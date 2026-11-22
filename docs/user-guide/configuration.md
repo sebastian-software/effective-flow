@@ -269,7 +269,7 @@ absent because this example pins `tracker.mode: local`; they belong to an extern
 ## Block `executionProfiles`
 
 `executionProfiles.fast.enabled` is the opt-in Boolean switch for the Quality/Fast field pilot of
-`/effective-flow build`. It does not contain a provider model name. Missing or `false` means
+`/effective-flow build` and `refactor`. It does not contain a provider model name. Missing or `false` means
 disabled; malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed to
 **Quality** and stop new pilot measurement. Only the literal `true` admits the project to the pilot
 lifecycle; it does not start a baseline, activate Fast, or prove that the current host can enforce
@@ -280,13 +280,17 @@ Set the row with `/effective-flow setup guided` → **Advanced settings** → **
 **Disable** writes `false`. Profile and Express never ask this question and keep an existing value
 exactly as recorded. After the configuration write, the same block offers at most one confirmed
 generation action, depending on the stored pilot state: start the Quality-only baseline, or resume
-a suspended generation with healthy evidence. Activation needs no action: the next measured native
-`build` or `refactor` run activates a baseline generation automatically once its preregistered window and sample
-are met. See [Setup](./tools-setup.md#fast-pilot-block) for the sequence.
+a suspended generation with healthy evidence. Activation needs no action: the next measured
+`build` or `refactor` run activates a baseline generation automatically once its preregistered sample
+is met (10 eligible packets in at least 5 completed baseline records, with no calendar window). See [Setup](./tools-setup.md#fast-pilot-block) for the sequence.
 
-Once a generation is active, `build` and `refactor` may use the native **Fast** implementer for
+Once a generation is active, `build` and `refactor` may use the **Fast** implementer for
 the first implementation attempt of an eligible packet. During the baseline every packet runs
-Quality and is only measured. Portable installations remain Quality-only and unmeasured. Changing or removing the row does not rewrite a pilot generation, clear a suspension,
+Quality and is only measured. A native installation uses its Fast sidecar role; a portable
+installation (for example from DALO) uses a per-spawn Fast model setting, only on a harness the
+release has qualified (Claude Code today; Codex is unproven and stays Quality). `fix` is not yet
+measured and never uses Fast. The key remains the only setting: harness, install kind and
+thresholds are not configurable. Changing or removing the row does not rewrite a pilot generation, clear a suspension,
 or delete evidence.
 
 Project admission is also separate from detailed-trace consent. The configuration row cannot grant

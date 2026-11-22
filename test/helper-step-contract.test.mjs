@@ -118,7 +118,7 @@ test('the iterate orchestrator commits each item after its review; the delegatio
   );
   assert.match(
     handoff,
-    /it carries the literal lines `Commit: caller-owned` and `Execution root: <this run's execution root>`, receives verbatim the bolded ban on other commit paths, and returns `DONE` with its actual paths/,
+    /it carries the literal lines `Commit: caller-owned`, `Caller: iterate` \(a delegated `build`, `refactor` or `fix` run records `correction-pass` and runs Quality\) and `Execution root: <this run's execution root>`, receives verbatim the bolded ban on other commit paths, and returns `DONE` with its actual paths/,
   );
   assert.match(
     flat(commitSection),

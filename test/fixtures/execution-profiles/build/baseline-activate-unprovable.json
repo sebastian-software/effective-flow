@@ -3,7 +3,7 @@
   "harness": "codex",
   "config": "true",
   "inventory": "baseline",
-  "baselineEvidence": "ready",
+  "baselineEvidence": "sample-met",
   "activation": "unprovable",
   "replay": false,
   "replayReason": "The replay cannot make a guarded inventory read fail right after a lost activate response without corrupting the generation it then proves; this fixture pins the fragment's unprovable branch.",

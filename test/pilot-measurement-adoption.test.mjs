@@ -45,6 +45,9 @@ const PROTOCOL_1_0_DIGEST =
 // The digest every release from 1.66.0 through 1.67.1 persisted generations under.
 const PROTOCOL_1_1_DIGEST =
   'sha256:18ff022103e4ff0f5d5aebb492f58e738fdabbbfe367f6594b8dad2c80f15e3d';
+// The digest every release from 1.68.0 through 1.76.0 persisted generations under.
+const PROTOCOL_1_2_DIGEST =
+  'sha256:a39232140a24ffcfb95f1165cea2343e4593c32dc3594ef81a6d9295505b099c';
 const INCIDENTS = [
   ['safety', 'critical-safety-incident'],
   ['data-integrity', 'critical-data-integrity-incident'],
@@ -108,6 +111,10 @@ function fixture(t) {
     monotonicNs: () => clock.monotonicNs,
     uptimeSeconds: () => clock.uptime,
     hostname: () => 'fixture-host',
+    ownerPid: 4242,
+    ownerPidStartTime: 77,
+    // No installed qualification unless a test provides one: portable Fast is unavailable.
+    harnessQualificationPath: join(root, 'absent-fast-harness-qualification.json'),
   };
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return {
@@ -164,6 +171,7 @@ async function startWorkflow(fx, generationId, packets = [packetReservation()]) 
         configState: 'enabled',
         workflow: 'build',
         harnessFamily: 'codex',
+        installKind: 'native',
         packets,
       },
       fx.deps,
@@ -207,18 +215,30 @@ function terminalPayload(reservation, overrides = {}, packetOverrides = []) {
   };
 }
 
-async function timePacket(fx, generationId, reservation, packet = reservation.packets[0]) {
+async function timePacket(
+  fx,
+  generationId,
+  reservation,
+  packet = reservation.packets[0],
+  modelCompliance = 'not-applicable',
+) {
   const identity = packetIdentity(fx, generationId, reservation, packet);
   await executeOperation('start-packet', identity, fx.deps);
   fx.clock.wallMs += 125;
   fx.clock.monotonicNs += 125_000_000n;
   fx.clock.uptime += 0.125;
-  await executeOperation('finish-packet', identity, fx.deps);
+  await executeOperation('finish-packet', { ...identity, modelCompliance }, fx.deps);
 }
 
 async function reserveAndFinish(fx, generationId, selectedProfile = 'quality') {
   const reservation = await startWorkflow(fx, generationId, [packetReservation(selectedProfile)]);
-  await timePacket(fx, generationId, reservation);
+  await timePacket(
+    fx,
+    generationId,
+    reservation,
+    reservation.packets[0],
+    selectedProfile === 'fast' ? 'unverified' : 'not-applicable',
+  );
   return reservation;
 }
 
@@ -258,6 +278,7 @@ function gateInput(fx, generationId, generationState = 'baseline') {
     generationState,
     mode: 'merge',
     harnessFamily: 'codex',
+    installKind: 'native',
   };
 }
 
@@ -370,30 +391,50 @@ function storedPacket(ordinal, index, options = {}) {
     duration = 100,
     cost = '10',
     fallback = 'none',
+    reason = eligible ? null : 'profile-unavailable',
+    modelCompliance = selectedProfile === 'fast' &&
+    fallback !== 'admission-changed' &&
+    attempt !== 'not-started'
+      ? attempt === 'unknown'
+        ? 'unverified'
+        : 'verified'
+      : 'not-applicable',
   } = options;
   return {
     packetId: opaqueId(150, ordinal * 1000 + index),
     selectedProfile,
     wouldBeFastEligible: eligible,
-    firstGateReason: eligible ? null : 'profile-unavailable',
+    firstGateReason: reason,
     implementationDuration:
       duration === null
         ? { status: 'unavailable' }
         : { status: 'available', milliseconds: duration },
     fallback,
-    escalated: fallback !== 'none',
+    escalated: fallback !== 'none' && fallback !== 'admission-changed',
     costProxy:
       cost === null
         ? { status: 'unavailable' }
         : { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: cost },
     attempt,
+    modelCompliance,
   };
 }
 
+// Only a portable record can carry a verified or mismatch outcome: a native Fast spawn is never
+// observed and stays unverified.
 function storedRecord(generationId, ordinal, packets, options = {}) {
-  const { cohort = 'baseline', completionStatus = 'completed' } = options;
+  const {
+    cohort = 'baseline',
+    completionStatus = 'completed',
+    overlapped = false,
+    installKind = packets.some(({ modelCompliance }) =>
+      ['verified', 'mismatch'].includes(modelCompliance),
+    )
+      ? 'portable'
+      : 'native',
+  } = options;
   return {
-    schema: 2,
+    schema: 3,
     kind: 'workflow-record',
     runId: opaqueId(200, ordinal),
     workflowCapabilityHash: canonicalDigest({ capability: `adoption-${ordinal}` }),
@@ -404,6 +445,7 @@ function storedRecord(generationId, ordinal, packets, options = {}) {
     generationState: cohort === 'baseline' ? 'baseline' : 'active',
     workflow: 'build',
     harnessFamily: 'codex',
+    installKind,
     ordinal,
     packets,
     validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
@@ -411,6 +453,7 @@ function storedRecord(generationId, ordinal, packets, options = {}) {
     completionStatus,
     qualityCorrectionRounds: 0,
     detailTrace: false,
+    overlapped,
   };
 }
 
@@ -442,11 +485,12 @@ function treeBytes(root) {
   }, 0);
 }
 
-// Invariant: protocol 1.2.0 binds the Quality-mapping identity (the `deep` tier per harness) into
-// the digest, so its digest differs from every earlier one.
-test('protocol versions move to 1.2.0 with the Quality-mapping identity in the digest', async (t) => {
-  assert.equal(PILOT_MEASUREMENT_PROTOCOL_VERSION, '1.2.0');
-  assert.equal(PILOT_MEASUREMENT_PROTOCOL.version, '1.2.0');
+// Invariant: protocol 1.3.0 keeps the Quality-mapping identity in the digest, drops the baseline
+// window, and carries the short-baseline minima, the fix workflow, and the 1.3.0 record fields, so
+// its digest differs from every earlier one.
+test('protocol versions move to 1.3.0 with the short-baseline parameters in the digest', async (t) => {
+  assert.equal(PILOT_MEASUREMENT_PROTOCOL_VERSION, '1.3.0');
+  assert.equal(PILOT_MEASUREMENT_PROTOCOL.version, '1.3.0');
   assert.equal(
     PILOT_MEASUREMENT_PROTOCOL.qualityMappingIdentity,
     canonicalDigest({
@@ -458,9 +502,35 @@ test('protocol versions move to 1.2.0 with the Quality-mapping identity in the d
     PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY,
     PILOT_MEASUREMENT_PROTOCOL.qualityMappingIdentity,
   );
-  assert.equal(PILOT_MEASUREMENT_PROTOCOL.aggregation.algorithmVersion, 2);
-  assert.notEqual(PILOT_MEASUREMENT_PROTOCOL_DIGEST, PROTOCOL_1_0_DIGEST);
-  assert.notEqual(PILOT_MEASUREMENT_PROTOCOL_DIGEST, PROTOCOL_1_1_DIGEST);
+  const { aggregation, enums, policyProjection } = PILOT_MEASUREMENT_PROTOCOL;
+  assert.equal(aggregation.algorithmVersion, 3);
+  assert.equal(Object.hasOwn(aggregation, 'baselineWindowMinimumDays'), false);
+  assert.equal(aggregation.baselineEligiblePacketMinimum, 10);
+  assert.equal(aggregation.baselineRecordMinimum, 5);
+  assert.equal(aggregation.cohortMinimum, 5);
+  assert.deepEqual(enums.workflows, ['build', 'refactor', 'fix']);
+  assert.deepEqual(enums.installKinds, ['native', 'portable']);
+  assert.deepEqual(enums.modelCompliance, ['verified', 'mismatch', 'unverified', 'not-applicable']);
+  assert.equal(policyProjection.gateReasons[0], 'correction-pass');
+  assert.equal(policyProjection.fallbacks.includes('admission-changed'), true);
+  assert.deepEqual(
+    policyProjection.fallbackMappings.find(({ fallback }) => fallback === 'admission-changed'),
+    {
+      event: 'fast-admission-changed-before-spawn',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'admission-changed',
+      fastAttemptConsumed: false,
+    },
+  );
+  assert.equal(
+    PILOT_MEASUREMENT_PROTOCOL.adoptionGates.find(({ gate }) => gate === 'baseline-sample')
+      .threshold.numerator,
+    10,
+  );
+  for (const digest of [PROTOCOL_1_0_DIGEST, PROTOCOL_1_1_DIGEST, PROTOCOL_1_2_DIGEST]) {
+    assert.notEqual(PILOT_MEASUREMENT_PROTOCOL_DIGEST, digest);
+  }
   assert.match(PILOT_MEASUREMENT_PROTOCOL_DIGEST, /^sha256:[0-9a-f]{64}$/);
   assert.deepEqual(PILOT_MEASUREMENT_PROTOCOL.enums.packetAttempts, [
     'started',
@@ -478,34 +548,133 @@ test('protocol versions move to 1.2.0 with the Quality-mapping identity in the d
   );
 
   // RECORD_SCHEMA is internal, so the incremented schema is pinned on persisted reservations and
-  // records instead.
+  // records instead; the transient owner and overlap fields never reach the terminal record.
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
   const reservation = await reserveAndFinish(fx, generationId);
   const target = join(generationRoot(fx, generationId), 'records', `${reservation.runId}.json`);
-  assert.equal(readJsonFile(target).schema, 2);
+  const reserved = readJsonFile(target);
+  assert.equal(reserved.schema, 3);
+  assert.equal(reserved.installKind, 'native');
+  assert.equal(reserved.overlapFlag, false);
+  assert.match(reserved.ownerDigest, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(reserved.reservedAt, new Date(fx.clock.wallMs - 125).toISOString());
   await executeOperation('finalize', finalizeInput(fx, generationId, reservation), fx.deps);
   const record = readJsonFile(target);
-  assert.equal(record.schema, 2);
+  assert.equal(record.schema, 3);
   assert.equal(record.packets[0].attempt, 'started');
+  assert.equal(record.packets[0].modelCompliance, 'not-applicable');
+  assert.equal(record.overlapped, false);
+  for (const field of ['ownerSalt', 'ownerDigest', 'reservedAt', 'overlapFlag']) {
+    assert.equal(Object.hasOwn(record, field), false, field);
+  }
 });
 
-// Rewrites a generation's state and evidence as protocol 1.1.0 persisted them, so the fixture is
-// exactly what a release from 1.66.0 through 1.67.1 leaves behind.
+// Invariant: a generation persisted under protocol 1.2.0 (no 1.3.0 fields) stays readable: the
+// first locked operation suspends it once with protocol-parameters-changed, and it can be
+// inspected, reviewed, and discarded but never extended.
+test('a generation persisted under protocol 1.2.0 migrates once to suspended(protocol-parameters-changed)', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  await finalizeOne(fx, generationId);
+  persistUnderProtocol(fx, generationId, '1.2.0', PROTOCOL_1_2_DIGEST);
+  const pending = await inventory(fx, generationId);
+  assert.deepEqual(
+    [pending.generationState, pending.transitionPending, pending.protocolCurrent],
+    ['suspended', true, false],
+  );
+  assert.equal(pending.qualification.snapshot, null);
+  assert.equal(
+    (
+      await rejection(
+        'start',
+        {
+          ...fx.common,
+          generationId,
+          configState: 'enabled',
+          workflow: 'build',
+          harnessFamily: 'codex',
+          installKind: 'native',
+          packets: [packetReservation()],
+        },
+        fx.deps,
+      )
+    ).error.code,
+    'PROTOCOL_DRIFT',
+  );
+  const state = readState(fx, generationId);
+  assert.deepEqual(
+    [state.generationState, state.protocolVersion, state.schema],
+    ['suspended', '1.2.0', 1],
+  );
+  assert.deepEqual(readSuspension(fx, generationId).reasons, ['protocol-parameters-changed']);
+  const migrated = await inventory(fx, generationId);
+  assert.equal(migrated.transitionPending, false);
+  await reviewAndDiscard(fx, generationId, migrated.inventoryDigest, PROTOCOL_1_2_DIGEST);
+});
+
+// The shape protocols 1.1.0 and 1.2.0 persisted: no qualification snapshot, no installKind,
+// overlap, owner, or model-compliance fields, and the earlier schema numbers.
+function legacyShape(value) {
+  const {
+    harnessQualification,
+    installKind,
+    overlapped,
+    ownerSalt,
+    ownerDigest,
+    reservedAt,
+    overlapFlag,
+    fallback,
+    modelCompliance,
+    ...rest
+  } = value;
+  switch (value.kind) {
+    case 'pilot-generation-state':
+      return { ...rest, schema: 1 };
+    case 'workflow-reservation':
+      return { ...rest, schema: 2 };
+    case 'workflow-record':
+      return {
+        ...rest,
+        schema: 2,
+        packets: rest.packets.map(({ modelCompliance: _, ...packet }) => packet),
+      };
+    case 'gate-observation':
+    case 'gate-observation-reservation':
+      return { ...rest, schema: 1 };
+    case 'packet-timing-receipt':
+      return { ...rest, schema: 1 };
+    default:
+      return value;
+  }
+}
+
+// Rewrites a generation's state and evidence as a prior protocol persisted them, so the fixture is
+// exactly what a release from 1.66.0 through 1.67.1 (1.1.0) or 1.68.0 through 1.76.0 (1.2.0)
+// leaves behind.
 function persistUnderProtocol(fx, generationId, version, digest, stateOverrides = {}) {
   const root = generationRoot(fx, generationId);
-  writeState(fx, generationId, {
-    protocolVersion: version,
-    protocolDigest: digest,
-    ...stateOverrides,
-  });
+  const stateTarget = join(root, 'state.json');
+  writeFileSync(
+    stateTarget,
+    `${canonicalizeJson({
+      ...legacyShape(readJsonFile(stateTarget)),
+      protocolVersion: version,
+      protocolDigest: digest,
+      ...stateOverrides,
+    })}\n`,
+  );
   for (const directory of ['records', 'gate-observations']) {
     for (const name of readdirSync(join(root, directory))) {
+      if (name.startsWith('.tmp-')) continue;
       const target = join(root, directory, name);
-      const value = readJsonFile(target);
-      if (Object.hasOwn(value, 'protocolDigest')) {
-        writeFileSync(target, `${canonicalizeJson({ ...value, protocolDigest: digest })}\n`);
-      }
+      const value = legacyShape(readJsonFile(target));
+      writeFileSync(
+        target,
+        `${canonicalizeJson(
+          Object.hasOwn(value, 'protocolDigest') ? { ...value, protocolDigest: digest } : value,
+        )}\n`,
+      );
     }
   }
 }
@@ -563,6 +732,7 @@ test('a generation persisted under protocol 1.1.0 migrates once to suspended(qua
           configState: 'enabled',
           workflow: 'build',
           harnessFamily: 'codex',
+          installKind: 'native',
           packets: [packetReservation()],
         },
         fx.deps,
@@ -595,6 +765,7 @@ test('a generation persisted under protocol 1.1.0 migrates once to suspended(qua
         configState: 'enabled',
         workflow: 'build',
         harnessFamily: 'codex',
+        installKind: 'native',
         packets: [packetReservation()],
       },
     ],
@@ -693,6 +864,7 @@ test('only the exact protocol 1.1.0 identity migrates; any other stays UNSAFE_ST
     ['unknown digest', '1.1.0', `sha256:${'0'.repeat(64)}`],
     ['1.1.0 digest under another version', '1.0.0', PROTOCOL_1_1_DIGEST],
     ['current digest under 1.1.0', '1.1.0', PILOT_MEASUREMENT_PROTOCOL_DIGEST],
+    ['1.2.0 digest under 1.1.0', '1.1.0', PROTOCOL_1_2_DIGEST],
   ]) {
     const fx = fixture(t);
     const { generationId } = await beginBaseline(fx);
@@ -713,6 +885,7 @@ test('only the exact protocol 1.1.0 identity migrates; any other stays UNSAFE_ST
             configState: 'enabled',
             workflow: 'build',
             harnessFamily: 'codex',
+            installKind: 'native',
             packets: [packetReservation()],
           },
           fx.deps,
@@ -777,7 +950,13 @@ test('an interrupted or pre-suspended 1.1.0 migration completes under the lifecy
   });
 });
 
-async function reviewAndDiscard(fx, generationId, expectedInventoryDigest) {
+// A prior-protocol generation is reviewed and discarded under its own stored protocol binding.
+async function reviewAndDiscard(
+  fx,
+  generationId,
+  expectedInventoryDigest,
+  protocolDigest = PROTOCOL_1_1_DIGEST,
+) {
   const review = await executeOperation(
     'begin-review',
     {
@@ -790,7 +969,7 @@ async function reviewAndDiscard(fx, generationId, expectedInventoryDigest) {
     fx.deps,
   );
   assert.equal(review.result.generationState, 'review');
-  assert.equal(readState(fx, generationId).protocolDigest, PROTOCOL_1_1_DIGEST);
+  assert.equal(readState(fx, generationId).protocolDigest, protocolDigest);
   const dryRun = await executeOperation(
     'discard-generation',
     { ...fx.common, generationId, configState: 'disabled', dryRun: true },
@@ -818,6 +997,7 @@ const START_INPUT = (fx, generationId) => ({
   configState: 'enabled',
   workflow: 'build',
   harnessFamily: 'codex',
+  installKind: 'native',
   packets: [packetReservation()],
 });
 
@@ -910,7 +1090,10 @@ test('begin-review succeeds first try with the digest of a pre-migration 1.1.0 i
   await reviewAndDiscard(fx, generationId, pending.inventoryDigest);
 });
 
-test('activate needs no confirmation and reports exactly the unmet window and sample', async (t) => {
+// Invariant: protocol 1.3.0 activates on the sample alone, with no calendar window: at least 10
+// eligible packets of completed baseline records and at least 5 completed baseline records, where a
+// record whose only first gate reason is correction-pass counts toward neither minimum.
+test('activate needs no confirmation and reports the unmet sample without any window', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
   const input = activateInput(fx, generationId);
@@ -928,37 +1111,43 @@ test('activate needs no confirmation and reports exactly the unmet window and sa
 
   assert.deepEqual(
     (await executeOperation('activate', input, fx.deps)).result,
-    notReady(['window', 'sample']),
-  );
-  fx.clock.wallMs += 7 * DAY_MS - 1;
-  assert.deepEqual(
-    (await executeOperation('activate', input, fx.deps)).result,
-    notReady(['window', 'sample']),
-  );
-  fx.clock.wallMs += 1;
-  assert.deepEqual(
-    (await executeOperation('activate', input, fx.deps)).result,
     notReady(['sample']),
   );
 
-  // Only wouldBeFastEligible packets of completed baseline records count toward the sample.
+  // 9 eligible packets in 5 completed records, plus ineligible and failed-record packets: not ready.
+  const twoEach = (ordinal) => [storedPacket(ordinal, 0), storedPacket(ordinal, 1)];
   writeRecords(fx, generationId, [
-    storedRecord(
-      generationId,
-      1,
-      Array.from({ length: 19 }, (_, index) => storedPacket(1, index)).concat(
-        storedPacket(1, 19, { eligible: false }),
-      ),
-    ),
-    storedRecord(generationId, 2, [storedPacket(2, 0)], { completionStatus: 'failed' }),
+    storedRecord(generationId, 1, twoEach(1)),
+    storedRecord(generationId, 2, twoEach(2)),
+    storedRecord(generationId, 3, twoEach(3)),
+    storedRecord(generationId, 4, twoEach(4)),
+    storedRecord(generationId, 5, [storedPacket(5, 0), storedPacket(5, 1, { eligible: false })]),
+    storedRecord(generationId, 6, twoEach(6), { completionStatus: 'failed' }),
   ]);
   assert.deepEqual(
     (await executeOperation('activate', input, fx.deps)).result,
     notReady(['sample']),
   );
-  assert.deepEqual(snapshot(fx, generationId).length, before.length + 2);
 
-  writeRecords(fx, generationId, [storedRecord(generationId, 3, [storedPacket(3, 0)])]);
+  // 10 eligible packets in 4 counted records plus one correction-pass record: still not ready.
+  writeRecords(
+    fx,
+    generationId,
+    [
+      storedRecord(generationId, 5, [storedPacket(5, 0), storedPacket(5, 1)].concat(twoEach(7))),
+      storedRecord(generationId, 4, [
+        storedPacket(4, 0, { eligible: false, reason: 'correction-pass' }),
+      ]),
+    ],
+    { nextWorkflowOrdinal: 7 },
+  );
+  assert.deepEqual(
+    (await executeOperation('activate', input, fx.deps)).result,
+    notReady(['sample']),
+  );
+
+  // A fifth counted completed record satisfies the sample without any elapsed time.
+  writeRecords(fx, generationId, [storedRecord(generationId, 8, [storedPacket(8, 0)])]);
   assert.deepEqual((await executeOperation('activate', input, fx.deps)).result, {
     status: 'activated',
     generationId,
@@ -970,6 +1159,18 @@ test('activate needs no confirmation and reports exactly the unmet window and sa
   assert.equal((await rejection('activate', input, fx.deps)).error.code, 'INVALID_STATE');
 });
 
+// Four completed baseline records with 12 eligible packets: one more completed record meets both
+// activation minima.
+function oneRecordShortSample(generationId) {
+  return Array.from({ length: 4 }, (_, index) =>
+    storedRecord(generationId, index + 1, [
+      storedPacket(index + 1, 0),
+      storedPacket(index + 1, 1),
+      storedPacket(index + 1, 2),
+    ]),
+  );
+}
+
 test('activate reports busy alone while a reservation, packet timing, or observation is open', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
@@ -980,26 +1181,25 @@ test('activate reports busy alone while a reservation, packet timing, or observa
     generationState: 'baseline',
     unmet: ['busy'],
   };
-  writeRecords(fx, generationId, [
-    storedRecord(
-      generationId,
-      1,
-      Array.from({ length: 20 }, (_, index) => storedPacket(1, index)),
-    ),
-  ]);
-  assert.deepEqual((await executeOperation('activate', input, fx.deps)).result.unmet, ['window']);
+  writeRecords(fx, generationId, oneRecordShortSample(generationId));
+  assert.deepEqual((await executeOperation('activate', input, fx.deps)).result.unmet, ['sample']);
+  assert.equal((await inventory(fx, generationId)).busyCause, null);
 
-  // An open reservation is busy, and busy is never combined with window or sample.
+  // An open reservation is busy, and busy is never combined with sample.
   const reservation = await startWorkflow(fx, generationId);
   assert.deepEqual((await executeOperation('activate', input, fx.deps)).result, busy);
+  assert.equal((await inventory(fx, generationId)).busyCause, 'open-reservations');
   await executeOperation('start-packet', packetIdentity(fx, generationId, reservation), fx.deps);
   assert.equal((await inventory(fx, generationId)).incompleteCounts.packetTimings, 1);
   assert.deepEqual((await executeOperation('activate', input, fx.deps)).result, busy);
-  await executeOperation('finish-packet', packetIdentity(fx, generationId, reservation), fx.deps);
+  await executeOperation(
+    'finish-packet',
+    { ...packetIdentity(fx, generationId, reservation), modelCompliance: 'not-applicable' },
+    fx.deps,
+  );
   await executeOperation('finalize', finalizeInput(fx, generationId, reservation), fx.deps);
-  assert.deepEqual((await executeOperation('activate', input, fx.deps)).result.unmet, ['window']);
+  assert.equal((await inventory(fx, generationId)).busyCause, null);
 
-  fx.clock.wallMs += 7 * DAY_MS;
   const observation = (
     await executeOperation('start-gate-observation', gateInput(fx, generationId), fx.deps)
   ).result;
@@ -1007,11 +1207,19 @@ test('activate reports busy alone while a reservation, packet timing, or observa
   const before = snapshot(fx, generationId);
   assert.deepEqual((await executeOperation('activate', input, fx.deps)).result, busy);
   assert.deepEqual(snapshot(fx, generationId), before);
+  // An observation kept open (as across SUSPENDED host-pr-watch) has its own cause, which no
+  // reconcile-record clears; an open workflow reservation still takes precedence.
+  assert.equal((await inventory(fx, generationId)).busyCause, 'open-observations');
+  const overlapping = await reserveAndFinish(fx, generationId);
+  assert.equal((await inventory(fx, generationId)).busyCause, 'open-reservations');
+  await executeOperation('finalize', finalizeInput(fx, generationId, overlapping), fx.deps);
+  assert.equal((await inventory(fx, generationId)).busyCause, 'open-observations');
   await executeOperation(
     'finalize-gate-observation',
     finalizeGateInput(fx, generationId, observation),
     fx.deps,
   );
+  assert.equal((await inventory(fx, generationId)).busyCause, null);
   assert.deepEqual((await executeOperation('activate', input, fx.deps)).result, {
     status: 'activated',
     generationId,
@@ -1977,6 +2185,58 @@ test('reconcile-record records every packet of an abandoned run as unknown', asy
   });
 });
 
+// Invariant: a receipt that proves the pre-spawn admission-changed fallback keeps an abandoned
+// Fast packet out of the Fast attempts instead of recording it as an unverified Fast spawn.
+test('reconcile-record keeps an admission-changed receipt as that fallback', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const reservation = await startWorkflow(fx, generationId, [
+    packetReservation('fast'),
+    packetReservation('fast'),
+  ]);
+  await executeOperation(
+    'start-packet',
+    {
+      ...packetIdentity(fx, generationId, reservation, reservation.packets[0]),
+      fallback: 'admission-changed',
+    },
+    fx.deps,
+  );
+  const current = await inventory(fx, generationId);
+  await executeOperation(
+    'reconcile-record',
+    {
+      ...fx.common,
+      generationId,
+      runId: reservation.runId,
+      workflowCapability: reservation.workflowCapability,
+      expectedInventoryDigest: current.inventoryDigest,
+      confirmation: true,
+    },
+    fx.deps,
+  );
+  const record = readJsonFile(recordPath(fx, generationId, reservation.runId));
+  assert.deepEqual(
+    record.packets.map(({ attempt, fallback, escalated, modelCompliance }) => ({
+      attempt,
+      fallback,
+      escalated,
+      modelCompliance,
+    })),
+    [
+      {
+        attempt: 'unknown',
+        fallback: 'admission-changed',
+        escalated: false,
+        modelCompliance: 'not-applicable',
+      },
+      { attempt: 'unknown', fallback: 'none', escalated: false, modelCompliance: 'unverified' },
+    ],
+  );
+  assert.equal((await inventory(fx, generationId)).incompleteCounts.packetTimings, 0);
+});
+
 test('the stored-packet validator enforces attempt invariants per completion status', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
@@ -2123,7 +2383,7 @@ test('cohort metrics exclude not-started packets and never count unknown pilot-F
   const summaries = join(generationRoot(fx, generationId), 'summaries');
   const privateView = readJsonFile(join(summaries, 'private.json'));
   const publication = readJsonFile(join(summaries, 'publication.json'));
-  assert.equal(privateView.algorithmVersion, 2);
+  assert.equal(privateView.algorithmVersion, 3);
   const fallbackOutcomes = (counts) =>
     Object.fromEntries(
       PILOT_MEASUREMENT_POLICY_PROJECTION.fallbacks.map((fallback) => [
@@ -2222,7 +2482,9 @@ test('start-gate-observation records nothing when admission is closed', async (t
   assert.equal(readSuspension(fx, generationId), null);
 });
 
-test('start-gate-observation reports busy without persisting and finalize under a lock never suspends', async (t) => {
+// Invariant: only lifecycle-lock contention is busy; open records, packet timings, and other
+// observations overlap with a new observation, which flags every open workflow reservation.
+test('start-gate-observation reports busy only for a held lock and finalize under a lock never suspends', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
   const busy = { status: 'not-recorded', reason: 'busy', pilotControlOutcome: 'none' };
@@ -2238,14 +2500,44 @@ test('start-gate-observation reports busy without persisting and finalize under 
   await assertBusy('held lock');
   release();
   const reservation = await startWorkflow(fx, generationId);
-  await assertBusy('open reservation');
+  const reservationPath = join(
+    generationRoot(fx, generationId),
+    'records',
+    `${reservation.runId}.json`,
+  );
+  assert.equal(readJsonFile(reservationPath).overlapFlag, false);
   await executeOperation('start-packet', packetIdentity(fx, generationId, reservation), fx.deps);
-  await assertBusy('open packet timing');
-  await executeOperation('finish-packet', packetIdentity(fx, generationId, reservation), fx.deps);
+  const overlapping = (await startObservation()).result;
+  assert.equal(overlapping.status, 'reserved');
+  assert.equal(readJsonFile(reservationPath).overlapFlag, true);
+  const observationPath = join(
+    generationRoot(fx, generationId),
+    'gate-observations',
+    `${overlapping.observationId}.json`,
+  );
+  assert.equal(Object.hasOwn(readJsonFile(observationPath), 'overlapFlag'), false);
+  await executeOperation(
+    'finalize-gate-observation',
+    finalizeGateInput(fx, generationId, overlapping),
+    fx.deps,
+  );
+  await executeOperation(
+    'finish-packet',
+    { ...packetIdentity(fx, generationId, reservation), modelCompliance: 'not-applicable' },
+    fx.deps,
+  );
   await executeOperation('finalize', finalizeInput(fx, generationId, reservation), fx.deps);
+  assert.equal(readJsonFile(reservationPath).overlapped, true);
   const observation = (await startObservation()).result;
   assert.equal(observation.status, 'reserved');
-  await assertBusy('open observation');
+  // A second observation beside an open one is reserved too.
+  const second = (await startObservation()).result;
+  assert.equal(second.status, 'reserved');
+  await executeOperation(
+    'finalize-gate-observation',
+    finalizeGateInput(fx, generationId, second),
+    fx.deps,
+  );
 
   const finalizeObservation = finalizeGateInput(fx, generationId, observation);
   const unlock = holdLifecycleLock(fx, generationId);
@@ -2312,4 +2604,738 @@ test('invalid members and orphan temporaries still suspend a gate observation wi
       );
     });
   }
+});
+
+function activeGeneration(fx, generationId) {
+  writeState(fx, generationId, {
+    generationState: 'active',
+    activatedAt: new Date(fx.clock.wallMs).toISOString(),
+  });
+}
+
+function recordPath(fx, generationId, runId) {
+  return join(generationRoot(fx, generationId), 'records', `${runId}.json`);
+}
+
+function timingPath(fx, generationId, reservation, packet = reservation.packets[0]) {
+  return join(
+    generationRoot(fx, generationId),
+    'records',
+    `${reservation.runId}.${packet.packetId}.timing.json`,
+  );
+}
+
+// Invariant: records overlap freely and finalize with `overlapped: true` without referencing each
+// other, while a Fast spawn under a foreign incomplete record fails closed with ADMISSION_CHANGED,
+// consumes no Fast attempt, and runs as its admission-changed Quality fallback.
+test('overlapping records finalize as overlapped and a foreign record closes Fast admission', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const first = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const second = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  assert.equal(second.status, 'reserved');
+
+  const identity = packetIdentity(fx, generationId, first);
+  const closed = await rejection('start-packet', identity, fx.deps);
+  assert.equal(closed.error.code, 'ADMISSION_CHANGED');
+  assert.equal(existsSync(timingPath(fx, generationId, first)), false);
+  assert.equal(
+    (await rejection('start-packet', { ...identity, fallback: 'spawn-rejected' }, fx.deps)).error
+      .code,
+    'INVALID_PAYLOAD',
+  );
+
+  const fallback = { ...identity, fallback: 'admission-changed' };
+  assert.deepEqual((await executeOperation('start-packet', fallback, fx.deps)).result, {
+    status: 'started',
+    runId: first.runId,
+    packetId: identity.packetId,
+    fallback: 'admission-changed',
+  });
+  // The fallback receipt is not the Fast attempt: retrying the Fast start cannot adopt it.
+  assert.equal((await rejection('start-packet', identity, fx.deps)).error.code, 'INVALID_STATE');
+  assert.equal(
+    (await rejection('finish-packet', { ...identity, modelCompliance: 'verified' }, fx.deps)).error
+      .code,
+    'INVALID_PAYLOAD',
+  );
+  await executeOperation(
+    'finish-packet',
+    { ...identity, modelCompliance: 'not-applicable' },
+    fx.deps,
+  );
+  assert.equal(
+    (await rejection('finalize', finalizeInput(fx, generationId, first), fx.deps)).error.code,
+    'INVALID_PAYLOAD',
+  );
+  await executeOperation(
+    'finalize',
+    finalizeInput(fx, generationId, first, {}, [
+      { fallback: 'admission-changed', escalated: false },
+    ]),
+    fx.deps,
+  );
+  const firstRecord = readJsonFile(recordPath(fx, generationId, first.runId));
+  assert.equal(firstRecord.overlapped, true);
+  assert.deepEqual(
+    [
+      firstRecord.packets[0].selectedProfile,
+      firstRecord.packets[0].fallback,
+      firstRecord.packets[0].escalated,
+      firstRecord.packets[0].modelCompliance,
+    ],
+    ['fast', 'admission-changed', false, 'not-applicable'],
+  );
+  for (const field of ['ownerSalt', 'ownerDigest', 'reservedAt', 'overlapFlag']) {
+    assert.equal(Object.hasOwn(firstRecord, field), false, field);
+  }
+  assert.doesNotMatch(JSON.stringify(firstRecord), new RegExp(second.runId));
+
+  // With the foreign record closed, the second run's Fast spawn is admitted, and an open gate
+  // observation does not close admission.
+  const observation = (
+    await executeOperation('start-gate-observation', gateInput(fx, generationId, 'active'), fx.deps)
+  ).result;
+  assert.equal(observation.status, 'reserved');
+  const secondIdentity = packetIdentity(fx, generationId, second);
+  assert.equal(
+    (await executeOperation('start-packet', secondIdentity, fx.deps)).result.fallback,
+    'none',
+  );
+  assert.equal(
+    (
+      await rejection(
+        'finish-packet',
+        { ...secondIdentity, modelCompliance: 'not-applicable' },
+        fx.deps,
+      )
+    ).error.code,
+    'INVALID_PAYLOAD',
+  );
+  // A native Fast spawn has no verification adapter, so only unverified is accepted.
+  for (const modelCompliance of ['verified', 'mismatch']) {
+    assert.equal(
+      (await rejection('finish-packet', { ...secondIdentity, modelCompliance }, fx.deps)).error
+        .code,
+      'INVALID_PAYLOAD',
+    );
+  }
+  await executeOperation(
+    'finish-packet',
+    { ...secondIdentity, modelCompliance: 'unverified' },
+    fx.deps,
+  );
+  await executeOperation('finalize', finalizeInput(fx, generationId, second), fx.deps);
+  const secondRecord = readJsonFile(recordPath(fx, generationId, second.runId));
+  assert.equal(secondRecord.overlapped, true);
+  assert.equal(secondRecord.packets[0].modelCompliance, 'unverified');
+  await executeOperation(
+    'finalize-gate-observation',
+    finalizeGateInput(fx, generationId, observation),
+    fx.deps,
+  );
+
+  // A run alone from start to finalize is not overlapped.
+  const alone = await reserveAndFinish(fx, generationId, 'fast');
+  await executeOperation('finalize', finalizeInput(fx, generationId, alone), fx.deps);
+  assert.equal(readJsonFile(recordPath(fx, generationId, alone.runId)).overlapped, false);
+});
+
+// Invariant: a suspension closes Fast admission at the spawn without consuming a Fast attempt.
+test('a suspension after the reservation turns a Fast start into ADMISSION_CHANGED', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const reservation = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  await executeOperation(
+    'suspend',
+    { ...fx.common, generationId, pilotControlOutcome: 'evidence-gap', affectedRecordIds: [] },
+    fx.deps,
+  );
+  const identity = packetIdentity(fx, generationId, reservation);
+  assert.equal(
+    (await rejection('start-packet', identity, fx.deps)).error.code,
+    'ADMISSION_CHANGED',
+  );
+  assert.equal(existsSync(timingPath(fx, generationId, reservation)), false);
+  assert.equal(
+    (
+      await executeOperation(
+        'start-packet',
+        { ...identity, fallback: 'admission-changed' },
+        fx.deps,
+      )
+    ).result.status,
+    'started',
+  );
+});
+
+// Invariant: foreign leftover evidence closes Fast admission at the spawn without consuming a Fast
+// attempt: a timing receipt a terminal record kept because its finalize faulted before removing
+// it, or an orphan temporary. The run's own timing receipts, a temporary of a held lock, and an
+// open gate observation do not close it.
+test('a foreign leftover receipt or orphan temporary turns a Fast start into ADMISSION_CHANGED', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const peer = await reserveAndFinish(fx, generationId, 'fast');
+  const leftover = timingPath(fx, generationId, peer);
+  const leftoverBytes = readFileSync(leftover);
+  await executeOperation('finalize', finalizeInput(fx, generationId, peer), fx.deps);
+  assert.equal(readJsonFile(recordPath(fx, generationId, peer.runId)).kind, 'workflow-record');
+
+  const reservation = await startWorkflow(fx, generationId, [
+    packetReservation('fast'),
+    packetReservation('fast'),
+  ]);
+  const own = packetIdentity(fx, generationId, reservation, reservation.packets[0]);
+  assert.equal((await executeOperation('start-packet', own, fx.deps)).result.fallback, 'none');
+  const identity = packetIdentity(fx, generationId, reservation, reservation.packets[1]);
+  const target = timingPath(fx, generationId, reservation, reservation.packets[1]);
+  const closedBy = async (label, plant) => {
+    const remove = plant();
+    const before = snapshot(fx, generationId);
+    const envelope = await rejection('start-packet', identity, fx.deps);
+    assert.equal(envelope.error.code, 'ADMISSION_CHANGED', label);
+    assert.equal(existsSync(target), false, label);
+    assert.deepEqual(snapshot(fx, generationId), before, label);
+    remove();
+  };
+  // The peer's finalize persisted its record but faulted before removing its timing receipt.
+  await closedBy('leftover receipt', () => {
+    writeFileSync(leftover, leftoverBytes);
+    return () => rmSync(leftover);
+  });
+  await closedBy('orphan temporary', () => {
+    const temporary = orphanTemporary(fx, generationId);
+    writeFileSync(temporary, 'x');
+    return () => rmSync(temporary);
+  });
+
+  // A temporary whose owner lock is held is a concurrent packet write, not a leftover; with it, the
+  // run's own receipt, and an open gate observation present, the Fast spawn is admitted.
+  const observation = (
+    await executeOperation('start-gate-observation', gateInput(fx, generationId, 'active'), fx.deps)
+  ).result;
+  assert.equal(observation.status, 'reserved');
+  const lockNonce = 'L'.repeat(32);
+  const lock = join(generationRoot(fx, generationId), 'locks', `packet-${'P'.repeat(32)}.lock`);
+  writeFileSync(
+    lock,
+    canonicalizeJson({
+      schema: 1,
+      operation: 'finish-packet',
+      generationId,
+      ownerPid: process.pid,
+      nonce: lockNonce,
+    }),
+  );
+  const live = join(
+    generationRoot(fx, generationId),
+    'records',
+    `.tmp-finish-packet-${generationId}-${lockNonce}-${'0'.repeat(16)}`,
+  );
+  writeFileSync(live, 'x');
+  assert.deepEqual((await executeOperation('start-packet', identity, fx.deps)).result, {
+    status: 'started',
+    runId: reservation.runId,
+    packetId: identity.packetId,
+    fallback: 'none',
+  });
+  assert.equal(readJsonFile(target).fallback, 'none');
+  rmSync(live);
+  rmSync(lock);
+});
+
+// Invariant: a start-packet re-sent after a lost response precedes the spawn, so it acknowledges
+// the Fast receipt only while Fast admission is still open. Once another run reserved, the re-send
+// fails ADMISSION_CHANGED with nothing written, and the admission-changed re-send replaces the
+// unspawned Fast receipt, so finalize accepts the matching fallback.
+test('a re-sent Fast start-packet rechecks admission and converts to admission-changed', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const reservation = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const identity = packetIdentity(fx, generationId, reservation);
+  const fallback = { ...identity, fallback: 'admission-changed' };
+  const target = timingPath(fx, generationId, reservation);
+  const sent = { status: 'started', runId: reservation.runId, packetId: identity.packetId };
+  // The first response is lost; admission is still open, so the identical re-send is acknowledged.
+  await executeOperation('start-packet', identity, fx.deps);
+  const fast = readFileSync(target);
+  assert.deepEqual((await executeOperation('start-packet', identity, fx.deps)).result, {
+    ...sent,
+    fallback: 'none',
+  });
+  assert.deepEqual(readFileSync(target), fast);
+
+  // Another run reserves before the re-send: the first child must not start Fast.
+  const foreign = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const before = snapshot(fx, generationId);
+  assert.equal(
+    (await rejection('start-packet', identity, fx.deps)).error.code,
+    'ADMISSION_CHANGED',
+  );
+  assert.deepEqual(snapshot(fx, generationId), before);
+
+  // The foreign run ends before the fallback re-send, so admission reopens: the caller already saw
+  // the refusal, and the Quality fallback is still accepted.
+  rmSync(recordPath(fx, generationId, foreign.runId));
+  fx.clock.wallMs += 50;
+  fx.clock.monotonicNs += 50_000_000n;
+  assert.deepEqual((await executeOperation('start-packet', fallback, fx.deps)).result, {
+    ...sent,
+    fallback: 'admission-changed',
+  });
+  const converted = readJsonFile(target);
+  assert.equal(converted.fallback, 'admission-changed');
+  assert.equal(converted.status, 'started');
+  assert.equal(converted.startWallMs, fx.clock.wallMs, 'the Quality start times the real spawn');
+  // A lost conversion response is re-sent as is; the Fast start can no longer adopt the receipt.
+  assert.deepEqual((await executeOperation('start-packet', fallback, fx.deps)).result, {
+    ...sent,
+    fallback: 'admission-changed',
+  });
+  assert.equal((await rejection('start-packet', identity, fx.deps)).error.code, 'INVALID_STATE');
+
+  await executeOperation(
+    'finish-packet',
+    { ...identity, modelCompliance: 'not-applicable' },
+    fx.deps,
+  );
+  assert.equal(
+    (await rejection('finalize', finalizeInput(fx, generationId, reservation), fx.deps)).error.code,
+    'INVALID_PAYLOAD',
+  );
+  await executeOperation(
+    'finalize',
+    finalizeInput(fx, generationId, reservation, {}, [
+      { fallback: 'admission-changed', escalated: false },
+    ]),
+    fx.deps,
+  );
+  const stored = readJsonFile(recordPath(fx, generationId, reservation.runId)).packets[0];
+  assert.deepEqual(
+    [stored.selectedProfile, stored.fallback, stored.escalated],
+    ['fast', 'admission-changed', false],
+  );
+  assert.equal(existsSync(target), false);
+});
+
+// Invariant: a lock staging file closes Fast admission once the writer its staged record names is
+// provably gone (or no valid record names one), and a live writer's staging file, a concurrent
+// lock acquisition, does not.
+test('an orphaned lock staging file closes Fast admission and a live one does not', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const reservation = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const identity = packetIdentity(fx, generationId, reservation);
+  const target = timingPath(fx, generationId, reservation);
+  const nonce = 'S'.repeat(32);
+  const staged = join(
+    generationRoot(fx, generationId),
+    'locks',
+    `.tmp-finish-packet-${generationId}-${nonce}-${'1'.repeat(16)}`,
+  );
+  const stage = (ownerPid) =>
+    writeFileSync(
+      staged,
+      `${canonicalizeJson({ schema: 1, operation: 'finish-packet', generationId, ownerPid, nonce })}\n`,
+    );
+  const goneOwner = 2_147_483_647;
+  const probed = [];
+  const deps = {
+    ...fx.deps,
+    kill: (pid, signal) => {
+      probed.push(pid);
+      if (pid !== goneOwner) return process.kill(pid, signal);
+      throw Object.assign(new Error('no such process'), { code: 'ESRCH' });
+    },
+  };
+
+  stage(goneOwner);
+  const before = snapshot(fx, generationId);
+  assert.equal((await rejection('start-packet', identity, deps)).error.code, 'ADMISSION_CHANGED');
+  assert.ok(probed.includes(goneOwner), 'the staged writer is probed');
+  assert.deepEqual(snapshot(fx, generationId), before);
+  // A staging file without a valid record cannot prove a live writer.
+  writeFileSync(staged, 'x');
+  assert.equal((await rejection('start-packet', identity, deps)).error.code, 'ADMISSION_CHANGED');
+  assert.equal(existsSync(target), false);
+
+  stage(process.pid);
+  assert.deepEqual((await executeOperation('start-packet', identity, deps)).result, {
+    status: 'started',
+    runId: reservation.runId,
+    packetId: identity.packetId,
+    fallback: 'none',
+  });
+  rmSync(staged);
+});
+
+function writeQualification(t, records) {
+  const directory = mkdtempSync(join(tmpdir(), 'effective-flow-pilot-qualification-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const target = join(directory, 'fast-harness-qualification.json');
+  writeFileSync(target, `${JSON.stringify({ schemaVersion: 1, records })}\n`);
+  return target;
+}
+
+function qualificationRecord(harnessFamily, outcome, identity) {
+  return {
+    installKind: 'portable',
+    harnessFamily,
+    outcome,
+    hostVersion: outcome === 'qualified' ? '2.1' : null,
+    probedOn: '2026-11-21',
+    fastMappingIdentity: identity,
+  };
+}
+
+// Invariant: portable Fast needs the harness qualified in the generation snapshot and the snapshot's
+// Fast-mapping identity equal to the installed record's; an absent, malformed, unqualified, or
+// unproven record or an identity mismatch is PROFILE_UNAVAILABLE, while native Fast is unaffected.
+test('portable Fast requires a qualified snapshot whose identity matches the installed record', async (t) => {
+  const identity = 'a'.repeat(64);
+  const installed = writeQualification(t, [
+    qualificationRecord('claude', 'qualified', identity),
+    qualificationRecord('codex', 'unproven', 'b'.repeat(64)),
+  ]);
+  const fx = fixture(t);
+  fx.deps.harnessQualificationPath = installed;
+  const { generationId } = await beginBaseline(fx);
+  const view = await inventory(fx, generationId);
+  assert.equal(view.qualification.installed.status, 'available');
+  assert.deepEqual(view.qualification.snapshot, view.qualification.installed);
+  activeGeneration(fx, generationId);
+
+  const start = (harnessFamily, installKind = 'portable', deps = fx.deps) =>
+    executeOperation(
+      'start',
+      {
+        ...fx.common,
+        generationId,
+        configState: 'enabled',
+        workflow: 'refactor',
+        harnessFamily,
+        installKind,
+        packets: [packetReservation('fast')],
+      },
+      deps,
+    );
+  const reservation = (await start('claude')).result;
+  assert.equal(reservation.status, 'reserved');
+  const unavailable = async (operation, input, deps, label) =>
+    assert.equal(
+      (await rejection(operation, input, deps)).error.code,
+      'PROFILE_UNAVAILABLE',
+      label,
+    );
+  const startInput = (harnessFamily) => ({
+    ...fx.common,
+    generationId,
+    configState: 'enabled',
+    workflow: 'build',
+    harnessFamily,
+    installKind: 'portable',
+    packets: [packetReservation('fast')],
+  });
+  await unavailable('start', startInput('codex'), fx.deps, 'unproven harness');
+
+  const changed = writeQualification(t, [
+    qualificationRecord('claude', 'qualified', 'c'.repeat(64)),
+  ]);
+  const malformedPath = writeQualification(t, []);
+  writeFileSync(malformedPath, '{"schemaVersion":1,"records":[{}]}\n');
+  for (const [label, path] of [
+    ['identity mismatch', changed],
+    ['malformed record', malformedPath],
+    ['absent record', join(fx.root, 'missing-qualification.json')],
+  ]) {
+    const deps = { ...fx.deps, harnessQualificationPath: path };
+    await unavailable('start', startInput('claude'), deps, label);
+    await unavailable(
+      'start-packet',
+      packetIdentity(fx, generationId, reservation),
+      deps,
+      `${label} at the spawn`,
+    );
+  }
+  // A PROFILE_UNAVAILABLE spawn takes the same re-send path as ADMISSION_CHANGED: the packet
+  // starts as its admission-changed Quality fallback without a qualification check.
+  assert.equal(
+    (
+      await executeOperation(
+        'start-packet',
+        { ...packetIdentity(fx, generationId, reservation), fallback: 'admission-changed' },
+        { ...fx.deps, harnessQualificationPath: changed },
+      )
+    ).result.fallback,
+    'admission-changed',
+  );
+  // Native installations keep their sidecar rule and never read the qualification.
+  assert.equal(
+    (await start('codex', 'native', { ...fx.deps, harnessQualificationPath: changed })).result
+      .status,
+    'reserved',
+  );
+
+  // A generation that began without an installed qualification never admits portable Fast.
+  const other = fixture(t);
+  const { generationId: unqualified } = await beginBaseline(other);
+  assert.deepEqual((await inventory(other, unqualified)).qualification.snapshot, {
+    status: 'unavailable',
+  });
+  activeGeneration(other, unqualified);
+  await unavailable(
+    'start',
+    { ...startInput('claude'), ...other.common, generationId: unqualified },
+    { ...other.deps, harnessQualificationPath: installed },
+    'harness not qualified in the snapshot',
+  );
+
+  // A snapshot whose probe found the harness `unqualified` never admits portable Fast either.
+  const refused = fixture(t);
+  refused.deps.harnessQualificationPath = writeQualification(t, [
+    qualificationRecord('claude', 'unqualified', identity),
+  ]);
+  const { generationId: refusedId } = await beginBaseline(refused);
+  activeGeneration(refused, refusedId);
+  await unavailable(
+    'start',
+    { ...startInput('claude'), ...refused.common, generationId: refusedId },
+    refused.deps,
+    'unqualified harness',
+  );
+});
+
+// Invariant: a run iterate delegated records correction-pass on every packet, selects Quality, and
+// counts toward no minimum; mixing it with another first reason is rejected.
+test('correction-pass reserves Quality on every packet and counts toward no minimum', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const correction = {
+    selectedProfile: 'quality',
+    wouldBeFastEligible: false,
+    gate: { eligibility: 'excluded', firstReason: 'correction-pass' },
+  };
+  assert.equal(
+    (
+      await rejection(
+        'start',
+        {
+          ...fx.common,
+          generationId,
+          configState: 'enabled',
+          workflow: 'fix',
+          harnessFamily: 'claude',
+          installKind: 'portable',
+          packets: [correction, packetReservation()],
+        },
+        fx.deps,
+      )
+    ).error.code,
+    'INVALID_PAYLOAD',
+  );
+  assert.equal(
+    (await startWorkflow(fx, generationId, [correction, correction])).status,
+    'reserved',
+  );
+});
+
+// Invariant: Fast packets whose spawn ran on another model (mismatch) and admission-changed
+// fallbacks leave every attempted-Fast metric; mismatch and unverified are counted separately.
+test('model-compliance mismatch and admission-changed packets leave the Fast metrics', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const fast = { selectedProfile: 'fast' };
+  const pilot = { cohort: 'pilot' };
+  writeRecords(
+    fx,
+    generationId,
+    [
+      storedRecord(generationId, 1, [storedPacket(1, 0, { ...fast })], pilot),
+      storedRecord(
+        generationId,
+        2,
+        [storedPacket(2, 0, { ...fast, modelCompliance: 'unverified', duration: 300 })],
+        pilot,
+      ),
+      storedRecord(
+        generationId,
+        3,
+        [storedPacket(3, 0, { ...fast, modelCompliance: 'mismatch', duration: 900 })],
+        { ...pilot, overlapped: true },
+      ),
+      storedRecord(
+        generationId,
+        4,
+        [storedPacket(4, 0, { ...fast, fallback: 'admission-changed', duration: 900 })],
+        { ...pilot, overlapped: true },
+      ),
+      storedRecord(generationId, 5, [
+        storedPacket(5, 0, { eligible: false, reason: 'correction-pass' }),
+      ]),
+    ],
+    {
+      generationState: 'review',
+      activatedAt: new Date(fx.clock.wallMs).toISOString(),
+      reviewStartedAt: new Date(fx.clock.wallMs).toISOString(),
+    },
+  );
+  const current = await inventory(fx, generationId);
+  await executeOperation(
+    'aggregate',
+    { ...fx.common, generationId, expectedInventoryDigest: current.inventoryDigest },
+    fx.deps,
+  );
+  const privateView = readJsonFile(
+    join(generationRoot(fx, generationId), 'summaries', 'private.json'),
+  );
+  const { pilot: metrics, baseline } = privateView.cohorts;
+  assert.equal(metrics.attemptedFastCount, 2);
+  assert.deepEqual(metrics.fastWithoutEscalation, { numerator: '1', denominator: '1' });
+  assert.equal(metrics.fallbackOccurrences, 0);
+  assert.equal(metrics.fallbackOutcomes['admission-changed'], 1);
+  assert.deepEqual(metrics.modelComplianceOutcomes, {
+    verified: 1,
+    mismatch: 1,
+    unverified: 1,
+    'not-applicable': 0,
+  });
+  assert.equal(metrics.durationContributorCount, 3);
+  assert.deepEqual(metrics.durationMedianMs, { numerator: '300', denominator: '1' });
+  assert.equal(metrics.overlappedRecordCount, 2);
+  assert.equal(baseline.correctionPassRecordCount, 1);
+  assert.equal(baseline.countedRecordCount, 0);
+  assert.equal(privateView.evaluationInputs.eligibleBaselinePackets, null);
+});
+
+// Invariant: five records per cohort meet the cohort minimum; the chronological halves are reported
+// for information only and never make an evaluation input (hence Keep) unavailable, and finding
+// rates divide by the records whose review ran.
+test('evaluation with five records per cohort reports halves without gating Keep on them', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const withFindings = (record, critical) => ({
+    ...record,
+    review: { status: 'completed', severityCounts: { critical, important: 0, note: 0 } },
+  });
+  const baselineRecords = [1, 2, 3, 4, 5].map((ordinal) =>
+    withFindings(storedRecord(generationId, ordinal, [storedPacket(ordinal, 0)]), 0),
+  );
+  const pilotRecords = [6, 7, 8, 9, 10].map((ordinal) =>
+    withFindings(
+      storedRecord(generationId, ordinal, [storedPacket(ordinal, 0, { selectedProfile: 'fast' })], {
+        cohort: 'pilot',
+      }),
+      ordinal === 6 ? 1 : 0,
+    ),
+  );
+  // A sixth pilot record whose review did not run stays out of the finding-rate denominator.
+  const notReviewed = storedRecord(
+    generationId,
+    11,
+    [storedPacket(11, 0, { selectedProfile: 'fast' })],
+    { cohort: 'pilot' },
+  );
+  notReviewed.review = {
+    status: 'not-run',
+    severityCounts: { critical: 0, important: 0, note: 0 },
+  };
+  writeRecords(fx, generationId, [...baselineRecords, ...pilotRecords, notReviewed], {
+    generationState: 'review',
+    activatedAt: new Date(fx.clock.wallMs).toISOString(),
+    reviewStartedAt: new Date(fx.clock.wallMs).toISOString(),
+  });
+  const current = await inventory(fx, generationId);
+  const aggregate = (
+    await executeOperation(
+      'aggregate',
+      { ...fx.common, generationId, expectedInventoryDigest: current.inventoryDigest },
+      fx.deps,
+    )
+  ).result;
+  const privateView = readJsonFile(
+    join(generationRoot(fx, generationId), 'summaries', 'private.json'),
+  );
+  const { baseline, pilot } = privateView.cohorts;
+  assert.equal(baseline.cohortMinimumMet, true);
+  assert.equal(pilot.cohortMinimumMet, true);
+  assert.deepEqual(baseline.ordinalHalves, {
+    first: { count: 2, minimumMet: false },
+    second: { count: 3, minimumMet: false },
+    minimumMet: false,
+  });
+  assert.equal(pilot.ordinalHalves.minimumMet, false);
+  assert.equal(pilot.reviewContributorCount, 5);
+  assert.deepEqual(pilot.criticalFindingsPerReviewed, { numerator: '1', denominator: '5' });
+  const inputs = privateView.evaluationInputs;
+  for (const metric of [
+    'eligibleBaselinePackets',
+    'fastWithoutEscalation',
+    'workflowCompletionDelta',
+    'criticalReviewFindingDelta',
+    'qualityCorrectionMedianDelta',
+  ]) {
+    assert.notEqual(inputs[metric], null, metric);
+  }
+  const evaluation = (
+    await executeOperation(
+      'evaluate',
+      {
+        ...fx.common,
+        generationId,
+        decisionDigest: aggregate.decisionDigest,
+        reviewDigest: aggregate.reviewDigest,
+        protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+      },
+      fx.deps,
+    )
+  ).result;
+  const byGate = Object.fromEntries(evaluation.gates.map(({ gate, result }) => [gate, result]));
+  for (const gate of [
+    'baseline-sample',
+    'fast-without-escalation',
+    'workflow-completion-non-regression',
+    'quality-correction-non-regression',
+  ]) {
+    assert.notEqual(byGate[gate], 'unavailable', gate);
+  }
+});
+
+// Invariant: a workflow record and a gate observation can be open together; once terminal, neither
+// references the other and neither carries a reservation identity field.
+test('an open record and observation finalize without referencing each other or reservation identity', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const observation = (
+    await executeOperation('start-gate-observation', gateInput(fx, generationId), fx.deps)
+  ).result;
+  assert.equal(observation.status, 'reserved');
+  const run = await reserveAndFinish(fx, generationId);
+  await executeOperation('finalize', finalizeInput(fx, generationId, run), fx.deps);
+  await executeOperation(
+    'finalize-gate-observation',
+    finalizeGateInput(fx, generationId, observation),
+    fx.deps,
+  );
+  const record = readJsonFile(recordPath(fx, generationId, run.runId));
+  const observationDirectory = join(generationRoot(fx, generationId), 'gate-observations');
+  const [observationFile] = readdirSync(observationDirectory);
+  const terminalObservation = readJsonFile(join(observationDirectory, observationFile));
+  assert.equal(terminalObservation.kind, 'gate-observation');
+  const reservationFields = ['ownerSalt', 'ownerDigest', 'reservedAt', 'overlapFlag'];
+  for (const [label, value] of [
+    ['record', record],
+    ['observation', terminalObservation],
+  ]) {
+    for (const field of reservationFields) {
+      assert.equal(Object.hasOwn(value, field), false, `${label} must not carry ${field}`);
+    }
+  }
+  assert.doesNotMatch(JSON.stringify(record), new RegExp(observation.observationId));
+  assert.doesNotMatch(JSON.stringify(terminalObservation), new RegExp(run.runId));
 });

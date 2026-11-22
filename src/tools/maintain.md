@@ -1,7 +1,7 @@
 ---
 description: "Thin adapter for recurring Node project maintenance: delegates the dependency-update mechanics (ecosystem detection, risk grouping, changelog research, compatibility adaptation, validation strategy, update reporting) to the dependency path of the central effective-delivery skill and owns only the orchestration itself: scope gate, green baseline, one commit per group, review-report backlinks, and delivery/worktree handback. Not a feature, bugfix, or refactoring workflow, and not a scheduler."
 catalogHint: "Runs recurring maintenance: dependency updates and security fixes."
-contextBudget: 716
+contextBudget: 718
 ---
 
 # Effective Flow Maintain

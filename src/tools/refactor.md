@@ -1,7 +1,7 @@
 ---
 description: "Orchestrates the refactoring workflow: analysis, gap analysis, plan validation, baseline, routed refactoring, review, post-validation and before/after comparison."
 catalogHint: "Improves structure or readability without changing behavior."
-contextBudget: 979
+contextBudget: 981
 ---
 
 # Effective Flow Refactor
@@ -274,7 +274,7 @@ eligibility is never evaluated again.
 
 1. Start the appropriate implementer skill. The Quality selector is the default; the Fast reference
    serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
-   is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
+   is set immediately before that call. The `Tier` line below binds each Quality selector; a Fast reference takes only its own values (portable: the `Fast tier` line):
    <!-- spawn-site:refactor/initial-implementation -->
    - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:ui-implementer:fast}}.
    - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:nodejs-implementer:fast}}.

@@ -1,16 +1,15 @@
 {
-  "name": "Another run in flight makes activate report busy, and the later start fails into an unmeasured run",
+  "name": "Another run in flight makes activate report busy, and the later start still reserves an overlapping baseline record",
   "harness": "codex",
   "config": "true",
   "inventory": "baseline",
-  "baselineEvidence": "ready",
+  "baselineEvidence": "sample-met",
   "external": [
     {
       "at": "before-activate",
       "operation": "start"
     }
   ],
-  "startResult": "INCOMPLETE_EVIDENCE",
   "packets": [
     {
       "bucket": "node-backend-cli",
@@ -20,24 +19,48 @@
   "completion": "completed",
   "expected": {
     "configState": "enabled",
-    "generationState": "none",
+    "generationState": "baseline",
     "persistedGenerationState": "baseline",
     "activation": "not-ready:busy",
-    "operations": ["inventory", "protocol", "activate", "start"],
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
     "packets": [
       {
-        "eligibility": "not-evaluated",
+        "eligibility": "eligible",
         "selectedProfile": "quality",
-        "recorded": false,
-        "wire": null,
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
         "attempts": ["quality"],
         "fallback": "none",
         "fastAttemptConsumed": false,
-        "attempt": null
+        "attempt": "started"
       }
     ],
     "incidents": [],
-    "finalize": null,
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
     "events": []
   }
 }

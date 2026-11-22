@@ -783,13 +783,39 @@ function panelValuesPhrase(harness, mappings, context) {
 // the exact two-harness values phrases rendered from the mappings.
 const RENDERED_SPAWN_SITE_LINE_RE =
   /^[ \t]*Tier `[a-z]+`.* \(rules: `model-tiers`(?:, no downward move)?\)\.$/;
+// The portable Fast tier line, rendered only beside the Quality line of an authorized first
+// implementation spawn. The provider-name guard identifies it by this name, never by its values.
+export const FAST_TIER_LINE_PREFIX = 'Fast tier: ';
+const FAST_TIER_LINE_SUFFIX = ' (rules: `execution-profiles`).';
+const RENDERED_FAST_TIER_LINE_RE = /^[ \t]*Fast tier: .* \(rules: `execution-profiles`\)\.$/;
 
-// Line numbers of every rendered spawn-site tier line in a rendered body. Workers spawn nothing,
-// so a worker body must yield none.
+// Line numbers of every rendered spawn-site tier line, the Fast tier line included, in a rendered
+// body. Workers spawn nothing, so a worker body must yield none.
 export function findRenderedSpawnSiteLines(text) {
   return normalizeLineEndings(text)
     .split('\n')
-    .flatMap((line, index) => (RENDERED_SPAWN_SITE_LINE_RE.test(line) ? [index + 1] : []));
+    .flatMap((line, index) =>
+      RENDERED_SPAWN_SITE_LINE_RE.test(line) || RENDERED_FAST_TIER_LINE_RE.test(line)
+        ? [index + 1]
+        : [],
+    );
+}
+
+// Line numbers of the rendered Fast tier lines alone.
+export function findRenderedFastTierLines(text) {
+  return normalizeLineEndings(text)
+    .split('\n')
+    .flatMap((line, index) => (RENDERED_FAST_TIER_LINE_RE.test(line) ? [index + 1] : []));
+}
+
+// The two-harness Fast values from AGENT_PROFILE_MAPPINGS.fast, in the portable phrase form.
+function fastTierValuesPhrase(profileMappings, context) {
+  validateAgentProfileMappings(profileMappings, { context });
+  return tierValuesPhrase('fast', 'portable', profileMappings, context);
+}
+
+export function renderFastTierLine(profileMappings, { context } = {}) {
+  return `${FAST_TIER_LINE_PREFIX}${fastTierValuesPhrase(profileMappings, context)}${FAST_TIER_LINE_SUFFIX}`;
 }
 
 // Render one site's tier line. A single resolved tier renders once; differing role tiers render
@@ -819,8 +845,14 @@ export function renderSpawnSiteLine(site, harness, { mappings, context } = {}) {
 }
 
 // Replace every spawn-site marker line of a resolved body with its site's tier line, keeping the
-// marker's indentation. `sites` maps site id to resolved site.
-export function renderSpawnSiteMarkers(body, harness, { sites, mappings, context } = {}) {
+// marker's indentation. `sites` maps site id to resolved site. On the portable target a site in
+// `fastSites` (the authorized first implementation spawns) also renders the Fast tier line from
+// `profileMappings`; native targets keep their Fast sidecars and render none.
+export function renderSpawnSiteMarkers(
+  body,
+  harness,
+  { sites, mappings, fastSites = new Set(), profileMappings, context } = {},
+) {
   if (!body.includes(SPAWN_SITE_MARKER_PREFIX)) return body;
   const markers = collectSpawnSiteMarkers(body, { context });
   const lines = body.split('\n');
@@ -830,8 +862,13 @@ export function renderSpawnSiteMarkers(body, harness, { sites, mappings, context
       throw new Error(`Unknown spawn-site "${id}"${contextSuffix(context)}`);
     }
     const indent = lines[line - 1].match(/^[ \t]*/)[0];
+    const fastLine =
+      harness === 'portable' && fastSites.has(id)
+        ? `${indent}${renderFastTierLine(profileMappings, { context })}\n`
+        : '';
     lines[line - 1] =
       `${indent}${renderSpawnSiteLine(site, harness, { mappings, context })}\n` +
+      fastLine +
       `${indent}Model selection site: \`${id}\` (\`shared/model-selection.md\`).`;
   }
   return lines.join('\n');
@@ -887,9 +924,15 @@ export function renderModelTierTable(harness, mappings, { context } = {}) {
 export function renderModelTierDirectives(
   body,
   harness,
-  { sites, mappings, agentTiers, context } = {},
+  { sites, mappings, agentTiers, fastSites, profileMappings, context } = {},
 ) {
-  const withSites = renderSpawnSiteMarkers(body, harness, { sites, mappings, context });
+  const withSites = renderSpawnSiteMarkers(body, harness, {
+    sites,
+    mappings,
+    fastSites,
+    profileMappings,
+    context,
+  });
   if (!MODEL_TIER_GENERATED_PLACEHOLDERS.some((token) => withSites.includes(token))) {
     return withSites;
   }
@@ -910,15 +953,18 @@ function providerNamePattern(names) {
 
 // Provider model names in rendered text, as `{ line, name }`. With `allowGenerated`, only the
 // portable build-generated tier text rendered from `mappings` is exempt: a line between the
-// model-tier-table markers that equals a rendered table line, and an exact two-harness values
-// phrase inside a rendered spawn-site line. An unbalanced table marker fails.
+// model-tier-table markers that equals a rendered table line, an exact two-harness values phrase
+// inside a rendered spawn-site line, and, with `profileMappings`, the exact Fast values phrase
+// inside a line named as the Fast tier line. The Fast exemption follows the line's name, not any
+// equality of its values with a tier. An unbalanced table marker fails.
 export function findProviderModelNames(
   text,
-  { modelNames, allowGenerated = false, mappings, context } = {},
+  { modelNames, allowGenerated = false, mappings, profileMappings, context } = {},
 ) {
   const pattern = providerNamePattern(modelNames);
   let tableLines = new Set();
   let valuePhrases = [];
+  let fastPhrase = null;
   if (allowGenerated) {
     if (!mappings) {
       throw new Error(
@@ -927,6 +973,7 @@ export function findProviderModelNames(
     }
     tableLines = new Set(renderModelTierTable('portable', mappings, { context }).split('\n'));
     valuePhrases = MODEL_TIERS.map((tier) => tierValuesPhrase(tier, 'portable', mappings, context));
+    if (profileMappings) fastPhrase = fastTierValuesPhrase(profileMappings, context);
   }
   const findings = [];
   let inTable = false;
@@ -946,7 +993,9 @@ export function findProviderModelNames(
     const scanned =
       allowGenerated && RENDERED_SPAWN_SITE_LINE_RE.test(line)
         ? valuePhrases.reduce((rest, phrase) => rest.replaceAll(phrase, ''), line)
-        : line;
+        : fastPhrase !== null && RENDERED_FAST_TIER_LINE_RE.test(line)
+          ? line.replace(`${FAST_TIER_LINE_PREFIX}${fastPhrase}`, FAST_TIER_LINE_PREFIX)
+          : line;
     for (const match of scanned.matchAll(pattern)) {
       findings.push({ line: index + 1, name: match[0] });
     }
@@ -2567,6 +2616,7 @@ export function assertProjectRoutingContract(routes, { context } = {}) {
 // vocabularies, order, state algebra, and handoff interface for focused tests.
 
 export const EXECUTION_PROFILE_GATE_REASONS = Object.freeze([
+  'correction-pass',
   'profile-unavailable',
   'trust-boundary',
   'destructive-data',
@@ -2582,6 +2632,7 @@ export const EXECUTION_PROFILE_GATE_REASONS = Object.freeze([
 
 export const EXECUTION_PROFILE_FALLBACKS = Object.freeze([
   'none',
+  'admission-changed',
   'spawn-rejected',
   'worker-abort',
   'missing-context',
@@ -2737,7 +2788,7 @@ const EXECUTION_PROFILE_EXPECTED = Object.freeze({
     }),
     Object.freeze({
       profile: 'fast',
-      intent: 'distinct-native-lower-cost-lower-latency-capability',
+      intent: 'distinct-lower-cost-lower-latency-native-role-or-per-spawn-tier-capability',
     }),
   ]),
   configCases: Object.freeze([
@@ -2780,10 +2831,15 @@ const EXECUTION_PROFILE_EXPECTED = Object.freeze({
   ]),
   gate: Object.freeze([
     Object.freeze({
+      priority: '0',
+      decision: 'correction-pass',
+      evidence: 'The trusted caller region carries no `Caller: iterate` line',
+    }),
+    Object.freeze({
       priority: '1',
       decision: 'profile-unavailable',
       evidence:
-        'Native target, complete profile mapping, available spawn mechanism, and no host override that erases the distinction',
+        'Complete profile mapping, a spawn mechanism that takes the Fast values, no host override that erases the distinction, and on a portable build a harness qualified in the generation snapshot with the installed Fast-mapping identity',
     }),
     Object.freeze({
       priority: '2',
@@ -2934,6 +2990,13 @@ const EXECUTION_PROFILE_EXPECTED = Object.freeze({
       fastAttemptConsumed: 'false',
     }),
     Object.freeze({
+      event: 'fast-admission-changed-before-spawn',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'admission-changed',
+      fastAttemptConsumed: 'false',
+    }),
+    Object.freeze({
       event: 'fast-spawn-rejected-after-attempt',
       gateDecision: 'eligible',
       selectedProfile: 'quality',
@@ -3004,7 +3067,7 @@ const EXECUTION_PROFILE_EXPECTED = Object.freeze({
       from: 'baseline',
       to: 'active',
       owner: 'work-package-3',
-      guard: 'Preregistered sample and window conditions passed',
+      guard: 'Preregistered sample conditions passed on an idle generation',
     }),
     Object.freeze({
       operation: 'suspend',
@@ -3045,8 +3108,10 @@ const EXECUTION_PROFILE_EXPECTED = Object.freeze({
     Object.freeze({ rule: 'review-incorporation', value: 'quality-only' }),
     Object.freeze({ rule: 'conflict-resolution', value: 'quality-only' }),
     Object.freeze({ rule: 'scope-growth-continuation', value: 'quality-only' }),
-    Object.freeze({ rule: 'portable', value: 'quality-only' }),
-    Object.freeze({ rule: 'missing-native-capability', value: 'profile-unavailable' }),
+    Object.freeze({ rule: 'portable', value: 'qualified-harness-per-spawn-tier' }),
+    Object.freeze({ rule: 'missing-profile-capability', value: 'profile-unavailable' }),
+    Object.freeze({ rule: 'caller-iterate', value: 'correction-pass' }),
+    Object.freeze({ rule: 'closed-admission-before-spawn', value: 'admission-changed' }),
     Object.freeze({ rule: 'force-override-detection', value: 'presence-only' }),
     Object.freeze({ rule: 'rejected-fast-spawn', value: 'spawn-rejected' }),
     Object.freeze({ rule: 'escalation-checkout', value: 'same-verified-checkout' }),
@@ -3331,11 +3396,12 @@ export function assertExecutionProfileContract(contract, { context } = {}) {
   }
   assertExecutionProfileUnique(contract.gate, 'priority', 'gate priority', context);
   assertExecutionProfileUnique(contract.gate, 'decision', 'gate decision', context);
+  // Priorities start at 0: `correction-pass` precedes the capability row.
   for (const [index, reason] of EXECUTION_PROFILE_GATE_REASONS.entries()) {
     const row = contract.gate[index];
-    if (row.priority !== String(index + 1) || row.decision !== reason || !row.evidence) {
+    if (row.priority !== String(index) || row.decision !== reason || !row.evidence) {
       throw new Error(
-        `Execution-profile gate row ${index + 1} must be priority ${index + 1}, decision "${reason}", and carry positive evidence${contextSuffix(context)}`,
+        `Execution-profile gate row ${index + 1} must be priority ${index}, decision "${reason}", and carry positive evidence${contextSuffix(context)}`,
       );
     }
   }
@@ -4580,8 +4646,8 @@ export function splitInlineCodeSpans(body) {
 // register that exact custom-agent name; the portable manager build maps the
 // same identifier to a bundled worker contract and the built-in/general
 // subagent mechanism.
-// {{AGENT_PROFILE:X:fast}} -> the native Fast representation for the target,
-// or an explicit Quality-only notice on portable managers.
+// {{AGENT_PROFILE:X:fast}} -> the native Fast sidecar for the target, or on
+// portable managers the bundled worker contract spawned at the rendered Fast tier.
 // {{BUILD_TARGET}} -> the rendered target itself (`claude`, `codex`, or
 // `portable`), so a shared fragment can tell a portable installation from a
 // native one deterministically even when a portable skill runs on a native host.
@@ -4590,8 +4656,8 @@ export function splitInlineCodeSpans(body) {
 // the bare name, so the span keeps exactly its own backtick pair: a span that is
 // exactly the placeholder renders as one pair and a longer span stays one valid
 // span. Exposed tools render the same everywhere, and the portable
-// AGENT_PROFILE notice follows the span instead of entering it. Fenced code
-// blocks keep the backticked rendering.
+// AGENT_PROFILE Fast-tier note follows the span instead of entering it. Fenced
+// code blocks keep the backticked rendering.
 //
 // The command name (`/<skillName>` on Claude, `$<skillName>` on Codex) and the
 // agent prefix are passed in from the single source of truth in build.mjs, so a
@@ -4642,9 +4708,9 @@ export function transformRefs(
   if (/\{\{BUILD_TARGET\}\}/.test(body) && !RENDERED_TARGETS.includes(harness)) {
     throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
   }
-  const portableProfileNotice = ' (portable build: Fast unavailable, Quality only)';
+  const portableProfileNotice = ' at the Fast tier';
   // `code` renders a placeholder inside a code span: the bare name, with any portable
-  // AGENT_PROFILE notice collected in `notices` for placement after the span.
+  // AGENT_PROFILE note collected in `notices` for placement after the span.
   const render = (text, { code = false, notices = [] } = {}) => {
     const span = (name) => (code ? name : `\`${name}\``);
     return text

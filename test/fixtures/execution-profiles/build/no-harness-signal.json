@@ -1,6 +1,6 @@
 {
-  "name": "A portable build is an unmeasured run on any host and calls no pilot operation",
-  "harness": "portable",
+  "name": "A run without a spawn-tool harness signal is unmeasured and calls no pilot operation",
+  "harness": "none",
   "config": "true",
   "inventory": "active",
   "packets": [

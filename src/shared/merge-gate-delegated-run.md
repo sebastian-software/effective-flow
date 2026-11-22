@@ -80,8 +80,8 @@ In this order, before any other write:
   nothing; one from Entry steps 1 to 5 is an Entry abort of the return contract. Every other return finalizes a pilot reservation per Phase 6 and `pilot-measurement`, and
   `DONE` and `ABORT` run Phase 6 exactly once. `BLOCKED-USER` first ends an in-progress merge as
   Phase 2 step 1's controlled stop, then runs Phase 6 without its report and without deleting the
-  wisdom file, which the re-dispatch continues. `SUSPENDED host-pr-watch` ends the same way; a T3-path run
-  holds no reservation to finalize, per `pilot-measurement`.
+  wisdom file, which the re-dispatch continues. `SUSPENDED host-pr-watch` ends the same way but
+  finalizes no observation: it keeps the observation handle per `pilot-measurement`.
 - **A delegated orchestrator.** The delegation mandate's pending-child bullet binds this run: every
   child runs in the foreground, and no turn ends while one is pending. This foreground shape stays
   blocked for progress until useful pre-terminal delivery plus terminal joins is observed in that
@@ -578,7 +578,8 @@ gate run inline generates it at the start. Use
 - per "Draft ready for review": every `merge-proof-local` result, the class with its blocker count
   and `appendixTrust`, why no question was posed or the answer, and the ready step's result
 - when a pilot observation was reserved, its three anonymous correction counters; never its
-  observation identifier or capability
+  observation identifier or capability outside the handle `pilot-measurement` keeps across a
+  `SUSPENDED host-pr-watch` return
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
   every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
   retain that every delegated `{{SKILL:iterate}}` round carried `Summary comment: suppressed`, so it
@@ -1443,8 +1444,9 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
 
 ### Phase 6: Summary
 
-Before step 1, if Phase 0 reserved a pilot observation and no earlier controlled ending finalized
-it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement` fragment. This
+Before step 1, if Phase 0 reserved or restored a pilot observation and no earlier controlled ending
+finalized it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement`
+fragment; a `SUSPENDED host-pr-watch` return writes its handle per "Suspended observation" instead. This
 ordering is mandatory: finalization needs the counters and final status evidence that step 1
 deletes. The mutually exclusive earlier-ending and normal-Phase-6 routes together finalize every
 reservation exactly once. On the T3 path of `host-pr-watch`, step 1 keeps the wisdom file on a

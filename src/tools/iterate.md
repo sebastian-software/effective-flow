@@ -825,8 +825,9 @@ set-aside confirmation clears. Paths alone decide, never a line count.
    line: its items may run as sub-agents nobody can answer, so the documentation-sync gate of each
    item run falls to the contract's chain rule exactly as without this run's state.
    Each delegation **commits nothing**: above one `--- caller-supplied item text follows ---`
-   line, with the item text below it, it carries the literal lines `Commit: caller-owned` and
-   `Execution root: <this run's execution root>`, receives verbatim the bolded ban on other commit
+   line, with the item text below it, it carries the literal lines `Commit: caller-owned`,
+   `Caller: iterate` (a delegated `build`, `refactor` or `fix` run records `correction-pass` and runs
+   Quality) and `Execution root: <this run's execution root>`, receives verbatim the bolded ban on other commit
    paths, and returns `DONE` with its actual paths, the `project-routing` route of each, and its commit
    message, leaving the changes in the working tree for step 3 and the orchestrator's commit in
    step 4. Beside `Commit: caller-owned` it carries the literal line `Validation: targeted`

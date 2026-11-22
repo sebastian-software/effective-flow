@@ -3,7 +3,7 @@
   "harness": "claude",
   "config": "true",
   "inventory": "baseline",
-  "baselineEvidence": "window-met",
+  "baselineEvidence": "fresh",
   "packets": [
     {
       "bucket": "node-backend-cli",

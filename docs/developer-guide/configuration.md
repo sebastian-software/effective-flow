@@ -368,13 +368,17 @@ confirmed generation action for the inventory-proven state: `begin-baseline` for
 activates: `build` or `refactor` calls `activate` automatically in a measured run's preflight.
 
 `build` and `refactor` are the only consumers that read the key for profile selection. Their reader is split: the
-configuration contract classifies `configState`, and only `enabled` on a native harness triggers the
-read-only helper `inventory` that yields the generation state. `none`, `suspended`, and `review`
+configuration contract classifies `configState`, and only `enabled` with a harness family (from the
+spawn tool's parameter shape) triggers the read-only helper `inventory` that yields the generation
+state. `none`, `suspended`, and `review`
 select Quality without a record; only `baseline` and `active` classify and measure packets, and a
 `baseline` is first offered to the helper's automatic `activate`. The
 build emits the native capability this needs—five generated Fast sidecars for each native harness,
-Codex tier variants, strict schema-2 native inventories, and the local measurement helper. Portable output remains
-Quality-only and unmeasured. The existence of native artifacts or a valid inventory neither
+Codex tier variants, strict schema-2 native inventories, and the local measurement helper. Portable
+output renders a per-spawn Fast tier line at the same two sites and is measured; it selects Fast only
+on a harness that the shipped qualification record marks `qualified` and the generation snapshot
+recorded. The key stays the only configuration: it carries no harness, install kind or threshold,
+and the qualification record is build metadata, not configuration. The existence of native artifacts or a valid inventory neither
 activates Fast nor proves that the running host can discover or accept the representation.
 
 Pilot generation state and evidence are owned below
@@ -404,8 +408,14 @@ over `CLAUDE_CODE_SUBAGENT_MODEL`. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is the opt
 present, Claude Code offers no `model` parameter on its Agent tool; the orchestrator recognizes the
 forced model by that missing parameter, passes only the tier's effort, says so once, and the
 workers run on the forced model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort of every subagent; Effective Flow
-documents it and does not detect it. The tiers read no environment variable; only the Fast pilot checks the force variable's presence,
-and its value is never read, relayed, displayed or persisted.
+documents it and does not detect it. The tiers read no environment variable. The Fast pilot checks the force variable's presence, and
+its value is never read, relayed, displayed or persisted. The one other environment read is
+`CLAUDE_CODE_SESSION_ID` (with `CLAUDE_CONFIG_DIR` for the root) in the `claude-subagent-transcript`
+adapter of `model-selection verify`, which locates the child's own transcript under
+`<root>/<project>/<session>/subagents/`, where `<root>` is `$CLAUDE_CONFIG_DIR/projects` when that
+variable holds an absolute path and `~/.claude/projects` when it is unset or empty (any other value
+is `unverified`), and extracts only `message.model`, `effort` and
+the host `version`.
 
 ### Bot registry encoding (`mergeGate.bots`)
 

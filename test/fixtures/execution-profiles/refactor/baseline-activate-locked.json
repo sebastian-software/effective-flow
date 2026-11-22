@@ -3,7 +3,7 @@
   "harness": "codex",
   "config": "true",
   "inventory": "baseline",
-  "baselineEvidence": "ready",
+  "baselineEvidence": "sample-met",
   "activation": "locked",
   "packets": [
     {

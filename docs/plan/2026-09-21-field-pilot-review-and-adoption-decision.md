@@ -27,36 +27,36 @@ work-package-3 helper, followed by ordinary source/documentation changes through
 
 - Treat the versioned data exported by `src/scripts/pilot-measurement-protocol.mjs` as the sole
   executable preregistration and digest source. Before collection, its shipped version fixes baseline
-  and pilot windows, workload strata, harness/proxy compatibility, exclusions, host-load treatment,
+  and pilot sample minima, harness/proxy compatibility, exclusions, host-load treatment,
   minimum sample, sustained-benefit definition, material-regression tolerances, fallback-cluster
-  threshold, and the anonymous merge-gate observation schema/window. Its marked developer-guide
+  threshold, and the anonymous merge-gate observation schema and minimum. Its marked developer-guide
   section is only a build-validated explanatory mirror. Verify that the module version/digest
   confirmed by `begin-baseline` predates collection and matches generation state; this review never
   redefines that generation's protocol from Markdown.
-- Use these initial fixed evidence rules: at least 30 eligible packet observations in each Quality
-  baseline and active-pilot cohort, at least 10 distinct workflow runs and seven calendar days per
-  cohort. Both `build` and `refactor` must each contribute at least one compatible
-  workflow×harness stratum with at least ten observations per cohort; no represented workflow may
-  be omitted from the decision for undersampling. “Sustained” means the latency, cost, and autonomy
-  thresholds pass in every preregistered, sufficiently sampled workflow×harness stratum and both
-  chronological halves; no overall weighting can override a failing stratum. Cost strata
-  additionally match proxy kind and unit. A fallback cluster is at least three occurrences and at
-  least 15% of Fast packets. Material regression means any Critical finding, more than a
-  5-percentage-point drop in completion or required-check/validation success, more than a 10% rise
-  in Important findings per completed run or Quality correction rounds, or more than a 10% rise in
-  anonymous period-level merge-gate rounds normalized per completed observation. Keep
-  non-regression must hold both across all measured workflows and separately across the comparable
-  would-have-been-Fast/Fast-exposed population. When a baseline adverse-event count/rate is zero, the
-  active cohort must also remain zero rather than using relative division. A zero baseline latency or
-  cost value cannot demonstrate a percentage reduction and makes that benefit unavailable. The
-  cohort-wide minima are exactly 30 eligible packets, ten distinct workflows, and seven calendar
-  days once per cohort; they are not reapplied to each half. Each compared workflow×harness stratum
-  needs ten available observations per metric and cohort. Split each such metric/stratum/cohort by
-  atomic generation ordinal into an earlier `floor(n/2)` and later `ceil(n/2)` half, each with at
-  least five available observations. Period-level gate/check and merge-gate comparison separately
-  needs ten completed observations per cohort, mode, and harness, split by observation ordinal into
-  halves of at least five. Records lacking a metric do not satisfy its minimum. Any unmet cohort,
-  stratum, metric, or half minimum makes Keep unavailable.
+- Use these fixed evidence rules, as shipped in protocol `1.3.0`: activation needs at least 10
+  eligible packets in at least 5 completed baseline records and no calendar window; evaluation needs
+  at least 5 terminal records in each Quality baseline and active-pilot cohort. Records whose only
+  first gate reason is `correction-pass` (runs `iterate` delegated, always Quality) count toward
+  neither minimum. The comparison is pooled across workflows and harnesses and confounded by task
+  mix, overlap (records flagged `overlapped`), harness, install kind and the denominator of records
+  whose review ran (the Critical and Important finding rates use it); it requires no `build` or
+  `refactor` stratum, and no represented workflow is omitted from the decision. Packets whose model
+  compliance is `mismatch` leave the Fast metrics and are counted separately. Cost compares only
+  matching proxy kind and unit. A fallback cluster is at least three occurrences and at least 15% of
+  Fast packets. Material regression means any Critical finding, more than a 5-percentage-point drop
+  in completion or required-check/validation success, more than a 10% rise in Important findings
+  per reviewed run or Quality correction rounds, or more than a 10% rise in anonymous period-level
+  merge-gate rounds normalized per completed observation. Keep non-regression must hold both across
+  all measured workflows and separately across the comparable would-have-been-Fast/Fast-exposed
+  population. When a baseline adverse-event count/rate is zero, the active cohort must also remain
+  zero rather than using relative division. A zero baseline latency or cost value cannot demonstrate
+  a percentage reduction and makes that benefit unavailable. Where a metric is compared within a
+  compatible stratum, it needs five available observations per cohort; period-level gate/check and
+  merge-gate comparison separately needs five completed observations per cohort, mode, and harness.
+  The chronological halves by atomic generation ordinal are reported for information only: an
+  unavailable split never makes Keep unavailable. Records lacking a metric do not satisfy its
+  minimum. Any unmet cohort, stratum, metric, or period minimum makes Keep unavailable. With samples
+  this small the pooled comparison is weak, and a later review treats small effects as inconclusive.
 - Preserve the concept's hypotheses: at least 25% lower median implementation duration, at least
   30% lower supported executor-cost proxy, at least 70% Fast completion without escalation, and no
   material workflow/validation/review regression. Missing compatible baseline or proxy data is
@@ -78,8 +78,8 @@ work-package-3 helper, followed by ordinary source/documentation changes through
   observation, separately by `merge|report` and harness.
 - Treat the field evidence as observational and unpaired. The benefit comparator is pilot-baseline
   packets marked would-have-been-Fast and executed with Quality versus active packets that attempted
-  Fast. Match workflow and harness; cost additionally matches proxy kind and unit. Selected profile
-  is intentionally the cross-cohort difference, not a compatibility key. Disclose task mix, host
+  Fast. The comparison is pooled across workflows; cost matches proxy kind and unit. Selected profile
+  is intentionally the cross-cohort difference, not a compatibility key. Disclose task mix, overlap, harness, install kind, the review-ran denominator, host
   load, repository-check time, model availability, missing/incomplete/abandoned records, and baseline
   provenance.
 - Treat merge-gate correction rounds as a required preregistered period-level non-regression gate,
@@ -194,7 +194,7 @@ with its context-budget, roster, and eval-freshness consequences.
    preregistered period-level merge-gate source before emitting `keepEligible`. It never persists or
    chooses Change versus Stop.
 7. Verify that benefit uses only the exact pilot-baseline-Quality-would-have-been-Fast versus active-
-   attempted-Fast populations and compatible workflow/harness/proxy strata. Cost uses the two
+   attempted-Fast populations and compatible harness/proxy groups. Cost uses the two
    protocol-defined per-packet medians; Quality corrections use completed workflows; merge-gate
    corrections use completed observations separated by mode/harness. Any missing required comparator
    makes Keep unavailable.
@@ -242,8 +242,10 @@ with its context-budget, roster, and eval-freshness consequences.
 - `discard-generation` is not a bypass for a live writer/other lock, symlink, containment failure, or
   unverified ownership. It accepts unknown/malformed owned members only as opaque inventory-bound
   bytes, publishes nothing, and can never support Keep.
-- A branch that requires portable Fast, caller-model control, or expansion into `fix`, `iterate`,
-  or `merge-gate` exceeds the concept and needs a new concept/plan.
+- Portable Fast and the expansion into `fix`, `iterate`-delegated correction passes, and portable
+  `merge-gate` observations are planned in
+  [`2026-11-21-fast-pilot-opt-in-with-a-short-baseline-and-broader-workflow-coverage.md`](2026-11-21-fast-pilot-opt-in-with-a-short-baseline-and-broader-workflow-coverage.md);
+  caller-model control still exceeds the concept and needs its own concept/plan.
 
 ## Acceptance criteria
 
@@ -276,10 +278,10 @@ with its context-budget, roster, and eval-freshness consequences.
 - [ ] Keep is selected only when every decision-table row, including period-level merge-gate
       non-regression, passes; any unavailable required comparator yields Change or Stop.
 - [ ] Benefit compares pilot-baseline Quality packets marked would-have-been-Fast with active packets
-      that attempted Fast, matched by workflow/harness and additionally proxy kind/unit for cost.
-      Each cohort independently meets 30 packets, ten workflows, and seven days; each metric/stratum
-      has ten observations per cohort and five in each ordinal half. Period observations meet the
-      analogous ten-per-mode/harness cohort and five-per-half rule. Zero latency/cost baselines are
+      that attempted Fast, pooled across workflows, with proxy kind/unit matched for cost. Each
+      cohort independently meets 5 terminal records; each compared metric/stratum has five
+      observations per cohort, and the ordinal halves are informational. Period observations meet
+      the analogous five-per-mode/harness cohort rule. Zero latency/cost baselines are
       unavailable, while zero baseline adverse-event rates require active zero.
 - [ ] Workflow-quality non-regression holds for all measured workflows and separately for the
       comparable Fast-exposed population; merge-gate rates are normalized by completed observation
@@ -311,7 +313,7 @@ with its context-budget, roster, and eval-freshness consequences.
 ## Validation plan
 
 First, the helper tests must exercise `begin-baseline` refusal without valid configuration,
-successful confirmed baseline creation, `activate` refusal below the preregistered sample/window,
+successful confirmed baseline creation, `activate` refusal below the preregistered sample (10 eligible packets in 5 completed records),
 and successful transition at the exact threshold. For the selected generation, run these lifecycle
 operations and validate each JSON response, including generation state plus record, trace, and
 gate-observation counts:
@@ -340,7 +342,7 @@ Each command uses the operation as its sole positional argument, exact-key JSON 
 stdout envelope, value-free stderr, and nonzero failure. The final inventory must return the
 canonical absent-generation result and zero matching tombstones; verify any approved summary at its
 exact destination and compare the transient unrelated-runtime digests. Helper/decision tests pin
-every exact threshold boundary, missing metric, zero denominator, cohort/half/stratum minimum, proxy
+every exact threshold boundary, missing metric, zero denominator, cohort/stratum minimum, informational halves, proxy
 mismatch, separate merge/report mode, incomplete reconciliation, member/state/parameter/view-digest
 drift before evaluate, publication suppression, purge response loss, tombstone retry, discard
 refusal/confirmation/crash recovery, and every
@@ -394,7 +396,7 @@ Run `pnpm eval merge-gate verify --mode strict` only at release, after any owed 
   makes Keep unavailable, and never bypasses writer, lock, symlink, containment, or ownership guards.
 - **Incorporated during deep review:** The shipped runtime module is the sole preregistration
   authority; review is a terminal generation state distinct from configuration disablement;
-  comparator populations and separate cohort/stratum/half minima are exact; a private decision view
+  comparator populations and the cohort/stratum minima are exact (aligned 2026-11-21 to protocol `1.3.0`: pooled, no mandatory stratum, halves informational); a private decision view
   preserves low-count gate math without weakening publication suppression; begin-review and discard
   use confirmed compare-and-set/dry-run digests; positional CLI use, reconciliation, optional
   publication, and canonical post-tombstone inventory are explicit.

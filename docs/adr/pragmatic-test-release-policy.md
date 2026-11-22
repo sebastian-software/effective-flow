@@ -20,6 +20,14 @@ which supersedes the `e0966ac7` record as the binding for both T3 observed rows.
 disabled. The `focus` and `build-context` eval rounds stay post-merge debt and decide no activation.
 The decision below is unchanged.
 
+Status note, November 21, 2026: the opt-in portable Fast profile is a new execution path with its
+own acceptance. It is accepted by a qualified probe of each harness (recorded in the shipped
+qualification record, build-validated against the Fast mapping identity) plus the contract tests
+that fail closed on an absent, unqualified or mismatched record. The pilot, not a recording
+campaign, is the behavioural measurement of Fast. Fast stays default-off everywhere else. The
+Claude Code probe qualified and the Codex probe stayed `unproven`, so Codex runs stay Quality. The
+decision below and every other capability boundary are unchanged.
+
 ## Context
 
 Package acceptance and experimental execution qualification answer different questions. A

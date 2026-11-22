@@ -185,6 +185,7 @@ test('the spawned CLI discovers and completes one anonymous gate observation', (
       generationState: 'baseline',
       mode: 'merge',
       harnessFamily: 'codex',
+      installKind: 'native',
     },
     { cwd: fixture.root },
   );
@@ -269,7 +270,7 @@ test('the spawned CLI activates without confirmation and records an incident by 
       status: 'not-ready',
       generationId,
       generationState: 'baseline',
-      unmet: ['window', 'sample'],
+      unmet: ['sample'],
     },
   });
   const confirmed = runCli(

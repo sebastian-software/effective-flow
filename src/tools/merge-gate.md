@@ -334,6 +334,9 @@ limits never shrink within a gate run.
   The delegated run emits nothing on `ABORT`, so this caller alone applies the abort clause of the
   retrospective slot in `next-steps` (T4); an `Entry abort: yes` return never qualifies.
 
+Every caller ending, here or under `host-pr-watch`, that deletes a wisdom file still holding a pilot
+observation handle first finalizes it per "Suspended observation" in `shared/pilot-measurement.md`.
+
 A non-interactive caller dispatches `Run state: non-interactive` with no completion answer and never
 receives `BLOCKED-USER`; one it receives is invalid. A caller without a spawn mechanism, or whose
 dispatch is declined, runs the gate inline the same way, with its own caller limits, and says so once.

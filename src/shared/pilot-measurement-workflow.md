@@ -26,8 +26,9 @@ worker handoff, a retained-state continuation, a commit, a pull request, or any 
 
 `LOCKED` is the one retryable error: the helper changed nothing. Re-send the identical payload at
 most twice more, after about two and then about five seconds; an exhausted retry counts as that
-operation's failure. Never re-send after any other error, except a lost response where a step
-allows it.
+operation's failure. `finalize` alone, which overlapping runs contend for at their ends, re-sends at
+most five times more, after about two, five, ten, twenty, and thirty seconds. Never re-send after
+any other error, except a lost response where a step allows it.
 
 Before the first implementation spawn, a failure no step below handles by name (a nonzero exit, a
 malformed envelope, `PROTOCOL_DRIFT`, or an unknown key or result) prevents Fast; while no
@@ -42,8 +43,8 @@ and before the first packet is classified for `start`.
 
 With `configState=enabled`, an **unmeasured run** holds no usable generation: every packet takes
 `generationState=none` with `not-evaluated + quality`, the legal `no-generation` row, runs Quality
-without Fast, and is never recorded. A portable build, an ambiguous or failed inventory, a genuine
-activation fault, and a failed `start` each make the run unmeasured. That `generationState=none` is
+without Fast, and is never recorded. A missing harness family, an ambiguous or failed inventory, a
+genuine activation fault, and a failed `start` each make the run unmeasured. That `generationState=none` is
 the run's effective envelope, not a claim about the persisted generation: the orchestrator keeps an
 inventory-proven persisted state separately as the incident target.
 
@@ -51,10 +52,11 @@ inventory-proven persisted state separately as the incident target.
    classify it as `configState=disabled|invalid|enabled`. Do not repair or write it. Disabled or
    invalid selects `eligibility=not-evaluated + selectedProfile=quality` for every packet and calls
    no pilot operation.
-2. This installation is the `{{BUILD_TARGET}}` build, fixed when it was built. `claude` and `codex`
-   are the harness family. A `portable` build is an unmeasured run whatever host executes it: it
-   calls no pilot operation, reads no inventory, and records nothing.
-3. With `configState=enabled` on a native build, call the read-only `inventory` operation with
+2. This installation is the `{{BUILD_TARGET}}` build, fixed when it was built: `installKind` is
+   `portable` for a `portable` build and `native` otherwise. `harnessFamily` is the
+   `model-selection` harness of the spawn tool this orchestrator holds; without one the run is
+   unmeasured and calls no pilot operation.
+3. With `configState=enabled` and a harness family, call the read-only `inventory` operation with
    exactly these keys:
 
    ```json
@@ -86,8 +88,9 @@ inventory-proven persisted state separately as the incident target.
    ```
 
    - `activated` makes the generation `active`, persisted and effective alike.
-   - `not-ready` whose `unmet` is a nonempty subset of `busy`, `window`, and `sample` keeps it
-     `baseline`. With `busy`, another run is in flight and the `start` below fails.
+   - `not-ready` whose `unmet` is a nonempty subset of `busy` and `sample` keeps it `baseline`;
+     `busy` means another run's reservation or a gate observation is open, which does not block
+     the `start` below.
    - `LOCKED`, once its retry is exhausted, keeps it `baseline`: a held lock fails before any check.
    - `INVALID_STATE`, `WRITE_FAILED`, a lost or malformed response, or an unknown result is
      ambiguous: re-read `inventory` with the `generationId` and take its proven state as in step 3,
@@ -135,6 +138,7 @@ packet entry per classified initial packet in a fixed order:
   "generationId": "<inventory generationId>",
   "configState": "enabled",
   "workflow": "<build|refactor>",
+  "installKind": "<native|portable>",
   "harnessFamily": "<claude|codex>",
   "packets": ["<one wire-shape entry per packet>"]
 }
@@ -142,10 +146,12 @@ packet entry per classified initial packet in a fixed order:
 
 `workflow` names the adopting workflow. A success returns `runId`, `workflowCapability`, and one
 `packetId`/`packetCapability` pair per packet in the same order. Never re-send `start` other than
-after `LOCKED`. Any failure creates no usable record: the run becomes an unmeasured run, the
+after `LOCKED` or the `PROFILE_UNAVAILABLE` below. Any other failure creates no usable record: the run becomes an unmeasured run, the
 classification is discarded, and the value-free reason is reported. The inventory-proven
-persisted state stays known and remains the incident target. An in-flight reservation, including an unfinished merge-gate observation or timing
-receipt, makes `start` fail with `INCOMPLETE_EVIDENCE`, so admission is serialized.
+persisted state stays known and remains the incident target. Another open record or observation
+never blocks `start`; the helper only marks the overlap. `PROFILE_UNAVAILABLE` rejects a `fast`
+packet of a portable harness the generation snapshot does not qualify: reclassify that packet
+`profile-unavailable` and send `start` once more.
 
 ### Packet timing
 
@@ -166,10 +172,13 @@ The packet timing and identity operations take exactly these keys:
 - **Start before spawn.** Call `start-packet` immediately before a packet's first implementation
   spawn, after its packet snapshot, and never spawn that packet before it succeeded. The helper
   reads a missing receipt as proof that the packet never started, so this order is what makes its
-  `attempt` true.
+  `attempt` true. `ADMISSION_CHANGED`, or `PROFILE_UNAVAILABLE`, for a `fast` packet wrote nothing:
+  re-send `start-packet` once with the added key `"fallback": "admission-changed"`, then spawn that
+  packet Quality with no Fast attempt consumed.
 - Call `finish-packet` once when that packet's initial phase ends: its Quality attempt, its Fast
   success, or its failed Fast attempt plus the single retained-state Quality continuation. Never
-  finish or restart the timer between the Fast attempt and that continuation.
+  finish or restart the timer between the Fast attempt and that continuation. It adds the key
+  `modelCompliance` with the packet's value from the `execution-profiles` delegation rule.
 - Validation, review, retry, and correction spawns lie outside the interval and count only through
   `qualityCorrectionRounds`. Missing or incompatible data stays unavailable, never zero.
 - An exit that ends the run before every packet completed finalizes as `aborted` or `failed`,
@@ -177,6 +186,9 @@ The packet timing and identity operations take exactly these keys:
   `not-started` and excludes it from every packet metric. A packet whose initial phase is still open
   at that exit is not finished; the helper records it as `started` with an unavailable duration.
 - A lost `start-packet` or `finish-packet` response may be re-sent once with the identical payload.
+  A re-sent `start-packet` of a `fast` packet checks admission again, since nothing has spawned
+  yet: `ADMISSION_CHANGED` or `PROFILE_UNAVAILABLE` then wrote nothing and takes the same single
+  `"fallback": "admission-changed"` re-send and Quality spawn as under "Start before spawn".
   Any other failure leaves the record unfinalizable: send no further packet operation or fabricated
   outcome, continue implementation with Quality, and apply "Finalization failure" at the exit.
 
@@ -211,8 +223,9 @@ keys:
 }
 ```
 
-- `fallback` is the packet's exact decision-map value, and `escalated` equals `fallback != "none"`.
-  Baseline and Quality-selected packets, and every packet that never spawned, always send `none`.
+- `fallback` is the packet's exact decision-map value, and `escalated` is `true` exactly for a
+  fallback other than `none` and `admission-changed`. Baseline and Quality-selected packets, and
+  every packet that never spawned, always send `none`.
 - `costProxy` is `null`, recorded as unavailable, unless the harness exposes a cost measure; then
   it is `{kind, unit, value}` from that measure: `kind` and `unit` are tokens, and `value` is a
   canonical unsigned decimal string (`0` or no leading zero, at most 39 digits). Never invent a
@@ -238,7 +251,7 @@ keys:
   `findings` (`id`, `severity`, `status`, `category`, `path`, `line`). Diffs, escalation detail, and
   handoff prose never enter it.
 - A lost response may be re-sent once with the identical payload; the helper deduplicates it.
-  Every other failure, `LOCKED` after its retry included, is a finalization failure.
+  Every other failure, `LOCKED` after its longer retry included, is a finalization failure.
 
 ### Incidents and pilot control
 
@@ -278,8 +291,12 @@ a Fast attempt: it runs Quality from its first spawn, still timed by `start-pack
 `finish-packet`. A Fast attempt already spawned keeps its own outcome. At `finalize`, a packet
 reserved as `fast` that ran Quality this way sends `scope-incident` with `escalated: true`: the
 incident consumed its only Fast attempt, and the closed vocabulary's one incident fallback charges
-it to Fast, where `none` would credit a Quality execution as a Fast success. The incident's own
-category stays on the control axis.
+it to Fast, where `none` would credit a Quality execution as a Fast success. Once the helper
+persisted the suspension, that packet's `start-packet` meets `ADMISSION_CHANGED` instead and it
+sends `admission-changed`. The asymmetry is intended: the helper binds the fallback to the timing
+receipt, and a persisted suspension both closes admission before the spawn and already charges the
+incident durably on the control axis, while an unpersisted incident leaves the `scope-incident`
+fallback as its only trace in the record. The incident's own category stays on the control axis.
 
 A reserved record still finalizes after an incident. Implementation fallback and pilot control
 stay independent: a scope incident may set both the `scope-incident` fallback and the `scope`
@@ -306,7 +323,7 @@ options:
   - label: Reconcile
     description: Mark this run's incomplete pilot record abandoned; product changes stay unchanged
   - label: Keep
-    description: Leave the incomplete record in place; only a generation discard or purge clears it
+    description: Leave the incomplete record in place; only discarding the generation clears it
 ```
 
 Under an Automation caller's scored decision mode, row S-PRC of `scored-decisions` decides.
@@ -319,8 +336,11 @@ every packet's `attempt` `unknown`, which never counts as a success. When `final
 persisting the record, for example while removing a timing receipt, the helper only drains the
 remaining receipts and returns the stored `completionStatus`. Report the status the helper returns.
 A declined, unanswered, non-interactive, or failed reconciliation leaves the incomplete record in
-place. The completion report then states that it keeps every later measured run
-unmeasured and that only `discard-generation` or `purge` clears it.
+place. The completion report then states that it blocks activation and aggregation, that it closes
+Fast admission for later runs or, when only timing receipts remain behind a persisted terminal
+record, makes every later `start` and `start-gate-observation` fail `INCOMPLETE_EVIDENCE`, and that
+no later run can reconcile it: only `begin-review` followed by `discard-generation` with the pilot
+disabled clears it, losing the generation.
 
 Only a suspension the helper persisted, from a successful `record-incident` or an envelope with
 `controlStatePersisted: true`, keeps later runs off Fast: each later run observes that persisted

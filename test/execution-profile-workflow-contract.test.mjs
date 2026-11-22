@@ -104,7 +104,12 @@ const FRAGMENT_KEYS = (() => {
     activate: Object.keys(jsonBlocks(preflight)[1]),
     start: Object.keys(jsonBlocks(reservation)[1]),
     'start-packet': packetKeys,
-    'finish-packet': packetKeys,
+    'finish-packet': [
+      ...packetKeys,
+      ...proseKeys(timing, 'Call `finish-packet` once', 'with the packet').filter(
+        (key) => key === 'modelCompliance',
+      ),
+    ],
     finalize: Object.keys(jsonBlocks(finalization)[0]),
     'record-incident': proseKeys(incidents, 'payload has exactly', ', which holds'),
     'reconcile-record': proseKeys(failure, 'call `reconcile-record` with exactly', '. The helper'),
@@ -125,9 +130,14 @@ const INSPECTING_FALLBACKS = new Set(['missing-context', 'scope-growth', 'new-de
 const INCIDENT_CATEGORIES = pilotIncidentCategories();
 const MEASURED_STATES = new Set(['baseline', 'active']);
 const SUSPENDABLE_STATES = new Set(['baseline', 'active', 'suspended']);
-const BASELINE_EVIDENCE = ['fresh', 'window-met', 'sample-met', 'ready'];
+// Protocol 1.3.0 has no calendar window: a baseline is fresh or has its eligible sample.
+const BASELINE_EVIDENCE = ['fresh', 'sample-met'];
 // One send plus at most two retries, as the fragment's `LOCKED` policy states.
 const LOCKED_SENDS = 3;
+// `finalize` alone gets the longer budget: one send plus at most five retries.
+const FINALIZE_LOCKED_SENDS = 6;
+const INSTALL_KINDS = ['native', 'portable'];
+const QUALIFICATION_OUTCOMES = ['qualified', 'unqualified', 'unproven'];
 // A `LOCKED` envelope changes nothing, so it carries no control state to report.
 const LOCKED_CONTROL = { pilotControlOutcome: 'none', controlStatePersisted: false, alert: 'none' };
 
@@ -168,11 +178,19 @@ function classify(packet, fixture, groupSizes) {
     ...fixture.capability,
   };
   const failed = new Set(packet.failedEvidence ?? []);
+  // Gate row 0: a run delegated by `iterate` carries `Caller: iterate` and is a correction pass.
+  if (fixture.caller === 'iterate') failed.add('correction-pass');
+  // Gate row 1 on a portable build also needs the harness qualified in the generation snapshot
+  // with the installed identity; a requalification after `start` refused reclassifies it here.
+  const portableUnqualified =
+    installKindOf(fixture) === 'portable' &&
+    (qualificationOf(fixture) !== 'qualified' || fixture.requalified === true);
   if (
     !FAST_CAPABLE_ROUTES.has(packet.bucket) ||
     !capability.nativeMapping ||
     !capability.spawnMechanism ||
-    capability.forceOverridePresent
+    capability.forceOverridePresent ||
+    portableUnqualified
   ) {
     failed.add('profile-unavailable');
   }
@@ -183,6 +201,30 @@ function classify(packet, fixture, groupSizes) {
   for (const reason of failed) assert.ok(GATE_ORDER.includes(reason), `unknown gate: ${reason}`);
   const first = GATE_ORDER.find((decision) => failed.has(decision));
   return first === undefined ? 'eligible' : `excluded(${first})`;
+}
+
+function installKindOf(fixture) {
+  const installKind = fixture.installKind ?? 'native';
+  assert.ok(INSTALL_KINDS.includes(installKind), `unknown install kind: ${installKind}`);
+  return installKind;
+}
+
+// The generation snapshot's outcome for the run's portable harness; native runs carry none.
+function qualificationOf(fixture) {
+  if (installKindOf(fixture) === 'native') {
+    assert.equal(fixture.qualification, undefined, 'a native run reads no qualification');
+    return null;
+  }
+  const outcome = fixture.qualification ?? 'qualified';
+  assert.ok(QUALIFICATION_OUTCOMES.includes(outcome), `unknown qualification: ${outcome}`);
+  return outcome;
+}
+
+// Whether the fixture's external action happens at that point of the run.
+function externalAt(fixture, at, operation) {
+  return (fixture.external ?? []).some(
+    (action) => action.at === at && action.operation === operation,
+  );
 }
 
 function wireOf(eligibility, selectedProfile) {
@@ -205,8 +247,7 @@ function activationResult(fixture) {
   const busy = (fixture.external ?? []).some(({ at }) => at === 'before-activate');
   if (busy) return { status: 'not-ready', unmet: ['busy'] };
   const unmet = [];
-  if (!['window-met', 'ready'].includes(evidence)) unmet.push('window');
-  if (!['sample-met', 'ready'].includes(evidence)) unmet.push('sample');
+  if (evidence !== 'sample-met') unmet.push('sample');
   return unmet.length === 0 ? { status: 'activated' } : { status: 'not-ready', unmet };
 }
 
@@ -243,6 +284,11 @@ function runRecordScenario(fixture) {
   const incidents = [];
   // Set by the first critical incident, persisted or not; no later packet attempts Fast.
   let incidentSeen = false;
+  // Fast admission closed for the rest of the run: a persisted suspension, or a review that began
+  // after `start`. A `fast` packet's `start-packet` then fails with `ADMISSION_CHANGED`.
+  let admissionClosed = (fixture.external ?? []).some(
+    ({ at, operation }) => at === 'after-start' && operation === 'begin-review',
+  );
   let persistedGenerationState = null;
   let activation = null;
   const shape = (generationState, packets, finalize = null) => ({
@@ -258,11 +304,11 @@ function runRecordScenario(fixture) {
   });
   // Sends one operation under the `LOCKED` retry policy: the first `locked` sends meet a held lock.
   // Returns whether a send got past the lock.
-  const send = (step, locked = 0) => {
-    for (let attempt = 0; attempt < Math.min(locked, LOCKED_SENDS); attempt += 1) {
+  const send = (step, locked = 0, budget = LOCKED_SENDS) => {
+    for (let attempt = 0; attempt < Math.min(locked, budget); attempt += 1) {
       steps.push({ ...step, result: 'LOCKED' });
     }
-    if (locked >= LOCKED_SENDS) return false;
+    if (locked >= budget) return false;
     steps.push(step);
     return true;
   };
@@ -283,7 +329,10 @@ function runRecordScenario(fixture) {
       { operation: 'record-incident', category: packet.incident, withRecord: runId, result },
       packet.incidentLocked ?? 0,
     );
-    if (sent && result === 'persisted') return;
+    if (sent && result === 'persisted') {
+      admissionClosed = true;
+      return;
+    }
     // An unpersisted incident leaves nothing durable to stop a later run from selecting Fast, so
     // the run asks once whether to retry it; only a Retry answer re-sends the identical payload.
     events.push({ kind: 'alert', operation: 'record-incident', report: 'value-free-alert' });
@@ -296,6 +345,8 @@ function runRecordScenario(fixture) {
     );
     if (!retried || result !== 'persisted') {
       events.push({ kind: 'alert', operation: 'record-incident', report: 'value-free-alert' });
+    } else {
+      admissionClosed = true;
     }
   };
   // Disabled and invalid keep their own fail-closed rows; every other unrecorded run is either a
@@ -311,7 +362,7 @@ function runRecordScenario(fixture) {
     };
   };
   if (configState !== 'enabled') return quiet(null);
-  if (fixture.harness === 'portable') return quiet('none');
+  if (fixture.harness === 'none') return quiet('none');
   assert.ok(['claude', 'codex'].includes(fixture.harness));
   steps.push({ operation: 'inventory' });
   if (fixture.inventory === 'failed') return quiet('none');
@@ -359,12 +410,31 @@ function runRecordScenario(fixture) {
   for (const { couplingGroup } of fixture.packets) {
     if (couplingGroup) groupSizes.set(couplingGroup, (groupSizes.get(couplingGroup) ?? 0) + 1);
   }
-  const classified = fixture.packets.map((packet) => {
-    const eligibility = classify(packet, fixture, groupSizes);
-    const row = legalRow(configState, generationState, eligibility);
-    assert.ok(row, `no legal envelope for ${generationState}/${eligibility}`);
-    return { packet, eligibility, selectedProfile: row.selectedProfile };
-  });
+  const classifyAll = (input) =>
+    input.packets.map((packet) => {
+      const eligibility = classify(packet, input, groupSizes);
+      const row = legalRow(configState, generationState, eligibility);
+      assert.ok(row, `no legal envelope for ${generationState}/${eligibility}`);
+      return { packet, eligibility, selectedProfile: row.selectedProfile };
+    });
+  let classified = classifyAll(fixture);
+  // A portable installation requalified after the inventory (a reinstall with another Fast-mapping
+  // identity) makes `start` refuse a `fast` packet with `PROFILE_UNAVAILABLE`: the run reclassifies
+  // those packets `profile-unavailable` and sends `start` once more.
+  if (
+    installKindOf(fixture) === 'portable' &&
+    externalAt(fixture, 'before-start', 'requalify') &&
+    classified.some(({ selectedProfile }) => selectedProfile === 'fast')
+  ) {
+    steps.push({
+      operation: 'start',
+      wires: classified.map(({ eligibility, selectedProfile }) =>
+        wireOf(eligibility, selectedProfile),
+      ),
+      result: 'PROFILE_UNAVAILABLE',
+    });
+    classified = classifyAll({ ...fixture, requalified: true });
+  }
   const wires = classified.map(({ eligibility, selectedProfile }) =>
     wireOf(eligibility, selectedProfile),
   );
@@ -376,6 +446,10 @@ function runRecordScenario(fixture) {
 
   const completion = fixture.completion ?? 'failed';
   let unfinalizable = false;
+  // Set once the first `start-packet` is about to be sent: a portable installation requalified
+  // since `start` refuses every later Fast spawn with `PROFILE_UNAVAILABLE`.
+  let profileClosed = false;
+  let startPacketSeen = false;
   const packets = classified.map(({ packet, eligibility, selectedProfile }, index) => {
     const outcome = packet.initialOutcome ?? 'none';
     const result = {
@@ -395,8 +469,45 @@ function runRecordScenario(fixture) {
     }
     // Start before spawn: the timer starts before the packet's first implementation spawn. A
     // `LOCKED` start is retried; an exhausted retry leaves the record unfinalizable.
+    // A `fast` packet meeting closed admission writes nothing and is re-sent once as its
+    // `admission-changed` Quality fallback, which consumes no Fast attempt.
+    // An external action before the first `start-packet`: a foreign reservation closes admission,
+    // and a portable requalification makes the Fast profile unavailable. Both refusals write
+    // nothing and take the same `admission-changed` re-send.
+    if (!unfinalizable && !startPacketSeen) {
+      startPacketSeen = true;
+      if (externalAt(fixture, 'before-start-packet', 'start')) admissionClosed = true;
+      if (externalAt(fixture, 'before-start-packet', 'requalify')) {
+        assert.equal(installKindOf(fixture), 'portable', 'only a portable run reads the record');
+        profileClosed = true;
+      }
+    }
+    // A lost `start-packet` response: the first send started the timer, and the identical
+    // re-send precedes the spawn, so it rechecks admission. A foreign reservation in between
+    // closes it, and the re-send then takes the same `admission-changed` path.
+    if (!unfinalizable && packet.startPacketLost) {
+      assert.ok(!admissionClosed && !profileClosed, 'only an admitted start loses its response');
+      steps.push({ operation: 'start-packet', packet: index, result: 'response-lost' });
+      if (externalAt(fixture, 'after-lost-start-packet', 'start')) admissionClosed = true;
+    }
+    const admissionChanged =
+      selectedProfile === 'fast' && !unfinalizable && (admissionClosed || profileClosed);
     if (!unfinalizable) {
-      const started = send({ operation: 'start-packet', packet: index }, packet.startPacketLocked);
+      if (admissionChanged) {
+        steps.push({
+          operation: 'start-packet',
+          packet: index,
+          result: admissionClosed ? 'ADMISSION_CHANGED' : 'PROFILE_UNAVAILABLE',
+        });
+      }
+      const started = send(
+        {
+          operation: 'start-packet',
+          packet: index,
+          ...(admissionChanged ? { fallback: 'admission-changed' } : {}),
+        },
+        packet.startPacketLocked,
+      );
       if (!started) {
         events.push(controlEvent('start-packet', LOCKED_CONTROL));
         unfinalizable = true;
@@ -404,8 +515,13 @@ function runRecordScenario(fixture) {
     }
     result.attempt = 'started';
     // A helper failure after `start` blocks every later Fast attempt in the run, and so does any
-    // earlier critical incident: that reservation runs Quality and is charged as `scope-incident`.
-    if (selectedProfile === 'fast' && !unfinalizable && incidentSeen) {
+    // earlier critical incident: that reservation runs Quality and is charged as `scope-incident`,
+    // or as `admission-changed` once a persisted suspension closed its admission.
+    if (admissionChanged) {
+      assert.equal(outcome, 'none', 'a closed admission makes no Fast attempt');
+      result.fallback = 'admission-changed';
+      result.attempts.push('quality');
+    } else if (selectedProfile === 'fast' && !unfinalizable && incidentSeen) {
       assert.equal(outcome, 'none', 'a forfeited Fast reservation makes no Fast attempt');
       result.fastAttemptConsumed = true;
       result.fallback = 'scope-incident';
@@ -457,7 +573,10 @@ function runRecordScenario(fixture) {
   const finalize = {
     completionStatus: completion,
     qualityCorrectionRounds: (fixture.corrections ?? []).length,
-    packets: packets.map(({ fallback }) => ({ fallback, escalated: fallback !== 'none' })),
+    packets: packets.map(({ fallback }) => ({
+      fallback,
+      escalated: fallback !== 'none' && fallback !== 'admission-changed',
+    })),
   };
   const finalizeResult = fixture.finalizeResult ?? 'finalized';
   assert.ok(
@@ -473,7 +592,7 @@ function runRecordScenario(fixture) {
     } else if (finalizeResult === 'locked-once') {
       send({ operation: 'finalize', result: 'finalized' }, 1);
     } else if (finalizeResult === 'locked') {
-      send({ operation: 'finalize' }, LOCKED_SENDS);
+      send({ operation: 'finalize' }, FINALIZE_LOCKED_SENDS, FINALIZE_LOCKED_SENDS);
       failed = true;
     } else if (finalizeResult === 'finalized') {
       steps.push({ operation: 'finalize', result: 'finalized' });
@@ -698,6 +817,33 @@ const DAY_MS = 86_400_000;
 const sandbox = mkdtempSync(join(tmpdir(), 'effective-flow-build-pilot-replay-'));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
+// The installed qualification every replayed generation snapshots at `begin-baseline`: portable
+// Claude qualified, portable Codex unqualified. A `requalify` action installs another identity.
+function writeQualificationFile(name, claudeIdentity) {
+  const target = join(sandbox, name);
+  const record = (harnessFamily, outcome, fastMappingIdentity) => ({
+    installKind: 'portable',
+    harnessFamily,
+    outcome,
+    hostVersion: outcome === 'qualified' ? '2.1' : null,
+    probedOn: '2026-11-21',
+    fastMappingIdentity,
+  });
+  writeFileSync(
+    target,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      records: [
+        record('claude', 'qualified', claudeIdentity),
+        record('codex', 'unqualified', 'b'.repeat(64)),
+      ],
+    })}\n`,
+  );
+  return target;
+}
+const QUALIFICATION_PATH = writeQualificationFile('qualification.json', 'a'.repeat(64));
+const REQUALIFIED_PATH = writeQualificationFile('requalified.json', 'c'.repeat(64));
+
 function git(root, ...args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', env: GIT_ENV });
   assert.equal(result.status, 0, result.stderr);
@@ -718,6 +864,7 @@ function runtime(root, clock) {
     monotonicNs: () => clock.monotonicNs,
     uptimeSeconds: () => clock.uptime,
     hostname: () => 'replay-host',
+    harnessQualificationPath: QUALIFICATION_PATH,
   };
   const common = { runtimeStateRoot: root, repositoryIdentity: realpathSync(join(root, '.git')) };
   const call = (operation, input) => executeOperation(operation, input, deps);
@@ -726,7 +873,7 @@ function runtime(root, clock) {
     clock.monotonicNs += BigInt(milliseconds) * 1_000_000n;
     clock.uptime += milliseconds / 1000;
   };
-  return { root, clock, common, call, advance };
+  return { root, clock, common, call, advance, deps };
 }
 
 function freshRepository(name) {
@@ -794,13 +941,24 @@ function template(state) {
   return templates.get(state);
 }
 
+// The activation sample: `baselineRecordMinimum` completed records that together hold
+// `baselineEligiblePacketMinimum` eligible packets.
 async function completedSample(rt, scoped) {
-  const sample = PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum;
+  const { baselineEligiblePacketMinimum, baselineRecordMinimum } =
+    PILOT_MEASUREMENT_PROTOCOL.aggregation;
+  const perRecord = Math.ceil(baselineEligiblePacketMinimum / baselineRecordMinimum);
+  for (let index = 0; index < baselineRecordMinimum; index += 1) {
+    await completedRecord(rt, scoped, perRecord);
+  }
+}
+
+async function completedRecord(rt, scoped, sample) {
   const reservation = (
     await rt.call('start', {
       ...scoped,
       configState: 'enabled',
       workflow: 'build',
+      installKind: 'native',
       harnessFamily: 'codex',
       packets: Array.from({ length: sample }, () => quality(true)),
     })
@@ -816,7 +974,7 @@ async function completedSample(rt, scoped) {
     };
     await rt.call('start-packet', identity);
     rt.advance(10);
-    await rt.call('finish-packet', identity);
+    await rt.call('finish-packet', { ...identity, modelCompliance: 'not-applicable' });
     packets.push({
       packetId: packet.packetId,
       packetCapability: packet.packetCapability,
@@ -850,11 +1008,7 @@ async function prepareTemplate(state) {
   });
   const { generationId } = baseline.result;
   const scoped = { ...rt.common, generationId };
-  const window = PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * DAY_MS;
-  if (['active', 'baseline-sample-met', 'baseline-ready'].includes(state)) {
-    await completedSample(rt, scoped);
-  }
-  if (['active', 'baseline-window-met', 'baseline-ready'].includes(state)) rt.advance(window);
+  if (['active', 'baseline-sample-met'].includes(state)) await completedSample(rt, scoped);
   if (state === 'active') {
     const { result } = await rt.call('activate', { ...scoped, ...PROTOCOL });
     assert.equal(result.status, 'activated');
@@ -923,9 +1077,14 @@ const NEUTRAL = { pilotControlOutcome: 'none', controlStatePersisted: false, ale
 async function replay(fixture, scenario) {
   const rt = await cloneTemplate(templateOf(fixture));
   const external = (at) => (fixture.external ?? []).filter((action) => action.at === at);
+  // Each point's external actions run once, even when its step is re-sent.
+  const externalDone = new Set();
   const runExternal = async (at) => {
+    if (externalDone.has(at)) return;
+    externalDone.add(at);
     for (const { operation } of external(at)) {
       if (operation === 'begin-review') await beginReview(rt, rt.generationId);
+      else if (operation === 'requalify') rt.deps.harnessQualificationPath = REQUALIFIED_PATH;
       else {
         assert.equal(operation, 'start', `unknown external action: ${operation}`);
         await rt.call('start', {
@@ -933,6 +1092,7 @@ async function replay(fixture, scenario) {
           generationId: rt.generationId,
           configState: 'enabled',
           workflow: 'build',
+          installKind: 'native',
           harnessFamily: 'codex',
           packets: [quality(false)],
         });
@@ -957,9 +1117,12 @@ async function replay(fixture, scenario) {
     generationId: rt.generationId,
     configState: 'enabled',
     workflow: fixture.workflow,
+    installKind: installKindOf(fixture),
     harnessFamily: fixture.harness,
     confirmation: true,
   };
+  let wires = [];
+  const admissionChangedPackets = new Set();
   let reservation = null;
   let inventoryDigest = null;
   const packetValues = (index) => ({
@@ -968,6 +1131,11 @@ async function replay(fixture, scenario) {
     workflowCapability: reservation.workflowCapability,
     packetId: reservation.packets[index].packetId,
     packetCapability: reservation.packets[index].packetCapability,
+    // A native Fast spawn is never observed; the replay has no portable transcript to verify.
+    modelCompliance:
+      wires[index]?.selectedProfile === 'fast' && !admissionChangedPackets.has(index)
+        ? 'unverified'
+        : 'not-applicable',
   });
   const expectedAttempts = () => scenario.result.packets.map(({ attempt }) => attempt);
   for (const step of scenario.steps) {
@@ -977,8 +1145,17 @@ async function replay(fixture, scenario) {
         if (step.withGeneration) input.generationId = rt.generationId;
         const { result } = await rt.call('inventory', input);
         if (fixture.inventory === 'absent') assert.equal(result.generationStatus, 'absent');
-        else if (!step.withGeneration) assert.equal(result.generationState, fixture.inventory);
-        else if (step.settles === 'activation') {
+        else if (!step.withGeneration) {
+          assert.equal(result.generationState, fixture.inventory);
+          // A portable run reads its harness's outcome from the generation snapshot.
+          if (installKindOf(fixture) === 'portable') {
+            const snapshotted = result.qualification.snapshot.records.find(
+              (record) =>
+                record.installKind === 'portable' && record.harnessFamily === fixture.harness,
+            );
+            assert.equal(snapshotted.outcome, qualificationOf(fixture));
+          }
+        } else if (step.settles === 'activation') {
           assert.equal(result.generationState, scenario.result.generationState);
         }
         inventoryDigest = result.inventoryDigest ?? null;
@@ -1011,10 +1188,14 @@ async function replay(fixture, scenario) {
       }
       case 'start': {
         await runExternal('before-start');
+        wires = step.wires;
         const call = rt.call('start', payload('start', { ...values, packets: step.wires }));
         if (step.result === 'reserved') {
           reservation = (await call).result;
           assert.equal(reservation.packets.length, step.wires.length);
+        } else if (step.result === 'PROFILE_UNAVAILABLE') {
+          await expectFailure(call, 'PROFILE_UNAVAILABLE', 'start refuses unqualified Fast');
+          break;
         } else {
           await expectFailure(call, step.result, 'start must fail as the fixture states');
         }
@@ -1022,10 +1203,20 @@ async function replay(fixture, scenario) {
         break;
       }
       case 'start-packet': {
-        const call = () =>
-          rt.call('start-packet', payload('start-packet', packetValues(step.packet)));
+        await runExternal('before-start-packet');
+        const input = payload('start-packet', packetValues(step.packet));
+        if (step.fallback) {
+          input.fallback = step.fallback;
+          admissionChangedPackets.add(step.packet);
+        }
+        const call = () => rt.call('start-packet', input);
         if (step.result === 'LOCKED') await locked(step, call);
-        else {
+        else if (step.result === 'response-lost') {
+          await call();
+          await runExternal('after-lost-start-packet');
+        } else if (['ADMISSION_CHANGED', 'PROFILE_UNAVAILABLE'].includes(step.result)) {
+          await expectFailure(call(), step.result, 'the helper refuses the Fast spawn');
+        } else {
           await call();
           rt.advance(25);
         }
@@ -1114,6 +1305,12 @@ async function replay(fixture, scenario) {
           assert.equal((await rt.call('finalize', input)).result.status, 'finalized');
           const record = storedRecord(rt, rt.generationId, reservation.runId);
           assert.equal(record.workflow, fixture.workflow, 'the record names its workflow');
+          assert.equal(record.installKind, installKindOf(fixture));
+          // Only another run's reservation overlaps this one.
+          assert.equal(
+            record.overlapped,
+            (fixture.external ?? []).some(({ operation }) => operation === 'start'),
+          );
           assert.deepEqual(record.validation, input.validation, 'the helper keeps the validation');
           assert.equal(record.completionStatus, outcome.completionStatus);
           assert.deepEqual(
@@ -1191,18 +1388,29 @@ for (const fixture of fixtures) {
     if (result.activation?.startsWith('not-ready') || result.activation === 'locked') {
       assert.equal(result.persistedGenerationState, 'baseline', 'an unready baseline stays one');
     }
-    assert.ok(count('start') <= 1);
+    // `start` is re-sent only after a portable `PROFILE_UNAVAILABLE` and the reclassification.
+    assert.ok(count('start') <= (externalAt(fixture, 'before-start', 'requalify') ? 2 : 1));
     assert.ok(
       count('finalize') <=
-        ({ 'lost-response': 2, 'locked-once': 2, locked: LOCKED_SENDS }[fixture.finalizeResult] ??
-          1),
+        ({ 'lost-response': 2, 'locked-once': 2, locked: FINALIZE_LOCKED_SENDS }[
+          fixture.finalizeResult
+        ] ?? 1),
       'finalize is sent once, re-sent only after a lost response or LOCKED',
     );
-    // A packet timing operation is re-sent only after `LOCKED`; its locked sends are retries.
+    // A packet timing operation is re-sent only after `LOCKED` or a lost `start-packet` response;
+    // its locked sends and the lost send are retries.
     const retries = (key) =>
       fixture.packets.reduce((sum, packet) => sum + Math.min(packet[key] ?? 0, LOCKED_SENDS), 0);
+    // A refused Fast `start-packet` wrote nothing; its `admission-changed` re-send starts the timer.
+    const refused = result.packets.filter(
+      ({ fallback }) => fallback === 'admission-changed',
+    ).length;
     const timed = {
-      'start-packet': count('start-packet') - retries('startPacketLocked'),
+      'start-packet':
+        count('start-packet') -
+        retries('startPacketLocked') -
+        refused -
+        fixture.packets.filter(({ startPacketLost }) => startPacketLost).length,
       'finish-packet': count('finish-packet') - retries('finishPacketLocked'),
     };
     if (operations.includes('finalize')) {
@@ -1221,8 +1429,12 @@ for (const fixture of fixtures) {
       }
       assert.ok(operations.lastIndexOf('finish-packet') < operations.indexOf('finalize'));
     }
-    if (result.configState !== 'enabled' || fixture.harness === 'portable') {
-      assert.deepEqual(operations, [], 'disabled, invalid, and portable runs call no operation');
+    if (result.configState !== 'enabled' || fixture.harness === 'none') {
+      assert.deepEqual(
+        operations,
+        [],
+        'disabled, invalid, and runs without a harness family call no operation',
+      );
     }
     // The effective envelope never overwrites the inventory-proven persisted state, and only that
     // persisted state decides whether an incident is recorded.
@@ -1253,7 +1465,12 @@ for (const fixture of fixtures) {
         packet.fallback === 'scope-incident' &&
         !packet.attempts.includes('fast');
       assert.equal(packet.fastAttemptConsumed, packet.attempts.includes('fast') || forfeited);
-      if (packet.fallback !== 'none') {
+      if (packet.fallback === 'admission-changed') {
+        // The pre-spawn admission change runs Quality and keeps the Fast attempt unconsumed.
+        const row = contract.decisionMappings.find(({ fallback }) => fallback === packet.fallback);
+        assert.equal(row.fastAttemptConsumed, 'false');
+        assert.deepEqual(packet.attempts, ['quality']);
+      } else if (packet.fallback !== 'none') {
         const row = contract.decisionMappings.find(({ fallback }) => fallback === packet.fallback);
         assert.equal(row.fastAttemptConsumed, 'true');
         assert.deepEqual(packet.attempts, forfeited ? ['quality'] : ['fast', 'quality']);
@@ -1347,7 +1564,7 @@ function assertRefactorInvariants(fixture, result) {
 // cannot produce for `build` states why and stays model-only.
 const replayable = (fixture) =>
   configStateOf(fixture.config) === 'enabled' &&
-  fixture.harness !== 'portable' &&
+  fixture.harness !== 'none' &&
   fixture.inventory !== 'failed' &&
   fixture.replay !== false;
 
@@ -1423,14 +1640,21 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
     'locked',
     'not-ready:busy',
     'not-ready:sample',
-    'not-ready:window',
-    'not-ready:window,sample',
   ]);
-  for (const harness of ['claude', 'codex', 'portable']) {
+  for (const harness of ['claude', 'codex', 'none']) {
     assert.ok(
       buildFixtures.some((fixture) => fixture.harness === harness),
       `no ${harness} fixture`,
     );
+  }
+  // Both adopting workflows replay the portable path: an activated Fast attempt, a requalification
+  // refused at `start` and at `start-packet`, and a foreign reservation closing admission.
+  for (const set of [buildFixtures, refactorFixtures]) {
+    const portable = set.filter((fixture) => installKindOf(fixture) === 'portable');
+    assert.ok(portable.some(({ expected }) => expected.activation === 'activated'));
+    assert.ok(portable.some((fixture) => externalAt(fixture, 'before-start', 'requalify')));
+    assert.ok(portable.some((fixture) => externalAt(fixture, 'before-start-packet', 'requalify')));
+    assert.ok(set.some((fixture) => externalAt(fixture, 'before-start-packet', 'start')));
   }
   const events = [
     ...seen((fixture) => fixture.expected.events.map((event) => JSON.stringify(event))),
@@ -1472,13 +1696,14 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
   assert.ok(
     buildFixtures.some((fixture) => fixture.packets.some((p) => p.incidentRetry === 'Retry')),
   );
-  // A later Fast reservation after an incident runs Quality and is charged as `scope-incident`.
+  // A later Fast reservation after an incident runs Quality: charged as `scope-incident`, or as
+  // `admission-changed` once a persisted suspension closed its admission.
   assert.ok(
     buildFixtures.some((fixture) =>
       fixture.expected.packets.some(
         (p) =>
           p.selectedProfile === 'fast' &&
-          p.fallback === 'scope-incident' &&
+          ['scope-incident', 'admission-changed'].includes(p.fallback) &&
           !p.attempts.includes('fast'),
       ),
     ),
@@ -1487,6 +1712,15 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
   // A packet timing operation recovers from one `LOCKED` and fails the record once exhausted.
   assert.ok(
     buildFixtures.some((fixture) => fixture.packets.some((p) => p.startPacketLocked === 1)),
+  );
+  // A lost start-packet response re-sent after a foreign reservation takes the admission-changed
+  // path.
+  assert.ok(
+    buildFixtures.some(
+      (fixture) =>
+        externalAt(fixture, 'after-lost-start-packet', 'start') &&
+        fixture.packets.some((p) => p.startPacketLost),
+    ),
   );
   assert.ok(
     buildFixtures.some((fixture) =>
@@ -1626,17 +1860,16 @@ test('the refactor fixture set covers its baseline, exit, loop, and capture matr
   for (const activation of ['activated', 'ambiguous:active', 'ambiguous:unprovable', 'locked']) {
     assert.ok(seen((f) => [f.expected.activation]).has(activation), `no ${activation} activation`);
   }
-  assert.ok(some(({ harness }) => harness === 'portable'));
+  assert.ok(some(({ harness }) => harness === 'none'));
   assert.ok(
     some(({ inventory }) => inventory === 'failed'),
     'no pre-spawn inventory failure',
   );
-  for (const operation of ['start', 'begin-review']) {
-    assert.ok(
-      some(({ external }) => (external ?? []).some((a) => a.operation === operation)),
-      `no concurrent ${operation}`,
-    );
-  }
+  // A concurrent `start` only overlaps since protocol 1.3.0; a concurrent review still changes the run.
+  assert.ok(
+    some(({ external }) => (external ?? []).some((a) => a.operation === 'begin-review')),
+    'no concurrent begin-review',
+  );
   assert.ok(some(({ packets }) => packets.some((p) => p.finishFailure !== undefined)));
   assert.ok(some(({ finalizeResult }) => finalizeResult === 'fault'));
   assert.ok(some(({ expected }) => expected.incidents.length > 0));
@@ -1728,7 +1961,7 @@ test('build selects Fast only for the first attempt and transitions to Quality e
   const policy = flat(source('src/shared/execution-profiles.md'));
   assert.match(
     policy,
-    /`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present: detect presence only and never read, relay, or persist its value/,
+    /a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` prevents a Fast attempt and records `profile-unavailable`; detect that variable's presence only and never read, relay, or persist its value/,
   );
   assert.match(
     policy,
@@ -1736,7 +1969,7 @@ test('build selects Fast only for the first attempt and transitions to Quality e
   );
   assert.match(
     policy,
-    /Portable is Quality-only and unmeasured in V1: it evaluates no gate and records no reason/,
+    /A portable build passes row 1 only when the pilot `inventory` reports that harness `qualified` in the generation's qualification snapshot and the snapshot's Fast-mapping identity equals the installed record's; the helper rejects `fast` otherwise/,
   );
 
   assert.match(
@@ -1852,7 +2085,7 @@ test('build finalizes a reserved record once and activates only automatically', 
   assert.match(text, /`activated` makes the generation `active`, persisted and effective alike/);
   assert.match(
     text,
-    /`not-ready` whose `unmet` is a nonempty subset of `busy`, `window`, and `sample` keeps it `baseline`/,
+    /`not-ready` whose `unmet` is a nonempty subset of `busy` and `sample` keeps it `baseline`; `busy` means another run's reservation or a gate observation is open, which does not block the `start` below/,
   );
   assert.match(text, /`LOCKED`, once its retry is exhausted, keeps it `baseline`/);
   assert.match(
@@ -1869,6 +2102,12 @@ test('build finalizes a reserved record once and activates only automatically', 
   assert.match(
     flat(section(fragment, '### Helper contract', '### Preflight')),
     /`LOCKED` is the one retryable error: the helper changed nothing\. Re-send the identical payload at most twice more, after about two and then about five seconds; an exhausted retry counts as that operation's failure/,
+  );
+  // `finalize` gets the longer budget the simulator replays as FINALIZE_LOCKED_SENDS.
+  assert.equal(FINALIZE_LOCKED_SENDS, 6);
+  assert.match(
+    flat(section(fragment, '### Helper contract', '### Preflight')),
+    /`finalize` alone, which overlapping runs contend for at their ends, re-sends at most five times more, after about two, five, ten, twenty, and thirty seconds/,
   );
 });
 
@@ -1894,7 +2133,7 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   );
   assert.match(
     preflight,
-    /With `configState=enabled`, an \*\*unmeasured run\*\* holds no usable generation: every packet takes `generationState=none` with `not-evaluated \+ quality`, the legal `no-generation` row, runs Quality without Fast, and is never recorded\. A portable build, an ambiguous or failed inventory, a genuine activation fault, and a failed `start` each make the run unmeasured/,
+    /With `configState=enabled`, an \*\*unmeasured run\*\* holds no usable generation: every packet takes `generationState=none` with `not-evaluated \+ quality`, the legal `no-generation` row, runs Quality without Fast, and is never recorded\. A missing harness family, an ambiguous or failed inventory, a genuine activation fault, and a failed `start` each make the run unmeasured/,
   );
   assert.match(
     preflight,
@@ -1906,7 +2145,7 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   );
   assert.match(
     preflight,
-    /This installation is the `\{\{BUILD_TARGET\}\}` build, fixed when it was built\. `claude` and `codex` are the harness family\. A `portable` build is an unmeasured run whatever host executes it: it calls no pilot operation, reads no inventory, and records nothing/,
+    /This installation is the `\{\{BUILD_TARGET\}\}` build, fixed when it was built: `installKind` is `portable` for a `portable` build and `native` otherwise\. `harnessFamily` is the `model-selection` harness of the spawn tool this orchestrator holds; without one the run is unmeasured and calls no pilot operation/,
   );
   assert.match(
     preflight,
@@ -1926,27 +2165,34 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
     'configState',
     'generationId',
     'harnessFamily',
+    'installKind',
     'packets',
     'repositoryIdentity',
     'runtimeStateRoot',
     'workflow',
   ]);
   assert.equal(blocks[1].configState, 'enabled');
-  // The placeholder names exactly the adopting workflows, which are the helper's closed vocabulary.
+  assert.equal(blocks[1].installKind, '<native|portable>');
+  // The placeholder names exactly the adopting workflows; the helper's closed vocabulary admits them
+  // and already `fix`, which adopts the policy later.
   assert.equal(blocks[1].workflow, `<${ADOPTING_WORKFLOWS.join('|')}>`);
-  assert.deepEqual(PILOT_MEASUREMENT_PROTOCOL.enums.workflows, ADOPTING_WORKFLOWS);
+  assert.deepEqual(PILOT_MEASUREMENT_PROTOCOL.enums.workflows, [...ADOPTING_WORKFLOWS, 'fix']);
   assert.match(flat(reservation), /`workflow` names the adopting workflow/);
   assert.match(flat(reservation), /`firstReason` is `null` exactly for `eligible`/);
   assert.match(flat(reservation), /`not-evaluated` is never sent/);
   assert.match(flat(reservation), /Classify every initial packet completely before `start`/);
-  assert.match(flat(reservation), /Never re-send `start` other than after `LOCKED`/);
   assert.match(
     flat(reservation),
-    /makes `start` fail with `INCOMPLETE_EVIDENCE`, so admission is serialized/,
+    /Never re-send `start` other than after `LOCKED` or the `PROFILE_UNAVAILABLE` below/,
+  );
+  // Since protocol 1.3.0 records overlap: another open reservation never blocks `start`.
+  assert.match(
+    flat(reservation),
+    /Another open record or observation never blocks `start`; the helper only marks the overlap/,
   );
   assert.match(
     flat(reservation),
-    /Any failure creates no usable record: the run becomes an unmeasured run, the classification is discarded/,
+    /Any other failure creates no usable record: the run becomes an unmeasured run, the classification is discarded/,
   );
   assert.match(
     flat(reservation),
@@ -1978,6 +2224,11 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
     /A packet that never spawned gets no timing operation; the helper records it as `not-started` and excludes it from every packet metric\. A packet whose initial phase is still open at that exit is not finished; the helper records it as `started` with an unavailable duration/,
   );
   assert.match(flat(timing), /finalizes as `aborted` or `failed`, never `completed`/);
+  // A re-sent start precedes the spawn, so the helper rechecks admission before acknowledging Fast.
+  assert.match(
+    flat(timing),
+    /A re-sent `start-packet` of a `fast` packet checks admission again, since nothing has spawned yet: `ADMISSION_CHANGED` or `PROFILE_UNAVAILABLE` then wrote nothing and takes the same single `"fallback": "admission-changed"` re-send and Quality spawn as under "Start before spawn"/,
+  );
   assert.doesNotMatch(timing, /Known bias|near-zero/, 'the never-spawned bias is resolved');
 
   const finalization = section(fragment, '### Finalization', '### Incidents and pilot control');
@@ -2006,7 +2257,10 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   assert.equal(payload.packets[0].costProxy, null);
   assert.equal(payload.detailOptIn, payload.trace !== null);
   const rules = flat(finalization);
-  assert.match(rules, /`escalated` equals `fallback != "none"`/);
+  assert.match(
+    rules,
+    /`escalated` is `true` exactly for a fallback other than `none` and `admission-changed`/,
+  );
   assert.match(rules, /Never invent a cost source/);
   // The closed finalize values, as the helper validates them.
   assert.match(
@@ -2039,7 +2293,7 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   assert.match(rules, /A lost response may be re-sent once with the identical payload/);
   assert.match(
     rules,
-    /Every other failure, `LOCKED` after its retry included, is a finalization failure/,
+    /Every other failure, `LOCKED` after its longer retry included, is a finalization failure/,
   );
 });
 
@@ -2135,7 +2389,18 @@ test('incidents are recorded by category and a failed finalize offers one same-r
     failureText,
     /A declined, unanswered, non-interactive, or failed reconciliation leaves the incomplete record in place/,
   );
-  assert.match(failureText, /only `discard-generation` or `purge` clears it/);
+  // Receipts left behind a persisted terminal record fail every later start, not only Fast.
+  assert.match(
+    failureText,
+    /closes Fast admission for later runs or, when only timing receipts remain behind a persisted terminal record, makes every later `start` and `start-gate-observation` fail `INCOMPLETE_EVIDENCE`/,
+  );
+  // Only the owning run can reconcile; purge needs a complete aggregate, so a left record clears
+  // only by discarding the generation.
+  assert.match(
+    failureText,
+    /no later run can reconcile it: only `begin-review` followed by `discard-generation` with the pilot disabled clears it, losing the generation/,
+  );
+  assert.doesNotMatch(failureText, /`purge` clears it/);
   assert.match(failureText, /a reviewed generation never resumes/);
   // A later run observes only a suspension the helper persisted; an unpersisted incident leaves
   // nothing durable, so the fragment names setup's `Disable` instead of promising a suspension.
@@ -2400,6 +2665,7 @@ test('the fragment token rule matches the helper for every token slot', async ()
       ...scoped,
       configState: 'enabled',
       workflow: 'build',
+      installKind: 'native',
       harnessFamily: 'claude',
       packets: accepted.map(() => quality(true)),
     })
@@ -2414,7 +2680,7 @@ test('the fragment token rule matches the helper for every token slot', async ()
     };
     await rt.call('start-packet', identity);
     rt.advance(10);
-    await rt.call('finish-packet', identity);
+    await rt.call('finish-packet', { ...identity, modelCompliance: 'not-applicable' });
   }
   const trace = (value) => ({
     roles: [{ role: value, profile: 'quality' }],

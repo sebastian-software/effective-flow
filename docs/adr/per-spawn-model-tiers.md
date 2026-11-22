@@ -132,23 +132,22 @@ text; the guard recognizes both shapes, and a native target may name only its ow
 - `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. It is documented and not detected.
 
 **The Fast pilot keeps its contract.** `{{AGENT_PROFILE:X:fast}}`, its gate, its first-attempt rule
-and its measurement are unchanged, and portable output stays without Fast. A Fast spawn selects
-the generated Fast role in native Claude Code and Codex targets without model or effort
-overrides. Codex role-file values win over spawn parameters; Claude invocation values would
-override its Fast sidecar. The Quality intent token
+and its measurement are unchanged. A Fast spawn selects the generated Fast role in native Claude
+Code and Codex targets without model or effort overrides. Codex role-file values win over spawn
+parameters; Claude invocation values would override its Fast sidecar. The Quality intent token
 is unchanged; the configured strongest capability it names is the role's `deep` tier. The
-Quality-mapping identity, a SHA-256 digest of the canonical `deep` values per harness, becomes part
-of the pilot protocol, so a change of those values starts a new generation. Protocol `1.2.0`
-carries it; a generation persisted under `1.1.0` migrates once to a suspended state with the reason
-`quality-mapping-changed`, is never extended or resumed, and can only be reviewed and discarded.
-Evidence is never mixed across the change on any machine. The digest, rather than the values,
-lets the portable copy of the protocol module stay free of provider names; the build checks it
-against `MODEL_TIER_MAPPINGS`.
+Quality-mapping identity, a SHA-256 digest of the canonical `deep` values per harness, is part of
+the pilot protocol, so a change of those values starts a new generation. The digest, rather than the
+values, lets the portable copy of the protocol module stay free of provider names; the build checks
+it against `MODEL_TIER_MAPPINGS`. Prior protocol digests map to a suspension reason: `1.1.0` to
+`quality-mapping-changed` (a generation persisted under it migrates once to a suspended state and
+can only be reviewed and discarded) and `1.2.0` to `protocol-parameters-changed` (see the amendment
+of 2026-11-21).
 
 **Relation to earlier decisions.** This record supersedes the portable restriction in
 [Native execution-profile representation](./native-execution-profile-representation.md), which kept
-portable output Quality-only and without model metadata: that holds for Fast only, while portable
-spawns now carry tiers. It amends
+portable output Quality-only and without model metadata: portable spawns now carry tiers, and
+the 2026-11-21 amendment lets a qualified portable harness select Fast. It amends
 [Risk-aware model-tiering pilot policy](./risk-aware-model-tiering-pilot-policy.md) in the same
 way for portable output, and it sharpens what Quality means there. The Codex host check (see
 "Status") satisfies the review trigger of the representation record on per-spawn contracts.
@@ -218,8 +217,8 @@ differs from its harness's `deep` model.
   duplicate or surviving marker. Workflows add context lines per includer of the mandate.
 - A user with `CLAUDE_CODE_SUBAGENT_MODEL` set now sees the per-spawn tier win; the opt-out is `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, which fixes the model while the tier's effort
   still applies.
-- Existing pilot generations under protocol `1.1.0` are suspended once and must be reviewed and
-  discarded before a new baseline starts.
+- Existing pilot generations under protocol `1.1.0` or `1.2.0` are suspended once and must be
+  reviewed and discarded before a new baseline starts.
 - A host that rejects a tier parameter degrades to a spawn without it, which inherits or takes the
   native fallback; this is reported once and never blocks a run.
 
@@ -296,6 +295,50 @@ for the delegated runs only; the `deep` mapping is unchanged.
   findings within its site's blocking scope, a rejected item stays uncommitted (dirty checkout
   reported, worktree retained, `aborted`, next round stops), and the standard runner never closes or
   admits an item the `deep` classification marked `uncertain`.
+
+**2026-11-21: portable Fast tier.** This exercises the review trigger on a changed per-spawn
+contract and revises that portable restriction; see
+[Native execution-profile representation](./native-execution-profile-representation.md).
+
+- **Fast tier line.** The first implementation spawn of `build` and `refactor` renders a Fast tier
+  line from `AGENT_PROFILE_MAPPINGS.fast` next to its Quality (`deep`) line; the orchestrator uses
+  exactly one per the packet's selected profile. Every other spawn keeps its site tier with no
+  downward move. The Fast values equal the `standard` tier today; the provider-alias guard exempts
+  the Fast tier line by name, not through that equality. `model-selection fast` returns only the
+  Fast values and authorizes nothing; the pilot helper rejects `fast` for a portable harness that
+  is not qualified in the generation snapshot.
+- **Harness family** comes only from the parameter shape of the spawn tool the orchestrator holds
+  (`model` and `effort` is `claude`, `reasoning_effort` is `codex`). T3 Code is a client surface,
+  not a harness, and a delegation to another provider is never a Fast spawn.
+- **Narrow environment exception.** The `claude-subagent-transcript` adapter of `model-selection
+verify` reads `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR`, builds exactly
+  `<projects>/<project>/<session>/subagents/agent-<id>.jsonl` and rejects traversal and symlinks.
+  `<projects>` is `$CLAUDE_CONFIG_DIR/projects` for an absolute value and `~/.claude/projects` when
+  the variable is unset, as Claude Code stores it; any other value is `unverified`. `<project>` is
+  the working directory's Claude project name; because the helper's working directory may differ
+  from the session's, it otherwise accepts the single directory in `<projects>` that holds the
+  session, found by listing at most 4096 names without reading any file. It requires each entry's
+  `sessionId` and `agentId` to match and extracts only `message.model`, `effort` and the host
+  `version` from `type: assistant` entries; it returns no content, working directory, branch or
+  task text. These are the only environment values the helper reads; the Codex `codex-rollout`
+  adapter additionally reads the session's `cli_version`.
+- **Fast compliance on every well-formed request.** `verify` with a Fast selection returns
+  `data.modelCompliance` for every well-formed request: missing evidence or missing parent and child
+  handles are `unverified`, as is an absent or unreadable installed qualification record, and an
+  `INVALID_*` error records `unverified`.
+- **Fast mismatch exception to `MODEL_MISMATCH`.** A Fast packet whose observed model or host
+  version fails the check is `modelCompliance: mismatch`. The work is kept, because it still passes
+  the run's validation and review, and only leaves the Fast metrics. A Quality `MODEL_MISMATCH`
+  keeps its stop behaviour.
+- **Probes, 2026-11-21.** Claude Code: the portable Agent tool with `model: sonnet`, `effort:
+medium` ran the child on `claude-sonnet-5-5` at `medium` (host 2.1, under T3 Code), so the harness
+  is `qualified`. Codex: the probe could not run, because the host refused the delegated session, so
+  the harness is `unproven` and Codex stays Quality. One host's probe qualifies a harness for every
+  install of the release, and a provider gateway may map aliases differently; the per-packet check
+  is the safeguard.
+- **Protocol `1.3.0`** replaces `1.2.0`, the digest shipped from v1.68.0 to v1.76.0. A generation
+  persisted under `1.2.0` is suspended once with `protocol-parameters-changed` and can only be
+  inspected, reviewed and discarded.
 
 ## References
 

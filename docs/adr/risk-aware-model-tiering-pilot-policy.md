@@ -22,7 +22,8 @@ away.
 Effective Flow defines two implementation intents: **Quality** is the strongest available
 configured implementation capability, the role's `deep` model tier (see
 [Per-spawn model tiers](./per-spawn-model-tiers.md)), and the safe default; **Fast** is a distinct
-native lower-cost, lower-latency capability for a bounded eligible packet. These are policy
+lower-cost, lower-latency capability for a bounded eligible packet: a native sidecar role or, on a
+qualified harness, a portable per-spawn tier. These are policy
 intents, not provider model names, and the Quality intent token is unchanged.
 
 The project-level `executionProfiles.fast.enabled` key is a strict Boolean and defaults off. Missing
@@ -30,8 +31,9 @@ or `false` is disabled. Malformed, ambiguous, or unreadable input is invalid. Bo
 Quality and stop new measurement. Literal `true` only admits the project to the pilot lifecycle; an
 explicitly confirmed prospective Quality-only baseline and an activated generation are still
 required before an eligible packet may use Fast. The confirmed baseline is the only consent:
-activation follows automatically once the preregistered baseline window and sample conditions
-pass, and until then the helper reports the unmet conditions, or another run still in flight, as
+activation follows automatically once the preregistered baseline sample conditions
+pass (at least 10 eligible packets in at least 5 completed baseline records, with no calendar
+window), and until then the helper reports the unmet conditions, or another run still in flight, as
 not ready rather than as an error. Disabling or removing the key is the configuration
 rollback: it stops new admission without rewriting generation state, clearing a suspension, or
 discarding already captured evidence.
@@ -95,13 +97,39 @@ not positively established, even though the comparison itself stays measurable; 
 required behavior change stops for replanning instead of being authorized by escalation. Every
 pass after a packet's initial attempt, including review incorporation and each regression
 correction, stays Quality. Guided setup exposes the opt-in and the confirmed
-`begin-baseline` and `resume` actions; no workflow run calls those two, and portable output remains
-Quality-only.
+`begin-baseline` and `resume` actions; no workflow run calls those two. Portable output is measured
+like native output and may select Fast only on a harness whose qualification the baseline snapshot
+recorded.
 
-> **Amended** by [Per-spawn model tiers](./per-spawn-model-tiers.md): portable output stays without Fast, but its spawns now carry model tiers rather than
-> inheriting the manager's model. The Quality-mapping identity, a digest of the `deep` tier values
-> per harness, is part of the pilot protocol from version `1.2.0`; a generation recorded under
-> `1.1.0` is suspended once with `quality-mapping-changed` and never continued.
+> **Amended** by [Per-spawn model tiers](./per-spawn-model-tiers.md): portable spawns carry model
+> tiers rather than inheriting the manager's model. The Quality-mapping identity, a digest of the
+> `deep` tier values per harness, is part of the pilot protocol from version `1.2.0`; a generation
+> recorded under `1.1.0` is suspended once with `quality-mapping-changed` and never continued.
+
+> **Amended 2026-11-21** (protocol `1.3.0`; see
+> [Per-spawn model tiers](./per-spawn-model-tiers.md#review-notes) and
+> [Native execution-profile representation](./native-execution-profile-representation.md)):
+>
+> - **Short baseline.** Activation needs 10 eligible packets in at least 5 completed baseline
+>   records and no elapsed time; evaluation needs 5 records per cohort. The chronological-halves
+>   comparison is informational and no longer makes Keep unavailable. Records whose only first
+>   reason is `correction-pass` (an `iterate`-delegated run, always Quality) are measured but count
+>   toward neither minimum.
+> - **Coverage.** `fix` is admitted by the protocol (`1.3.0`) but not yet measured or wired; only
+>   `build` and `refactor` record runs today. `merge-gate` observations also run under T3 Code.
+> - **Overlap.** Records and observations may be open together. A record opened or overlapped by
+>   another is flagged `overlapped`, an unlinked confounder. A Fast packet whose admission closed
+>   before its first spawn runs Quality with `admission-changed`, which consumes no Fast attempt.
+> - **Records.** `installKind` (`native` or `portable`), `harnessFamily` and a per-packet
+>   `modelCompliance` (`verified`, `mismatch`, `unverified`, `not-applicable`) are recorded;
+>   `mismatch` packets leave the Fast metrics and are counted separately. Finding rates use records
+>   whose review ran as the denominator.
+> - **Generations.** A generation under `1.2.0` (the digest shipped from v1.68.0 to v1.76.0) is
+>   suspended once with `protocol-parameters-changed` and can only be inspected, reviewed and
+>   discarded. Activation still requires an idle generation, so an orphaned open reservation or
+>   observation blocks it; the inventory reports that cause. Only the owning run can reconcile a
+>   reservation, so an orphaned observation clears only by discarding the generation, and an
+>   orphaned reservation does too until the planned, not yet shipped cleanup action exists.
 
 Configuration, generation state, trace consent, native capability, and publication approval remain
 separate decisions. Review freezes new reservations; private aggregate evaluation precedes any
@@ -124,7 +152,8 @@ generation identifier in the private review binding rather than either metric vi
   safety or project consent. An explicit default-off project policy and lifecycle gate are retained.
 - **Use historical work as the comparison baseline.** Task mix, host load, and repository checks
   make that comparison weak. The pilot requires an explicitly started prospective Quality-only
-  baseline.
+  baseline. A short baseline gives a weak, pooled comparison that is confounded by task mix, overlap,
+  harness and install kind; a later review treats small effects as inconclusive.
 - **Retry Fast after a failure or correction.** Repeated speculative attempts can erase the expected
   benefit and compound scope uncertainty. Corrections and retries therefore use Quality.
 - **Duplicate eligibility rules in each workflow.** That would allow order and fallback behavior to
@@ -139,10 +168,10 @@ generation identifier in the private review binding rather than either metric vi
 
 - Existing projects retain Quality behavior until they opt in, explicitly confirm a baseline, and
   that baseline activates automatically; every workflow other than `build` and `refactor` stays
-  Quality-only.
+  Quality-only (`fix` is admitted by the protocol but not yet wired).
 - The pilot can fail closed when configuration, evidence, lifecycle state, or native enforcement is
   uncertain.
-- A possible performance gain is deliberately forgone for excluded, coupled, corrective, portable,
+- A possible performance gain is deliberately forgone for excluded, coupled, corrective, unqualified-harness,
   and unsupported work.
 - Retained-state escalation avoids discarding useful edits, but the Quality continuation must treat
   the diff and worker report as unverified intermediate evidence.
@@ -157,8 +186,8 @@ generation identifier in the private review binding rather than either metric vi
 ## Review triggers
 
 Review this living decision when a further workflow is to adopt Fast or an adopting workflow needs
-a different safety boundary; native or
-portable hosts can enforce materially different guarantees; pilot evidence shows clustered
+a different safety boundary; a qualified
+harness or a native host can enforce materially different guarantees; pilot evidence shows clustered
 fallbacks or correction cost; a critical safety, authorization, data-integrity, or scope incident is
 attributable to profile selection; or lifecycle persistence and rollback semantics change. Exact
 model aliases and numerical pilot thresholds remain outside this ADR and may change without

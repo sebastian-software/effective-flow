@@ -321,6 +321,8 @@ test('all base workers retain complete native metadata and independent native ar
   );
 });
 
+// Invariant: portable output names only base workers and never a native profile; its one Fast
+// representation is the build-generated Fast tier line and the portable contract's `fast` block.
 test('portable output contains only base workers and no native profile representation', () => {
   const portable = join(distRoot, 'portable/effective-flow');
   const workerNames = readdirSync(join(portable, 'workers'))
@@ -362,19 +364,24 @@ test('portable output contains only base workers and no native profile represent
       const contract = JSON.parse(content);
       assert.deepEqual(
         Object.keys(contract).sort(),
-        ['schemaVersion', 'target', 'mappings', 'panelModels', 'roles', 'sites'].sort(),
+        ['schemaVersion', 'target', 'mappings', 'panelModels', 'roles', 'sites', 'fast'].sort(),
       );
       assert.equal(contract.schemaVersion, 1);
       assert.equal(contract.target, 'portable');
       assert.deepEqual(contract.mappings, MODEL_TIER_MAPPINGS);
       assert.deepEqual(contract.panelModels, PANEL_MODEL_ALLOWLIST);
-      providerContent = JSON.stringify({ ...contract, mappings: {}, panelModels: {} });
+      assert.deepEqual(contract.fast, {
+        mappings: AGENT_PROFILE_MAPPINGS.fast,
+        sites: ['build-delegated-run/initial-implementation', 'refactor/initial-implementation'],
+      });
+      providerContent = JSON.stringify({ ...contract, mappings: {}, panelModels: {}, fast: {} });
     }
     assert.deepEqual(
       findProviderModelNames(providerContent, {
         modelNames: PROVIDER_MODEL_NAMES,
         allowGenerated: true,
         mappings: MODEL_TIER_MAPPINGS,
+        profileMappings: AGENT_PROFILE_MAPPINGS,
       }),
       [],
       path,
@@ -386,8 +393,8 @@ test('portable output contains only base workers and no native profile represent
 
 // `build` Phase 2 and `refactor` Phase 3 are the adopted Fast surfaces. Each of their five
 // implementer selector lines keeps the Quality reference and appends exactly one target-native Fast
-// rendering; portable output keeps the base worker and states that it runs Quality only, without
-// naming a native profile or a gate reason to record. A selector line is found by its Quality
+// rendering; portable output keeps the base worker at the one rendered Fast tier line of that
+// phase, without naming a native profile or a gate reason to record. A selector line is found by its Quality
 // reference, so the invariant does not depend on each tool's bucket labels.
 const ADOPTED_RENDERED_PHASES = {
   build: { start: '\n### Phase 2: Implementation\n', end: '\n### Phase 3: Documentation\n' },
@@ -405,7 +412,7 @@ test('the adopted selector lines render the exact per-target Fast representation
   const expected = {
     claude: (worker) => `Fast: \`${worker}-fast\`.`,
     codex: (worker) => `Fast: \`${worker}-fast\`.`,
-    portable: (worker) => `Fast: \`${worker}\` (portable build: Fast unavailable, Quality only).`,
+    portable: (worker) => `Fast: \`${worker}\` at the Fast tier.`,
   };
   for (const [tool, bounds] of Object.entries(ADOPTED_RENDERED_PHASES)) {
     for (const [target, render] of Object.entries(expected)) {
@@ -437,9 +444,14 @@ test('the adopted selector lines render the exact per-target Fast representation
       const overrides = text.match(/reasoning_effort: "[a-z]+"/g) ?? [];
       assert.equal(overrides.length, 0, `${where} per-spawn overrides`);
       assert.equal(
-        (text.match(/\(portable build: Fast unavailable, Quality only\)/g) ?? []).length,
+        (text.match(/ at the Fast tier\./g) ?? []).length,
         target === 'portable' ? 5 : 0,
-        `${where} portable Quality-only notices`,
+        `${where} portable Fast-tier references`,
+      );
+      assert.equal(
+        (phase.match(/^ {3}Fast tier: .* \(rules: `execution-profiles`\)\.$/gm) ?? []).length,
+        target === 'portable' ? 1 : 0,
+        `${where} Fast tier lines`,
       );
       assert.doesNotMatch(
         text,
@@ -451,10 +463,9 @@ test('the adopted selector lines render the exact per-target Fast representation
 });
 
 // Invariant: a portable skill can run on a Claude Code or Codex host, so the pilot fragments must
-// not infer portability from the host. Each target renders its own name into both fragments, and
-// the portable rendering tells the run to call no pilot operation and the setup block to offer no
-// generation action.
-test('the pilot fragments render their own build target and keep portable runs unmeasured', () => {
+// not infer portability from the host. Each target renders its own name into both fragments, the
+// workflow derives `installKind` from it, and no target excludes portable runs from measurement.
+test('the pilot fragments render their own build target and measure portable runs', () => {
   for (const target of ['claude', 'codex', 'portable']) {
     const shared = join(distRoot, target, 'effective-flow/shared');
     const workflow = readFileSync(join(shared, 'pilot-measurement-workflow.md'), 'utf8');
@@ -474,12 +485,10 @@ test('the pilot fragments render their own build target and keep portable runs u
     const flatWorkflow = workflow.replace(/\s+/g, ' ');
     assert.match(
       flatWorkflow,
-      /A `portable` build is an unmeasured run whatever host executes it: it calls no pilot operation, reads no inventory, and records nothing\./,
+      /`installKind` is `portable` for a `portable` build and `native` otherwise/,
     );
-    assert.match(
-      setup.replace(/\s+/g, ' '),
-      /A `portable` build offers none and calls no pilot operation/,
-    );
+    assert.doesNotMatch(flatWorkflow, /unmeasured run whatever host executes it/);
+    assert.doesNotMatch(setup.replace(/\s+/g, ' '), /offers none and calls no pilot operation/);
   }
 });
 
@@ -491,7 +500,7 @@ test('the pilot fragments render their own build target and keep portable runs u
 // merge-conflict resolver, and the unsupported-environment pointers and forbidden substitutes in the
 // code validator, test writer and merge-conflict resolver, and build's targeted scope, the shared
 // environment-signature classes and the failure-attribution pointer in the code validator and the
-// merge-conflict resolver;
+// merge-conflict resolver, and the project-routing skill-source paragraph in every worker embedding it;
 // any other configuration change or body change fails; the one declared added worker has no
 // base sidecar and any other base-worker membership change fails.
 // The pinned stdout names each delta and exactly the workers showing it.
@@ -530,6 +539,7 @@ test('the executable baseline proof preserves every Quality native configuration
       'Expected delta merge-conflict-resolver-forbidden-substitutes: effective-flow-merge-conflict-resolver\n' +
       'Expected delta code-validator-build-validation-budget: effective-flow-code-validator\n' +
       'Expected delta merge-conflict-resolver-environment-signature-classes: effective-flow-merge-conflict-resolver\n' +
+      'Expected delta project-routing-skill-sources: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-test-writer\n' +
       'Expected delta code-span-placeholder-pairs: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
   );
 });
@@ -632,6 +642,8 @@ test('route policy, authorization, eligibility, and generated-name errors fail b
   );
 });
 
+// Invariant: a Fast token is legal only inside an adopted initial implementation phase and only
+// after that phase's one Fast spawn-site marker, which alone renders the portable Fast tier line.
 test('profile tokens are accepted only in the initial implementation sections', () => {
   const token = '{{AGENT_PROFILE:nodejs-implementer:fast}}';
   // The probe adds two fixture lines, not a measured tool change: give it room in the line budget
@@ -639,19 +651,29 @@ test('profile tokens are accepted only in the initial implementation sections', 
   assertMutatedBuildSucceeds('build-phase-2-profile-token', (checkout) => {
     replaceOnce(
       join(checkout, 'src/shared/build-delegated-run.md'),
-      '### Phase 2: Implementation\n',
-      `### Phase 2: Implementation\n\n${token}\n`,
+      '   - Fullstack: both in parallel',
+      `   - ${token}\n   - Fullstack: both in parallel`,
     );
     raiseBudget(checkout, 'build');
   });
   assertMutatedBuildSucceeds('refactor-phase-3-profile-token', (checkout) => {
     replaceOnce(
       join(checkout, 'src/tools/refactor.md'),
-      '### Phase 3: Refactoring\n',
-      `### Phase 3: Refactoring\n\n${token}\n`,
+      '   - Use every bucket selected by project routing',
+      `   - ${token}\n   - Use every bucket selected by project routing`,
     );
     raiseBudget(checkout, 'refactor');
   });
+  assertMutatedBuildFails(
+    'build-phase-2-token-before-marker',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'src/shared/build-delegated-run.md'),
+        '### Phase 2: Implementation\n',
+        `### Phase 2: Implementation\n\n${token}\n`,
+      ),
+    /Fast-profile references in shared\/build-delegated-run\.md must all follow one spawn-site marker/,
+  );
 
   assertMutatedBuildFails(
     'build-frontmatter-profile-token',
@@ -847,6 +869,43 @@ test('a pilot Quality-mapping identity that differs from the deep tier fails bef
         "codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'xhigh' }),",
       ),
     expected,
+  );
+});
+
+// Invariant: the shipped harness-qualification record describes exactly the Fast mapping the build
+// ships, so a changed Fast mapping, a drifted identity, or a missing harness record fails before
+// swap and a changed mapping invalidates every probe until a new one is recorded.
+test('a qualification record that differs from AGENT_PROFILE_MAPPINGS.fast fails before swap', () => {
+  const expected =
+    /Fast harness qualification: .*\(in src\/scripts\/fast-harness-qualification\.json\)/;
+  assertMutatedBuildFails(
+    'qualification-fast-mapping-changed',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'build.mjs'),
+        "claude: Object.freeze({ model: 'sonnet', effort: 'medium' }),\n    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),\n  }),\n});\n// Provider-neutral",
+        "claude: Object.freeze({ model: 'sonnet', effort: 'low' }),\n    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),\n  }),\n});\n// Provider-neutral",
+      ),
+    /claude fastMappingIdentity differs from the current Fast mapping/,
+  );
+  assertMutatedBuildFails(
+    'qualification-identity-drift',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'src/scripts/fast-harness-qualification.json'),
+        'c44bca229590200420783d89007d5f6b8f3b0898fa48dc091f655d1cbaeb9e8f',
+        '0'.repeat(64),
+      ),
+    expected,
+  );
+  assertMutatedBuildFails(
+    'qualification-record-missing',
+    (checkout) =>
+      writeFileSync(
+        join(checkout, 'src/scripts/fast-harness-qualification.json'),
+        '{"schemaVersion":1,"records":[]}\n',
+      ),
+    /missing the portable codex record/,
   );
 });
 

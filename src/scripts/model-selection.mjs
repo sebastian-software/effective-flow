@@ -45,7 +45,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     if (argv.length !== 1 || !MODEL_SELECTION_OPERATIONS.includes(operation)) {
       throw new ModelSelectionError(
         'INVALID_INPUT',
-        'usage: model-selection.mjs <select|verify> (one JSON object on stdin)',
+        'usage: model-selection.mjs <select|fast|verify> (one JSON object on stdin)',
       );
     }
     const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));

@@ -111,6 +111,16 @@ function isSpawnCandidate(text) {
 // the block among that source's candidates. A stale entry fails as loudly as a missing one.
 const SPAWN_MENTION_ALLOWLIST = [
   [
+    'shared/execution-profiles.md',
+    'The harness family is the `model-selection` harness.',
+    'Fast capability rule of the adopting phase spawn marked there; starts nothing',
+  ],
+  [
+    'shared/model-selection.md',
+    'The Claude adapter, for a Fast selection only, is',
+    'evidence reader for a spawn marked at its own site; starts nothing',
+  ],
+  [
     'tools/autopilot.md',
     '**Sub-agents.** Require a built-in sub-agent mechanism, as Issue Buddy',
     'capability check, not a spawn site',
@@ -489,11 +499,6 @@ const SPAWN_MENTION_ALLOWLIST = [
     'receipt rationale',
   ],
   ['shared/execution-location.md', '**Claude Code:** Subagents start', 'harness note'],
-  [
-    'shared/execution-profiles.md',
-    'Portable is Quality-only and unmeasured',
-    'Fast host detection; the Quality respawn resolves to the role default',
-  ],
 
   // Existing progress receivers and adapters mention the owner but create no new spawn.
   [
@@ -992,10 +997,12 @@ test('margin, floor, retry and host-override rules live only in model-tiers.md',
 // adopting site binds its rendered line to the Quality selectors.
 const FAST_CARVE_OUT =
   "A Fast spawn passes only its Fast reference's own values, never the spawn site's tier line: on " +
-  'Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on native Codex the ' +
-  '`-fast` sidecar without per-spawn `model` or `reasoning_effort`. The Quality spawn and every correction pass the ' +
-  "site's tier.";
-const QUALITY_BINDING = 'The tier line below binds each Quality selector, never a Fast reference:';
+  'native Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on native Codex ' +
+  'the `-fast` sidecar without per-spawn `model` or `reasoning_effort`, on a portable build the routed ' +
+  'worker contract with exactly the `model-selection` `fast` values of the rendered Fast tier line. ' +
+  "The Quality spawn and every correction pass the site's tier.";
+const QUALITY_BINDING =
+  'The `Tier` line below binds each Quality selector; a Fast reference takes only its own values (portable: the `Fast tier` line):';
 const flatten = (text) => text.replace(/\s+/g, ' ');
 
 test('a Fast spawn passes only its own reference values, stated once in execution-profiles', () => {
@@ -1126,6 +1133,7 @@ test('every shipped selector resolves every generated site from the canonical bu
     const contract = JSON.parse(
       readFileSync(join(scripts, 'model-selection-contract.json'), 'utf8'),
     );
+    // Only the portable contract carries the per-spawn Fast values and the sites that render them.
     assert.deepEqual(contract, {
       schemaVersion: 1,
       target,
@@ -1133,6 +1141,20 @@ test('every shipped selector resolves every generated site from the canonical bu
       panelModels: PANEL_MODEL_ALLOWLIST,
       roles: expectedRoles,
       sites: expectedSites,
+      ...(target === 'portable'
+        ? {
+            fast: {
+              mappings: {
+                claude: { model: 'sonnet', effort: 'medium' },
+                codex: { model: 'gpt-5.6-luna', reasoning_effort: 'medium' },
+              },
+              sites: [
+                'build-delegated-run/initial-implementation',
+                'refactor/initial-implementation',
+              ],
+            },
+          }
+        : {}),
     });
     const harness = target === 'claude' ? 'claude' : 'codex';
     for (const site of contract.sites) {
@@ -1260,12 +1282,21 @@ test('the initial-implementation tier line renders right after its Quality-only 
       const at = lines.findIndex((line) => line.endsWith(QUALITY_BINDING));
       assert.ok(at >= 0, `${where}: the Quality-only binding renders`);
       assert.match(lines[at + 1], /^ {3}Tier `deep`: /, `${where}: ${lines[at + 1]}`);
+      // Only portable renders the Fast tier line, between the Quality line and the site line.
+      const fastLines = target === 'portable' ? 1 : 0;
+      if (fastLines) {
+        assert.match(lines[at + 2], /^ {3}Fast tier: .* \(rules: `execution-profiles`\)\.$/);
+      }
       assert.equal(
-        lines[at + 2],
+        lines[at + 2 + fastLines],
         `   Model selection site: \`${site}\` (\`shared/model-selection.md\`).`,
       );
-      assert.match(lines[at + 3], /^ {3}- Frontend: /, `${where}: ${lines[at + 3]}`);
-      const renderedSite = lines[at + 2].match(/Model selection site: `([^`]+)`/)[1];
+      assert.match(
+        lines[at + 3 + fastLines],
+        /^ {3}- Frontend: /,
+        `${where}: ${lines[at + 3 + fastLines]}`,
+      );
+      const renderedSite = lines[at + 2 + fastLines].match(/Model selection site: `([^`]+)`/)[1];
       assert.deepEqual(
         contract.sites.find(({ id }) => id === renderedSite),
         {

@@ -1,0 +1,93 @@
+{
+  "name": "A portable requalification before start makes start refuse the Fast packet, which is reclassified profile-unavailable before start is sent once more",
+  "harness": "claude",
+  "config": "true",
+  "installKind": "portable",
+  "qualification": "qualified",
+  "inventory": "active",
+  "external": [
+    {
+      "at": "before-start",
+      "operation": "requalify"
+    }
+  ],
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/a.mjs"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/b.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "excluded(profile-unavailable)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "profile-unavailable"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(profile-unavailable)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "profile-unavailable"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

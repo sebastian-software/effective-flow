@@ -16,6 +16,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { localHost, sessionOwner } from './effective-flow-state-planning-claim-core.mjs';
 import {
   PILOT_MEASUREMENT_POLICY_PROJECTION,
   PILOT_MEASUREMENT_PROTOCOL,
@@ -64,6 +65,8 @@ export const PILOT_MEASUREMENT_ERROR_CODES = Object.freeze([
   'UNSAFE_STORAGE',
   'NOT_FOUND',
   'WRITE_FAILED',
+  'ADMISSION_CHANGED',
+  'PROFILE_UNAVAILABLE',
 ]);
 
 const EXIT_CODES = Object.freeze({
@@ -81,6 +84,8 @@ const EXIT_CODES = Object.freeze({
   UNSAFE_STORAGE: 9,
   NOT_FOUND: 10,
   WRITE_FAILED: 11,
+  ADMISSION_CHANGED: 12,
+  PROFILE_UNAVAILABLE: 13,
 });
 
 const ERROR_MESSAGES = Object.freeze({
@@ -98,13 +103,28 @@ const ERROR_MESSAGES = Object.freeze({
   UNSAFE_STORAGE: 'pilot measurement storage contains an unsafe entry',
   NOT_FOUND: 'pilot measurement target does not exist',
   WRITE_FAILED: 'pilot measurement mutation could not be completed safely',
+  ADMISSION_CHANGED: 'pilot measurement admission closed before the Fast spawn',
+  PROFILE_UNAVAILABLE: 'the Fast profile is unavailable for this installation and harness',
 });
 
 const OWNER = Object.freeze({ schema: 1, owner: 'effective-flow-model-tiering-pilot' });
-const STATE_SCHEMA = 1;
-const RECORD_SCHEMA = 2;
+// Schemas of the current protocol's evidence. A generation bound to a prior protocol keeps the
+// LEGACY_* shapes: its state has no qualification snapshot, its records no `installKind`,
+// `overlapped` or `modelCompliance`, its reservations no transient owner or overlap fields, and its
+// observations and timing receipts none of the 1.3.0 fields.
+const STATE_SCHEMA = 2;
+const RECORD_SCHEMA = 3;
 const TRACE_SCHEMA = 1;
-const OBSERVATION_SCHEMA = 1;
+const OBSERVATION_SCHEMA = 2;
+const TIMING_SCHEMA = 2;
+const LEGACY_STATE_SCHEMA = 1;
+const LEGACY_RECORD_SCHEMA = 2;
+const LEGACY_OBSERVATION_SCHEMA = 1;
+const LEGACY_TIMING_SCHEMA = 1;
+const QUALIFICATION_MAX_BYTES = 64 * 1024;
+const HOST_VERSION = /^(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})$/;
+const PROBE_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+const MAPPING_IDENTITY = /^[0-9a-f]{64}$/;
 const O_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
 const READ_FLAGS = fsConstants.O_RDONLY | O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0);
 const WRITE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW;
@@ -129,17 +149,32 @@ const LIFECYCLE_LOCK_OPERATIONS = new Set([
   'purge',
   'discard-generation',
 ]);
-// The only earlier protocol a release persisted generations under: releases 1.66.0 through 1.67.1
-// all ship this digest. Derived by importing src/scripts/pilot-measurement-protocol.mjs at tag
-// effective-flow-v1.67.1 and reading PILOT_MEASUREMENT_PROTOCOL_DIGEST.
-const PREVIOUS_PROTOCOL = Object.freeze({
-  version: '1.1.0',
-  digest: 'sha256:18ff022103e4ff0f5d5aebb492f58e738fdabbbfe367f6594b8dad2c80f15e3d',
-});
-// The one-step migration suspends a generation recorded under PREVIOUS_PROTOCOL with this reason:
-// the Quality-mapping identity changed, so its evidence never continues under the current protocol.
+// The one-step migration suspends a generation recorded under a prior protocol with the reason of
+// its digest; its evidence never continues under the current protocol.
 const QUALITY_MAPPING_CHANGED = 'quality-mapping-changed';
-// Every suspension reason the protocol defines, plus the migration's, may leave a transition marker
+const PROTOCOL_PARAMETERS_CHANGED = 'protocol-parameters-changed';
+// Every earlier protocol a release persisted generations under, by digest. Each digest was derived
+// by importing src/scripts/pilot-measurement-protocol.mjs at a release tag and reading
+// PILOT_MEASUREMENT_PROTOCOL_DIGEST: 1.1.0 shipped in releases 1.66.0 through 1.67.1 (the
+// Quality-mapping identity changed after it), 1.2.0 in releases 1.68.0 through 1.76.0 (the
+// baseline, cohort, workflow, and record parameters changed after it).
+const PRIOR_PROTOCOLS = new Map([
+  [
+    'sha256:18ff022103e4ff0f5d5aebb492f58e738fdabbbfe367f6594b8dad2c80f15e3d',
+    Object.freeze({ version: '1.1.0', reason: QUALITY_MAPPING_CHANGED }),
+  ],
+  [
+    'sha256:a39232140a24ffcfb95f1165cea2343e4593c32dc3594ef81a6d9295505b099c',
+    Object.freeze({ version: '1.2.0', reason: PROTOCOL_PARAMETERS_CHANGED }),
+  ],
+]);
+function priorProtocol(digest) {
+  return PRIOR_PROTOCOLS.get(digest) ?? null;
+}
+function isLegacyDigest(digest) {
+  return PRIOR_PROTOCOLS.has(digest);
+}
+// Every suspension reason the protocol defines, plus the migrations', may leave a transition marker
 // behind, and each of them bypasses the raw-capacity check so a suspension can still be written at
 // the capacity limit.
 const SUSPENSION_REASONS = Object.freeze([
@@ -147,7 +182,7 @@ const SUSPENSION_REASONS = Object.freeze([
     ...PILOT_MEASUREMENT_POLICY_PROJECTION.pilotControlMappings
       .map(({ suspensionReason }) => suspensionReason)
       .filter((reason) => reason !== 'none'),
-    QUALITY_MAPPING_CHANGED,
+    ...[...PRIOR_PROTOCOLS.values()].map(({ reason }) => reason),
   ]),
 ]);
 const TRANSITION_MARKER_OPERATIONS = new Set([...SUSPENSION_REASONS, 'suspend', 'resume']);
@@ -1049,33 +1084,168 @@ async function withPacketLock(context, generationId, packetId, operation, deps, 
   }
 }
 
-// `previousProtocol` also admits a state bound to PREVIOUS_PROTOCOL; every other protocol identity
-// stays UNSAFE_STORAGE.
-function validatePersistedState(state, generationId, { previousProtocol = false } = {}) {
-  exactObject(state, [
-    'schema',
-    'kind',
-    'generationId',
-    'protocolVersion',
-    'protocolDigest',
-    'generationState',
-    'baselineStartedAt',
-    'activatedAt',
-    'reviewStartedAt',
-    'nextWorkflowOrdinal',
-    'nextObservationOrdinal',
+// The closed record of one installed Fast-harness qualification probe.
+function validateQualificationRecord(value) {
+  exactObject(value, [
+    'installKind',
+    'harnessFamily',
+    'outcome',
+    'hostVersion',
+    'probedOn',
+    'fastMappingIdentity',
   ]);
+  enumValue(value.installKind, PILOT_MEASUREMENT_PROTOCOL.enums.installKinds);
+  enumValue(value.harnessFamily, PILOT_MEASUREMENT_PROTOCOL.enums.harnessFamilies);
+  enumValue(value.outcome, PILOT_MEASUREMENT_PROTOCOL.enums.qualificationOutcomes);
   if (
-    state.schema !== STATE_SCHEMA ||
+    (value.hostVersion !== null &&
+      (typeof value.hostVersion !== 'string' || !HOST_VERSION.test(value.hostVersion))) ||
+    (value.outcome === 'qualified' && value.hostVersion === null) ||
+    typeof value.probedOn !== 'string' ||
+    !PROBE_DATE.test(value.probedOn) ||
+    new Date(`${value.probedOn}T00:00:00.000Z`).toISOString().slice(0, 10) !== value.probedOn ||
+    typeof value.fastMappingIdentity !== 'string' ||
+    !MAPPING_IDENTITY.test(value.fastMappingIdentity)
+  ) {
+    fail('INVALID_PAYLOAD');
+  }
+  return {
+    installKind: value.installKind,
+    harnessFamily: value.harnessFamily,
+    outcome: value.outcome,
+    hostVersion: value.hostVersion,
+    probedOn: value.probedOn,
+    fastMappingIdentity: value.fastMappingIdentity,
+  };
+}
+
+// The qualification records in canonical order, exactly one per install kind and harness family.
+function validateQualificationRecords(records) {
+  if (!Array.isArray(records) || records.length > 64) fail('INVALID_PAYLOAD');
+  const validated = records.map(validateQualificationRecord);
+  const keys = validated.map(({ installKind, harnessFamily }) => `${installKind}:${harnessFamily}`);
+  if (new Set(keys).size !== keys.length) fail('INVALID_PAYLOAD');
+  return validated.sort((left, right) =>
+    `${left.installKind}:${left.harnessFamily}`.localeCompare(
+      `${right.installKind}:${right.harnessFamily}`,
+    ),
+  );
+}
+
+// A qualification view, installed or snapshotted: `{status: 'available', schemaVersion, records}`
+// or `{status: 'unavailable'}`.
+function validateQualificationView(value) {
+  if (!isObject(value)) fail('INVALID_PAYLOAD');
+  if (value.status === 'unavailable') {
+    exactObject(value, ['status']);
+    return { status: 'unavailable' };
+  }
+  exactObject(value, ['status', 'schemaVersion', 'records']);
+  if (
+    value.status !== 'available' ||
+    value.schemaVersion !== PILOT_MEASUREMENT_PROTOCOL.harnessQualification.schemaVersion
+  ) {
+    fail('INVALID_PAYLOAD');
+  }
+  const records = validateQualificationRecords(value.records);
+  if (canonicalizeJson(records) !== canonicalizeJson(value.records)) fail('INVALID_PAYLOAD');
+  return { status: 'available', schemaVersion: value.schemaVersion, records };
+}
+
+// The installed qualification file beside the pilot scripts, read only from the installed skill
+// root (`deps.harnessQualificationPath` replaces the location in tests). An absent, oversized,
+// unreadable, or malformed file is `unavailable`, which makes portable Fast unavailable; this read
+// never fails an operation.
+async function readInstalledQualification(deps) {
+  const location =
+    deps.harnessQualificationPath ??
+    new URL(`./${PILOT_MEASUREMENT_PROTOCOL.harnessQualification.file}`, import.meta.url);
+  let handle;
+  try {
+    handle = await open(location, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0));
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > QUALIFICATION_MAX_BYTES) return { status: 'unavailable' };
+    const parsed = JSON.parse(await handle.readFile('utf8'));
+    exactObject(parsed, ['schemaVersion', 'records']);
+    if (parsed.schemaVersion !== PILOT_MEASUREMENT_PROTOCOL.harnessQualification.schemaVersion) {
+      return { status: 'unavailable' };
+    }
+    return {
+      status: 'available',
+      schemaVersion: parsed.schemaVersion,
+      records: validateQualificationRecords(parsed.records),
+    };
+  } catch {
+    return { status: 'unavailable' };
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+function qualificationRecord(view, installKind, harnessFamily) {
+  if (view?.status !== 'available') return null;
+  return (
+    view.records.find(
+      (record) => record.installKind === installKind && record.harnessFamily === harnessFamily,
+    ) ?? null
+  );
+}
+
+// Gate row 1 for a portable Fast selection: the harness is `qualified` in the generation snapshot
+// and the snapshot's Fast-mapping identity equals the installed record's. Native installations keep
+// their sidecar rule. The host version is checked per packet in verification, not here.
+async function assertFastProfileAvailable(state, installKind, harnessFamily, deps) {
+  if (installKind !== 'portable') return;
+  const snapshotted = qualificationRecord(state.harnessQualification, installKind, harnessFamily);
+  if (snapshotted?.outcome !== 'qualified') fail('PROFILE_UNAVAILABLE');
+  const installed = qualificationRecord(
+    await readInstalledQualification(deps),
+    installKind,
+    harnessFamily,
+  );
+  if (installed === null || installed.fastMappingIdentity !== snapshotted.fastMappingIdentity) {
+    fail('PROFILE_UNAVAILABLE');
+  }
+}
+
+const LEGACY_STATE_FIELDS = Object.freeze([
+  'schema',
+  'kind',
+  'generationId',
+  'protocolVersion',
+  'protocolDigest',
+  'generationState',
+  'baselineStartedAt',
+  'activatedAt',
+  'reviewStartedAt',
+  'nextWorkflowOrdinal',
+  'nextObservationOrdinal',
+]);
+
+// `previousProtocol` also admits a state bound to a prior protocol in PRIOR_PROTOCOLS, in that
+// protocol's shape; every other protocol identity stays UNSAFE_STORAGE.
+function validatePersistedState(state, generationId, { previousProtocol = false } = {}) {
+  const prior = isObject(state) ? priorProtocol(state.protocolDigest) : null;
+  const legacy = previousProtocol && prior !== null;
+  exactObject(
+    state,
+    legacy ? LEGACY_STATE_FIELDS : [...LEGACY_STATE_FIELDS, 'harnessQualification'],
+  );
+  if (!legacy) {
+    try {
+      validateQualificationView(state.harnessQualification);
+    } catch (error) {
+      fail('UNSAFE_STORAGE', { cause: error });
+    }
+  }
+  if (
+    state.schema !== (legacy ? LEGACY_STATE_SCHEMA : STATE_SCHEMA) ||
     state.kind !== 'pilot-generation-state' ||
     state.generationId !== generationId ||
-    !(
-      (state.protocolVersion === PILOT_MEASUREMENT_PROTOCOL_VERSION &&
+    !(legacy
+      ? state.protocolVersion === prior.version
+      : state.protocolVersion === PILOT_MEASUREMENT_PROTOCOL_VERSION &&
         state.protocolDigest === PILOT_MEASUREMENT_PROTOCOL_DIGEST) ||
-      (previousProtocol &&
-        state.protocolVersion === PREVIOUS_PROTOCOL.version &&
-        state.protocolDigest === PREVIOUS_PROTOCOL.digest)
-    ) ||
     !PILOT_MEASUREMENT_POLICY_PROJECTION.generationStates.includes(state.generationState) ||
     state.generationState === 'none' ||
     !Number.isSafeInteger(state.nextWorkflowOrdinal) ||
@@ -1232,20 +1402,177 @@ async function assertAdmissionOpen(context, evidence) {
   assertEvidenceHealthy(context, evidence);
 }
 
-// Busy means another run's reservation, packet timing, or observation is still open while the
-// evidence is otherwise sound. A crashed run's reservation is indistinguishable from a live one
-// and stays busy until reconcile-record resolves it.
-function evidenceBusy(evidence) {
-  return (
-    evidence.invalidMembers.length === 0 &&
-    evidence.orphanTemporaries.length === 0 &&
-    (evidence.incompleteRecords.length > 0 ||
-      evidence.incompleteTimings.length > 0 ||
-      evidence.incompleteObservations.length > 0)
-  );
+// The admission check for a new reservation or observation: open reservations, packet timings, and
+// observations of other runs are allowed (they overlap), while invalid members, orphan temporaries,
+// a timing receipt left behind a terminal record, and a foreign lock still fail closed.
+function assertEvidenceSound(context, evidence) {
+  if (
+    evidence.invalidMembers.length > 0 ||
+    evidence.orphanTemporaries.length > 0 ||
+    evidence.leftoverTimings.length > 0
+  ) {
+    fail('INCOMPLETE_EVIDENCE');
+  }
+  if (evidence.locks.some(({ nonce }) => nonce !== context.activeLock?.nonce)) {
+    fail('UNSAFE_STORAGE');
+  }
 }
 
-// A generation bound to PREVIOUS_PROTOCOL loads only for callers passing `previousProtocol`
+// Marks overlap without linkage: every open workflow reservation other than `exceptRunId` gets its
+// transient overlap flag set. Nothing records which reservation or observation caused it.
+async function flagOpenReservations(context, evidence, exceptRunId, operation, deps) {
+  for (const workflow of evidence.workflows) {
+    if (
+      workflow.kind !== 'workflow-reservation' ||
+      workflow.runId === exceptRunId ||
+      workflow.overlapFlag
+    ) {
+      continue;
+    }
+    await atomicWrite(
+      context,
+      path.join(evidence.root, 'records', `${workflow.runId}.json`),
+      { ...workflow, overlapFlag: true },
+      operation,
+      evidence.inventory.generationId,
+      deps,
+      PILOT_MEASUREMENT_PROTOCOL.limits.maxWorkflowRecordBytes,
+    );
+  }
+}
+
+// Whether a workflow reservation other than `runId` is open, and (with `observations`) whether a
+// gate observation is open. It reads under the caller's lifecycle or packet lock, which excludes
+// every writer of reservations and observations.
+async function otherReservationOpen(root, generationId, runId, { observations = false } = {}) {
+  for (const entry of await safeEntries(path.join(root, 'records'))) {
+    const match = /^([A-Za-z0-9_-]{32,128})\.json$/.exec(entry.name);
+    if (!entry.isFile() || match === null || match[1] === runId) continue;
+    const value = await readEvidenceJson(path.join(root, 'records', entry.name), {
+      maximum: PILOT_MEASUREMENT_PROTOCOL.limits.maxWorkflowRecordBytes,
+    });
+    if (validateStoredWorkflow(value, generationId, match[1]).kind === 'workflow-reservation') {
+      return true;
+    }
+  }
+  if (!observations) return false;
+  for (const entry of await safeEntries(path.join(root, 'gate-observations'))) {
+    const match = /^([A-Za-z0-9_-]{32,128})\.json$/.exec(entry.name);
+    if (!entry.isFile() || match === null) continue;
+    const value = await readEvidenceJson(path.join(root, 'gate-observations', entry.name));
+    if (
+      validateStoredObservation(value, generationId, match[1]).kind ===
+      'gate-observation-reservation'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Whether a lock staging file in `locks` is a leftover: its writer is provably gone, judged like
+// `reconcile-temporary` judges it, by the `ownerPid` of the staged lock record (a reused pid keeps
+// a real orphan looking live, the same limit). A stage that vanished meanwhile is none. A stage
+// without a valid record also counts, failing safe: a live writer's stage is unparseable only for
+// the instant between its exclusive create and its write, and closing Fast admission then costs
+// only a Quality start.
+async function orphanedLockStaging(target, generationId, deps) {
+  let value;
+  try {
+    value = await readJson(target, { missing: true });
+    if (value === null) return false;
+    validateStagedLockRecord(value, generationId, path.basename(target));
+  } catch {
+    return true;
+  }
+  return probePid(value.ownerPid, deps) === 'stale-provable';
+}
+
+// Whether generation evidence other than `runId`'s own holds a leftover that closes Fast admission:
+// a packet timing receipt of another run (also one left behind by a terminal record whose finalize
+// or reconcile-record faulted before removing it), a records member of no known shape, a temporary
+// file without a held owner lock, or a lock staging file whose writer is provably gone. It reads
+// under the caller's packet lock: concurrent packet writers stage temporaries under their held
+// lock, and a concurrent lock acquisition stages its lock record before any lock exists.
+async function foreignEvidenceLeftover(root, generationId, runId, deps) {
+  const temporaries = [];
+  for (const directory of ['', 'records', 'traces', 'gate-observations', 'summaries', 'locks']) {
+    for (const entry of await safeEntries(path.join(root, directory))) {
+      if (entry.name.startsWith('.tmp-')) {
+        if (directory !== 'locks') {
+          temporaries.push(path.join(root, directory, entry.name));
+        } else if (
+          await orphanedLockStaging(path.join(root, 'locks', entry.name), generationId, deps)
+        ) {
+          // No held lock vouches for a lock staging file; the staged record names its writer.
+          return true;
+        }
+        continue;
+      }
+      if (directory !== 'records') continue;
+      const timing = /^([A-Za-z0-9_-]{32,128})\.[A-Za-z0-9_-]{32,128}\.timing\.json$/.exec(
+        entry.name,
+      );
+      const workflowName = /^[A-Za-z0-9_-]{32,128}\.json$/.test(entry.name);
+      if (
+        !entry.isFile() ||
+        (timing === null && !workflowName) ||
+        (timing !== null && timing[1] !== runId)
+      ) {
+        return true;
+      }
+    }
+  }
+  if (temporaries.length === 0) return false;
+  const heldNonces = new Set();
+  for (const entry of await safeEntries(path.join(root, 'locks'))) {
+    if (!entry.isFile() || entry.name.startsWith('.tmp-')) continue;
+    const lock = await readJson(path.join(root, 'locks', entry.name), { missing: true });
+    if (lock !== null) heldNonces.add(lock.nonce);
+  }
+  for (const target of temporaries) {
+    let ownerNonce = null;
+    try {
+      ({ ownerNonce } = temporaryIdentity(path.basename(target), generationId));
+    } catch {}
+    // A writer removes its temporary before releasing its lock, so a temporary still present after
+    // the lock scan found no held owner lock is a leftover.
+    if (!heldNonces.has(ownerNonce) && (await pathExists(target))) return true;
+  }
+  return false;
+}
+
+// The owning session process of a new reservation, as a reservation-salted digest of host name,
+// pid, and pid start time (resolved like the planning claims), plus the reservation time.
+async function reservationOwner(deps) {
+  const { pid, pidStartTime } = await sessionOwner({ runner: deps.runner }, deps);
+  const ownerSalt = randomOpaque(deps, 24);
+  return {
+    ownerSalt,
+    ownerDigest: canonicalDigest({ salt: ownerSalt, hostname: localHost(deps), pid, pidStartTime }),
+  };
+}
+
+// Busy means a workflow reservation, packet timing, or gate observation is still open while the
+// evidence is otherwise sound. A crashed run's reservation is indistinguishable from a live one:
+// only its owning run can finalize or reconcile it (reconcile-record needs that run's workflow
+// capability), so an orphan otherwise stays busy until the generation is discarded.
+function evidenceBusy(evidence) {
+  return busyCause(evidence) !== null;
+}
+
+// The busy cause: `open-reservations` while a workflow reservation or packet timing is open, and
+// `open-observations` while only gate observations are, such as one a `merge-gate` run keeps open
+// across `SUSPENDED host-pr-watch` re-dispatches until that run finalizes it.
+function busyCause(evidence) {
+  if (evidence.invalidMembers.length > 0 || evidence.orphanTemporaries.length > 0) return null;
+  if (evidence.incompleteRecords.length > 0 || evidence.incompleteTimings.length > 0) {
+    return 'open-reservations';
+  }
+  return evidence.incompleteObservations.length > 0 ? 'open-observations' : null;
+}
+
+// A generation bound to a prior protocol loads only for callers passing `previousProtocol`
 // (inventory, begin-review, the gate-observation admission check, and the suspension writers);
 // every other caller gets PROTOCOL_DRIFT, so its evidence is inspected, reviewed, or discarded but
 // never extended or resumed. Until the migration persists, a stored baseline or active state reads
@@ -1261,7 +1588,7 @@ async function loadState(context, generationId, { previousProtocol = false } = {
     if (error instanceof PilotMeasurementError && error.code === 'PROTOCOL_DRIFT') throw error;
     fail('UNSAFE_STORAGE', { cause: error });
   }
-  if (state.protocolDigest !== PREVIOUS_PROTOCOL.digest) {
+  if (!isLegacyDigest(state.protocolDigest)) {
     return { root, state, migrationPending: false };
   }
   if (!previousProtocol) fail('PROTOCOL_DRIFT');
@@ -1276,19 +1603,20 @@ async function loadState(context, generationId, { previousProtocol = false } = {
   };
 }
 
-// A previous-protocol generation still needs the migration while it stores baseline or active
-// state, its suspension lacks the boundary reason, or the migration's own marker is pending. A
-// review generation is already closed to admission and keeps its state.
+// A prior-protocol generation still needs the migration while it stores baseline or active state,
+// its suspension lacks the boundary reason of its digest, or the migration's own marker is pending.
+// A review generation is already closed to admission and keeps its state.
 async function previousProtocolMigrationPending(root, state) {
   if (state.generationState === 'review') return false;
-  if ((await transitionMarker(root))?.operation === QUALITY_MAPPING_CHANGED) return true;
+  const { reason } = priorProtocol(state.protocolDigest);
+  if ((await transitionMarker(root))?.operation === reason) return true;
   if (state.generationState !== 'suspended') return true;
-  return !(await suspensionValue(root))?.reasons.includes(QUALITY_MAPPING_CHANGED);
+  return !(await suspensionValue(root))?.reasons.includes(reason);
 }
 
 async function storedPreviousProtocolState(root, generationId) {
   const stored = await readJson(path.join(root, 'state.json'), { missing: true });
-  if (stored?.protocolDigest !== PREVIOUS_PROTOCOL.digest) return null;
+  if (!isObject(stored) || !isLegacyDigest(stored.protocolDigest)) return null;
   try {
     return validatePersistedState(stored, generationId, { previousProtocol: true });
   } catch (error) {
@@ -1296,10 +1624,10 @@ async function storedPreviousProtocolState(root, generationId) {
   }
 }
 
-// One-step migration across the Quality-mapping generation boundary. withLock runs it under the
-// lifecycle lock before every locked operation except the review exit; it moves a pending
-// previous-protocol generation to suspended(`quality-mapping-changed`) through the marker-guarded
-// suspension write, keeps the stored protocol binding of all its evidence, and is a no-op once that
+// One-step migration across a protocol generation boundary. withLock runs it under the lifecycle
+// lock before every locked operation except the review exit; it moves a pending prior-protocol
+// generation to suspended with the reason of its digest (`quality-mapping-changed` for 1.1.0,
+// `protocol-parameters-changed` for 1.2.0) through the marker-guarded suspension write, keeps the stored protocol binding of all its evidence, and is a no-op once that
 // state is persisted. A leftover suspension-reason marker is completed first; a leftover suspend or
 // resume marker cannot be adopted, so the migration leaves it in place without failing: the read
 // view already reports the generation suspended, and only review and discard remain.
@@ -1315,7 +1643,8 @@ async function migratePreviousProtocolGeneration(context, generationId, deps) {
     state = await storedPreviousProtocolState(root, generationId);
     if (!(await previousProtocolMigrationPending(root, state))) return;
   }
-  await writeSuspension(context, root, generationId, state, QUALITY_MAPPING_CHANGED, [], deps);
+  const { reason } = priorProtocol(state.protocolDigest);
+  await writeSuspension(context, root, generationId, state, reason, [], deps);
 }
 
 function commonInput(input, extraRequired = [], optional = []) {
@@ -1382,7 +1711,7 @@ async function ensureGenerationDirectories(context, generationId, deps) {
   return root;
 }
 
-function initialGenerationState(generationId, deps) {
+function initialGenerationState(generationId, harnessQualification, deps) {
   return {
     schema: STATE_SCHEMA,
     kind: 'pilot-generation-state',
@@ -1395,6 +1724,7 @@ function initialGenerationState(generationId, deps) {
     reviewStartedAt: null,
     nextWorkflowOrdinal: 1,
     nextObservationOrdinal: 1,
+    harnessQualification,
   };
 }
 
@@ -1418,8 +1748,8 @@ async function inspectGenerationInitialization(root, generationId) {
       state = validatePersistedState(await readJson(path.join(root, entry.name)), generationId, {
         previousProtocol: true,
       });
-      // A previous-protocol generation is never adopted as a new baseline.
-      if (state.protocolDigest === PREVIOUS_PROTOCOL.digest) fail('INVALID_STATE');
+      // A prior-protocol generation is never adopted as a new baseline.
+      if (isLegacyDigest(state.protocolDigest)) fail('INVALID_STATE');
       continue;
     }
     if (
@@ -1590,7 +1920,7 @@ function validateStoredCost(value) {
   return value;
 }
 
-function validateStoredReservationPacket(value, generationState) {
+function validateStoredReservationPacket(value, generationState, legacy = false) {
   exactObject(value, [
     'packetId',
     'selectedProfile',
@@ -1605,6 +1935,7 @@ function validateStoredReservationPacket(value, generationState) {
     wouldBeFastEligible: value.wouldBeFastEligible,
     gate: value.gate,
   });
+  if (legacy && packet.gate.firstReason === 'correction-pass') fail('INVALID_PAYLOAD');
   assertPacketPolicy(packet, generationState);
   return value;
 }
@@ -1618,8 +1949,32 @@ const ATTEMPTS_BY_COMPLETION = Object.freeze({
   abandoned: ['unknown'],
 });
 
-function validateStoredFinalPacket(value, generationState, completionStatus) {
-  exactObject(value, [
+// `admission-changed` is the one fallback that is no escalation: the packet fell back to Quality
+// before its implementation started and consumed no attempt of the faster profile. Every other
+// fallback other than `none` is an escalation.
+function fallbackEscalates(fallback) {
+  return fallback !== 'none' && fallback !== 'admission-changed';
+}
+
+// The model-compliance values a final packet may carry: a Fast spawn that ran reports its
+// verification outcome; a Quality packet, an admission-changed fallback, or a packet that never
+// started has nothing to verify. Only a portable Fast spawn has a per-packet verification
+// adapter; a native Fast spawn's sidecar model is never observed, so it stays `unverified`.
+function allowedModelCompliance(selectedProfile, fallback, attempt, installKind) {
+  if (selectedProfile !== 'fast' || fallback === 'admission-changed' || attempt === 'not-started') {
+    return ['not-applicable'];
+  }
+  return installKind === 'portable' ? ['verified', 'mismatch', 'unverified'] : ['unverified'];
+}
+
+function validateStoredFinalPacket(
+  value,
+  generationState,
+  completionStatus,
+  legacy = false,
+  installKind = undefined,
+) {
+  const fields = [
     'packetId',
     'selectedProfile',
     'wouldBeFastEligible',
@@ -1629,7 +1984,8 @@ function validateStoredFinalPacket(value, generationState, completionStatus) {
     'escalated',
     'costProxy',
     'attempt',
-  ]);
+  ];
+  exactObject(value, legacy ? fields : [...fields, 'modelCompliance']);
   opaque(value.packetId);
   const attempt = enumValue(value.attempt, PILOT_MEASUREMENT_PROTOCOL.enums.packetAttempts);
   if (!ATTEMPTS_BY_COMPLETION[completionStatus]?.includes(attempt)) fail('INVALID_PAYLOAD');
@@ -1637,6 +1993,7 @@ function validateStoredFinalPacket(value, generationState, completionStatus) {
     value.firstGateReason === null
       ? null
       : enumValue(value.firstGateReason, PILOT_MEASUREMENT_POLICY_PROJECTION.gateReasons);
+  if (legacy && firstReason === 'correction-pass') fail('INVALID_PAYLOAD');
   const eligible = firstReason === null;
   if (booleanValue(value.wouldBeFastEligible) !== eligible) fail('INVALID_PAYLOAD');
   const selectedProfile = enumValue(value.selectedProfile, ['quality', 'fast']);
@@ -1652,17 +2009,29 @@ function validateStoredFinalPacket(value, generationState, completionStatus) {
   const fallback = enumValue(value.fallback, PILOT_MEASUREMENT_POLICY_PROJECTION.fallbacks);
   const escalated = booleanValue(value.escalated);
   if (
-    (fallback === 'none') !== !escalated ||
+    fallbackEscalates(fallback) !== escalated ||
+    (legacy && fallback === 'admission-changed') ||
     (generationState === 'baseline' && (fallback !== 'none' || escalated)) ||
     (selectedProfile === 'quality' && (fallback !== 'none' || escalated))
   ) {
     fail('INVALID_PAYLOAD');
   }
+  if (
+    !legacy &&
+    !allowedModelCompliance(selectedProfile, fallback, attempt, installKind).includes(
+      value.modelCompliance,
+    )
+  ) {
+    fail('INVALID_PAYLOAD');
+  }
   validateStoredCost(value.costProxy);
+  // An abandoned packet keeps the pre-spawn `admission-changed` fallback its receipt proved; it
+  // still has no duration, escalation, or cost.
+  const unstartedFallbacks = attempt === 'unknown' ? ['none', 'admission-changed'] : ['none'];
   if (
     attempt !== 'started' &&
     (value.implementationDuration.status !== 'unavailable' ||
-      fallback !== 'none' ||
+      !unstartedFallbacks.includes(fallback) ||
       escalated ||
       value.costProxy.status !== 'unavailable')
   ) {
@@ -1671,6 +2040,23 @@ function validateStoredFinalPacket(value, generationState, completionStatus) {
   return value;
 }
 
+// A run started by `iterate` records `correction-pass` on every packet (gate priority 0), so a
+// record either carries it on all packets or on none.
+function assertCorrectionPassUniform(firstReasons) {
+  const correction = firstReasons.filter((reason) => reason === 'correction-pass').length;
+  if (correction !== 0 && correction !== firstReasons.length) fail('INVALID_PAYLOAD');
+}
+
+// The transient reservation fields: the owning session process as a reservation-salted digest of
+// host name, pid, and pid start time, the reservation time, and the overlap flag. They live only in
+// an open reservation and never reach a terminal record.
+const RESERVATION_TRANSIENT_FIELDS = Object.freeze([
+  'ownerSalt',
+  'ownerDigest',
+  'reservedAt',
+  'overlapFlag',
+]);
+
 function validateStoredWorkflow(
   value,
   generationId,
@@ -1678,6 +2064,7 @@ function validateStoredWorkflow(
   protocolDigest = PILOT_MEASUREMENT_PROTOCOL_DIGEST,
 ) {
   return incompleteStoredValue(() => {
+    const legacy = isLegacyDigest(protocolDigest);
     const common = [
       'schema',
       'kind',
@@ -1693,22 +2080,26 @@ function validateStoredWorkflow(
       'ordinal',
       'packets',
     ];
+    if (!legacy) common.push('installKind');
     const reservation = value.kind === 'workflow-reservation';
+    const terminal = [
+      'validation',
+      'review',
+      'completionStatus',
+      'qualityCorrectionRounds',
+      'detailTrace',
+    ];
+    if (!legacy) terminal.push('overlapped');
     exactObject(
       value,
       reservation
-        ? common
-        : [
-            ...common,
-            'validation',
-            'review',
-            'completionStatus',
-            'qualityCorrectionRounds',
-            'detailTrace',
-          ],
+        ? legacy
+          ? common
+          : [...common, ...RESERVATION_TRANSIENT_FIELDS]
+        : [...common, ...terminal],
     );
     if (
-      value.schema !== RECORD_SCHEMA ||
+      value.schema !== (legacy ? LEGACY_RECORD_SCHEMA : RECORD_SCHEMA) ||
       !['workflow-reservation', 'workflow-record'].includes(value.kind) ||
       value.runId !== runId ||
       value.generationId !== generationId ||
@@ -1723,6 +2114,24 @@ function validateStoredWorkflow(
     enumValue(value.generationState, ['baseline', 'active']);
     enumValue(value.workflow, PILOT_MEASUREMENT_PROTOCOL.enums.workflows);
     enumValue(value.harnessFamily, PILOT_MEASUREMENT_PROTOCOL.enums.harnessFamilies);
+    if (legacy && value.workflow === 'fix') fail('INVALID_PAYLOAD');
+    if (!legacy) {
+      enumValue(value.installKind, PILOT_MEASUREMENT_PROTOCOL.enums.installKinds);
+      if (reservation) {
+        opaque(value.ownerSalt);
+        digestValue(value.ownerDigest);
+        if (
+          typeof value.reservedAt !== 'string' ||
+          Number.isNaN(Date.parse(value.reservedAt)) ||
+          new Date(value.reservedAt).toISOString() !== value.reservedAt
+        ) {
+          fail('INVALID_PAYLOAD');
+        }
+        booleanValue(value.overlapFlag);
+      } else {
+        booleanValue(value.overlapped);
+      }
+    }
     integer(value.ordinal);
     if (value.ordinal < 1 || !Array.isArray(value.packets) || value.packets.length === 0) {
       fail('INVALID_PAYLOAD');
@@ -1734,8 +2143,23 @@ function validateStoredWorkflow(
       ? null
       : enumValue(value.completionStatus, PILOT_MEASUREMENT_PROTOCOL.enums.completionStatuses);
     for (const packet of value.packets) {
-      if (reservation) validateStoredReservationPacket(packet, value.generationState);
-      else validateStoredFinalPacket(packet, value.generationState, completionStatus);
+      if (reservation) validateStoredReservationPacket(packet, value.generationState, legacy);
+      else {
+        validateStoredFinalPacket(
+          packet,
+          value.generationState,
+          completionStatus,
+          legacy,
+          value.installKind,
+        );
+      }
+    }
+    if (!legacy) {
+      assertCorrectionPassUniform(
+        value.packets.map((packet) =>
+          reservation ? packet.gate.firstReason : packet.firstGateReason,
+        ),
+      );
     }
     if (new Set(value.packets.map(({ packetId }) => packetId)).size !== value.packets.length) {
       fail('INVALID_PAYLOAD');
@@ -1753,7 +2177,7 @@ function validateStoredWorkflow(
   });
 }
 
-function validateStoredTiming(value, generationId, runId, packetId) {
+function validateStoredTiming(value, generationId, runId, packetId, legacy = false) {
   return incompleteStoredValue(() => {
     const common = [
       'schema',
@@ -1769,14 +2193,14 @@ function validateStoredTiming(value, generationId, runId, packetId) {
       'startMonotonicNs',
       'startBootEstimateMs',
     ];
-    exactObject(
-      value,
-      value.status === 'finished'
-        ? [...common, 'duration', 'finishWallMs', 'finishMonotonicNs', 'finishBootEstimateMs']
-        : common,
-    );
+    // A 1.3.0 receipt names whether it started the packet's Fast attempt or its pre-spawn
+    // `admission-changed` Quality fallback, and its finished form carries the model compliance.
+    if (!legacy) common.push('fallback');
+    const finished = ['duration', 'finishWallMs', 'finishMonotonicNs', 'finishBootEstimateMs'];
+    if (!legacy) finished.push('modelCompliance');
+    exactObject(value, value.status === 'finished' ? [...common, ...finished] : common);
     if (
-      value.schema !== 1 ||
+      value.schema !== (legacy ? LEGACY_TIMING_SCHEMA : TIMING_SCHEMA) ||
       value.kind !== 'packet-timing-receipt' ||
       !['started', 'finished'].includes(value.status) ||
       value.generationId !== generationId ||
@@ -1791,7 +2215,10 @@ function validateStoredTiming(value, generationId, runId, packetId) {
     integer(value.startWallMs);
     integer(value.startBootEstimateMs);
     if (!/^(?:0|[1-9][0-9]*)$/.test(value.startMonotonicNs)) fail('INVALID_PAYLOAD');
+    if (!legacy) enumValue(value.fallback, ['none', 'admission-changed']);
     if (value.status === 'finished') {
+      if (!legacy)
+        enumValue(value.modelCompliance, PILOT_MEASUREMENT_PROTOCOL.enums.modelCompliance);
       validateStoredDuration(value.duration);
       integer(value.finishWallMs);
       integer(value.finishBootEstimateMs);
@@ -1808,6 +2235,7 @@ function validateStoredObservation(
   protocolDigest = PILOT_MEASUREMENT_PROTOCOL_DIGEST,
 ) {
   return incompleteStoredValue(() => {
+    const legacy = isLegacyDigest(protocolDigest);
     const common = [
       'schema',
       'kind',
@@ -1820,6 +2248,7 @@ function validateStoredObservation(
       'harnessFamily',
       'ordinal',
     ];
+    if (!legacy) common.push('installKind');
     const reservation = value.kind === 'gate-observation-reservation';
     exactObject(
       value,
@@ -1835,7 +2264,7 @@ function validateStoredObservation(
           ],
     );
     if (
-      value.schema !== OBSERVATION_SCHEMA ||
+      value.schema !== (legacy ? LEGACY_OBSERVATION_SCHEMA : OBSERVATION_SCHEMA) ||
       !['gate-observation-reservation', 'gate-observation'].includes(value.kind) ||
       value.observationId !== observationId ||
       value.generationId !== generationId ||
@@ -1847,6 +2276,7 @@ function validateStoredObservation(
     enumValue(value.cohort, PILOT_MEASUREMENT_PROTOCOL.enums.cohorts);
     enumValue(value.mode, PILOT_MEASUREMENT_PROTOCOL.enums.observationModes);
     enumValue(value.harnessFamily, PILOT_MEASUREMENT_PROTOCOL.enums.harnessFamilies);
+    if (!legacy) enumValue(value.installKind, PILOT_MEASUREMENT_PROTOCOL.enums.installKinds);
     integer(value.ordinal);
     if (value.ordinal < 1) fail('INVALID_PAYLOAD');
     if (!reservation) {
@@ -1980,7 +2410,15 @@ async function evidenceInventory(context, generationId, options) {
       maximum: PILOT_MEASUREMENT_PROTOCOL.limits.maxWorkflowRecordBytes,
     });
     if (timingMatch !== null) {
-      timings.push(validateStoredTiming(value, generationId, timingMatch[1], timingMatch[2]));
+      timings.push(
+        validateStoredTiming(
+          value,
+          generationId,
+          timingMatch[1],
+          timingMatch[2],
+          isLegacyDigest(state.protocolDigest),
+        ),
+      );
     } else {
       workflows.push(
         validateStoredWorkflow(value, generationId, workflowMatch[1], state.protocolDigest),
@@ -2009,16 +2447,31 @@ async function evidenceInventory(context, generationId, options) {
       packetIds.add(packet.packetId);
     }
   }
+  // A receipt binds to its open reservation by the packet capability hash. A terminal record drops
+  // that hash, so a receipt it kept because its finalize or reconcile-record faulted before removing
+  // it binds by membership: a packet of that record whose attempt is not `not-started`. Such a
+  // leftover stays an open packet timing, which keeps activation and aggregation closed, and closes
+  // new admission until reconcile-record (which authenticates the workflow capability) drains it.
+  // Any other receipt fails closed.
+  const leftoverTimings = [];
   for (const timing of timings) {
     const workflow = workflowById.get(timing.runId);
     const packet = workflow?.packets.find(({ packetId }) => packetId === timing.packetId);
     if (
-      workflow?.kind !== 'workflow-reservation' ||
+      packet !== undefined &&
+      workflow.kind === 'workflow-reservation' &&
+      packet.packetCapabilityHash === timing.packetCapabilityHash
+    ) {
+      continue;
+    }
+    if (
       packet === undefined ||
-      packet.packetCapabilityHash !== timing.packetCapabilityHash
+      workflow.kind !== 'workflow-record' ||
+      packet.attempt === 'not-started'
     ) {
       fail('INCOMPLETE_EVIDENCE');
     }
+    leftoverTimings.push(timing.packetId);
   }
 
   const traceRunIds = new Set();
@@ -2197,6 +2650,7 @@ async function evidenceInventory(context, generationId, options) {
     packetIds,
     incompleteRecords,
     incompleteTimings,
+    leftoverTimings: leftoverTimings.sort(),
     incompleteObservations,
     orphanTemporaries,
     inventory,
@@ -2240,12 +2694,14 @@ async function inventoryOperation(input, deps) {
   const discovered = await discoverGenerationIds(context);
   if (input.generationId === undefined && discovered.length > 1) fail('INVALID_STATE');
   const generationId = input.generationId ?? discovered[0] ?? null;
+  const installed = await readInstalledQualification(deps);
   if (generationId === null) {
     return {
       generationId: null,
       generationStatus: 'absent',
       normalTombstones: 0,
       discardTombstones: 0,
+      qualification: { installed, snapshot: null },
     };
   }
   const tombstones = context.exists
@@ -2259,9 +2715,11 @@ async function inventoryOperation(input, deps) {
       generationStatus: 'absent',
       normalTombstones,
       discardTombstones,
+      qualification: { installed, snapshot: null },
     };
   }
   const evidence = await evidenceInventory(context, generationId, { previousProtocol: true });
+  const legacy = isLegacyDigest(evidence.state.protocolDigest);
   return {
     generationId,
     generationStatus: 'present',
@@ -2273,8 +2731,14 @@ async function inventoryOperation(input, deps) {
     rawBytes: evidence.inventory.rawBytes,
     transitionPending: evidence.transition !== null || evidence.migrationPending,
     protocolCurrent: evidence.state.protocolDigest === PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+    // Activation needs an idle generation: an open workflow reservation, packet timing, or gate
+    // observation blocks it until its own run finalizes it (or reconciles a workflow reservation
+    // with `reconcile-record`). An orphan clears only by discarding the generation; purge needs a
+    // complete aggregate and is unreachable while anything is open.
+    busyCause: busyCause(evidence),
     normalTombstones,
     discardTombstones,
+    qualification: { installed, snapshot: legacy ? null : evidence.state.harnessQualification },
   };
 }
 
@@ -2294,6 +2758,9 @@ async function beginBaseline(input, deps) {
   assertProtocol(input.protocolVersion, input.protocolDigest);
   const context = await ensureNamespace(input, deps);
   const recoveredNamespaceLock = await recoverNamespaceLock(context, deps);
+  // The generation keeps the qualification it began under; a harness that qualifies later needs a
+  // new generation.
+  const harnessQualification = await readInstalledQualification(deps);
   return await withNamespaceLock(context, 'begin-baseline', deps, async () => {
     const recovered = await recoverGenerationInitialization(context, deps);
     if (recovered !== null) {
@@ -2303,6 +2770,7 @@ async function beginBaseline(input, deps) {
         generationState: recovered.state.generationState,
         protocolVersion: recovered.state.protocolVersion,
         protocolDigest: recovered.state.protocolDigest,
+        harnessQualification: recovered.state.harnessQualification,
       };
     }
     let generationId;
@@ -2316,7 +2784,7 @@ async function beginBaseline(input, deps) {
       }
     }
     if (root === undefined || generationId === undefined) fail('INVALID_STATE');
-    const state = initialGenerationState(generationId, deps);
+    const state = initialGenerationState(generationId, harnessQualification, deps);
     await atomicWrite(
       context,
       path.join(root, 'state.json'),
@@ -2337,6 +2805,7 @@ async function beginBaseline(input, deps) {
       generationState: 'baseline',
       protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
       protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+      harnessQualification,
     };
   });
 }
@@ -2359,20 +2828,13 @@ async function activate(input, deps) {
     });
     if (evidenceBusy(evidence)) return notReady(['busy']);
     assertEvidenceHealthy(context, evidence);
-    const elapsed = nowMs(deps) - Date.parse(evidence.state.baselineStartedAt);
     const records = evidence.workflows.filter(({ kind }) => kind === 'workflow-record');
-    const eligiblePackets = records
-      .filter((record) => record.cohort === 'baseline' && record.completionStatus === 'completed')
-      .flatMap((record) => record.packets)
-      .filter((packet) => packet.wouldBeFastEligible).length;
-    const unmet = [];
-    if (elapsed < PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * 86_400_000) {
-      unmet.push('window');
+    const { eligiblePackets, countedRecords } = baselineProgress(records);
+    const { baselineEligiblePacketMinimum, baselineRecordMinimum } =
+      PILOT_MEASUREMENT_PROTOCOL.aggregation;
+    if (eligiblePackets < baselineEligiblePacketMinimum || countedRecords < baselineRecordMinimum) {
+      return notReady(['sample']);
     }
-    if (eligiblePackets < PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum) {
-      unmet.push('sample');
-    }
-    if (unmet.length > 0) return notReady(unmet);
     const next = { ...evidence.state, generationState: 'active', activatedAt: nowIso(deps) };
     await atomicWrite(
       context,
@@ -2384,6 +2846,26 @@ async function activate(input, deps) {
     );
     return { status: 'activated', generationId: input.generationId, generationState: 'active' };
   });
+}
+
+// A record whose only first gate reason is `correction-pass` (a run `iterate` delegated) counts
+// toward no minimum.
+function correctionPassOnly(record) {
+  return record.packets.every((packet) => packet.firstGateReason === 'correction-pass');
+}
+
+// The activation sample: eligible packets of completed baseline records, and completed baseline
+// records that count toward the record minimum. No calendar window applies.
+function baselineProgress(records) {
+  const completed = records.filter(
+    (record) => record.cohort === 'baseline' && record.completionStatus === 'completed',
+  );
+  return {
+    eligiblePackets: completed
+      .flatMap((record) => record.packets)
+      .filter((packet) => packet.wouldBeFastEligible).length,
+    countedRecords: completed.filter((record) => !correctionPassOnly(record)).length,
+  };
 }
 
 function validateGate(value) {
@@ -2450,10 +2932,11 @@ async function readWorkflowRecords(root) {
 }
 
 async function startWorkflow(input, deps) {
-  commonInput(input, ['configState', 'workflow', 'harnessFamily', 'packets']);
+  commonInput(input, ['configState', 'workflow', 'harnessFamily', 'installKind', 'packets']);
   enumValue(input.configState, ['enabled']);
   enumValue(input.workflow, PILOT_MEASUREMENT_PROTOCOL.enums.workflows);
   enumValue(input.harnessFamily, PILOT_MEASUREMENT_PROTOCOL.enums.harnessFamilies);
+  enumValue(input.installKind, PILOT_MEASUREMENT_PROTOCOL.enums.installKinds);
   if (
     !Array.isArray(input.packets) ||
     input.packets.length === 0 ||
@@ -2468,12 +2951,18 @@ async function startWorkflow(input, deps) {
     fail('INVALID_PAYLOAD');
   }
   const packets = input.packets.map(validatePacketReservation);
+  assertCorrectionPassUniform(packets.map(({ gate }) => gate.firstReason));
+  const owner = await reservationOwner(deps);
   const context = await ensureNamespace(input, deps);
   return await withLock(context, input.generationId, 'start', deps, async () => {
     const evidence = await evidenceInventory(context, input.generationId);
     const { root, state } = evidence;
-    await assertAdmissionOpen(context, evidence);
+    if (await admissionClosed(evidence)) fail('INVALID_STATE');
+    assertEvidenceSound(context, evidence);
     for (const packet of packets) assertPacketPolicy(packet, state.generationState);
+    if (packets.some(({ selectedProfile }) => selectedProfile === 'fast')) {
+      await assertFastProfileAvailable(state, input.installKind, input.harnessFamily, deps);
+    }
     const count = await workflowRecordCount(root);
     if (count >= PILOT_MEASUREMENT_PROTOCOL.limits.maxWorkflowRecordsPerGeneration) {
       await suspendForCapacity(context, input.generationId, state, deps);
@@ -2505,11 +2994,16 @@ async function startWorkflow(input, deps) {
       generationState: state.generationState,
       workflow: input.workflow,
       harnessFamily: input.harnessFamily,
+      installKind: input.installKind,
       ordinal: state.nextWorkflowOrdinal,
       packets: packetResults.map(({ packetCapability, ...packet }) => ({
         ...packet,
         packetCapabilityHash: hashCapability(packetCapability),
       })),
+      ...owner,
+      reservedAt: nowIso(deps),
+      overlapFlag:
+        evidence.incompleteRecords.length > 0 || evidence.incompleteObservations.length > 0,
     };
     const nextState = { ...state, nextWorkflowOrdinal: state.nextWorkflowOrdinal + 1 };
     await atomicWrite(
@@ -2530,6 +3024,7 @@ async function startWorkflow(input, deps) {
       PILOT_MEASUREMENT_PROTOCOL.limits.maxWorkflowRecordBytes,
       { noReplace: true },
     );
+    await flagOpenReservations(context, evidence, runId, 'start', deps);
     return {
       status: 'reserved',
       runId,
@@ -2742,9 +3237,11 @@ async function loadReservation(context, generationId, runId) {
 }
 
 async function startPacket(input, deps) {
-  commonInput(input, ['runId', 'packetId', 'workflowCapability', 'packetCapability']);
+  commonInput(input, ['runId', 'packetId', 'workflowCapability', 'packetCapability'], ['fallback']);
   opaque(input.runId);
   opaque(input.packetId);
+  const fallback =
+    input.fallback === undefined ? 'none' : enumValue(input.fallback, ['admission-changed']);
   const context = await ensureNamespace(input, deps);
   return await withPacketLock(
     context,
@@ -2754,37 +3251,83 @@ async function startPacket(input, deps) {
     deps,
     async () => {
       const { root, record } = await loadReservation(context, input.generationId, input.runId);
-      await loadState(context, input.generationId);
+      const { state } = await loadState(context, input.generationId);
       if (record.kind !== 'workflow-reservation') fail('INVALID_STATE');
       authenticate(input.workflowCapability, record.workflowCapabilityHash);
       const packet = record.packets.find(({ packetId }) => packetId === input.packetId);
       if (!packet) fail('AUTHENTICATION_FAILED');
       authenticate(input.packetCapability, packet.packetCapabilityHash);
+      if (fallback !== 'none' && packet.selectedProfile !== 'fast') fail('INVALID_PAYLOAD');
       const target = path.join(root, 'records', `${input.runId}.${input.packetId}.timing.json`);
       const existing = await readJson(target, { missing: true });
+      // A Fast spawn needs open admission at this moment: no suspension, incident, or transition,
+      // the reservation's own generation state, no foreign incomplete record, and no foreign
+      // leftover evidence: another run's timing receipt, such as one a terminal record kept after
+      // its finalize or reconcile-record faulted, an orphan temporary (a lock staging file only
+      // once its writer is provably gone), or an invalid member. The run's own reservation and
+      // timing receipts and an open gate observation do not close it. A closed admission writes
+      // nothing and consumes no Fast attempt; the packet then starts as its `admission-changed`
+      // Quality fallback. Admission and the qualification are not re-checked for a first
+      // fallback call.
+      const admissionClosed = async () =>
+        state.generationState !== record.generationState ||
+        (await suspensionValue(root)) !== null ||
+        (await transitionMarker(root)) !== null ||
+        (await otherReservationOpen(root, input.generationId, input.runId)) ||
+        (await foreignEvidenceLeftover(root, input.generationId, input.runId, deps));
+      const fastCheck = async () => {
+        if (await admissionClosed()) fail('ADMISSION_CHANGED');
+        await assertFastProfileAvailable(state, record.installKind, record.harnessFamily, deps);
+      };
+      const timingReceipt = (packetCapabilityHash, receiptFallback) => {
+        const salt = randomOpaque(deps, 24);
+        const wallMs = nowMs(deps);
+        const uptimeSeconds = (deps.uptimeSeconds ?? os.uptime)();
+        const hostname = (deps.hostname ?? os.hostname)();
+        const monotonicNs = String((deps.monotonicNs ?? process.hrtime.bigint)());
+        return {
+          schema: TIMING_SCHEMA,
+          kind: 'packet-timing-receipt',
+          status: 'started',
+          generationId: input.generationId,
+          runId: input.runId,
+          packetId: input.packetId,
+          packetCapabilityHash,
+          salt,
+          hostFingerprint: canonicalDigest({ salt, hostname }),
+          startWallMs: wallMs,
+          startMonotonicNs: monotonicNs,
+          startBootEstimateMs: Math.round(wallMs - uptimeSeconds * 1000),
+          fallback: receiptFallback,
+        };
+      };
       if (existing !== null) {
         authenticate(input.packetCapability, existing.packetCapabilityHash);
-        return { status: existing.status, runId: input.runId, packetId: input.packetId };
+        // A start re-sent after a lost response comes before any child exists, so a started
+        // Fast receipt acknowledges a Fast start only while the first call's conditions hold.
+        const openFastReceipt =
+          packet.selectedProfile === 'fast' &&
+          existing.status === 'started' &&
+          existing.fallback === 'none';
+        if (existing.fallback === fallback) {
+          if (openFastReceipt) await fastCheck();
+          return {
+            status: existing.status,
+            runId: input.runId,
+            packetId: input.packetId,
+            fallback,
+          };
+        }
+        // Its `admission-changed` re-send replaces that unspawned Fast receipt: the caller already
+        // saw the retry refused, so admission may have reopened since and, as for a first
+        // fallback call, is not re-checked. The caller then spawns the packet Quality.
+        if (!openFastReceipt || fallback !== 'admission-changed') fail('INVALID_STATE');
+        const converted = timingReceipt(existing.packetCapabilityHash, fallback);
+        await atomicWrite(context, target, converted, 'start-packet', input.generationId, deps);
+        return { status: 'started', runId: input.runId, packetId: input.packetId, fallback };
       }
-      const salt = randomOpaque(deps, 24);
-      const wallMs = nowMs(deps);
-      const uptimeSeconds = (deps.uptimeSeconds ?? os.uptime)();
-      const hostname = (deps.hostname ?? os.hostname)();
-      const monotonicNs = String((deps.monotonicNs ?? process.hrtime.bigint)());
-      const receipt = {
-        schema: 1,
-        kind: 'packet-timing-receipt',
-        status: 'started',
-        generationId: input.generationId,
-        runId: input.runId,
-        packetId: input.packetId,
-        packetCapabilityHash: packet.packetCapabilityHash,
-        salt,
-        hostFingerprint: canonicalDigest({ salt, hostname }),
-        startWallMs: wallMs,
-        startMonotonicNs: monotonicNs,
-        startBootEstimateMs: Math.round(wallMs - uptimeSeconds * 1000),
-      };
+      if (packet.selectedProfile === 'fast' && fallback === 'none') await fastCheck();
+      const receipt = timingReceipt(packet.packetCapabilityHash, fallback);
       await atomicWrite(
         context,
         target,
@@ -2795,7 +3338,7 @@ async function startPacket(input, deps) {
         undefined,
         { noReplace: true },
       );
-      return { status: 'started', runId: input.runId, packetId: input.packetId };
+      return { status: 'started', runId: input.runId, packetId: input.packetId, fallback };
     },
   );
 }
@@ -2832,7 +3375,17 @@ function durationFromReceipt(receipt, deps) {
 }
 
 async function finishPacket(input, deps) {
-  commonInput(input, ['runId', 'packetId', 'workflowCapability', 'packetCapability']);
+  commonInput(input, [
+    'runId',
+    'packetId',
+    'workflowCapability',
+    'packetCapability',
+    'modelCompliance',
+  ]);
+  const modelCompliance = enumValue(
+    input.modelCompliance,
+    PILOT_MEASUREMENT_PROTOCOL.enums.modelCompliance,
+  );
   const context = await ensureNamespace(input, deps);
   return await withPacketLock(
     context,
@@ -2849,11 +3402,31 @@ async function finishPacket(input, deps) {
       const target = path.join(root, 'records', `${input.runId}.${input.packetId}.timing.json`);
       const receipt = await readJson(target);
       authenticate(input.packetCapability, receipt.packetCapabilityHash);
-      if (receipt.status === 'finished') return { status: 'finished', duration: receipt.duration };
+      // A Fast spawn reports its verification outcome; a Quality packet or an admission-changed
+      // fallback has nothing to verify.
+      if (
+        !allowedModelCompliance(
+          packet.selectedProfile,
+          receipt.fallback,
+          'started',
+          record.installKind,
+        ).includes(modelCompliance)
+      ) {
+        fail('INVALID_PAYLOAD');
+      }
+      if (receipt.status === 'finished') {
+        if (receipt.modelCompliance !== modelCompliance) fail('INVALID_STATE');
+        return { status: 'finished', duration: receipt.duration, modelCompliance };
+      }
       if (receipt.status !== 'started') fail('INVALID_STATE');
-      const closed = { ...receipt, status: 'finished', ...durationFromReceipt(receipt, deps) };
+      const closed = {
+        ...receipt,
+        status: 'finished',
+        ...durationFromReceipt(receipt, deps),
+        modelCompliance,
+      };
       await atomicWrite(context, target, closed, 'finish-packet', input.generationId, deps);
-      return { status: 'finished', duration: closed.duration };
+      return { status: 'finished', duration: closed.duration, modelCompliance };
     },
   );
 }
@@ -3079,7 +3652,7 @@ async function finalizeWorkflow(input, deps) {
       if (!outcome) fail('INVALID_PAYLOAD');
       authenticate(outcome.packetCapability, reserved.packetCapabilityHash);
       if (
-        (outcome.fallback === 'none') !== !outcome.escalated ||
+        fallbackEscalates(outcome.fallback) !== outcome.escalated ||
         (reservation.generationState === 'baseline' &&
           (outcome.fallback !== 'none' || outcome.escalated)) ||
         (reserved.selectedProfile === 'quality' &&
@@ -3097,6 +3670,7 @@ async function finalizeWorkflow(input, deps) {
       const receipt = await readJson(timingTarget, { missing: true });
       let attempt;
       let implementationDuration;
+      let modelCompliance;
       if (receipt === null) {
         // Adopters call start-packet immediately before every implementation spawn, so a missing
         // receipt proves the packet never started. A completed run must have started all of them.
@@ -3106,12 +3680,30 @@ async function finalizeWorkflow(input, deps) {
         }
         attempt = 'not-started';
         implementationDuration = { status: 'unavailable' };
+        modelCompliance = 'not-applicable';
       } else {
         authenticate(outcome.packetCapability, receipt.packetCapabilityHash);
+        // The receipt proves whether the packet started its Fast attempt or its pre-spawn
+        // admission-changed Quality fallback; the caller's outcome must agree.
+        if (
+          (receipt.fallback === 'admission-changed') !==
+          (outcome.fallback === 'admission-changed')
+        ) {
+          fail('INVALID_PAYLOAD');
+        }
         if (receipt.status === 'finished') {
           implementationDuration = receipt.duration;
+          modelCompliance = receipt.modelCompliance;
         } else if (receipt.status === 'started' && completionStatus !== 'completed') {
           implementationDuration = { status: 'unavailable' };
+          modelCompliance = allowedModelCompliance(
+            reserved.selectedProfile,
+            receipt.fallback,
+            'started',
+            reservation.installKind,
+          ).includes('unverified')
+            ? 'unverified'
+            : 'not-applicable';
         } else {
           fail('INCOMPLETE_EVIDENCE');
         }
@@ -3131,8 +3723,14 @@ async function finalizeWorkflow(input, deps) {
             ? { status: 'unavailable' }
             : { status: 'available', ...outcome.costProxy },
         attempt,
+        modelCompliance,
       });
     }
+    // An overlap flagged on the reservation, or a reservation or observation still open now, marks
+    // the record as overlapped; the transient owner and overlap fields are dropped here.
+    const overlapped =
+      reservation.overlapFlag ||
+      (await otherReservationOpen(root, input.generationId, input.runId, { observations: true }));
     const finalized = {
       schema: RECORD_SCHEMA,
       kind: 'workflow-record',
@@ -3145,6 +3743,7 @@ async function finalizeWorkflow(input, deps) {
       generationState: reservation.generationState,
       workflow: reservation.workflow,
       harnessFamily: reservation.harnessFamily,
+      installKind: reservation.installKind,
       ordinal: reservation.ordinal,
       packets,
       validation,
@@ -3152,6 +3751,7 @@ async function finalizeWorkflow(input, deps) {
       completionStatus,
       qualityCorrectionRounds,
       detailTrace: detailOptIn,
+      overlapped,
     };
     if (detailOptIn) {
       const trace = validateTrace(input.trace, reservation);
@@ -3197,11 +3797,12 @@ async function finalizeWorkflowGuarded(input, deps) {
 
 async function startGateObservation(input, deps) {
   return await guardedObservationMutation(input, deps, [], async () => {
-    commonInput(input, ['configState', 'generationState', 'mode', 'harnessFamily']);
+    commonInput(input, ['configState', 'generationState', 'mode', 'harnessFamily', 'installKind']);
     enumValue(input.configState, PILOT_MEASUREMENT_POLICY_PROJECTION.configStates);
     enumValue(input.generationState, PILOT_MEASUREMENT_POLICY_PROJECTION.generationStates);
     enumValue(input.mode, PILOT_MEASUREMENT_PROTOCOL.enums.observationModes);
     enumValue(input.harnessFamily, PILOT_MEASUREMENT_PROTOCOL.enums.harnessFamilies);
+    enumValue(input.installKind, PILOT_MEASUREMENT_PROTOCOL.enums.installKinds);
     const notRecorded = (reason) => ({
       status: 'not-recorded',
       reason,
@@ -3236,8 +3837,8 @@ async function startGateObservation(input, deps) {
           ) {
             return notRecorded('admission-closed');
           }
-          if (evidenceBusy(evidence)) return notRecorded('busy');
-          assertEvidenceHealthy(mutable, evidence);
+          // Open records and observations of other runs overlap instead of blocking.
+          assertEvidenceSound(mutable, evidence);
           const count = countBySuffix(
             await safeEntries(path.join(root, 'gate-observations')),
             '.json',
@@ -3266,6 +3867,7 @@ async function startGateObservation(input, deps) {
             cohort: current.generationState === 'baseline' ? 'baseline' : 'pilot',
             mode: input.mode,
             harnessFamily: input.harnessFamily,
+            installKind: input.installKind,
             ordinal: current.nextObservationOrdinal,
           };
           await atomicWrite(
@@ -3286,6 +3888,8 @@ async function startGateObservation(input, deps) {
             undefined,
             { noReplace: true },
           );
+          // The observation flags every open workflow reservation; it is never flagged itself.
+          await flagOpenReservations(mutable, evidence, null, 'start-gate-observation', deps);
           return {
             status: 'reserved',
             observationId,
@@ -3604,6 +4208,31 @@ async function reconcileRecord(input, deps) {
     }
     if (record.kind !== 'workflow-reservation') fail('INVALID_STATE');
     assertReservationPolicy(record);
+    // A receipt that proves the pre-spawn admission-changed fallback keeps that packet out of the
+    // Fast attempts; every other packet of an abandoned run stays unknown.
+    const receiptFallbacks = new Map();
+    for (const packet of record.packets) {
+      const receipt = await readJson(
+        path.join(evidence.root, 'records', `${input.runId}.${packet.packetId}.timing.json`),
+        { missing: true },
+      );
+      if (receipt === null) continue;
+      if (
+        receipt.kind !== 'packet-timing-receipt' ||
+        receipt.generationId !== input.generationId ||
+        receipt.runId !== input.runId ||
+        receipt.packetId !== packet.packetId ||
+        receipt.packetCapabilityHash !== packet.packetCapabilityHash
+      ) {
+        fail('UNSAFE_STORAGE');
+      }
+      receiptFallbacks.set(packet.packetId, receipt.fallback);
+    }
+    const abandonedFallback = (packet) =>
+      packet.selectedProfile === 'fast' &&
+      receiptFallbacks.get(packet.packetId) === 'admission-changed'
+        ? 'admission-changed'
+        : 'none';
     const abandoned = {
       schema: RECORD_SCHEMA,
       kind: 'workflow-record',
@@ -3616,6 +4245,7 @@ async function reconcileRecord(input, deps) {
       generationState: record.generationState,
       workflow: record.workflow,
       harnessFamily: record.harnessFamily,
+      installKind: record.installKind,
       ordinal: record.ordinal,
       packets: record.packets.map((packet) => ({
         packetId: packet.packetId,
@@ -3623,10 +4253,18 @@ async function reconcileRecord(input, deps) {
         wouldBeFastEligible: packet.wouldBeFastEligible,
         firstGateReason: packet.gate.firstReason,
         implementationDuration: { status: 'unavailable' },
-        fallback: 'none',
+        fallback: abandonedFallback(packet),
         escalated: false,
         costProxy: { status: 'unavailable' },
         attempt: 'unknown',
+        modelCompliance: allowedModelCompliance(
+          packet.selectedProfile,
+          abandonedFallback(packet),
+          'unknown',
+          record.installKind,
+        ).includes('unverified')
+          ? 'unverified'
+          : 'not-applicable',
       })),
       validation: { status: 'unavailable', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
       review: {
@@ -3636,6 +4274,11 @@ async function reconcileRecord(input, deps) {
       completionStatus: 'abandoned',
       qualityCorrectionRounds: 0,
       detailTrace: false,
+      overlapped:
+        record.overlapFlag ||
+        (await otherReservationOpen(evidence.root, input.generationId, input.runId, {
+          observations: true,
+        })),
     };
     await atomicWrite(context, target, abandoned, 'reconcile-record', input.generationId, deps);
     await removeWorkflowTimingReceipts(context, evidence.root, input, null, deps);
@@ -3855,13 +4498,26 @@ function integerDistribution(values) {
 function cohortMetrics(records, cohort) {
   const selected = records.filter((record) => record.cohort === cohort);
   const completed = selected.filter((record) => record.completionStatus === 'completed');
+  // Records whose only first gate reason is correction-pass are measured but count toward no
+  // minimum.
+  const counted = selected.filter((record) => !correctionPassOnly(record));
+  const countedCompleted = completed.filter((record) => !correctionPassOnly(record));
   const recordedPackets = selected.flatMap((record) => record.packets);
   // A not-started packet leaves every packet metric; an unknown packet stays in the counts but
   // never counts as a success, has no duration, and keeps the cost gate unavailable.
   const packets = recordedPackets.filter((packet) => packet.attempt !== 'not-started');
-  const startedPackets = packets.filter((packet) => packet.attempt === 'started');
-  const attemptedFast = packets.filter(
-    (packet) => packet.selectedProfile === 'fast' || packet.fallback !== 'none',
+  // A packet with modelCompliance mismatch ran on a model other than the selected faster one, so it
+  // leaves every Fast metric, duration, and cost and is counted only in modelComplianceOutcomes.
+  const startedPackets = packets.filter(
+    (packet) => packet.attempt === 'started' && packet.modelCompliance !== 'mismatch',
+  );
+  // A Fast packet consumed a Fast attempt unless it fell back before its spawn
+  // (admission-changed).
+  const fastAttemptPackets = packets.filter(
+    (packet) => packet.selectedProfile === 'fast' && packet.fallback !== 'admission-changed',
+  );
+  const attemptedFast = fastAttemptPackets.filter(
+    (packet) => packet.modelCompliance !== 'mismatch',
   );
   const eligible = packets.filter((packet) => packet.wouldBeFastEligible);
   const costPackets =
@@ -3871,6 +4527,7 @@ function cohortMetrics(records, cohort) {
         )
       : attemptedFast;
   const requiredValidation = selected.filter((record) => record.validation.requiredCount > 0);
+  // Finding rates use the records whose review ran as denominator.
   const completedReview = selected.filter((record) => record.review.status === 'completed');
   const availableDurations = startedPackets.filter(
     (packet) => packet.implementationDuration.status === 'available',
@@ -3879,14 +4536,30 @@ function cohortMetrics(records, cohort) {
   return {
     workflowCount: selected.length,
     completedCount: completed.length,
+    countedRecordCount: counted.length,
+    countedCompletedRecordCount: countedCompleted.length,
+    correctionPassRecordCount: selected.length - counted.length,
+    overlappedRecordCount: selected.filter((record) => record.overlapped).length,
     packetCount: packets.length,
     eligiblePacketCount: eligible.length,
+    eligibleCompletedPacketCount: completed
+      .flatMap((record) => record.packets)
+      .filter((packet) => packet.wouldBeFastEligible).length,
     attemptedFastCount: attemptedFast.length,
     validationContributorCount: requiredValidation.length,
     reviewContributorCount: completedReview.length,
     durationContributorCount: availableDurations.length,
+    // Informational only: an unavailable split never makes an adoption gate unavailable.
     ordinalHalves: halves,
-    cohortMinimumMet: selected.length >= PILOT_MEASUREMENT_PROTOCOL.aggregation.cohortMinimum,
+    cohortMinimumMet: counted.length >= PILOT_MEASUREMENT_PROTOCOL.aggregation.cohortMinimum,
+    installKindOutcomes: closedCounts(
+      selected.map(({ installKind }) => installKind),
+      PILOT_MEASUREMENT_PROTOCOL.enums.installKinds,
+    ),
+    modelComplianceOutcomes: closedCounts(
+      fastAttemptPackets.map(({ modelCompliance }) => modelCompliance),
+      PILOT_MEASUREMENT_PROTOCOL.enums.modelCompliance,
+    ),
     completionOutcomes: closedCounts(
       selected.map(({ completionStatus }) => completionStatus),
       PILOT_MEASUREMENT_PROTOCOL.enums.completionStatuses,
@@ -3923,9 +4596,17 @@ function cohortMetrics(records, cohort) {
       BigInt(requiredValidation.filter((record) => record.validation.status === 'passed').length),
       BigInt(requiredValidation.length),
     ),
-    criticalFindingsPerCompleted: rational(
-      BigInt(completed.reduce((sum, record) => sum + record.review.severityCounts.critical, 0)),
-      BigInt(completed.length),
+    criticalFindingsPerReviewed: rational(
+      BigInt(
+        completedReview.reduce((sum, record) => sum + record.review.severityCounts.critical, 0),
+      ),
+      BigInt(completedReview.length),
+    ),
+    importantFindingsPerReviewed: rational(
+      BigInt(
+        completedReview.reduce((sum, record) => sum + record.review.severityCounts.important, 0),
+      ),
+      BigInt(completedReview.length),
     ),
     qualityCorrectionMedian: median(
       completed.map((record) => BigInt(record.qualityCorrectionRounds)),
@@ -4051,15 +4732,15 @@ function groupedObservationDelta(baseline, pilot) {
 
 function evaluationInputs(baseline, pilot, baselineObservations, pilotObservations) {
   const minimum = PILOT_MEASUREMENT_PROTOCOL.aggregation.metricStratumMinimum;
-  const cohortsReady =
-    baseline.cohortMinimumMet &&
-    pilot.cohortMinimumMet &&
-    baseline.ordinalHalves.minimumMet &&
-    pilot.ordinalHalves.minimumMet;
+  // The chronological halves are reported but no longer gate readiness.
+  const cohortsReady = baseline.cohortMinimumMet && pilot.cohortMinimumMet;
   return {
+    // The baseline sample follows the activation minima: eligible packets of completed baseline
+    // records, available once enough completed baseline records count.
     eligibleBaselinePackets:
-      baseline.eligiblePacketCount >= minimum
-        ? rational(BigInt(baseline.eligiblePacketCount))
+      baseline.countedCompletedRecordCount >=
+      PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineRecordMinimum
+        ? rational(BigInt(baseline.eligibleCompletedPacketCount))
         : null,
     fastWithoutEscalation:
       cohortsReady && pilot.attemptedFastCount >= minimum ? pilot.fastWithoutEscalation : null,
@@ -4079,12 +4760,10 @@ function evaluationInputs(baseline, pilot, baselineObservations, pilotObservatio
         ? addRational(pilot.validationSuccess, baseline.validationSuccess, -1n)
         : null,
     criticalReviewFindingDelta:
-      cohortsReady && baseline.completedCount >= minimum && pilot.completedCount >= minimum
-        ? addRational(
-            pilot.criticalFindingsPerCompleted,
-            baseline.criticalFindingsPerCompleted,
-            -1n,
-          )
+      cohortsReady &&
+      baseline.reviewContributorCount >= minimum &&
+      pilot.reviewContributorCount >= minimum
+        ? addRational(pilot.criticalFindingsPerReviewed, baseline.criticalFindingsPerReviewed, -1n)
         : null,
     qualityCorrectionMedianDelta:
       cohortsReady && baseline.completedCount >= minimum && pilot.completedCount >= minimum
@@ -4168,9 +4847,12 @@ function publicationCohort(metrics) {
     validationSuccess: validationOutcomes.suppressed
       ? { suppressed: true }
       : publicationCell(metrics.validationSuccess, metrics.validationContributorCount),
-    criticalFindingsPerCompleted: completionOutcomes.suppressed
+    criticalFindingsPerReviewed: reviewOutcomes.suppressed
       ? { suppressed: true }
-      : publicationRatioCell(metrics.criticalFindingsPerCompleted, metrics.completedCount),
+      : publicationRatioCell(metrics.criticalFindingsPerReviewed, metrics.reviewContributorCount),
+    importantFindingsPerReviewed: reviewOutcomes.suppressed
+      ? { suppressed: true }
+      : publicationRatioCell(metrics.importantFindingsPerReviewed, metrics.reviewContributorCount),
     qualityCorrectionMedian: publicationCell(
       metrics.qualityCorrectionMedian,
       metrics.completedCount,

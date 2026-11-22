@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "installKind": "portable",
+      "harnessFamily": "claude",
+      "outcome": "qualified",
+      "hostVersion": "2.1",
+      "probedOn": "2026-11-21",
+      "fastMappingIdentity": "c44bca229590200420783d89007d5f6b8f3b0898fa48dc091f655d1cbaeb9e8f"
+    },
+    {
+      "installKind": "portable",
+      "harnessFamily": "codex",
+      "outcome": "unproven",
+      "hostVersion": null,
+      "probedOn": "2026-11-21",
+      "fastMappingIdentity": "d31f77c7a7c662a4b440419a5b2f1867ffaf6864010b10e9f0735143d3464eb3"
+    }
+  ]
+}

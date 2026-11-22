@@ -83,7 +83,7 @@ string) and use the Mustache syntax `{{…}}`:
 | `{{FLOW}}`                      | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                                                |
 | `{{SKILL:X}}`                   | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                                                    |
 | `{{AGENT:X}}`                   | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                                              |
-| `{{AGENT_PROFILE:X:fast}}`      | Fast implementation reference    | Claude and Codex `` `effective-flow-X-fast` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) ``                                                                                                                                |
+| `{{AGENT_PROFILE:X:fast}}`      | Fast implementation reference    | Claude and Codex `` `effective-flow-X-fast` ``; portable `` `effective-flow-X` at the Fast tier ``                                                                                                                                                                |
 | `{{BUILD_TARGET}}`              | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                                                           |
 | `{{VERSION}}`                   | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                                                   |
 | `{{TOOL_LIST}}`                 | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                                                       |
@@ -96,7 +96,7 @@ string) and use the Mustache syntax `{{…}}`:
 `` `{{AGENT:X}}` `` keeps exactly its own backtick pair instead of a doubled one, and a longer span
 stays one valid span. A code span follows CommonMark: a backtick run closed by the next run of the
 same length, never crossing a blank line or a fence; `splitInlineCodeSpans` in `build-lib.mjs` does
-the split. The portable `{{AGENT_PROFILE:X:fast}}` notice is placed after the span. Exposed tools
+the split. The portable `{{AGENT_PROFILE:X:fast}}` note (" at the Fast tier") is placed after the span. Exposed tools
 render the same everywhere, and fenced code blocks keep the backticked rendering. The reference
 guard accepts a whitespace-delimited worker identifier inside a longer span as a reference.
 `scripts/compare-native-agent-baseline.mjs` allows this change as the pattern delta
@@ -389,6 +389,13 @@ The build aborts with an error message if any of these guards is violated:
   while the group is absent no source may. `findAutomationEmissionViolations` (`build-lib.mjs`)
   names each violating source line; rationale in
   [`automation-tool-category.md`](../adr/automation-tool-category.md).
+- **Fast qualification-record guard:** `src/scripts/fast-harness-qualification.json` holds one
+  record per install kind and harness family (probe outcome, host major.minor, date and
+  Fast-mapping identity). `validateFastHarnessQualification` checks its closed schema and that each
+  record's `fastMappingIdentity`, the SHA-256 of the sorted-key JSON of that harness's
+  `AGENT_PROFILE_MAPPINGS.fast` values, equals the current mapping; a divergence aborts the build
+  until a new probe is recorded. The file is copied byte for byte to the `scripts/` directory of
+  every target.
 - **Native profile-mapping guard:** Every registered base worker resolves a native model and
   effort from its `tier:` (the guards below). The centralized Fast mapping is complete for Claude
   and Codex, Claude effort uses the supported vocabulary, and each Codex model/reasoning
@@ -403,8 +410,9 @@ The build aborts with an error message if any of these guards is violated:
   top-level `tier:` with a known value, and any of the removed per-agent fields `claude.model`,
   `claude.effort`, `codex.model` and `codex.model_reasoning_effort` aborts the build. The
   spawn-site checks (marker syntax, table, reconciliation, surviving marker), the native
-  cross-provider guard, the portable provider-name guard and the pilot Quality-identity guard are
-  described under "Model tiers".
+  cross-provider guard, the portable provider-name guard (which exempts the Fast tier line by its
+  name, not by any equality of its values with the `standard` tier) and the pilot Quality-identity
+  guard are described under "Model tiers".
 - **Native-agent inventory guard:** The build emits canonical schema-version-2
   `native-agent-inventory.json` files inside the Claude and Codex skill targets. Both inventories
   must use the exact key order `schemaVersion`, `harness`, `baseWorkers`, `fastWorkers`,
@@ -620,7 +628,9 @@ The build aborts with an error message if any of these guards is violated:
   `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. The policy remains
   separate from the rendered native capability: the build emits the sanctioned Claude sidecars
   and native inventories, `build` Phase 2 and `refactor` Phase 3 are the only phases that lazy-load
-  the policy fragment and request Fast, and portable output contains no native profile artifact.
+  the policy fragment and request Fast, and portable output contains no native profile artifact. Every Fast reference of such a phase must
+  bind to one spawn-site marker, which must resolve to `deep` alone and is the only site that
+  renders the portable Fast tier line (the Fast tier line guard rejects it anywhere else).
 - **Pilot-measurement projection guards:** The execution-profile contract is projected into
   `src/scripts/pilot-measurement-protocol.mjs`; `assertPilotMeasurementPolicyProjection` rejects
   drift in that closed policy subset. The same module exports a measurement-only documentation
@@ -1819,8 +1829,8 @@ implementers, reviewers and the merge-conflict resolver (`deep`) use Claude `opu
 Codex `gpt-6.1-sol`/`high`; support roles (`standard`) use Claude `sonnet`/`medium` and Codex
 `gpt-5.6-luna`/`medium`. The source agent files are the canonical per-role assignments. Portable
 workers carry no native frontmatter, so a portable manager cannot enforce a worker profile
-natively; instead each portable spawn site passes the tier's values for the harness that runs it
-(see "Model tiers").
+natively; instead each portable spawn site passes the tier's values for the harness that runs it,
+and the authorized first implementation spawns add a Fast tier line (see "Model tiers").
 
 Fast-capable routes are classified centrally after the project-routing table is parsed. The five
 current routes—tooling, frontend JavaScript/TypeScript, Node.js, Rust, and generic product
@@ -1837,12 +1847,15 @@ are validated before rendering. The current operational mapping is Claude `sonne
 `gpt-5.6-luna`/`medium`; these aliases are replaceable build metadata, not part of project
 configuration or the durable representation decision.
 
-The same token renders an explicit Quality-only notice for portable managers, which still receive
-the normal worker-delegation bootstrap. A portable build records no gate reason: the pilot
-fragments read the rendered `{{BUILD_TARGET}}` and treat a `portable` build as unmeasured, whatever
-host runs it. Build guards reject native metadata,
+On the portable target the same token renders the routed worker contract "at the Fast tier", and
+the one spawn site its phase binds to renders a **Fast tier line** from
+`AGENT_PROFILE_MAPPINGS.fast` beside its Quality (`deep`) line. The orchestrator uses exactly one of
+them per the packet's selected profile; the harness family and the qualification decide, at run
+time, whether Fast is allowed (see the protocol guide). A portable build is measured: the pilot
+fragments read `{{BUILD_TARGET}}` only for `installKind`. Build guards reject native metadata,
 Fast sidecar identifiers, inventories, and unresolved profile tokens in portable output, and
-provider model names there outside build-generated tier text (see "Model tiers"). The token is authorized only in the initial implementation phase of `build` and
+provider model names there outside build-generated tier text and the Fast tier line (see "Model
+tiers"). The token is authorized only in the initial implementation phase of `build` and
 `refactor`. `build` Phase 2 and `refactor` Phase 3 each use it for their five Fast-capable
 implementers.
 
@@ -1928,15 +1941,32 @@ panel site, rejects it elsewhere, and takes the effort from the `deep` mapping. 
 [scoped exception](../adr/per-spawn-model-tiers.md).
 
 `select` emits the role/parameters, normalized expected model/effort and contract digest. `verify`
-recomputes that selection and reads a supported independent execution source. The initial adapter
+recomputes that selection and reads a supported independent execution source. The Codex adapter
 reads only an explicitly supplied exact Codex rollout file: no session discovery or directory
 enumeration. It binds `session_meta.id` and the parent spawn identity, checks every `turn_context`
 model/effort, and returns sanitized settings and coverage. Requested values, sidecar text and
 inline worker assertions are rejected as execution proof. Missing/unsupported evidence is
 `UNVERIFIED`; contradictory settings are `MODEL_MISMATCH`. Only matching evidence is `verified`.
 Recheck at terminal result acceptance after resumes; a previous snapshot proves no future turn.
-This is a check of host-recorded settings, not provider billing telemetry. Fast keeps its existing
-native eligibility and measurement owner.
+This is a check of host-recorded settings, not provider billing telemetry. Fast keeps its
+eligibility and measurement owner.
+
+`fast` returns only the Fast values from the contract's `AGENT_PROFILE_MAPPINGS.fast` copy for a
+portable first-implementation site and authorizes nothing; the pilot helper and the eligibility gate
+enforce. For a Fast selection `verify` also accepts the `claude-subagent-transcript` adapter: the
+orchestrator passes only the `agentId` of the Agent tool result, the helper reads
+`CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR` (the narrow environment exception) and builds
+exactly `<projects>/<project>/<session>/subagents/agent-<id>.jsonl`, rejects traversal and symlinks,
+requires matching `sessionId` and `agentId`, and extracts from `type: assistant` entries only
+`message.model`, `effort` and the host `version`. `<projects>` is `$CLAUDE_CONFIG_DIR/projects` for an
+absolute value, `~/.claude/projects` when unset, and otherwise `unverified`. `<project>` is the
+working directory's Claude project name (`/` and every other non-alphanumeric character become `-`),
+else the single directory in `<projects>` holding the session, found by listing at most 4096 names
+without reading any file. The Codex adapter additionally reads the session's `cli_version`. A Fast
+`verify` returns `data.modelCompliance` (`verified`, `mismatch`, `unverified`) for every well-formed
+request, `unverified` without evidence or handles or without a readable installed qualification
+record; an `INVALID_*` error records `unverified`. A Fast
+`mismatch` is the one exception to `MODEL_MISMATCH` and keeps the work.
 
 - **One mapping.** `MODEL_TIER_MAPPINGS` in `build.mjs` maps each tier to Claude Code
   `model`/`effort` and Codex `model`/`reasoning_effort` (frozen, next to `AGENT_PROFILE_MAPPINGS`,
@@ -1972,8 +2002,14 @@ native eligibility and measurement owner.
 - **Provider names.** A native target may name only its own provider's models, so a Codex model
   name in `dist/claude` or a Claude one in `dist/codex` fails. Portable output may name provider
   models only inside build-generated tier text: an exact rendered line of the marked table and an
-  exact two-harness values phrase rendered from `MODEL_TIER_MAPPINGS` inside a spawn-site line. Line-start `model:`/`effort:` keys, Fast stems and native inventories
+  exact two-harness values phrase rendered from `MODEL_TIER_MAPPINGS` inside a spawn-site line, and
+  the exact Fast values phrase rendered from `AGENT_PROFILE_MAPPINGS.fast` inside a line named
+  `Fast tier:`. The Fast exemption follows that name, never the coincidental equality of the Fast
+  values with the `standard` tier, so the mapping can diverge without a guard change. Line-start `model:`/`effort:` keys, Fast stems and native inventories
   stay forbidden there.
+- **Fast tier line.** At an authorized portable Fast site the renderer writes the Fast tier line
+  directly before the site's `Model selection site:` line; a rendered Fast tier line anywhere else,
+  in a native target or in a worker body fails the build. Native targets keep their Fast sidecars.
 - **Pilot identity.** The pilot protocol module is copied byte for byte and cannot import
   `build.mjs`, so it carries the SHA-256 digest of the canonical `MODEL_TIER_MAPPINGS.deep`
   (`PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY`). The build fails when it differs from the

@@ -466,8 +466,9 @@ the shared `scripts/process-runner.mjs` that the CLI
 entries import and inject into their cores, and `scripts/runtime-state-guard.mjs`, the runtime-state guard; and the pilot
 measurement family `scripts/pilot-measurement.mjs` with its `-core.mjs` and `-protocol.mjs`
 modules, next to the router, tools, and shared resources. The build also generates the read-only
-`setup status` ownership projection `scripts/setup-status-owners.json`, which is data, not a
-script. The remote tracker ships five
+`setup status` ownership projection `scripts/setup-status-owners.json` and ships the Fast probe
+record `scripts/fast-harness-qualification.json` (copied from `src/scripts/`, validated against the
+Fast mapping), both data, not scripts. The remote tracker ships five
 further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`,
 `-github-core.mjs`, `-forgejo-core.mjs` and `-ledger-core.mjs` — which the same registration and byte-identity guards
 cover. Installed skills therefore
@@ -708,8 +709,15 @@ After validation, copy and link installs record every installed base, Fast sidec
 in the existing harness ownership manifest. A later valid inventory can therefore remove an owned
 stale generated role, while files not recorded or listed by Effective Flow remain outside that
 cleanup scope.
-The portable DALO and Skills CLI paths remain unchanged: they install bundled Quality worker
-contracts and do not write native agent directories.
+The portable DALO and Skills CLI paths install bundled worker contracts and do not write native
+agent directories. Fast reaches them through the per-spawn Fast tier, not through a role file: a
+portable install may select Fast only on a harness that `scripts/fast-harness-qualification.json`
+marks `qualified` and that a generation snapshot recorded. The record is the outcome of one maintainer
+probe per release and holds for every install of that release; a new release with a new probe
+restores `verified` packets after a host major.minor update, and a provider gateway that maps model
+aliases differently is caught only by the per-packet compliance check. After a release that changes
+the protocol, `dalo sync` delivers it, and a generation recorded under an earlier protocol is
+suspended with its mapped reason and must be reviewed and discarded before a new baseline starts.
 
 ### Build only, no deployment
 

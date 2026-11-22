@@ -34,15 +34,23 @@ relays, displays, or persists the environment value. A host rejection after Fast
 requested is different: it consumes the sole attempt, records `spawn-rejected`, and continues once
 with Quality. The run never claims enforcement that the host prevented.
 
-Portable output is Quality-only in V1. Portable workers keep using the manager's general delegation
-mechanism, but the optimization is not requested or emulated because the manager cannot guarantee
-the native mapping and fallback contract. Behavioral correctness is shared across targets;
-performance optimization is intentionally native-only.
+Portable output may select Fast through the per-spawn Fast tier, but only on a qualified harness
+(revised 2026-11-21). The build renders a Fast tier line from `AGENT_PROFILE_MAPPINGS.fast` beside
+the Quality (`deep`) line at the first implementation spawn of `build` and `refactor`; a portable
+manager has no role file that could override a per-spawn parameter, so the parameter decides. A
+harness is qualified only when the shipped qualification record
+(`src/scripts/fast-harness-qualification.json`) states a `qualified` probe outcome and a Fast-mapping
+identity equal to the current mapping, and the pilot generation's snapshot records the same.
+Anything else, including a missing `model` parameter on Claude Code's Agent tool, selects Quality
+and records `profile-unavailable`. A per-packet `modelCompliance` check reads the child's actual
+model; a mismatch keeps the work and leaves only the Fast metrics. The harness family comes from the
+parameter shape of the spawn tool alone; a client surface such as T3 Code is not a signal. Native
+builds keep the sidecar rendering unchanged.
 
-> **Superseded in part** by [Per-spawn model tiers](./per-spawn-model-tiers.md): the Fast optimization stays native-only and portable output stays without
-> Fast, but portable spawns no longer inherit the manager's model. They carry a provider-neutral
-> tier whose values for both harnesses are build-generated, so "portable contains no model
-> metadata" no longer holds for generated tier text.
+> **Superseded in part** by [Per-spawn model tiers](./per-spawn-model-tiers.md): portable spawns no
+> longer inherit the manager's model. They carry a provider-neutral tier whose values for both
+> harnesses are build-generated, so "portable contains no model metadata" no longer holds for
+> generated tier text.
 
 The build now renders this native capability and publishes strict schema-2 native-agent inventories
 as build/install consistency manifests. It generates five Fast implementer sidecars for each native
@@ -57,17 +65,19 @@ active pilot generation requests Fast.
 
 - **Use one generic representation everywhere.** This would make the outputs look uniform while
   hiding differences in what each harness can enforce. It was rejected in favor of explicit native
-  mechanisms and a truthful portable limitation.
+  mechanisms and an explicit portable qualification gate.
 - **Put provider model names in `executionProfiles.fast.enabled` or workflow prose.** That would tie
   project policy to volatile aliases and scatter mappings across consumers. The key remains Boolean,
   and mappings stay centralized in build-owned metadata.
 - **Generate a second hierarchy of workers.** Execution profile is metadata on the existing
   delegation boundary, not a new orchestration layer. Only the native artifact required by a host
   is added when rendering lands.
-- **Attempt Fast in portable mode and fall back opportunistically.** A manager-dependent attempt
-  cannot prove consistent enforcement or fallback behavior. V1 accepts no portable optimization.
-  (The portable restriction applies to Fast only; see
-  [Per-spawn model tiers](./per-spawn-model-tiers.md).)
+- **Attempt Fast in portable mode on any harness and fall back opportunistically.** A
+  manager-dependent attempt cannot prove consistent enforcement without evidence. Portable Fast
+  therefore requires a qualified harness, a per-packet compliance check and the same Quality
+  fallback as native.
+- **Install native roles for DALO users.** DALO cannot install native Codex roles and has no verified
+  path for Claude role metadata, so portable users would never reach Fast.
 
 ## Consequences
 
@@ -75,20 +85,23 @@ active pilot generation requests Fast.
   while sharing one eligibility and correction policy.
 - Native inventories allow the build and local installer to reject representation drift without
   treating archive consistency as runtime capability or signed provenance.
-- Portable users retain correct Quality behavior but receive no V1 Fast latency or cost
-  optimization (per-spawn tiers apply to them; see [Per-spawn model tiers](./per-spawn-model-tiers.md)).
+- Portable users retain correct Quality behavior and may use Fast on a qualified harness. One
+  host's probe qualifies the harness for every install of a release, and a provider gateway may map
+  aliases differently, so the per-packet compliance check, not the probe, backs each Fast claim.
 - Host overrides and missing native support degrade safely and observably instead of silently
   changing the effective profile.
 - Concrete model aliases and effort values can evolve in their build-owned mapping without changing
   project configuration or this ADR.
 - Build and distribution tests must prove target separation: native targets contain only their own
   representation, portable output contains no native profile metadata beyond build-generated tier
-  text, and absent capability never produces a false enforcement claim.
+  text (the Fast tier line is exempted from the provider-alias guard by name), the build fails when
+  the qualification record's Fast-mapping identity differs from the current mapping, and absent
+  capability never produces a false enforcement claim.
 
 ## Review triggers
 
-Review this living decision when a harness changes its per-spawn or sidecar contract, portable
-managers can guarantee equivalent profile selection and Quality fallback, native override precedence
+Review this living decision when a harness changes its per-spawn or sidecar contract, a qualified
+harness changes how it resolves per-spawn model aliases, native override precedence
 changes, a new target is added, or centralized mappings can no longer express the required
 capability. Concrete aliases and pilot thresholds are deliberately not review triggers for this
 record. The per-spawn trigger is satisfied by the Codex host check recorded in
@@ -98,6 +111,7 @@ record. The per-spawn trigger is satisfied by the Codex host check recorded in
 
 - [Risk-aware model-tiering pilot policy](./risk-aware-model-tiering-pilot-policy.md)
 - [Per-spawn model tiers](./per-spawn-model-tiers.md)
+- [Pilot protocol](../developer-guide/model-tiering-pilot-protocol.md)
 - [Getting started: calling model](../user-guide/getting-started.md#recommended-calling-model)
 - [Native and portable worker rendering](../developer-guide/build-system.md#native-and-portable-worker-rendering)
 
