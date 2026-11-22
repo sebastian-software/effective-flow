@@ -921,10 +921,10 @@ gates, and enums. The build reconciles its policy projection with
 Configuration, lifecycle state, and native representation are intentionally independent. The
 strict `executionProfiles.fast.enabled` row admits a project to the lifecycle, a generation owns
 baseline/active/suspended/review state, and native inventories prove only that artifacts agree with
-their installation. No one layer activates another. Guided setup block 10 writes the row and
-offers the confirmed `begin-baseline` and `resume` actions; `build` reads the row and the
-generation, never calls either action, and lets the helper activate a baseline generation, which
-it does only once the preregistered window and sample are met.
+their installation. No one layer activates another. Setup block 10, from Guided or a Targeted
+request, writes the row and offers the confirmed `begin-baseline` and `resume` actions; `build`
+reads the row and the generation, never calls either action, and lets the helper activate a
+baseline generation, which it does only once the preregistered window and sample are met.
 
 `build` owns its workflow record through
 [`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md), loaded

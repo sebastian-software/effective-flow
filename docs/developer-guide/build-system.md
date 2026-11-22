@@ -952,17 +952,17 @@ checks, headSha }`) is pure and rejects a detected `detection` without its full 
   `releases/latest` (fixed `User-Agent`, short timeout, capped body). It emits one
   `{ ok, operation, data }` envelope with the sections `configuration`, `retired`, `ignore`,
   `domainOwners` and `version` plus a top-level `setupFixable` and `setupForms` (the distinct
-  `setupForm` of every setup-fixable finding: `setup`, `setup guided`, `setup hidden` or
-  `targeted`); an invalid source (setup Step 2 item 5) and a key a Targeted request refuses never
-  name `targeted`; the field schema is the header comment of
-  `setup-status-core.mjs`. Retired-row stops map per `(tool, mode)` onto the exposed tools through
-  the projection's mode-aware workflow edges; a resolver tool no exposed tool reaches keeps its own
-  name and is listed in `unmappedTools`. A resolver failure is a finding inside `data.configuration`,
-  not an envelope failure; only invalid input (exit 2) and an internal failure (exit 1) fail the
-  envelope. It writes nothing, and its frozen `REMEDIATIONS` map names a setup invocation form or a
-  manual step for every `DIAGNOSTIC_CODES`, `CONFIG_RESOLVE_ERROR_CODES`, `ROOT_CHECKS` and
-  `UNSAFE_REASONS` value; `test/setup-status-core.test.mjs` fails when the map and those exports
-  diverge and proves byte-identical repositories, `.git/` included, after a run.
+  `setupForm` of every setup-fixable finding: `setup`, `setup hidden` or `targeted`); an invalid
+  source (setup Step 2 item 5) and a key a Targeted request refuses never name `targeted`; the
+  field schema is the header comment of `setup-status-core.mjs`. Retired-row stops map per
+  `(tool, mode)` onto the exposed tools through the projection's mode-aware workflow edges; a
+  resolver tool no exposed tool reaches keeps its own name and is listed in `unmappedTools`. A
+  resolver failure is a finding inside `data.configuration`, not an envelope failure; only invalid
+  input (exit 2) and an internal failure (exit 1) fail the envelope. It writes nothing, and its
+  frozen `REMEDIATIONS` map names a setup invocation form or a manual step for every
+  `DIAGNOSTIC_CODES`, `CONFIG_RESOLVE_ERROR_CODES`, `ROOT_CHECKS` and `UNSAFE_REASONS` value;
+  `test/setup-status-core.test.mjs` fails when the map and those exports diverge and proves
+  byte-identical repositories, `.git/` included, after a run.
 - **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
 <build|validate>` with one JSON object on standard input whose `cwd` is the verified
   `RUNTIME_STATE_ROOT`; input never travels as command-line arguments. `merge-gate` uses it for
@@ -1048,8 +1048,8 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. Besides the
   `merge-gate` observation, `build` and `refactor` record their measured runs, call `activate`
   automatically in an enabled baseline generation's preflight, and record incidents through
-  `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; Guided setup block 10
-  runs the confirmed `begin-baseline` and `resume` actions through
+  `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; setup block 10
+  (Guided or Targeted) runs the confirmed `begin-baseline` and `resume` actions through
   `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).

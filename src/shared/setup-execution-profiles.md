@@ -1,11 +1,13 @@
-## Guided field-pilot block
+## Setup field-pilot block
 
-This fragment is loaded only when Guided Step 5 opens advanced block 10 (`executionProfiles`). It
-owns the Guided opt-in for `executionProfiles.fast.enabled` and the two confirmed generation
-actions `begin-baseline` and `resume`. The loaded configuration contract stays the
-reader and encoding of the key, and the shipped pilot helper stays the sole owner of generation
-state. Nothing here selects an execution profile, writes a workflow record, or adds a setup
-invocation: Profile, Express, and `{{SKILL:setup}} hidden` never load it.
+This fragment is loaded only when Guided Step 5 opens advanced block 10 (`executionProfiles`), or
+when a Targeted run (`setup-targeted-change`) touches `executionProfiles.fast.enabled`, holds a
+_pilot action_, or asks a _pilot state question_. It owns the setup opt-in for
+`executionProfiles.fast.enabled` and the two confirmed generation actions `begin-baseline` and
+`resume`. The loaded configuration contract stays the reader and encoding of the key, and the
+shipped pilot helper stays the sole owner of generation state. Nothing here selects an execution
+profile, writes a workflow record, or adds a setup invocation: Profile, Express, and
+`{{SKILL:setup}} hidden` never load it.
 
 ### The opt-in
 
@@ -22,10 +24,12 @@ generation snapshot records as qualified.
 
 Show the recorded value as the configuration contract classifies it: `enabled`, `disabled`, or
 `invalid`. Preview an invalid value as `invalid – runs as Quality` and never repair it silently.
-Pre-select `Keep`.
+Pre-select `Keep`, also for a Targeted _ask_ with no requested value; otherwise, under Targeted,
+pre-select the requested `Enable` or `Disable` instead and show the recorded value as "currently
+recorded".
 
 ```ask
-when: the user chose the advanced settings and block 10 is being asked
+when: the user chose the advanced settings and block 10 is being asked, or a Targeted request touches executionProfiles.fast.enabled or implies the opt-in through a pilot action
 header: Fast pilot
 question: Should this project take part in the Quality/Fast field pilot of build and refactor?
 options:
@@ -39,6 +43,7 @@ options:
 
 - `Enable` writes the literal `true`, `Disable` the literal `false`, and `Keep` writes nothing.
   Accept no other value, no free text, and no model or provider name; ask again on anything else.
+  A Targeted request's text only chooses the pre-selection.
 - The change goes through the Step 6 before/after list and confirmation like every other key. In
   hidden mode it is written to the local `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`
   like every other key and never to a tracked file.
@@ -51,9 +56,20 @@ options:
 
 ### Generation actions
 
-Offer these actions only in this Guided run, after Step 6 has finished without stopping and before
-Step 7. A declined Step 6 confirmation or a stopped run offers none. No action writes, rewrites, or
-removes `executionProfiles.fast.enabled`, and none changes the configuration.
+Offer these actions only in this setup run. Guided offers them after Step 6 has finished without
+stopping and before Step 7. Targeted offers them only at its pilot action step after its write
+step, and only when all of these hold:
+
+- the run is interactive;
+- the request holds a _pilot action_, explicitly or through an `Enable` answer;
+- the Targeted write step finished its write without stopping, or wrote nothing because the
+  opt-in was answered `Keep`, because every other operation was refused, redirected, or a
+  read-only question, or for another reason the Targeted "writes nothing" paragraph names;
+- no operation of the run stopped, on any key;
+- the fresh read of step 1, never the preview value, classifies the key as `enabled`.
+
+A declined confirmation or a stopped run offers none. No action writes, rewrites, or removes
+`executionProfiles.fast.enabled`, and none changes the configuration.
 
 Invoke `node <skill-root>/scripts/pilot-measurement.mjs <operation>` with the operation as the sole
 positional argument and exactly one JSON object with exactly the listed keys on standard input.
@@ -100,7 +116,9 @@ longer holds; nothing is claimed that the helper did not return.
 
 3. Each action has its own `ask` below. Send `confirmation: true` only after the user's explicit
    confirmation of that action in this same run. A refused, skipped, unanswered, or non-interactive
-   ask sends nothing.
+   ask sends nothing. Show the `Baseline` and `Resume` asks in full after their digests and
+   disclosure, and never pre-select an option: the invocation text is never consent, so a Targeted
+   request to start or resume the baseline selects this step and nothing more.
 
 **`begin-baseline`.** Call `protocol` with `{}` and take `protocolVersion` from `result.version`
 and `protocolDigest` from the envelope, which must equal `result.digest`; on a mismatch send

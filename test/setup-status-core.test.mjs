@@ -276,12 +276,7 @@ test('the remediation map covers exactly the resolver codes and detail values it
   // their own frozen text.
   assert.deepEqual(keys(REMEDIATIONS.retired), ['invalid', 'migrate', 'reviewerResolved']);
   // Every `invalid-value` shape other than a value-domain one on a key Targeted accepts.
-  assert.deepEqual(keys(REMEDIATIONS.invalidValue), [
-    'cell-count',
-    'fastProfile',
-    'hiddenForced',
-    'visibility',
-  ]);
+  assert.deepEqual(keys(REMEDIATIONS.invalidValue), ['cell-count', 'hiddenForced', 'visibility']);
   assert.ok(Object.isFrozen(REMEDIATIONS.invalidValue));
   assert.deepEqual(keys(REMEDIATIONS.ownerDisabled), ['exclude', 'skills.enabled']);
   assert.equal(typeof REMEDIATIONS.ownerMissing.remediation, 'string');
@@ -299,7 +294,6 @@ test('every setup-fixable remediation names exactly the setup form it records', 
   collect(REMEDIATIONS);
   const named = {
     setup: /`effective-flow setup`/,
-    'setup guided': /`effective-flow setup guided`/,
     'setup hidden': /`effective-flow setup hidden`/,
     targeted: /\(a Targeted request\)/,
     allowlist: /`effective-flow setup allowlist`/,
@@ -313,17 +307,23 @@ test('every setup-fixable remediation names exactly the setup form it records', 
     assert.ok(SETUP_FORMS.includes(setupForm), remediation);
     assert.match(remediation, named[setupForm], remediation);
   }
+  // No dead form: every `SETUP_FORMS` member is produced by at least one remediation entry.
+  for (const form of SETUP_FORMS) {
+    assert.ok(
+      all.some(({ setupForm }) => setupForm === form),
+      `no remediation produces ${form}`,
+    );
+  }
   assert.equal(REMEDIATIONS.diagnostics['tracked-hidden-ignored'].setupForm, 'setup hidden');
   assert.equal(REMEDIATIONS.diagnostics['invalid-value'].setupForm, 'targeted');
-  assert.equal(REMEDIATIONS.invalidValue.fastProfile.setupForm, 'setup guided');
   assert.equal(REMEDIATIONS.invalidValue.hiddenForced.setupForm, 'setup hidden');
 });
 
 test('no remediation sends an invalid source or a refused key to a Targeted request', () => {
   // Invariant: the Targeted precondition stops without a write on every diagnostic setup Step 2
-  // item 5 treats as an invalid source, and Targeted refuses `visibility` and
-  // `executionProfiles.fast.enabled`; so none of those findings names `targeted`, and an invalid
-  // source is a manual repair rather than setup's recreate-from-scratch decision.
+  // item 5 treats as an invalid source, and Targeted refuses `visibility`; so none of those
+  // findings names `targeted`, and an invalid source is a manual repair rather than setup's
+  // recreate-from-scratch decision.
   for (const entry of [
     REMEDIATIONS.diagnostics['ambiguous-key'],
     REMEDIATIONS.diagnostics['unrepresentable-row'],
@@ -337,7 +337,6 @@ test('no remediation sends an invalid source or a refused key to a Targeted requ
   }
   for (const entry of [
     REMEDIATIONS.invalidValue.visibility,
-    REMEDIATIONS.invalidValue.fastProfile,
     REMEDIATIONS.invalidValue.hiddenForced,
     REMEDIATIONS.diagnostics['tracked-hidden-ignored'],
   ]) {
@@ -607,8 +606,8 @@ test('an invalid retired row is a manual repair naming its diagnostic, not a set
 
 test('an invalid-value diagnostic names the form its reason and key allow', async (t) => {
   // Invariant: a cell-count `invalid-value` is an invalid source (manual), Targeted refuses
-  // `visibility` and the Fast flag, and in hidden mode a forced key is fixed by `setup hidden`; only
-  // a value-domain invalid value on an accepted key names a Targeted request.
+  // `visibility`, and in hidden mode a forced key is fixed by `setup hidden`; a value-domain invalid
+  // value on an accepted key, the Fast flag included, names a Targeted request.
   const invalidValue = (data, key) =>
     data.configuration.diagnostics.find(
       (entry) => entry.code === 'invalid-value' && entry.key === key,
@@ -642,9 +641,16 @@ test('an invalid-value diagnostic names the form its reason and key allow', asyn
   root = standard({ 'executionProfiles.fast.enabled': 'yes' });
   data = await status(t, root);
   diagnostic = invalidValue(data, 'executionProfiles.fast.enabled');
-  assert.equal(diagnostic.setupForm, 'setup guided');
-  assert.match(diagnostic.remediation, /^Run `effective-flow setup guided`/);
-  assert.deepEqual(data.setupForms, ['setup guided']);
+  assert.equal(diagnostic.setupForm, 'targeted');
+  assert.equal(
+    diagnostic.remediation,
+    REMEDIATIONS.diagnostics['invalid-value'].remediation.replaceAll(
+      '{key}',
+      'executionProfiles.fast.enabled',
+    ),
+  );
+  assert.doesNotMatch(diagnostic.remediation, /setup guided/);
+  assert.deepEqual(data.setupForms, ['targeted']);
 
   root = standard({ 'delivery.prReview': 'bogus' });
   data = await status(t, root);

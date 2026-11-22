@@ -4,11 +4,11 @@ Effective Flow includes a local measurement subsystem for the opt-in Quality/Fas
 `/effective-flow build` and `/effective-flow refactor`. The subsystem can create a preregistered Quality-only baseline, retain
 pilot evidence, evaluate the protocol gates, and remove one reviewed generation safely. Nothing
 starts by itself: you opt in and start the baseline through a confirmed action in
-`/effective-flow setup guided`, and a later `build` or `refactor` run activates the generation
-automatically once the preregistered baseline conditions pass. These two are the only workflows
-that record runs and may select Fast; `fix` is admitted by the protocol but not yet measured. The
-pilot works in native installations and in the portable build that DALO installs, where Fast needs a
-qualified harness (see "Portable Fast and harness qualification").
+`/effective-flow setup` (a Targeted request or Guided), and a later `build` or `refactor` run
+activates the generation automatically once the preregistered baseline conditions pass. These two
+are the only workflows that record runs and may select Fast; `fix` is admitted by the protocol but
+not yet measured. The pilot works in native installations and in the portable build that DALO
+installs, where Fast needs a qualified harness (see "Portable Fast and harness qualification").
 
 ## Where evidence lives
 
@@ -50,9 +50,9 @@ exactly once; an early report-mode stop is `reported-blocked` with unavailable c
 ## Activation and detailed consent are different decisions
 
 `executionProfiles.fast.enabled: true` is project-level admission to the pilot lifecycle. It is not
-activation, does not start measurement, and does not authorize a detailed trace. Guided setup block
-10 offers the lifecycle steps you confirm as separate actions, at most one per run and only for the
-state the stored generation proves:
+activation, does not start measurement, and does not authorize a detailed trace. Setup block 10,
+from Guided or a Targeted request, offers the lifecycle steps you confirm as separate actions, at
+most one per run and only for the state the stored generation proves:
 
 1. **Start the baseline.** Setup displays the exact shipped protocol digest and version, discloses
    the local minimal-data collection, names the preregistered minimum (at least 10 eligible packets
@@ -71,9 +71,9 @@ at least 10 eligible packets in at least 5 completed baseline records. Records o
 minimum. Until then the generation stays in its baseline and the run continues as a baseline run.
 Activation also needs an idle generation: while another record or observation is open, the
 generation stays in its baseline, but runs keep recording. A `merge-gate` run that waits for a PR
-under T3 Code keeps its observation open until the gate run ends; Guided setup reports that as open
+under T3 Code keeps its observation open until the gate run ends; setup reports that as open
 observations. An orphaned reservation (a crashed or aborted run that never finalized) keeps the
-generation from activating, and Guided setup reports it as open reservations. Only the run that
+generation from activating, and setup reports it as open reservations. Only the run that
 made a reservation can reconcile it, so an orphan clears only by reviewing and then discarding the
 generation with the pilot disabled, which loses the generation's evidence. A cleanup action for
 orphaned reservations is planned but not shipped. In an active generation, an eligible packet uses
@@ -138,19 +138,19 @@ Fast stops until an explicit resume; an incident it cannot store suspends nothin
 below. Only a still-suspended generation can resume; a generation in `review` is terminal
 and cannot return to admission.
 
-A `build` or `refactor` run reports such an incident to the helper by its category, and the helper records the
-suspension; your product changes are kept either way. From that point the same run starts no
-further Fast attempt: every packet it has not yet started runs Quality. If the helper cannot store
-the suspension, the run shows an alert and offers once to retry. Without a stored suspension
-nothing stops a later run from selecting Fast, so the run says so; disable the pilot in Guided
-setup to keep later runs on Quality until you enable it again. If a run cannot finalize its own pilot
-record, a genuine storage fault makes the helper suspend the generation itself, while lock
-contention, a rejected request, or a location fault leaves the pilot state unchanged. Either way
-the run asks once, in the same run, whether to mark that record abandoned; an abandoned record
-counts none of its packets as a success. Only that run can do so. If you decline, or the run cannot
-ask, the incomplete record stays: it blocks activation, aggregation, and later Fast spawns until
-the generation is reviewed and discarded with the pilot disabled. Purge is no way out, because it
-needs a completed aggregation, which an open record prevents.
+A `build` or `refactor` run reports such an incident to the helper by its category, and the helper
+records the suspension; your product changes are kept either way. From that point the same run
+starts no further Fast attempt: every packet it has not yet started runs Quality. If the helper
+cannot store the suspension, the run shows an alert and offers once to retry. Without a stored
+suspension nothing stops a later run from selecting Fast, so the run says so; disable the pilot in
+setup (Guided or a Targeted request) to keep later runs on Quality until you enable it again. If a
+run cannot finalize its own pilot record, a genuine storage fault makes the helper suspend the
+generation itself, while lock contention, a rejected request, or a location fault leaves the pilot
+state unchanged. Either way the run asks once, in the same run, whether to mark that record
+abandoned; an abandoned record counts none of its packets as a success. Only that run can do so. If
+you decline, or the run cannot ask, the incomplete record stays: it blocks activation, aggregation,
+and later Fast spawns until the generation is reviewed and discarded with the pilot disabled. Purge
+is no way out, because it needs a completed aggregation, which an open record prevents.
 
 A packet that a run never started, because the run stopped earlier, is recorded as not
 started and left out of every packet metric, so it cannot count as a Fast attempt.
@@ -233,11 +233,11 @@ After an update that changes the model that Quality runs use (protocol `1.2.0`, 
 Claude effort of the strongest tier from `xhigh` to `high` and moves its Codex model to
 `gpt-6.1-sol`), or the pilot parameters (protocol `1.3.0`: shorter baseline, new record fields), a
 pilot generation recorded before it is not continued. It is suspended once with the reason
-`quality-mapping-changed` (`1.1.0`) or `protocol-parameters-changed` (`1.2.0`), stays out of
-every later run, and cannot be resumed; Guided setup reports it and offers no action. Its only exit
-is the helper's `begin-review`, then `discard-generation` with the pilot disabled, which no
-workflow offers yet: run both through `scripts/pilot-measurement.mjs` directly, then start a new
-baseline from Guided setup. See the [developer protocol guide](../developer-guide/model-tiering-pilot-protocol.md#local-lifecycle-and-operation-boundary)
+`quality-mapping-changed` (`1.1.0`) or `protocol-parameters-changed` (`1.2.0`), stays out of every
+later run, and cannot be resumed; setup reports it and offers no action. Its only exit is the
+helper's `begin-review`, then `discard-generation` with the pilot disabled, which no workflow offers
+yet: run both through `scripts/pilot-measurement.mjs` directly, then start a new baseline from
+setup. See the [developer protocol guide](../developer-guide/model-tiering-pilot-protocol.md#local-lifecycle-and-operation-boundary)
 for the exact behavior.
 
 ## See also

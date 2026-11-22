@@ -152,11 +152,12 @@ retained-state continuation.
 ## Lifecycle and suspension interface
 
 Work package 3 is the sole owner of lifecycle persistence, the guarded operations below, the
-gitignored suspension record, and its digest-bound clear operation. Guided setup exposes
-`begin-baseline` and `resume` only as confirmed actions after the stated disclosure and explicit
-confirmation; no workflow run calls them. `activate` needs no confirmation of its own: the adopting
-workflow calls it automatically in a measured run's preflight, and the helper transitions only once
-the preregistered conditions pass. This fragment defines the interface but creates no state.
+gitignored suspension record, and its digest-bound clear operation. Setup (Guided block 10 or a
+Targeted request) exposes `begin-baseline` and `resume` only as confirmed actions after the stated
+disclosure and explicit confirmation; no workflow run calls them. `activate` needs no confirmation
+of its own: the adopting workflow calls it automatically in a measured run's preflight, and the
+helper transitions only once the preregistered conditions pass. This fragment defines the
+interface but creates no state.
 
 <!-- execution-profile-transition:start -->
 

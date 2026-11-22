@@ -358,8 +358,9 @@ The tagged state and selection policy is separately owned by
 [`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md). Configuration state and
 persisted generation state are independent, so changing or removing the row must not rewrite a
 generation or clear suspension. The key has no legacy migration and stores no model name. Setup
-remains the only configuration writer and exposes the row only in Guided advanced block 10, whose
-lazy fragment [`src/shared/setup-execution-profiles.md`](../../src/shared/setup-execution-profiles.md)
+remains the only configuration writer and exposes the row only in setup block 10, reached from
+Guided advanced settings or a Targeted request, whose lazy fragment
+[`src/shared/setup-execution-profiles.md`](../../src/shared/setup-execution-profiles.md)
 writes literal `true` or `false` (or nothing on Keep) through the ordinary before/after
 confirmation. Profile and Express never ask the block; they carry an existing row, valid or
 invalid, over byte-for-byte. After a completed Step 6, the same fragment offers at most one

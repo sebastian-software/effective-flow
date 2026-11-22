@@ -2,8 +2,10 @@
 
 This fragment is loaded only when the Guided `Advanced` question of Step 5 was answered `Yes`, or
 when a Targeted run (`setup-targeted-change`) touches a block key. Targeted asks only the touched
-key's question, never a whole block, and never block 10. Step 5 in `{{SKILL:setup}}` keeps that question, its `No` branch, and "Collapsing two
-`mergeGate.bots` spellings of one reviewer", which Express and every Step 6 write run as well.
+key's question, never a whole block, and never block 10 through this fragment: Targeted loads
+`setup-execution-profiles` directly. Step 5 in `{{SKILL:setup}}` keeps that question, its `No`
+branch, and "Collapsing two `mergeGate.bots` spellings of one reviewer", which Express and every
+Step 6 write run as well.
 
 Ask for each key block by block, each with a short explanation, the valid values from the config
 schema in `{{SKILL:setup}}`, and the current config value or default as the pre-selection:
