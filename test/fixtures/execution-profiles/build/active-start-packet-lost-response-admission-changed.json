@@ -1,0 +1,66 @@
+{
+  "name": "A Fast start-packet whose response is lost is re-sent after a foreign reservation opened, so the re-send meets closed admission and the packet runs Quality as admission-changed",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "external": [
+    {
+      "at": "after-lost-start-packet",
+      "operation": "start"
+    }
+  ],
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"],
+      "startPacketLost": true
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "start-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "admission-changed",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "admission-changed",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

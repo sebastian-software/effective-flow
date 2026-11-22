@@ -157,9 +157,9 @@ counts expose the open members. A timing receipt that a terminal record kept, be
 timing when it names a packet of that record that did not stay `not-started`, so a fresh
 `inventory` still succeeds and `reconcile-record` can drain it. Until then a new `start` or
 `start-gate-observation` that admission would otherwise accept fails `INCOMPLETE_EVIDENCE`, and
-`resume`, `activate`, and `aggregate` stay closed as for any open timing. A receipt of an unknown run or packet, a
-never-started packet, or a mismatched reservation still fails every inventory with
-`INCOMPLETE_EVIDENCE`.
+`resume`, `activate`, and `aggregate` stay closed as for any open timing. A receipt of an unknown
+run or packet, a never-started packet, or a mismatched reservation still fails every inventory
+with `INCOMPLETE_EVIDENCE`.
 
 A crashed run's open reservation reads as busy like a live one. Only the owning run can finalize it
 or reconcile it, because `reconcile-record` needs that run's transient `workflowCapability`; no
@@ -218,9 +218,20 @@ packet fails closed when admission is closed: a suspension, a transition marker,
 generation state that differs from the reservation's, a **foreign** incomplete record, or foreign
 leftover evidence: another run's timing receipt (also one a terminal record kept because its
 `finalize` or `reconcile-record` faulted before removing it), an orphan temporary file, or an
-invalid records member. The run's own reservation and timing receipts and an open gate observation
-do not count. It writes nothing and consumes no Fast attempt, and the workflow runs that packet
-Quality with the pre-spawn fallback `admission-changed`.
+invalid records member. A lock staging file counts only once the writer its staged record names is
+provably gone, the proof `reconcile-temporary` uses; a staging file without a valid record counts
+too, so a live writer caught between creating and writing it briefly closes admission. The run's
+own reservation and timing receipts and an open gate observation do not count. It writes nothing
+and consumes no Fast attempt, and the workflow runs that packet Quality with the pre-spawn fallback
+`admission-changed`.
+
+A `start-packet` re-sent after a lost response finds its Fast receipt already written, but no
+child has spawned yet, so it checks admission and the Fast profile again before acknowledging the
+Fast start. If either closed in the meantime, it fails `ADMISSION_CHANGED` or `PROFILE_UNAVAILABLE`
+and writes nothing, and the workflow re-sends it once with the fallback `admission-changed`. That
+call replaces the unspawned Fast receipt with a fresh `admission-changed` receipt, which `finalize`
+then matches against the packet's fallback; it fails `INVALID_STATE` while a first Fast call would
+still be admitted, and for a receipt that is already finished or already a fallback.
 
 Open reservations carry transient fields that exist for the overlap and the planned orphan check:
 a reservation-salted hash of the host name, process id and process start time, the reservation time

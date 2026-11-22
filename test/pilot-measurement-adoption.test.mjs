@@ -2848,6 +2848,132 @@ test('a foreign leftover receipt or orphan temporary turns a Fast start into ADM
   rmSync(lock);
 });
 
+// Invariant: a start-packet re-sent after a lost response precedes the spawn, so it acknowledges
+// the Fast receipt only while Fast admission is still open. Once another run reserved, the re-send
+// fails ADMISSION_CHANGED with nothing written, and the admission-changed re-send replaces the
+// unspawned Fast receipt, so finalize accepts the matching fallback.
+test('a re-sent Fast start-packet rechecks admission and converts to admission-changed', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const reservation = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const identity = packetIdentity(fx, generationId, reservation);
+  const fallback = { ...identity, fallback: 'admission-changed' };
+  const target = timingPath(fx, generationId, reservation);
+  const sent = { status: 'started', runId: reservation.runId, packetId: identity.packetId };
+  // The first response is lost; admission is still open, so the identical re-send is acknowledged
+  // and a conversion is refused.
+  await executeOperation('start-packet', identity, fx.deps);
+  const fast = readFileSync(target);
+  assert.deepEqual((await executeOperation('start-packet', identity, fx.deps)).result, {
+    ...sent,
+    fallback: 'none',
+  });
+  assert.equal((await rejection('start-packet', fallback, fx.deps)).error.code, 'INVALID_STATE');
+  assert.deepEqual(readFileSync(target), fast);
+
+  // Another run reserves before the re-send: the first child must not start Fast.
+  await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const before = snapshot(fx, generationId);
+  assert.equal(
+    (await rejection('start-packet', identity, fx.deps)).error.code,
+    'ADMISSION_CHANGED',
+  );
+  assert.deepEqual(snapshot(fx, generationId), before);
+
+  fx.clock.wallMs += 50;
+  fx.clock.monotonicNs += 50_000_000n;
+  assert.deepEqual((await executeOperation('start-packet', fallback, fx.deps)).result, {
+    ...sent,
+    fallback: 'admission-changed',
+  });
+  const converted = readJsonFile(target);
+  assert.equal(converted.fallback, 'admission-changed');
+  assert.equal(converted.status, 'started');
+  assert.equal(converted.startWallMs, fx.clock.wallMs, 'the Quality start times the real spawn');
+  // A lost conversion response is re-sent as is; the Fast start can no longer adopt the receipt.
+  assert.deepEqual((await executeOperation('start-packet', fallback, fx.deps)).result, {
+    ...sent,
+    fallback: 'admission-changed',
+  });
+  assert.equal((await rejection('start-packet', identity, fx.deps)).error.code, 'INVALID_STATE');
+
+  await executeOperation(
+    'finish-packet',
+    { ...identity, modelCompliance: 'not-applicable' },
+    fx.deps,
+  );
+  assert.equal(
+    (await rejection('finalize', finalizeInput(fx, generationId, reservation), fx.deps)).error.code,
+    'INVALID_PAYLOAD',
+  );
+  await executeOperation(
+    'finalize',
+    finalizeInput(fx, generationId, reservation, {}, [
+      { fallback: 'admission-changed', escalated: false },
+    ]),
+    fx.deps,
+  );
+  const stored = readJsonFile(recordPath(fx, generationId, reservation.runId)).packets[0];
+  assert.deepEqual(
+    [stored.selectedProfile, stored.fallback, stored.escalated],
+    ['fast', 'admission-changed', false],
+  );
+  assert.equal(existsSync(target), false);
+});
+
+// Invariant: a lock staging file closes Fast admission once the writer its staged record names is
+// provably gone (or no valid record names one), and a live writer's staging file, a concurrent
+// lock acquisition, does not.
+test('an orphaned lock staging file closes Fast admission and a live one does not', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const reservation = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const identity = packetIdentity(fx, generationId, reservation);
+  const target = timingPath(fx, generationId, reservation);
+  const nonce = 'S'.repeat(32);
+  const staged = join(
+    generationRoot(fx, generationId),
+    'locks',
+    `.tmp-finish-packet-${generationId}-${nonce}-${'1'.repeat(16)}`,
+  );
+  const stage = (ownerPid) =>
+    writeFileSync(
+      staged,
+      `${canonicalizeJson({ schema: 1, operation: 'finish-packet', generationId, ownerPid, nonce })}\n`,
+    );
+  const goneOwner = 2_147_483_647;
+  const probed = [];
+  const deps = {
+    ...fx.deps,
+    kill: (pid, signal) => {
+      probed.push(pid);
+      if (pid !== goneOwner) return process.kill(pid, signal);
+      throw Object.assign(new Error('no such process'), { code: 'ESRCH' });
+    },
+  };
+
+  stage(goneOwner);
+  const before = snapshot(fx, generationId);
+  assert.equal((await rejection('start-packet', identity, deps)).error.code, 'ADMISSION_CHANGED');
+  assert.ok(probed.includes(goneOwner), 'the staged writer is probed');
+  assert.deepEqual(snapshot(fx, generationId), before);
+  // A staging file without a valid record cannot prove a live writer.
+  writeFileSync(staged, 'x');
+  assert.equal((await rejection('start-packet', identity, deps)).error.code, 'ADMISSION_CHANGED');
+  assert.equal(existsSync(target), false);
+
+  stage(process.pid);
+  assert.deepEqual((await executeOperation('start-packet', identity, deps)).result, {
+    status: 'started',
+    runId: reservation.runId,
+    packetId: identity.packetId,
+    fallback: 'none',
+  });
+  rmSync(staged);
+});
+
 function writeQualification(t, records) {
   const directory = mkdtempSync(join(tmpdir(), 'effective-flow-pilot-qualification-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

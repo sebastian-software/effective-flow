@@ -186,6 +186,9 @@ The packet timing and identity operations take exactly these keys:
   `not-started` and excludes it from every packet metric. A packet whose initial phase is still open
   at that exit is not finished; the helper records it as `started` with an unavailable duration.
 - A lost `start-packet` or `finish-packet` response may be re-sent once with the identical payload.
+  A re-sent `start-packet` of a `fast` packet checks admission again, since nothing has spawned
+  yet: `ADMISSION_CHANGED` or `PROFILE_UNAVAILABLE` then wrote nothing and takes the same single
+  `"fallback": "admission-changed"` re-send and Quality spawn as under "Start before spawn".
   Any other failure leaves the record unfinalizable: send no further packet operation or fabricated
   outcome, continue implementation with Quality, and apply "Finalization failure" at the exit.
 
@@ -333,9 +336,11 @@ every packet's `attempt` `unknown`, which never counts as a success. When `final
 persisting the record, for example while removing a timing receipt, the helper only drains the
 remaining receipts and returns the stored `completionStatus`. Report the status the helper returns.
 A declined, unanswered, non-interactive, or failed reconciliation leaves the incomplete record in
-place. The completion report then states that it blocks activation and aggregation and closes Fast
-admission for later runs, and that no later run can reconcile it: only `begin-review` followed by
-`discard-generation` with the pilot disabled clears it, losing the generation.
+place. The completion report then states that it blocks activation and aggregation, that it closes
+Fast admission for later runs or, when only timing receipts remain behind a persisted terminal
+record, makes every later `start` and `start-gate-observation` fail `INCOMPLETE_EVIDENCE`, and that
+no later run can reconcile it: only `begin-review` followed by `discard-generation` with the pilot
+disabled clears it, losing the generation.
 
 Only a suspension the helper persisted, from a successful `record-incident` or an envelope with
 `controlStatePersisted: true`, keeps later runs off Fast: each later run observes that persisted

@@ -482,6 +482,14 @@ function runRecordScenario(fixture) {
         profileClosed = true;
       }
     }
+    // A lost `start-packet` response: the first send started the timer, and the identical
+    // re-send precedes the spawn, so it rechecks admission. A foreign reservation in between
+    // closes it, and the re-send then takes the same `admission-changed` path.
+    if (!unfinalizable && packet.startPacketLost) {
+      assert.ok(!admissionClosed && !profileClosed, 'only an admitted start loses its response');
+      steps.push({ operation: 'start-packet', packet: index, result: 'response-lost' });
+      if (externalAt(fixture, 'after-lost-start-packet', 'start')) admissionClosed = true;
+    }
     const admissionChanged =
       selectedProfile === 'fast' && !unfinalizable && (admissionClosed || profileClosed);
     if (!unfinalizable) {
@@ -1203,7 +1211,10 @@ async function replay(fixture, scenario) {
         }
         const call = () => rt.call('start-packet', input);
         if (step.result === 'LOCKED') await locked(step, call);
-        else if (['ADMISSION_CHANGED', 'PROFILE_UNAVAILABLE'].includes(step.result)) {
+        else if (step.result === 'response-lost') {
+          await call();
+          await runExternal('after-lost-start-packet');
+        } else if (['ADMISSION_CHANGED', 'PROFILE_UNAVAILABLE'].includes(step.result)) {
           await expectFailure(call(), step.result, 'the helper refuses the Fast spawn');
         } else {
           await call();
@@ -1386,7 +1397,8 @@ for (const fixture of fixtures) {
         ] ?? 1),
       'finalize is sent once, re-sent only after a lost response or LOCKED',
     );
-    // A packet timing operation is re-sent only after `LOCKED`; its locked sends are retries.
+    // A packet timing operation is re-sent only after `LOCKED` or a lost `start-packet` response;
+    // its locked sends and the lost send are retries.
     const retries = (key) =>
       fixture.packets.reduce((sum, packet) => sum + Math.min(packet[key] ?? 0, LOCKED_SENDS), 0);
     // A refused Fast `start-packet` wrote nothing; its `admission-changed` re-send starts the timer.
@@ -1394,7 +1406,11 @@ for (const fixture of fixtures) {
       ({ fallback }) => fallback === 'admission-changed',
     ).length;
     const timed = {
-      'start-packet': count('start-packet') - retries('startPacketLocked') - refused,
+      'start-packet':
+        count('start-packet') -
+        retries('startPacketLocked') -
+        refused -
+        fixture.packets.filter(({ startPacketLost }) => startPacketLost).length,
       'finish-packet': count('finish-packet') - retries('finishPacketLocked'),
     };
     if (operations.includes('finalize')) {
@@ -1696,6 +1712,15 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
   // A packet timing operation recovers from one `LOCKED` and fails the record once exhausted.
   assert.ok(
     buildFixtures.some((fixture) => fixture.packets.some((p) => p.startPacketLocked === 1)),
+  );
+  // A lost start-packet response re-sent after a foreign reservation takes the admission-changed
+  // path.
+  assert.ok(
+    buildFixtures.some(
+      (fixture) =>
+        externalAt(fixture, 'after-lost-start-packet', 'start') &&
+        fixture.packets.some((p) => p.startPacketLost),
+    ),
   );
   assert.ok(
     buildFixtures.some((fixture) =>
@@ -2199,6 +2224,11 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
     /A packet that never spawned gets no timing operation; the helper records it as `not-started` and excludes it from every packet metric\. A packet whose initial phase is still open at that exit is not finished; the helper records it as `started` with an unavailable duration/,
   );
   assert.match(flat(timing), /finalizes as `aborted` or `failed`, never `completed`/);
+  // A re-sent start precedes the spawn, so the helper rechecks admission before acknowledging Fast.
+  assert.match(
+    flat(timing),
+    /A re-sent `start-packet` of a `fast` packet checks admission again, since nothing has spawned yet: `ADMISSION_CHANGED` or `PROFILE_UNAVAILABLE` then wrote nothing and takes the same single `"fallback": "admission-changed"` re-send and Quality spawn as under "Start before spawn"/,
+  );
   assert.doesNotMatch(timing, /Known bias|near-zero/, 'the never-spawned bias is resolved');
 
   const finalization = section(fragment, '### Finalization', '### Incidents and pilot control');
@@ -2358,6 +2388,11 @@ test('incidents are recorded by category and a failed finalize offers one same-r
   assert.match(
     failureText,
     /A declined, unanswered, non-interactive, or failed reconciliation leaves the incomplete record in place/,
+  );
+  // Receipts left behind a persisted terminal record fail every later start, not only Fast.
+  assert.match(
+    failureText,
+    /closes Fast admission for later runs or, when only timing receipts remain behind a persisted terminal record, makes every later `start` and `start-gate-observation` fail `INCOMPLETE_EVIDENCE`/,
   );
   // Only the owning run can reconcile; purge needs a complete aggregate, so a left record clears
   // only by discarding the generation.

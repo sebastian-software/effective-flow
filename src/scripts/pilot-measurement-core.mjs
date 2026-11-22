@@ -1470,17 +1470,43 @@ async function otherReservationOpen(root, generationId, runId, { observations = 
   return false;
 }
 
+// Whether a lock staging file in `locks` is a leftover: its writer is provably gone, judged like
+// `reconcile-temporary` judges it, by the `ownerPid` of the staged lock record (a reused pid keeps
+// a real orphan looking live, the same limit). A stage that vanished meanwhile is none. A stage
+// without a valid record also counts, failing safe: a live writer's stage is unparseable only for
+// the instant between its exclusive create and its write, and closing Fast admission then costs
+// only a Quality start.
+async function orphanedLockStaging(target, generationId, deps) {
+  let value;
+  try {
+    value = await readJson(target, { missing: true });
+    if (value === null) return false;
+    validateStagedLockRecord(value, generationId, path.basename(target));
+  } catch {
+    return true;
+  }
+  return probePid(value.ownerPid, deps) === 'stale-provable';
+}
+
 // Whether generation evidence other than `runId`'s own holds a leftover that closes Fast admission:
 // a packet timing receipt of another run (also one left behind by a terminal record whose finalize
-// or reconcile-record faulted before removing it), a records member of no known shape, or a
-// temporary file without a held owner lock. It reads under the caller's packet lock: concurrent
-// packet writers stage temporaries under their held lock, and lock staging files are skipped.
-async function foreignEvidenceLeftover(root, generationId, runId) {
+// or reconcile-record faulted before removing it), a records member of no known shape, a temporary
+// file without a held owner lock, or a lock staging file whose writer is provably gone. It reads
+// under the caller's packet lock: concurrent packet writers stage temporaries under their held
+// lock, and a concurrent lock acquisition stages its lock record before any lock exists.
+async function foreignEvidenceLeftover(root, generationId, runId, deps) {
   const temporaries = [];
-  for (const directory of ['', 'records', 'traces', 'gate-observations', 'summaries']) {
+  for (const directory of ['', 'records', 'traces', 'gate-observations', 'summaries', 'locks']) {
     for (const entry of await safeEntries(path.join(root, directory))) {
       if (entry.name.startsWith('.tmp-')) {
-        temporaries.push(path.join(root, directory, entry.name));
+        if (directory !== 'locks') {
+          temporaries.push(path.join(root, directory, entry.name));
+        } else if (
+          await orphanedLockStaging(path.join(root, 'locks', entry.name), generationId, deps)
+        ) {
+          // No held lock vouches for a lock staging file; the staged record names its writer.
+          return true;
+        }
         continue;
       }
       if (directory !== 'records') continue;
@@ -3234,56 +3260,86 @@ async function startPacket(input, deps) {
       if (fallback !== 'none' && packet.selectedProfile !== 'fast') fail('INVALID_PAYLOAD');
       const target = path.join(root, 'records', `${input.runId}.${input.packetId}.timing.json`);
       const existing = await readJson(target, { missing: true });
-      if (existing !== null) {
-        authenticate(input.packetCapability, existing.packetCapabilityHash);
-        if (existing.fallback !== fallback) fail('INVALID_STATE');
-        return {
-          status: existing.status,
-          runId: input.runId,
-          packetId: input.packetId,
-          fallback,
-        };
-      }
       // A Fast spawn needs open admission at this moment: no suspension, incident, or transition,
       // the reservation's own generation state, no foreign incomplete record, and no foreign
       // leftover evidence: another run's timing receipt, such as one a terminal record kept after
-      // its finalize or reconcile-record faulted, an orphan temporary, or an invalid member. The
-      // run's own reservation and timing receipts and an open gate observation do not close it.
-      // A closed admission writes nothing and consumes no Fast attempt; the packet then starts as
-      // its `admission-changed` Quality fallback. Admission and the qualification are not
-      // re-checked for that fallback.
-      if (packet.selectedProfile === 'fast' && fallback === 'none') {
-        if (
-          state.generationState !== record.generationState ||
-          (await suspensionValue(root)) !== null ||
-          (await transitionMarker(root)) !== null ||
-          (await otherReservationOpen(root, input.generationId, input.runId)) ||
-          (await foreignEvidenceLeftover(root, input.generationId, input.runId))
-        ) {
-          fail('ADMISSION_CHANGED');
-        }
+      // its finalize or reconcile-record faulted, an orphan temporary (a lock staging file only
+      // once its writer is provably gone), or an invalid member. The run's own reservation and
+      // timing receipts and an open gate observation do not close it. A closed admission writes
+      // nothing and consumes no Fast attempt; the packet then starts as its `admission-changed`
+      // Quality fallback. Admission and the qualification are not re-checked for a first
+      // fallback call.
+      const admissionClosed = async () =>
+        state.generationState !== record.generationState ||
+        (await suspensionValue(root)) !== null ||
+        (await transitionMarker(root)) !== null ||
+        (await otherReservationOpen(root, input.generationId, input.runId)) ||
+        (await foreignEvidenceLeftover(root, input.generationId, input.runId, deps));
+      const fastCheck = async () => {
+        if (await admissionClosed()) fail('ADMISSION_CHANGED');
         await assertFastProfileAvailable(state, record.installKind, record.harnessFamily, deps);
-      }
-      const salt = randomOpaque(deps, 24);
-      const wallMs = nowMs(deps);
-      const uptimeSeconds = (deps.uptimeSeconds ?? os.uptime)();
-      const hostname = (deps.hostname ?? os.hostname)();
-      const monotonicNs = String((deps.monotonicNs ?? process.hrtime.bigint)());
-      const receipt = {
-        schema: TIMING_SCHEMA,
-        kind: 'packet-timing-receipt',
-        status: 'started',
-        generationId: input.generationId,
-        runId: input.runId,
-        packetId: input.packetId,
-        packetCapabilityHash: packet.packetCapabilityHash,
-        salt,
-        hostFingerprint: canonicalDigest({ salt, hostname }),
-        startWallMs: wallMs,
-        startMonotonicNs: monotonicNs,
-        startBootEstimateMs: Math.round(wallMs - uptimeSeconds * 1000),
-        fallback,
       };
+      const timingReceipt = (packetCapabilityHash, receiptFallback) => {
+        const salt = randomOpaque(deps, 24);
+        const wallMs = nowMs(deps);
+        const uptimeSeconds = (deps.uptimeSeconds ?? os.uptime)();
+        const hostname = (deps.hostname ?? os.hostname)();
+        const monotonicNs = String((deps.monotonicNs ?? process.hrtime.bigint)());
+        return {
+          schema: TIMING_SCHEMA,
+          kind: 'packet-timing-receipt',
+          status: 'started',
+          generationId: input.generationId,
+          runId: input.runId,
+          packetId: input.packetId,
+          packetCapabilityHash,
+          salt,
+          hostFingerprint: canonicalDigest({ salt, hostname }),
+          startWallMs: wallMs,
+          startMonotonicNs: monotonicNs,
+          startBootEstimateMs: Math.round(wallMs - uptimeSeconds * 1000),
+          fallback: receiptFallback,
+        };
+      };
+      if (existing !== null) {
+        authenticate(input.packetCapability, existing.packetCapabilityHash);
+        // A start re-sent after a lost response comes before any child exists, so a started
+        // Fast receipt acknowledges a Fast start only while the first call's conditions hold.
+        const openFastReceipt =
+          packet.selectedProfile === 'fast' &&
+          existing.status === 'started' &&
+          existing.fallback === 'none';
+        if (existing.fallback === fallback) {
+          if (openFastReceipt) await fastCheck();
+          return {
+            status: existing.status,
+            runId: input.runId,
+            packetId: input.packetId,
+            fallback,
+          };
+        }
+        // Its `admission-changed` re-send replaces that unspawned Fast receipt, and only while a
+        // first call would be refused: the caller then spawns the packet Quality.
+        if (!openFastReceipt || fallback !== 'admission-changed') fail('INVALID_STATE');
+        let stillOpen = false;
+        try {
+          await fastCheck();
+          stillOpen = true;
+        } catch (error) {
+          if (
+            !(error instanceof PilotMeasurementError) ||
+            !['ADMISSION_CHANGED', 'PROFILE_UNAVAILABLE'].includes(error.code)
+          ) {
+            throw error;
+          }
+        }
+        if (stillOpen) fail('INVALID_STATE');
+        const converted = timingReceipt(existing.packetCapabilityHash, fallback);
+        await atomicWrite(context, target, converted, 'start-packet', input.generationId, deps);
+        return { status: 'started', runId: input.runId, packetId: input.packetId, fallback };
+      }
+      if (packet.selectedProfile === 'fast' && fallback === 'none') await fastCheck();
+      const receipt = timingReceipt(packet.packetCapabilityHash, fallback);
       await atomicWrite(
         context,
         target,
