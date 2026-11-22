@@ -230,8 +230,9 @@ child has spawned yet, so it checks admission and the Fast profile again before 
 Fast start. If either closed in the meantime, it fails `ADMISSION_CHANGED` or `PROFILE_UNAVAILABLE`
 and writes nothing, and the workflow re-sends it once with the fallback `admission-changed`. That
 call replaces the unspawned Fast receipt with a fresh `admission-changed` receipt, which `finalize`
-then matches against the packet's fallback; it fails `INVALID_STATE` while a first Fast call would
-still be admitted, and for a receipt that is already finished or already a fallback.
+then matches against the packet's fallback. Like a first fallback call it does not recheck
+admission, so it succeeds even if admission reopened after the refused retry; it fails
+`INVALID_STATE` only for a receipt that is already finished or already a fallback.
 
 Open reservations carry transient fields that exist for the overlap and the planned orphan check:
 a reservation-salted hash of the host name, process id and process start time, the reservation time

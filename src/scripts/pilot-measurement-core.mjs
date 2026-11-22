@@ -3318,22 +3318,10 @@ async function startPacket(input, deps) {
             fallback,
           };
         }
-        // Its `admission-changed` re-send replaces that unspawned Fast receipt, and only while a
-        // first call would be refused: the caller then spawns the packet Quality.
+        // Its `admission-changed` re-send replaces that unspawned Fast receipt: the caller already
+        // saw the retry refused, so admission may have reopened since and, as for a first
+        // fallback call, is not re-checked. The caller then spawns the packet Quality.
         if (!openFastReceipt || fallback !== 'admission-changed') fail('INVALID_STATE');
-        let stillOpen = false;
-        try {
-          await fastCheck();
-          stillOpen = true;
-        } catch (error) {
-          if (
-            !(error instanceof PilotMeasurementError) ||
-            !['ADMISSION_CHANGED', 'PROFILE_UNAVAILABLE'].includes(error.code)
-          ) {
-            throw error;
-          }
-        }
-        if (stillOpen) fail('INVALID_STATE');
         const converted = timingReceipt(existing.packetCapabilityHash, fallback);
         await atomicWrite(context, target, converted, 'start-packet', input.generationId, deps);
         return { status: 'started', runId: input.runId, packetId: input.packetId, fallback };

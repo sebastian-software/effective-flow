@@ -2861,19 +2861,17 @@ test('a re-sent Fast start-packet rechecks admission and converts to admission-c
   const fallback = { ...identity, fallback: 'admission-changed' };
   const target = timingPath(fx, generationId, reservation);
   const sent = { status: 'started', runId: reservation.runId, packetId: identity.packetId };
-  // The first response is lost; admission is still open, so the identical re-send is acknowledged
-  // and a conversion is refused.
+  // The first response is lost; admission is still open, so the identical re-send is acknowledged.
   await executeOperation('start-packet', identity, fx.deps);
   const fast = readFileSync(target);
   assert.deepEqual((await executeOperation('start-packet', identity, fx.deps)).result, {
     ...sent,
     fallback: 'none',
   });
-  assert.equal((await rejection('start-packet', fallback, fx.deps)).error.code, 'INVALID_STATE');
   assert.deepEqual(readFileSync(target), fast);
 
   // Another run reserves before the re-send: the first child must not start Fast.
-  await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  const foreign = await startWorkflow(fx, generationId, [packetReservation('fast')]);
   const before = snapshot(fx, generationId);
   assert.equal(
     (await rejection('start-packet', identity, fx.deps)).error.code,
@@ -2881,6 +2879,9 @@ test('a re-sent Fast start-packet rechecks admission and converts to admission-c
   );
   assert.deepEqual(snapshot(fx, generationId), before);
 
+  // The foreign run ends before the fallback re-send, so admission reopens: the caller already saw
+  // the refusal, and the Quality fallback is still accepted.
+  rmSync(recordPath(fx, generationId, foreign.runId));
   fx.clock.wallMs += 50;
   fx.clock.monotonicNs += 50_000_000n;
   assert.deepEqual((await executeOperation('start-packet', fallback, fx.deps)).result, {
