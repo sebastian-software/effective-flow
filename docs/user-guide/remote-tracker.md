@@ -566,7 +566,7 @@ against it:
   adapter states none rather than fabricating a `CLEAN`. `BEHIND` is therefore undetectable; a
   branch-protection rule that blocks an outdated branch fails the merge closed server-side instead.
   The gate still brings a behind head with a failing check forward, through its Git ancestry check
-  rather than a merge state.
+  rather than a merge state, and resolves a genuine conflict found by its local merge proof.
 - **No requiredness per check.** Forgejo has no such flag, so every check reports it as unstated and
   `mergeGate.requireAllChecks: false` fails closed on each of them – stricter than the default,
   never looser.
@@ -855,7 +855,9 @@ missing or different base with `base-mismatch`; the caller re-reads instead of c
 pull request that has moved. Any other Git or forge failure, apart from the permission read, also
 fails the whole operation.
 
-`merge-proof-local` exists for Forgejo, where a WIP-titled draft reports no mergeable state. It
+`merge-proof-local` exists for Forgejo, where the forge states no merge state and leaves
+mergeability unstated for a conflicting or WIP-titled pull request; the merge gate uses it for its
+WIP-draft exit and to find a conflict it then resolves. It
 runs `git merge-tree --write-tree` in a private temporary object directory that it removes, so the
 repository's objects and refs stay unchanged. The result `status` is `clean`, `conflict` (with a
 `conflictCount`) or `unavailable`, and `reason` explains why. A Git older than 2.38, a missing ref,

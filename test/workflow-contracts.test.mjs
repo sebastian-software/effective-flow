@@ -7432,8 +7432,8 @@ function mergeGateStep3() {
   );
 }
 
-// Invariant: Phase 2 step 1 has exactly two triggers for one merge, (a) the forge state and (b) a
-// failing check with the ancestry check stating "behind", and "the run's latest check result" is
+// Invariant: Phase 2 step 1 triggers one merge on (a) the forge state and (b) a failing check with
+// the ancestry check stating "behind" (trigger (c) is pinned by its own test), and "the run's latest check result" is
 // defined as the most recent `pr-status-read`, never a `pr-checks-wait` result. The reads that
 // may supply it are pinned inside the definition bullet itself, cut from its own marker to the
 // next bullet: step 1's trigger prose also says "as step 4 defines it" and "Step 4's criterion",
@@ -7608,6 +7608,45 @@ test('the step-3 guard defers to trigger (b) without blocking on an undetermined
   assert.match(step3, near('undetermined', 'delegation', 100));
 });
 
+// Invariant: a genuine base conflict is repaired on any provider, drafts and non-drafts alike, even when
+// no check fails. Trigger (c) starts the base merge when `merge-proof-local` returns `conflict` and
+// neither trigger (a) nor (b) fired; it is independent of check results and fires once per run. The
+// Forgejo second-arm paragraph therefore must not promise a loop to `mergeGate.maxRounds` for a conflict.
+test('trigger (c) repairs a local base conflict without a failing check and fires once per run', () => {
+  const step1raw = mergeGateStep1();
+  const triggerCStart = step1raw.indexOf('**Trigger (c):**');
+  assert.notEqual(triggerCStart, -1, 'Phase 2 step 1 must carry a **Trigger (c):** marker');
+  assert.ok(
+    triggerCStart > step1raw.indexOf('**Trigger (b):**'),
+    'trigger (c) must come after trigger (b)',
+  );
+  const rest = step1raw.slice(triggerCStart);
+  const bullet = rest.search(/\n {3}- \*\*/);
+  const triggerC = prose(bullet === -1 ? rest : rest.slice(0, bullet));
+  assert.match(triggerC, near('`merge-proof-local`', '`conflict`', 400));
+  assert.match(triggerC, near('trigger-\\(c\\) record', 'base-merge-unavailable record', 300));
+  assert.doesNotMatch(triggerC, /failing/i, 'trigger (c) must not depend on a failing check');
+  assert.match(
+    prose(step1raw),
+    near('Trigger \\(c\\) fires at most once per run', 'trigger-\\(c\\) record', 200),
+    'the trigger-(c) record must bound it to one firing per run',
+  );
+
+  const forgejo = prose(
+    boundedSlice(
+      mergeGateSource(),
+      "**The second arm is Forgejo's",
+      '**The Forgejo WIP-draft exit.**',
+    ),
+  );
+  assert.doesNotMatch(
+    forgejo,
+    /loops to `mergeGate\.maxRounds`/i,
+    'a Forgejo conflict no longer loops to mergeGate.maxRounds',
+  );
+  assert.match(forgejo, /trigger \(c\)/i, 'the second-arm paragraph must point to trigger (c)');
+});
+
 // Invariant: the ancestry check precedes provisioning, so a head that already contains the base never
 // gets a worktree, and both lazy pointers fire on trigger (b) stating "behind" as well as on trigger (a).
 test('the ancestry check precedes provisioning and both lazy pointers name trigger (b)', () => {
@@ -7629,6 +7668,11 @@ test('the ancestry check precedes provisioning and both lazy pointers name trigg
     const when = triggers.get(fragment);
     assert.ok(when, `${fragment} must stay a lazy pointer`);
     assert.match(when, /behind|dirty/i);
+    assert.match(
+      when,
+      near('trigger \\(c\\) fired', '`conflict`', 80),
+      `${fragment} must load on trigger (c)`,
+    );
     assert.match(when, /trigger \(b\)/i, `${fragment} must load on trigger (b)`);
     assert.match(
       when,
@@ -8137,14 +8181,14 @@ test('the mismatch re-read that writes a different-commit record ends the run re
   );
 });
 
-// Invariant (end location ii, F2): first in step 1 - before either trigger is evaluated, against the
+// Invariant (end location ii, F2): first in step 1 - before any trigger is evaluated, against the
 // run's latest check result - a `different-commit` record with `BEHIND` or `DIRTY` ends the run
 // report-only, so a later round or a resumed run does not merge again. The instruction is pinned in
-// the text between "has two triggers." and `**Trigger (a):**`, and its order is checked: a check
+// the text between "has three triggers." and `**Trigger (a):**`, and its order is checked: a check
 // that sat after the triggers would not be a "check first".
-test('step 1 checks a different-commit record against BEHIND or DIRTY before either trigger is evaluated', () => {
-  const lead = prose(boundedSlice(mergeGateStep1(), 'has two triggers.', '**Trigger (a):**'));
-  assert.match(lead, /before either is evaluated/);
+test('step 1 checks a different-commit record against BEHIND or DIRTY before any trigger is evaluated', () => {
+  const lead = prose(boundedSlice(mergeGateStep1(), 'has three triggers.', '**Trigger (a):**'));
+  assert.match(lead, /before any is evaluated/);
   assert.match(
     lead,
     near('where the wisdom file holds a `different-commit`', 'base-merge-unavailable record', 40),
@@ -8155,8 +8199,8 @@ test('step 1 checks a different-commit record against BEHIND or DIRTY before eit
   const step1 = prose(mergeGateStep1());
   ordered(
     step1,
-    'has two triggers.',
-    'before either is evaluated',
+    'has three triggers.',
+    'before any is evaluated',
     'apply the report-only run end.',
     'Trigger (a):',
     'Trigger (b):',
@@ -8270,13 +8314,13 @@ test('the Phase 6 report is keyed on the record and hands to iterate only for a 
   );
 });
 
-// Invariant: the Rules section names both triggers: once the base-merge-unavailable record exists,
-// neither fires.
-test('the Rules section fires neither trigger once the base-merge-unavailable record exists', () => {
+// Invariant: the Rules section names every trigger: once the base-merge-unavailable record exists,
+// none fires.
+test('the Rules section fires no trigger once the base-merge-unavailable record exists', () => {
   const rules = prose(section(mergeGateSource(), '## Rules', '\n## '));
   assert.match(
     rules,
-    /Fire neither trigger of Phase 2 step 1 once the base-merge-unavailable record exists/,
+    /Fire no trigger of Phase 2 step 1 once the base-merge-unavailable record exists/,
   );
 });
 
@@ -25751,6 +25795,16 @@ test('the Forgejo WIP-draft exit needs a clean local merge proof and Phase 4 rep
     exit,
     /`conflict` ends the run here with a conflict report naming its `conflictCount` – the round stays counted, nothing is merged, delegated or asked, and Phase 6 runs\./,
   );
+  // A conflict ends the run only once trigger (c) has had its one repair; otherwise the next round repairs it.
+  assert.match(
+    exit,
+    near(
+      'trigger-\\(c\\) record or a base-merge-unavailable record',
+      '`conflict` ends the run here',
+      80,
+    ),
+  );
+  assert.match(exit, near('Any other `conflict` ends the round', 'fires trigger \\(c\\)', 120));
   assert.match(
     exit,
     /`unavailable`, a failed fetch or call, a shallow repository or a missing commit makes no exception/,
@@ -25782,7 +25836,7 @@ test('the Forgejo WIP-draft exit needs a clean local merge proof and Phase 4 rep
   // The helper reads and writes no ref, so the Git-read paragraph names it with the other reads.
   assert.match(
     prose(run),
-    /`merge-proof-local` of the Forgejo WIP-draft exit and of Phase 4: it fetches nothing, and its `git merge-tree --write-tree` writes only into a private temporary object directory the helper removes/,
+    /every `merge-proof-local` call, Phase 2 step 1's, the Forgejo WIP-draft exit's and Phase 4's: it fetches nothing, and its `git merge-tree --write-tree` writes only into a private temporary object directory the helper removes/,
   );
 });
 
