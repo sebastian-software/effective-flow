@@ -152,7 +152,14 @@ therefore needs an idle generation, while recording does not (see "Overlap and a
 `inventory` names the cause in `busyCause`: `open-reservations` while a workflow reservation or
 packet timing is open, otherwise `open-observations` while a gate observation is open, and `null`
 when nothing is open or the evidence holds an invalid member or orphan temporary. Its incomplete
-counts expose the open members.
+counts expose the open members. A timing receipt that a terminal record kept, because its
+`finalize` or `reconcile-record` faulted after persisting the record, counts as an open packet
+timing when it names a packet of that record that did not stay `not-started`, so a fresh
+`inventory` still succeeds and `reconcile-record` can drain it. Until then a new `start` or
+`start-gate-observation` that admission would otherwise accept fails `INCOMPLETE_EVIDENCE`, and
+`resume`, `activate`, and `aggregate` stay closed as for any open timing. A receipt of an unknown run or packet, a
+never-started packet, or a mismatched reservation still fails every inventory with
+`INCOMPLETE_EVIDENCE`.
 
 A crashed run's open reservation reads as busy like a live one. Only the owning run can finalize it
 or reconcile it, because `reconcile-record` needs that run's transient `workflowCapability`; no

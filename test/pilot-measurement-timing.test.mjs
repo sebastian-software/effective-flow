@@ -352,6 +352,246 @@ test('a crash leaves incomplete evidence, then unavailable timing can be reconci
   );
 });
 
+function generationDirectory(fixture) {
+  return join(
+    fixture.root,
+    '.effective-flow',
+    'model-tiering-pilot',
+    'generations',
+    fixture.generationId,
+  );
+}
+
+function allPacketsInput(fixture, completionStatus) {
+  return {
+    ...finishWorkflowInput(fixture, fixture.packets[0]),
+    packets: fixture.packets.map((packet) => ({
+      packetId: packet.packetId,
+      packetCapability: packet.packetCapability,
+      fallback: 'none',
+      escalated: false,
+      costProxy: null,
+    })),
+    completionStatus,
+  };
+}
+
+function timingNames(records) {
+  return readdirSync(records)
+    .filter((name) => name.endsWith('.timing.json'))
+    .sort();
+}
+
+async function inventoryOf(fixture) {
+  return (
+    await executeOperation(
+      'inventory',
+      {
+        runtimeStateRoot: fixture.root,
+        repositoryIdentity: fixture.repositoryIdentity,
+        generationId: fixture.generationId,
+      },
+      { runner: realRunner },
+    )
+  ).result;
+}
+
+// Invariant: a timing receipt a terminal record kept because its finalize faulted after persisting
+// the record stays readable as an open packet timing, so the documented recovery is reachable:
+// a fresh inventory, then reconcile-record drains the receipt and keeps the stored record.
+test('reconcile-record drains the timing receipts a faulted finalize left behind a terminal record', async (t) => {
+  const fixture = await workflowFixture(t, 2);
+  for (const [index, packet] of fixture.packets.entries()) {
+    const offset = BigInt(index);
+    await executeOperation(
+      'start-packet',
+      timingInput(fixture, packet),
+      controlledDeps(clock(9_000_000, 4_500, 120_000_000_000n + offset)),
+    );
+    await executeOperation(
+      'finish-packet',
+      timingInput(fixture, packet, { modelCompliance: 'not-applicable' }),
+      controlledDeps(clock(9_000_100, 4_500.1, 120_100_000_000n + offset)),
+    );
+  }
+  const generation = generationDirectory(fixture);
+  const records = join(generation, 'records');
+  const recordPath = join(records, `${fixture.runId}.json`);
+
+  // The fault strikes in the receipt-removal loop, after the terminal record is persisted and its
+  // first receipt removed.
+  let armed = true;
+  async function faultingRunner(request) {
+    if (
+      armed &&
+      request.args.includes('ls-files') &&
+      JSON.parse(readFileSync(recordPath, 'utf8')).kind === 'workflow-record' &&
+      timingNames(records).length === 1
+    ) {
+      armed = false;
+      throw new Error('injected receipt removal fault');
+    }
+    return realRunner(request);
+  }
+  await assert.rejects(
+    executeOperation('finalize', allPacketsInput(fixture, 'completed'), {
+      runner: faultingRunner,
+    }),
+    (error) =>
+      error.pilotControlOutcome === 'finalization-failed' && error.controlStatePersisted === true,
+  );
+  assert.equal(armed, false);
+  const recordBytes = readFileSync(recordPath, 'utf8');
+  assert.equal(JSON.parse(recordBytes).kind, 'workflow-record');
+  assert.equal(JSON.parse(recordBytes).completionStatus, 'completed');
+  assert.equal(timingNames(records).length, 1);
+
+  const leftover = await inventoryOf(fixture);
+  assert.equal(leftover.incompleteCounts.packetTimings, 1);
+  assert.equal(leftover.incompleteCounts.workflowRecords, 0);
+  assert.equal(leftover.busyCause, 'open-reservations');
+
+  const reconcileInput = {
+    runtimeStateRoot: fixture.root,
+    repositoryIdentity: fixture.repositoryIdentity,
+    generationId: fixture.generationId,
+    runId: fixture.runId,
+    workflowCapability: fixture.workflowCapability,
+    expectedInventoryDigest: leftover.inventoryDigest,
+    confirmation: true,
+  };
+  await assert.rejects(
+    executeOperation(
+      'reconcile-record',
+      { ...reconcileInput, workflowCapability: fixture.packets[0].packetCapability },
+      { runner: realRunner },
+    ),
+    (error) => error.code === 'AUTHENTICATION_FAILED',
+  );
+  assert.equal(timingNames(records).length, 1);
+  assert.deepEqual(
+    (await executeOperation('reconcile-record', reconcileInput, { runner: realRunner })).result,
+    { status: 'completed', runId: fixture.runId },
+  );
+  assert.equal(readFileSync(recordPath, 'utf8'), recordBytes);
+  assert.deepEqual(timingNames(records), []);
+  const drained = await inventoryOf(fixture);
+  assert.equal(drained.incompleteCounts.packetTimings, 0);
+  assert.equal(drained.busyCause, null);
+});
+
+// Invariant: an open receipt binds only by its reservation's packet capability hash, and a leftover
+// receipt only to a packet of a terminal record that started (or is unknown); a receipt of an
+// unknown run, an unknown packet, a packet that never started, or a mismatched reservation fails
+// the inventory closed. A bound leftover keeps new admission closed until reconcile-record drains it.
+test('a timing receipt no terminal record binds still fails the inventory closed', async (t) => {
+  const fixture = await workflowFixture(t, 2);
+  const [missing, started] = fixture.packets;
+  await executeOperation(
+    'start-packet',
+    timingInput(fixture, started),
+    controlledDeps(clock(9_500_000, 4_750, 130_000_000_000n)),
+  );
+  const records = join(generationDirectory(fixture), 'records');
+  const receiptPath = join(records, `${fixture.runId}.${started.packetId}.timing.json`);
+  const receiptBytes = readFileSync(receiptPath, 'utf8');
+  const receipt = JSON.parse(receiptBytes);
+  const reservation = JSON.parse(readFileSync(join(records, `${fixture.runId}.json`), 'utf8'));
+  const otherHash = reservation.packets.find(
+    ({ packetId }) => packetId === missing.packetId,
+  ).packetCapabilityHash;
+  assert.notEqual(otherHash, receipt.packetCapabilityHash);
+  writeFileSync(
+    receiptPath,
+    `${JSON.stringify({ ...receipt, packetCapabilityHash: otherHash })}\n`,
+    {
+      mode: 0o600,
+    },
+  );
+  await assert.rejects(
+    inventoryOf(fixture),
+    (error) => error.code === 'INCOMPLETE_EVIDENCE',
+    'mismatched reservation',
+  );
+  writeFileSync(receiptPath, receiptBytes, { mode: 0o600 });
+  await executeOperation('finalize', allPacketsInput(fixture, 'aborted'), { runner: realRunner });
+  const record = JSON.parse(readFileSync(join(records, `${fixture.runId}.json`), 'utf8'));
+  assert.deepEqual(
+    record.packets.map(({ attempt }) => attempt),
+    ['not-started', 'started'],
+  );
+  assert.deepEqual(timingNames(records), []);
+
+  const plant = (runId, packetId) => {
+    const target = join(records, `${runId}.${packetId}.timing.json`);
+    writeFileSync(target, `${JSON.stringify({ ...receipt, runId, packetId })}\n`, {
+      mode: 0o600,
+    });
+    return target;
+  };
+  for (const [label, runId, packetId] of [
+    ['unknown run', 'U'.repeat(32), started.packetId],
+    ['unknown packet', fixture.runId, 'Q'.repeat(32)],
+    ['packet that never started', fixture.runId, missing.packetId],
+  ]) {
+    const target = plant(runId, packetId);
+    await assert.rejects(
+      inventoryOf(fixture),
+      (error) => error.code === 'INCOMPLETE_EVIDENCE',
+      label,
+    );
+    rmSync(target);
+  }
+  // The started packet's own receipt is the leftover a faulted finalize keeps.
+  plant(fixture.runId, started.packetId);
+  const leftover = await inventoryOf(fixture);
+  assert.equal(leftover.incompleteCounts.packetTimings, 1);
+  assert.equal(leftover.busyCause, 'open-reservations');
+  const startInput = {
+    runtimeStateRoot: fixture.root,
+    repositoryIdentity: fixture.repositoryIdentity,
+    generationId: fixture.generationId,
+    configState: 'enabled',
+    workflow: 'build',
+    harnessFamily: 'codex',
+    installKind: 'native',
+    packets: [
+      {
+        selectedProfile: 'quality',
+        wouldBeFastEligible: true,
+        gate: { eligibility: 'eligible', firstReason: null },
+      },
+    ],
+  };
+  await assert.rejects(
+    executeOperation('start', startInput, { runner: realRunner }),
+    (error) => error.code === 'INCOMPLETE_EVIDENCE',
+  );
+  assert.deepEqual(
+    (
+      await executeOperation(
+        'reconcile-record',
+        {
+          runtimeStateRoot: fixture.root,
+          repositoryIdentity: fixture.repositoryIdentity,
+          generationId: fixture.generationId,
+          runId: fixture.runId,
+          workflowCapability: fixture.workflowCapability,
+          expectedInventoryDigest: leftover.inventoryDigest,
+          confirmation: true,
+        },
+        { runner: realRunner },
+      )
+    ).result,
+    { status: 'aborted', runId: fixture.runId },
+  );
+  assert.deepEqual(timingNames(records), []);
+  assert.equal(
+    (await executeOperation('start', startInput, { runner: realRunner })).result.status,
+    'reserved',
+  );
+});
+
 test('an aborted or failed run records each packet attempt from its receipt', async (t) => {
   for (const completionStatus of ['aborted', 'failed']) {
     await t.test(completionStatus, async (t) => {

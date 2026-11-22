@@ -1404,9 +1404,13 @@ async function assertAdmissionOpen(context, evidence) {
 
 // The admission check for a new reservation or observation: open reservations, packet timings, and
 // observations of other runs are allowed (they overlap), while invalid members, orphan temporaries,
-// and a foreign lock still fail closed.
+// a timing receipt left behind a terminal record, and a foreign lock still fail closed.
 function assertEvidenceSound(context, evidence) {
-  if (evidence.invalidMembers.length > 0 || evidence.orphanTemporaries.length > 0) {
+  if (
+    evidence.invalidMembers.length > 0 ||
+    evidence.orphanTemporaries.length > 0 ||
+    evidence.leftoverTimings.length > 0
+  ) {
     fail('INCOMPLETE_EVIDENCE');
   }
   if (evidence.locks.some(({ nonce }) => nonce !== context.activeLock?.nonce)) {
@@ -2417,16 +2421,31 @@ async function evidenceInventory(context, generationId, options) {
       packetIds.add(packet.packetId);
     }
   }
+  // A receipt binds to its open reservation by the packet capability hash. A terminal record drops
+  // that hash, so a receipt it kept because its finalize or reconcile-record faulted before removing
+  // it binds by membership: a packet of that record whose attempt is not `not-started`. Such a
+  // leftover stays an open packet timing, which keeps activation and aggregation closed, and closes
+  // new admission until reconcile-record (which authenticates the workflow capability) drains it.
+  // Any other receipt fails closed.
+  const leftoverTimings = [];
   for (const timing of timings) {
     const workflow = workflowById.get(timing.runId);
     const packet = workflow?.packets.find(({ packetId }) => packetId === timing.packetId);
     if (
-      workflow?.kind !== 'workflow-reservation' ||
+      packet !== undefined &&
+      workflow.kind === 'workflow-reservation' &&
+      packet.packetCapabilityHash === timing.packetCapabilityHash
+    ) {
+      continue;
+    }
+    if (
       packet === undefined ||
-      packet.packetCapabilityHash !== timing.packetCapabilityHash
+      workflow.kind !== 'workflow-record' ||
+      packet.attempt === 'not-started'
     ) {
       fail('INCOMPLETE_EVIDENCE');
     }
+    leftoverTimings.push(timing.packetId);
   }
 
   const traceRunIds = new Set();
@@ -2605,6 +2624,7 @@ async function evidenceInventory(context, generationId, options) {
     packetIds,
     incompleteRecords,
     incompleteTimings,
+    leftoverTimings: leftoverTimings.sort(),
     incompleteObservations,
     orphanTemporaries,
     inventory,
