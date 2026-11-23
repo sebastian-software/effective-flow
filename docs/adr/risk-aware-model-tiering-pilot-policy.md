@@ -101,6 +101,11 @@ correction, stays Quality. Guided setup exposes the opt-in and the confirmed
 like native output and may select Fast only on a harness whose qualification the baseline snapshot
 recorded.
 
+> **Amended 2026-11-22:** the Targeted setup entry (`effective-flow setup <free text>`) exposes the
+> same opt-in question and the same confirmed `begin-baseline` and `resume` actions as Guided
+> block 10. The invariant is unchanged: setup is the only entry, the actions are confirmed, and no
+> workflow run calls them.
+
 > **Amended** by [Per-spawn model tiers](./per-spawn-model-tiers.md): portable spawns carry model
 > tiers rather than inheriting the manager's model. The Quality-mapping identity, a digest of the
 > `deep` tier values per harness, is part of the pilot protocol from version `1.2.0`; a generation

@@ -19,8 +19,8 @@
 //   cwd                  the canonical directory the status ran for
 //   setupFixable         true iff any finding below carries `setupFixable: true`
 //   setupForms[]         the distinct `setupForm` values of those findings, in `SETUP_FORMS` order
-//                        (`setup`, `setup guided`, `setup hidden`, `targeted`, `allowlist`); one
-//                        entry names the single form that fixes everything setup can fix
+//                        (`setup`, `setup hidden`, `targeted`, `allowlist`); one entry names
+//                        the single form that fixes everything setup can fix
 //   Every finding that carries `setupFixable` also carries `setupForm`: the setup invocation form
 //   its remediation names when setup-fixable, otherwise null (always null for domain owners and
 //   the version).
@@ -230,8 +230,6 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const INSTALLED_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z.-]+)?$/;
 
 const STATE_DIR = '.effective-flow';
-// The one key a Targeted request redirects to Guided setup, Advanced, Block 10.
-const FAST_PROFILE_KEY = 'executionProfiles.fast.enabled';
 const IGNORE_ENTRY = '.effective-flow/';
 const STANDARD_PROBE = '.effective-flow/config.json';
 const HIDDEN_PROBES = Object.freeze([
@@ -252,13 +250,7 @@ const GITIGNORE_DIRECTORY_NEGATION = /^!\s*\/?\.effective-flow\/?$/;
 
 // `setupForm` names the setup invocation form that fixes a setup-fixable finding (one of
 // `SETUP_FORMS`), and is null for a finding setup cannot fix.
-export const SETUP_FORMS = Object.freeze([
-  'setup',
-  'setup guided',
-  'setup hidden',
-  'targeted',
-  'allowlist',
-]);
+export const SETUP_FORMS = Object.freeze(['setup', 'setup hidden', 'targeted', 'allowlist']);
 
 function entry(remediation, setupFixable, setupForm = null) {
   return Object.freeze({ remediation, setupFixable, setupForm: setupFixable ? setupForm : null });
@@ -384,11 +376,6 @@ export const REMEDIATIONS = Object.freeze({
     visibility: entry(
       'Manual step: remove the `visibility` row with the invalid value from `{path}` by hand; a tracked configuration needs no `visibility` row (standard is the default), and a Targeted request refuses the key. To move to hidden mode instead, run `effective-flow setup hidden`.',
       false,
-    ),
-    fastProfile: entry(
-      'Run `effective-flow setup guided` and set `{key}` under Advanced, Block 10 (a Targeted request refuses this key); until then Fast stays disabled.',
-      true,
-      'setup guided',
     ),
     hiddenForced: entry(
       'Run `effective-flow setup hidden` to rewrite the local configuration without the invalid `{key}` row; hidden mode forces `{key}`, and a Targeted request refuses it.',
@@ -629,12 +616,12 @@ function finding(found, values = {}) {
 
 // The `invalid-value` variant for one diagnostic: a structural one (`reason: cell-count`) is an
 // invalid source; a value-domain one names the form that accepts its key, because a Targeted request
-// refuses `visibility`, `executionProfiles.fast.enabled` and, in hidden mode, every forced key.
+// refuses `visibility` and, in hidden mode, every forced key. `executionProfiles.fast.enabled` is a
+// value-domain diagnostic on a key Targeted accepts, so it takes the generic entry.
 function invalidValueRemediation(diagnostic, visibility) {
   const variants = REMEDIATIONS.invalidValue;
   if (diagnostic.reason === 'cell-count') return variants['cell-count'];
   if (diagnostic.key === 'visibility') return variants.visibility;
-  if (diagnostic.key === FAST_PROFILE_KEY) return variants.fastProfile;
   if (visibility === 'hidden' && Object.hasOwn(HIDDEN_FORCED_VALUES, diagnostic.key)) {
     return variants.hiddenForced;
   }

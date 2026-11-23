@@ -6,9 +6,9 @@ reconciliation. The anonymous merge-gate observation is a different record owned
 `pilot-measurement` fragment. The loaded `execution-profiles` fragment stays the canonical profile
 policy; this fragment adds no gate row, state, fallback, or outcome.
 
-A workflow run never calls `begin-baseline` or `resume`; those two are confirmed Guided setup
-actions. A run reads the generation, lets the helper activate a baseline generation, and writes
-only its own record and incidents.
+A workflow run never calls `begin-baseline` or `resume`; those two are confirmed setup actions
+(Guided block 10 or a Targeted request). A run reads the generation, lets the helper activate a
+baseline generation, and writes only its own record and incidents.
 
 ### Helper contract
 
@@ -276,14 +276,14 @@ options:
   - label: Retry
     description: Re-send the identical incident under the LOCKED retry policy; a success persists the suspension
   - label: Leave
-    description: Record nothing more; later measured runs may select Fast until the pilot is disabled in Guided setup
+    description: Record nothing more; later measured runs may select Fast until the pilot is disabled in setup
 ```
 
 On **Retry**, re-send the identical payload under the same policy and report the persisted
 suspension on success. A declined, unanswered, non-interactive, or failed retry leaves no
 suspension. The completion report then states that no durable state keeps a later measured run off
-Fast, and that the confirmed recovery path is `{{SKILL:setup}}` Guided block 10 `Disable`, after
-which Fast returns only through a confirmed `Enable` there.
+Fast, and that the confirmed recovery path is `{{SKILL:setup}}` block 10 `Disable`, from Guided or a
+Targeted request, after which Fast returns only through a confirmed `Enable` there.
 Under an Automation caller's scored decision mode, row S-INC of `scored-decisions` decides.
 
 After any critical incident in the run, persisted or not, no packet that has not yet spawned makes
@@ -344,8 +344,8 @@ disabled clears it, losing the generation.
 
 Only a suspension the helper persisted, from a successful `record-incident` or an envelope with
 `controlStatePersisted: true`, keeps later runs off Fast: each later run observes that persisted
-suspension until an explicit confirmed Guided `resume` while the generation is still `suspended`
+suspension until an explicit confirmed setup `resume` while the generation is still `suspended`
 with healthy evidence; a reviewed generation never resumes. An incident that could not be persisted
 leaves no durable state, so nothing keeps a later measured run off Fast; the only confirmed
-recovery is `{{SKILL:setup}}` Guided block 10 `Disable`, and Fast returns only through a confirmed
-`Enable` there.
+recovery is `{{SKILL:setup}}` block 10 `Disable`, from Guided or a Targeted request, and Fast
+returns only through a confirmed `Enable` there.

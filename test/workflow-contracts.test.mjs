@@ -1360,7 +1360,7 @@ test('setup classifies the seven keyword invocations and routes any other argume
 // renders a non-null ignore-note `detail`, reports a missing or disabled domain owner once per owner
 // and cause (a missing owner suppresses its disabled lines), and recommends setup only for a
 // setup-fixable finding with one option per setup form, at most two: bare setup is Profile mode and
-// applies neither a Targeted request nor `setup hidden`/`setup guided`, so it is offered only for
+// applies neither a Targeted request nor `setup hidden`, so it is offered only for
 // the `setup` form itself. The next-steps table carries that recommendation as a `setup` row whose
 // `<...>` placeholders the fragment fills.
 test('setup status renders the read-only status envelope and never asks or mutates', () => {
@@ -1425,20 +1425,13 @@ test('setup status renders the read-only status envelope and never asks or mutat
   );
   for (const [form, invocation] of [
     ['setup', 'bare `\\{\\{SKILL:setup\\}\\}` \\(an empty setup argument\\)'],
-    ['setup guided', '`\\{\\{SKILL:setup\\}\\} guided`'],
     ['setup hidden', '`\\{\\{SKILL:setup\\}\\} hidden`'],
     ['targeted', '`\\{\\{SKILL:setup\\}\\} <request>` with the first Targeted request'],
     ['allowlist', '`\\{\\{SKILL:setup\\}\\} allowlist`'],
   ]) {
     assert.match(prose(status), new RegExp(`\`${form}\` is ${invocation}`));
   }
-  ordered(
-    prose(status),
-    '`setup` is bare',
-    '`setup guided` is',
-    '`setup hidden` is',
-    '`targeted` is',
-  );
+  ordered(prose(status), '`setup` is bare', '`setup hidden` is', '`targeted` is');
   assert.match(prose(status), /the second line also says that the report's remaining forms follow/);
   assert.match(prose(status), /Bare `\{\{SKILL:setup\}\}` is an option only for the `setup` form/);
   assert.doesNotMatch(prose(status), /setup forms named above/);
@@ -1588,7 +1581,8 @@ test('every setup lazy pointer names the decision point that loads it', () => {
 // Invariant: a Targeted run loads each owning Guided fragment only for the key groups that fragment
 // owns, and hidden mode's fragment only for its write. The fragment's owner table is the source of
 // truth: every key group it assigns to the core switches must trigger the core-switch pointer, and
-// every group it assigns to a numbered block the advanced pointer, so a key group missing from a
+// every group it assigns to a numbered block the advanced pointer (block 10, loaded directly, its own
+// `setup-execution-profiles` pointer), so a key group missing from a
 // `when:` silently runs its change without the owner's question. Each owning fragment's opener names
 // that Targeted entry and keeps it to the touched key's question (hidden mode: its write section).
 test('the Targeted setup fragment loads each owning fragment only for the keys it owns', () => {
@@ -1600,6 +1594,7 @@ test('the Targeted setup fragment loads each owning fragment only for the keys i
   const pointerCount = (name) => targetedMatches.filter((match) => match[1].trim() === name).length;
   for (const name of [
     'setup-advanced-settings',
+    'setup-execution-profiles',
     'setup-guided-core-switches',
     'setup-hidden-mode',
   ]) {
@@ -1610,11 +1605,13 @@ test('the Targeted setup fragment loads each owning fragment only for the keys i
   );
   assert.deepEqual([...targetedPointers.keys()].sort(), [
     'setup-advanced-settings',
+    'setup-execution-profiles',
     'setup-guided-core-switches',
     'setup-hidden-mode',
   ]);
   const corePointer = targetedPointers.get('setup-guided-core-switches');
   const advancedPointer = targetedPointers.get('setup-advanced-settings');
+  const pilotPointer = targetedPointers.get('setup-execution-profiles');
   assert.match(corePointer, /Targeted operation touches a core-switch key/);
   assert.match(advancedPointer, /Targeted operation touches a block key/);
 
@@ -1652,30 +1649,35 @@ test('the Targeted setup fragment loads each owning fragment only for the keys i
       'tracker.externalTool',
       'skills.*',
       'mergeGate.*',
+      'executionProfiles.fast.enabled',
     ],
   );
-  const owned = { core: [], block: [] };
+  const owned = { core: [], block: [], pilot: [] };
   for (const [group, owner] of ownerRows) {
     // Only full key names are checked; `…Hint` and `.trigger` abbreviate the row's lead key.
     const keys = spans(group).filter((key) => /^[a-z]/i.test(key));
     const core = /core switches/.test(owner);
-    const block = /\bblock \d/.test(owner);
+    const pilot = /`setup-execution-profiles`/.test(owner);
+    const block = !pilot && /\bblock \d/.test(owner);
     assert.ok(
-      core || block || /Step 4 base-branch rule/.test(owner),
+      core || block || pilot || /Step 4 base-branch rule/.test(owner),
       `owner row ${group} must name a core switch, a block, or the setup core's base-branch rule`,
     );
     for (const key of keys) {
       if (core) assert.ok(covers(corePointer, key), `core-switch pointer misses ${key}`);
       if (block) assert.ok(covers(advancedPointer, key), `advanced pointer misses ${key}`);
+      if (pilot) assert.ok(covers(pilotPointer, key), `pilot pointer misses ${key}`);
     }
     if (core) owned.core.push(...keys);
     if (block) owned.block.push(...keys);
+    if (pilot) owned.pilot.push(...keys);
   }
   // The reverse direction: a `when:` key whose row names another owner would load this fragment
   // for a change it does not own.
   for (const [when, keys, name] of [
     [corePointer, owned.core, 'core-switch'],
     [advancedPointer, owned.block, 'advanced'],
+    [pilotPointer, owned.pilot, 'pilot'],
   ]) {
     for (const span of spans(when)) {
       assert.ok(
@@ -1737,8 +1739,8 @@ test('the Targeted setup fragment loads each owning fragment only for the keys i
   }
   assert.match(
     opener('setup-advanced-settings'),
-    /never a whole block, and never block 10/,
-    'Targeted never reaches the Fast pilot block, which stays Guided-only',
+    /never a whole block, and never block 10 through this fragment: Targeted loads `setup-execution-profiles` directly/,
+    'Targeted reaches the Fast pilot block only through its own direct pointer',
   );
   const hiddenMode = source('src/shared/setup-hidden-mode.md');
   assert.match(hiddenMode, /^### Writing the hidden local configuration$/m);
@@ -1940,9 +1942,9 @@ test('the external profile alone captures reproducible connection context and ve
   assert.match(contract, /Drift invalidates the preview/);
 });
 
-// The field-pilot opt-in `executionProfiles.fast.enabled` has exactly one writer, Guided setup, and
-// exactly one entry into it: advanced block 10, whose lazy fragment owns the question and the
-// generation actions. The setup core carries only that block's entry, its pointer, and the schema
+// The field-pilot opt-in `executionProfiles.fast.enabled` has exactly one writer, setup block 10,
+// whose lazy fragment owns the question and the generation actions; Guided reaches it through
+// advanced block 10 and Targeted through its own pointer. The setup core carries only the schema
 // row, so the invocation set and the always-loaded budget stay what they were.
 function setupExecutionProfilesFragment() {
   return source('src/shared/setup-execution-profiles.md');
@@ -1963,7 +1965,7 @@ function sentPayloadKeys(text, label) {
   return [...sentence.matchAll(/`([A-Za-z]+)(?:: [^`]+)?`/g)].map(([, key]) => key).slice(1);
 }
 
-test('setup exposes the field-pilot opt-in only through Guided block 10 and its schema row', () => {
+test('setup exposes the field-pilot opt-in only through block 10 and its schema row', () => {
   const setup = source('src/tools/setup.md');
   const schema = boundedSlice(setup, '## Config schema', '### Safe defaults');
   // The block list sits behind the `Advanced` answer in `setup-advanced-settings`.
@@ -1980,7 +1982,7 @@ test('setup exposes the field-pilot opt-in only through Guided block 10 and its 
   assert.match(row[0], /never a provider model name/);
   assert.match(
     row[0],
-    /Set only in Guided block 10; Profile and Express preserve an existing value/,
+    /Set only by setup block 10, from Guided or a Targeted request; Profile and Express preserve an existing value/,
   );
 
   ordered(advanced, '9. `mergeGate`', '10. `executionProfiles`', '```lazy-include');
@@ -2022,11 +2024,15 @@ test('setup exposes the field-pilot opt-in only through Guided block 10 and its 
 
   const fragment = prose(setupExecutionProfilesFragment());
   assert.match(fragment, /loaded only when Guided Step 5 opens advanced block 10/);
+  assert.match(
+    fragment,
+    /or when a Targeted run \(`setup-targeted-change`\) touches `executionProfiles\.fast\.enabled`/,
+  );
   assert.match(fragment, /writes a workflow record, or adds a setup invocation/);
   assert.match(fragment, /Profile, Express, and `\{\{SKILL:setup\}\} hidden` never load it/);
 });
 
-test('the Guided opt-in writes only literal true or false and never repairs or names a model', () => {
+test('the setup opt-in writes only literal true or false and never repairs or names a model', () => {
   const fragment = prose(setupExecutionProfilesFragment());
   const ask = setupPilotAsk('Fast pilot');
 
@@ -2078,17 +2084,20 @@ test('the Guided opt-in writes only literal true or false and never repairs or n
   const encoding = prose(source('src/shared/config-migration.md'));
   assert.match(
     encoding,
-    /Only Guided setup \(advanced block 10\) sets it; Profile and Express preserve an existing value and never enable it/,
+    /Only setup block 10 \(Guided or Targeted\) sets it; Profile and Express preserve an existing value and never enable it/,
   );
   assert.doesNotMatch(encoding, /not yet an interactive setup choice/);
 });
 
-test('Guided generation actions are confirmed, digest-bound, disclosed, and state-gated', () => {
+test('setup generation actions are confirmed, digest-bound, disclosed, and state-gated', () => {
   const text = setupExecutionProfilesFragment();
   const fragment = prose(text);
 
   // Placement: after the configuration is written, never as a side effect of the Boolean.
-  assert.match(fragment, /after Step 6 has finished without stopping and before Step 7/);
+  assert.match(
+    fragment,
+    /Guided offers them after Step 6 has finished without stopping and before Step 7/,
+  );
   assert.match(
     fragment,
     /No action writes, rewrites, or removes `executionProfiles\.fast\.enabled`/,
@@ -2385,15 +2394,15 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
     near('list the seven keyword forms', '`\\{\\{SKILL:setup\\}\\} <free text>`', 10),
   );
 
-  // Redirects: the two keys that stay with the full setup.
+  // Redirects: `visibility` stays with the full setup; the Fast pilot key no longer redirects.
   assert.match(refusals, near('`visibility` →', '`\\{\\{SKILL:setup\\}\\} hidden` to hide', 10));
   assert.match(
     refusals,
     near('`\\{\\{SKILL:setup\\}\\} guided`', 'answering `Standard` to unhide', 20),
   );
-  assert.match(
+  assert.doesNotMatch(
     refusals,
-    /`executionProfiles\.fast\.enabled` → `\{\{SKILL:setup\}\} guided` → Advanced → Block 10/,
+    /`executionProfiles\.fast\.enabled` → `\{\{SKILL:setup\}\} guided`/,
   );
   // A redirect refuses its operation only; a precondition stop ends the run.
   assert.match(refusals, /Precondition stops end the whole run/);
@@ -2480,7 +2489,7 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
   // The one write path: Step 6 items 1, 2 and 4 plus the Targeted item 3, one confirmation.
   assert.match(
     write,
-    near('The only write path is Step 6 items 1, 2 and 4', 'the Targeted item 3', 10),
+    near('The only configuration write path is Step 6 items 1, 2 and 4', 'the Targeted item 3', 10),
   );
   assert.match(write, near('the Targeted item 3', 'under one explicit confirmation', 10));
   ordered(
@@ -2536,6 +2545,244 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
 
   // The summary stages nothing, so it matches no next-step row.
   assert.match(summary, /It matches no next-steps row/);
+});
+
+// Invariant: a Targeted request for the Fast pilot opt-in is served by block 10 itself, loaded
+// through the one Targeted pointer, instead of being redirected to the full Guided setup. The
+// owner row and the pointer's `when:` name the key; the redirect list no longer does.
+test('the Targeted fragment serves executionProfiles.fast.enabled through block 10 instead of redirecting to guided', () => {
+  const targeted = source('src/shared/setup-targeted-change.md');
+  const refusals = prose(section(targeted, '### Refusals and redirects'));
+  const row = section(targeted, '### Owner questions')
+    .split('\n')
+    .find((line) => line.startsWith('| `executionProfiles.fast.enabled`'));
+  assert.ok(row, 'the owner table must carry an executionProfiles.fast.enabled row');
+  assert.match(prose(row), /block 10 \(`setup-execution-profiles`\), loaded directly/);
+  const pointers = [...targeted.matchAll(LAZY_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === 'setup-execution-profiles',
+  );
+  assert.equal(pointers.length, 1);
+  assert.match(
+    pointers[0][2],
+    /^\s*a Targeted operation touches `executionProfiles\.fast\.enabled`/,
+  );
+  // No redirect of the key to the full setup remains anywhere in the fragment.
+  assert.doesNotMatch(
+    prose(targeted),
+    /executionProfiles\.fast\.enabled`?[^.]{0,120}`\{\{SKILL:setup\}\} guided`/,
+  );
+  assert.doesNotMatch(refusals, /executionProfiles|Fast pilot/);
+});
+
+// Invariant: block 10 admits a Targeted run in its opener, its opt-in ask, its pre-selection rule
+// and its generation-action gate, and the gate keeps each of its conditions.
+test('the pilot block admits Targeted in its opener, ask, pre-selection and generation-action gate', () => {
+  const raw = setupExecutionProfilesFragment();
+  const fragment = prose(raw);
+  assert.match(
+    fragment,
+    /or when a Targeted run \(`setup-targeted-change`\) touches `executionProfiles\.fast\.enabled`, holds a _pilot action_, or asks a _pilot state question_/,
+  );
+  assert.match(
+    setupPilotAsk('Fast pilot').when,
+    /a Targeted request touches executionProfiles\.fast\.enabled/,
+  );
+  assert.match(
+    fragment,
+    /under Targeted, pre-select the requested `Enable` or `Disable` instead and show the recorded value as "currently recorded"/,
+  );
+  assert.match(fragment, /A Targeted request's text only chooses the pre-selection/);
+
+  const gate = prose(
+    boundedSlice(
+      raw,
+      'Targeted offers them only at its pilot action step',
+      'A declined confirmation',
+    ),
+  );
+  assert.match(gate, /only when all of these hold/);
+  assert.match(gate, /the run is interactive/);
+  assert.match(
+    gate,
+    /the request holds a _pilot action_, explicitly or through an `Enable` answer/,
+  );
+  // Every qualifying no-write reason: a `Keep` answer, an otherwise refused, redirected or
+  // read-only request, and each reason the Targeted "writes nothing" paragraph names.
+  assert.match(
+    gate,
+    /the Targeted write step finished its write without stopping, or wrote nothing because the opt-in was answered `Keep`/,
+  );
+  assert.match(
+    gate,
+    /because every other operation was refused, redirected, or a read-only question/,
+  );
+  assert.match(gate, /or for another reason the Targeted "writes nothing" paragraph names/);
+  assert.match(gate, /no operation of the run stopped, on any key/);
+  assert.match(
+    gate,
+    /the fresh read of step 1, never the preview value, classifies the key as `enabled`/,
+  );
+  assert.match(fragment, /A declined confirmation or a stopped run offers none/);
+});
+
+test('Baseline and Resume are never pre-selected and the request text is never consent', () => {
+  const fragment = prose(setupExecutionProfilesFragment());
+  assert.match(
+    fragment,
+    near('never pre-select an option', 'the invocation text is never consent', 40),
+  );
+  assert.match(
+    fragment,
+    /a Targeted request to start or resume the baseline selects this step and nothing more/,
+  );
+  assert.match(
+    fragment,
+    /Send `confirmation: true` only after the user's explicit confirmation of that action in this same run/,
+  );
+  assert.match(fragment, /non-interactive ask sends nothing/);
+  for (const header of ['Baseline', 'Resume']) {
+    assert.doesNotMatch(setupPilotAsk(header).when, /Targeted request/);
+  }
+  const targeted = prose(source('src/shared/setup-targeted-change.md'));
+  assert.match(targeted, /the request never confirms either/);
+});
+
+// Invariant: the Targeted fragment defines the pilot operation kinds and owns the wording rules
+// that keep a loose request inside its own route.
+test('the Targeted fragment pins the pilot operations, implied opt-in, ambiguity questions, refusals, state answer and summary reasons', () => {
+  const targeted = source('src/shared/setup-targeted-change.md');
+  const interpretation = prose(section(targeted, '### Interpretation'));
+  const requests = prose(section(targeted, '### Fast pilot requests'));
+  const refusals = prose(section(targeted, '### Refusals and redirects'));
+  const answers = prose(section(targeted, '### Read-only answers'));
+  const write = prose(section(targeted, '### Write'));
+  const summary = prose(section(targeted, '### Summary'));
+
+  assert.match(interpretation, /_pilot action_: start or resume the Fast pilot baseline/);
+  assert.match(
+    interpretation,
+    /_pilot state question_: a read-only question about the pilot's generation state/,
+  );
+
+  // Bare "fast": one two-option question, Fast pilot or review.profile.
+  assert.match(
+    requests,
+    /A bare "fast" with no pilot, baseline, execution-profile, or review context/,
+  );
+  assert.match(
+    requests,
+    near(
+      'the Fast pilot \\(`executionProfiles\\.fast\\.enabled`\\)',
+      'the review profile \\(`review\\.profile = fast`\\)',
+      40,
+    ),
+  );
+  assert.match(requests, /"Fast pilot", "start the baseline", or "review profile fast" need none/);
+  assert.match(requests, /"review" means `begin-review`, refused below, never `review\.profile`/);
+  // The Fast pilot answer is a set whose `Enable` answer, not the disambiguation itself, is the
+  // pilot action; only a Fast-key answer feeds block 10's question, which stays the one decision.
+  assert.match(
+    requests,
+    /_set_ `executionProfiles\.fast\.enabled = true` whose `Enable` answer counts as a _pilot action_/,
+  );
+  assert.match(
+    requests,
+    /A disambiguation answer that selects an `executionProfiles\.fast\.enabled` _set_ only selects the operation; block 10's `Fast pilot` question stays the single decision/,
+  );
+  assert.match(requests, /A "leave unchanged" stop answer is no operation/);
+
+  // Implied opt-in: Enable pre-selected, a recorded false named as an earlier explicit decision.
+  assert.match(requests, /While the key is not `enabled`, it implies the opt-in/);
+  assert.match(
+    requests,
+    /with `Enable` pre-selected and a recorded `false` named as an earlier explicit decision to disable/,
+  );
+  assert.match(requests, /`Keep` or `Disable` offers no action/);
+
+  // Stop wording: Disable or unchanged, and begin-review is out of reach.
+  assert.match(
+    requests,
+    /Stop wording \("stop the pilot", "pause Fast"\) gets one question: `Disable`, or leave the pilot unchanged/,
+  );
+  assert.match(
+    requests,
+    near(
+      "ending a generation \\(`begin-review`\\) is out of Targeted's reach",
+      'names its route below',
+      40,
+    ),
+  );
+
+  // Per-operation refusals.
+  assert.match(
+    refusals,
+    /`begin-review` and `discard-generation` → the pilot helper directly, with the pilot disabled/,
+  );
+  assert.match(refusals, /measurement edits and a model or provider name have no route/);
+  assert.match(refusals, /Every other refusal applies to its operation only/);
+
+  // The state answer also runs in a non-interactive run.
+  assert.match(
+    answers,
+    /A _pilot state question_ runs block 10 "Generation actions" step 1 \(`inventory`\) once at this stage, also in a non-interactive run/,
+  );
+  assert.match(answers, /it offers no action/);
+  assert.match(write, /it calls the pilot helper only for a _pilot state question_/);
+  // Only the two fail-closed codes send nothing further; every other failure and a lost action
+  // response re-read the inventory under block 10's rule.
+  const actionStep = boundedSlice(write, 'Pilot action step.', 'stays as it is');
+  assert.match(
+    actionStep,
+    /A fail-closed `UNSAFE_RUNTIME_ROOT` or `MIGRATION_REQUIRED` is reported by its error code, sends nothing further/,
+  );
+  assert.match(
+    actionStep,
+    /any other failure, and a lost `begin-baseline` or `resume` response, follows block 10's re-read-`inventory` rule/,
+  );
+
+  // Summary reason list.
+  assert.match(
+    summary,
+    /A pilot action is reported as offered, accepted, declined, or not offered with its reason/,
+  );
+  for (const reason of [
+    'the generation state',
+    'a busy cause',
+    'config not `enabled`',
+    'a non-interactive run',
+    'a declined confirmation',
+    'a stopped write',
+    'no valid operation',
+    'the helper error code',
+  ]) {
+    assert.ok(summary.includes(reason), `the Summary reason list must name ${reason}`);
+  }
+  // The action outcome and the proven generation state come from block 10's report items.
+  assert.match(
+    summary,
+    /Block 10's Step 8 report items apply as well, with the generation state the last `inventory` proves, or unknown/,
+  );
+});
+
+// Invariant: block 10 stays out of Targeted's reach through the advanced-settings fragment, and the
+// Targeted fragment holds the only Targeted pointer to the pilot fragment.
+test('advanced settings still exclude Targeted from block 10 and only the Targeted fragment points to it', () => {
+  const advanced = prose(source('src/shared/setup-advanced-settings.md'));
+  assert.match(
+    advanced,
+    /Targeted asks only the touched key's question, never a whole block, and never block 10 through this fragment: Targeted loads `setup-execution-profiles` directly/,
+  );
+  const pointerHosts = readdirSync(new URL('src/shared/', repositoryRoot)).filter((file) =>
+    [...source(`src/shared/${file}`).matchAll(LAZY_INCLUDE_RE)].some(
+      (match) => match[1].trim() === 'setup-execution-profiles',
+    ),
+  );
+  assert.deepEqual(pointerHosts.sort(), ['setup-advanced-settings.md', 'setup-targeted-change.md']);
+  const advancedPointer = [
+    ...source('src/shared/setup-advanced-settings.md').matchAll(LAZY_INCLUDE_RE),
+  ].find((match) => match[1].trim() === 'setup-execution-profiles');
+  assert.match(advancedPointer[2], /the user chose the advanced settings and block 10/);
+  assert.doesNotMatch(advancedPointer[2], /Targeted/);
 });
 
 // The check above is satisfied vacuously by a *deleted* pointer: a name nobody references is a

@@ -47,13 +47,49 @@ Map the free text, in any language, to operations on known schema keys (the conf
   `<exact check context>`, counts as no value and becomes an _ask_; it is never written;
 - _reset_ `<key>`: remove the row so the source skill's default applies; for `language.chat` that
   is mirroring, never a `null` row;
-- _question_: a read-only question about keys.
+- _question_: a read-only question about keys;
+- _pilot action_: start or resume the Fast pilot baseline (see "Fast pilot requests");
+- _pilot state question_: a read-only question about the pilot's generation state.
 
 One request may hold several operations. Give each ambiguity one focused question offering only
 valid readings or values ("prReview off" may mean `delivery.prReview` or `mergeGate.*`); never
 guess. A key outside the schema is not written; existing unknown rows are preserved, never created
 or removed. When nothing is recognized, a typo such as `exprss` included, say so, list the seven
 keyword forms and `{{SKILL:setup}} <free text>`, and stop without mutation.
+
+### Fast pilot requests
+
+The loaded `setup-execution-profiles` fragment (block 10) owns every question, check, and helper
+call these operations reach:
+
+- A _set_ of `executionProfiles.fast.enabled` poses block 10's `Fast pilot` question with the
+  requested `Enable` or `Disable` pre-selected; a plain _ask_ (no requested value, a placeholder
+  included) pre-selects `Keep`, as in Guided. An `Enable` answer also counts as a _pilot action_; a
+  disable request never reaches the action step.
+- A _pilot action_ selects the pilot action step under "Write" and nothing more: `inventory`
+  decides between `begin-baseline` and `resume`, and the request never confirms either. While the
+  key is not `enabled`, it implies the opt-in: pose the `Fast pilot` question, labelled as implied
+  by the request, with `Enable` pre-selected and a recorded `false` named as an earlier explicit
+  decision to disable. `Keep` or `Disable` offers no action.
+- A bare "fast" with no pilot, baseline, execution-profile, or review context, and conflicting
+  signals such as "Fast pilot review", get one question: the Fast pilot
+  (`executionProfiles.fast.enabled`) or the review profile (`review.profile = fast`). "Fast pilot",
+  "start the baseline", or "review profile fast" need none. Answering the Fast pilot makes it a
+  _set_ `executionProfiles.fast.enabled = true` whose `Enable` answer counts as a _pilot action_.
+  Inside a pilot request, "review" means `begin-review`, refused below, never `review.profile`.
+- Stop wording ("stop the pilot", "pause Fast") gets one question: `Disable`, or leave the pilot
+  unchanged. It adds that ending a generation (`begin-review`) is out of Targeted's reach and names
+  its route below.
+
+A disambiguation answer that selects an `executionProfiles.fast.enabled` _set_ only selects the
+operation; block 10's `Fast pilot` question stays the single decision, with that answer
+pre-selected. A "leave unchanged" stop answer is no operation, and the review profile answer is a
+_set_ `review.profile = fast`.
+
+```lazy-include
+setup-execution-profiles
+when: a Targeted operation touches `executionProfiles.fast.enabled`, holds a _pilot action_, or asks a _pilot state question_; only its "The opt-in" and "Generation actions" sections apply
+```
 
 ### Refusals and redirects
 
@@ -62,7 +98,9 @@ in the preview with its reason and route, and offer the remaining operations as 
 
 - `visibility` → `{{SKILL:setup}} hidden` to hide; `{{SKILL:setup}}` or `{{SKILL:setup}} guided`
   answering `Standard` to unhide.
-- `executionProfiles.fast.enabled` → `{{SKILL:setup}} guided` → Advanced → Block 10.
+- `begin-review` and `discard-generation` → the pilot helper directly, with the pilot disabled, as
+  block 10 names it; measurement edits and a model or provider name have no route, because the
+  helper owns measurement and no model or provider is ever configured.
 - First-time-only actions (`.gitignore`, marker, `CLAUDE.md` import, rename probe, legacy JSON
   migration) → `{{SKILL:setup}}`.
 - In hidden mode: every `tracker.*` key (the tracker is pinned to `local`), a forced row listed
@@ -83,6 +121,12 @@ building block assigns to it, and say that a Targeted change of any key offers i
 answer writes nothing, asks no confirmation, and matches no next-steps row. A mixed request answers
 first, then shows the change preview.
 
+A _pilot state question_ runs block 10 "Generation actions" step 1 (`inventory`) once at this
+stage, also in a non-interactive run, and reports the generation state, any busy cause, and the
+qualification under that section's step 1 and step 2 reporting rules; it offers no action. A helper
+failure (such as `UNSAFE_RUNTIME_ROOT`, `MIGRATION_REQUIRED`, or `INVALID_STATE`) is reported by
+its error code alone, with a route to `{{SKILL:setup}}`, and the remaining operations continue.
+
 ### Owner questions
 
 For each touched key, run only that key's question from its owner, never a whole block: the
@@ -92,21 +136,22 @@ instead of falling back to the default, because the user asked for one specific 
 switches" below are `setup-guided-core-switches`, numbered blocks those of
 `setup-advanced-settings`.
 
-| Key group                                                                                   | Owner                                              | Targeted rule                                                                 |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `review.*`                                                                                  | advanced block 1                                   | —                                                                             |
-| `applyReview.*`                                                                             | block 2                                            | —                                                                             |
-| `language.project`, `language.*` overrides                                                  | core switches (Language), `config-setup-migration` | a `language.workflow` change offers the owner's legacy-key migration proposal |
-| `plan.dir`, `concept.dir`                                                                   | block 4                                            | canonicalized, neither the same directory nor nested                          |
-| `delivery.completion`, `delivery.prReview`                                                  | core switches                                      | —                                                                             |
-| `delivery.baseBranch`, `delivery.returnBranch`                                              | Step 4 base-branch rule                            | `git remote` / `origin/HEAD` proposal; a divergence is named in the preview   |
-| `delivery.branchPrefix`, `delivery.mergeMethod`                                             | block 5                                            | —                                                                             |
-| `worktree.enabled`                                                                          | core switches (Worktree)                           | —                                                                             |
-| `worktree.setup`, `worktree.baseDir`                                                        | block 6                                            | —                                                                             |
-| `tracker.mode`, `tracker.remoteToolOverride`                                                | core switches (Tracker)                            | see below                                                                     |
-| `tracker.externalTool`, `…Hint`, `…StartedState`, `…DoneState`                              | core switches (external), block 7                  | see below                                                                     |
-| `skills.*`                                                                                  | block 8                                            | `agents.<name>` / `tools.<name>` only with source agent or tool names         |
-| `mergeGate.*`, `.bots`, `.trigger`, `.check`, `.botAccounts`, `iterate.reviewFixValidation` | block 9, Step 5 collapse                           | see below                                                                     |
+| Key group                                                                                   | Owner                                                  | Targeted rule                                                                     |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `review.*`                                                                                  | advanced block 1                                       | —                                                                                 |
+| `applyReview.*`                                                                             | block 2                                                | —                                                                                 |
+| `language.project`, `language.*` overrides                                                  | core switches (Language), `config-setup-migration`     | a `language.workflow` change offers the owner's legacy-key migration proposal     |
+| `plan.dir`, `concept.dir`                                                                   | block 4                                                | canonicalized, neither the same directory nor nested                              |
+| `delivery.completion`, `delivery.prReview`                                                  | core switches                                          | —                                                                                 |
+| `delivery.baseBranch`, `delivery.returnBranch`                                              | Step 4 base-branch rule                                | `git remote` / `origin/HEAD` proposal; a divergence is named in the preview       |
+| `delivery.branchPrefix`, `delivery.mergeMethod`                                             | block 5                                                | —                                                                                 |
+| `worktree.enabled`                                                                          | core switches (Worktree)                               | —                                                                                 |
+| `worktree.setup`, `worktree.baseDir`                                                        | block 6                                                | —                                                                                 |
+| `tracker.mode`, `tracker.remoteToolOverride`                                                | core switches (Tracker)                                | see below                                                                         |
+| `tracker.externalTool`, `…Hint`, `…StartedState`, `…DoneState`                              | core switches (external), block 7                      | see below                                                                         |
+| `skills.*`                                                                                  | block 8                                                | `agents.<name>` / `tools.<name>` only with source agent or tool names             |
+| `mergeGate.*`, `.bots`, `.trigger`, `.check`, `.botAccounts`, `iterate.reviewFixValidation` | block 9, Step 5 collapse                               | see below                                                                         |
+| `executionProfiles.fast.enabled`                                                            | block 10 (`setup-execution-profiles`), loaded directly | its question alone, the requested answer pre-selected, then the pilot action step |
 
 - Adding a reviewer to `mergeGate.bots` also touches its `.trigger` and `.check`. Collapse first
   ("Collapsing two `mergeGate.bots` spellings of one reviewer", Step 5), then block 9's
@@ -162,8 +207,8 @@ when: a Targeted run with the hidden local file as source reaches its write; onl
 
 ### Write
 
-The only write path is Step 6 items 1, 2 and 4 with the Targeted item 3, under one explicit
-confirmation:
+The only configuration write path is Step 6 items 1, 2 and 4 with the Targeted item 3, under one
+explicit confirmation:
 
 1. **Item 1:** start from the resolved values and `data.source.rows`, apply only the interpreted
    operations, and carry untouched and unknown rows byte for byte. The retired-row rewrite and the
@@ -185,13 +230,23 @@ confirmation:
 
 A request whose requested rows all match what is recorded, that resets only absent keys, or whose
 operations are all refused, redirected or read-only questions writes nothing (no retired-row
-rewrite or bot collapse either), asks no confirmation, and says so. A
-non-interactive run answers the questions, reports the interpreted operations and the preview it
-would have shown, and writes nothing.
+rewrite or bot collapse either), asks no confirmation, and says so; a _pilot action_ is a valid
+operation, so a request holding one still reaches the pilot action step. A non-interactive run
+answers the questions, reports the interpreted operations and the preview it would have shown, and
+writes nothing; it calls the pilot helper only for a _pilot state question_.
+
+**Pilot action step.** The one helper-state write after the configuration write path: run block
+10 "Generation actions" under its Targeted gate. A fail-closed `UNSAFE_RUNTIME_ROOT` or
+`MIGRATION_REQUIRED` is reported by its error code, sends nothing further, and points to
+`{{SKILL:setup}}`; any other failure, and a lost `begin-baseline` or `resume` response, follows
+block 10's re-read-`inventory` rule. A configuration write that already happened stays as it is.
 
 ### Summary
 
 Step 8 for Targeted reports the mode `Targeted`, the interpreted operations, the rows written or
 "nothing written" with the reason, the source path, retired rows rewritten and bot collapses, and
-each refused or redirected operation with its route. It matches no next-steps row: a Targeted run
-stages nothing.
+each refused or redirected operation with its route. A pilot action is reported as offered,
+accepted, declined, or not offered with its reason: the generation state, a busy cause, config not
+`enabled`, a non-interactive run, a declined confirmation, a stopped write, no valid operation, or
+the helper error code. Block 10's Step 8 report items apply as well, with the generation state the
+last `inventory` proves, or unknown. It matches no next-steps row: a Targeted run stages nothing.

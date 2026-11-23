@@ -5,7 +5,7 @@ This guide documents the shipped, local measurement protocol for the Quality/Fas
 [`src/scripts/pilot-measurement-protocol.mjs`](../../src/scripts/pilot-measurement-protocol.mjs)
 and the guarded operations implemented by
 [`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). The
-protocol itself activates nothing: Guided setup starts a baseline only through a confirmed action,
+protocol itself activates nothing: setup (Guided or Targeted) starts a baseline only through a confirmed action,
 a measured `build` or `refactor` run lets the helper activate that baseline automatically once its
 preregistered conditions pass, and these two are the only workflows that record runs and request
 Fast. `fix` is admitted by the protocol's `workflow` enum but not yet measured or wired. Portable
@@ -240,10 +240,10 @@ and the overlap flag. Every terminal write (`finalize`, `reconcile-record`) stri
 
 ### Callers
 
-Guided setup, the two adopting workflows, and `merge-gate` call the helper, each through a lazy
+Setup (Guided and Targeted), the two adopting workflows, and `merge-gate` call the helper, each through a lazy
 fragment that owns its exact payloads:
 
-- **Guided setup block 10**
+- **Setup block 10** (Guided advanced settings or a Targeted request)
   ([`src/shared/setup-execution-profiles.md`](../../src/shared/setup-execution-profiles.md)) reads
   `inventory` and offers at most one confirmed action for the proven state: `begin-baseline` for
   `none`, and `resume` for a `suspended` generation whose evidence is healthy (every incomplete
@@ -287,7 +287,7 @@ fragment that owns its exact payloads:
   `start-packet` meets `ADMISSION_CHANGED` instead and it finalizes `admission-changed`: the
   receipt binds the fallback, and the persisted suspension already charges the incident durably. An incident the helper cannot persist yields only a
   value-free alert and one same-run ask to retry it; otherwise the run reports that nothing durable
-  keeps later runs off Fast and that Guided setup's `Disable` is the confirmed recovery path.
+  keeps later runs off Fast and that setup's `Disable` is the confirmed recovery path.
   `LOCKED` is retried with the identical payload at most twice more, after about two and then
   about five seconds; `finalize`, which overlapping runs contend for at their ends, is retried at
   most five times more, after about two, five, ten, twenty, and thirty seconds. A failed or impossible
@@ -519,7 +519,7 @@ state without the `1.3.0` fields stays valid for `inventory`, `begin-review` and
   `review` generation is already closed and keeps its state.
 - **Read-only paths never migrate.** `inventory` reports such a generation as `suspended` with
   `transitionPending: true` until a locked operation persists the migration, and reports
-  `protocolCurrent: false` for every generation bound to an earlier protocol, so Guided setup never
+  `protocolCurrent: false` for every generation bound to an earlier protocol, so setup never
   offers `resume` for it. The anonymous gate
   observation admission check and the suspension and incident writers read it as suspended as well.
 - **Everything else is `PROTOCOL_DRIFT`.** After the migration no operation extends, activates,

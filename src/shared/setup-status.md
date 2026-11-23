@@ -67,10 +67,10 @@ remediation of your own.
 End the report with the next-steps block per the shared `next-steps` contract: it recommends
 `{{SKILL:setup}}` only when `data.setupFixable` is true; otherwise the run emits no block. The
 options follow `data.setupForms` in order, one per form and at most two: `setup` is bare
-`{{SKILL:setup}}` (an empty setup argument), `setup guided` is `{{SKILL:setup}} guided`,
-`setup hidden` is `{{SKILL:setup}} hidden`, `targeted` is `{{SKILL:setup}} <request>` with the
-first Targeted request the remediations name, its line saying that any others follow the same way,
-and `allowlist` is `{{SKILL:setup}} allowlist`.
+`{{SKILL:setup}}` (an empty setup argument), `setup hidden` is `{{SKILL:setup}} hidden`,
+`targeted` is `{{SKILL:setup}} <request>` with the first Targeted request the remediations name,
+its line saying that any others follow the same way, and `allowlist` is
+`{{SKILL:setup}} allowlist`.
 With more than two forms, the second line also says that the report's remaining forms follow the
 same way. Bare `{{SKILL:setup}}` is an option only for the `setup` form. An owner missing from the
 session's skill list never makes the report setup-fixable.

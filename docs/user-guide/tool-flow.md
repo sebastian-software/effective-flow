@@ -98,9 +98,9 @@ an associated plan; they read no optional planning context:
 
 - **`/effective-flow setup`** with nothing staged – there is nothing for `commit` to pick up. A
   `/effective-flow setup status` report is the exception when it found a problem setup can fix: it
-  names one setup form per line, at most two, in the order `setup`, `setup guided`, `setup hidden`,
-  then a Targeted request, then `setup allowlist`; further forms or requests follow the same way, and bare `setup` appears
-  only when the plain setup form is among them.
+  names one setup form per line, at most two, in the order `setup`, `setup hidden`, then a Targeted
+  request, then `setup allowlist`; further forms or requests follow the same way, and bare `setup`
+  appears only when the plain setup form is among them.
 - **`/effective-flow cleanup`** with an empty report – nothing was found to carry over, delete, or
   refer on to `setup`.
 - **`/effective-flow investigate`** that found no bug, deliberately no action, or a pending product

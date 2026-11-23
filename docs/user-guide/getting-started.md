@@ -134,7 +134,7 @@ generated roles before it changes an installation. Those artifacts establish bui
 consistency, not runtime discovery or activation.
 
 `build` and `refactor` are the two workflows that request that representation, and only inside
-their opt-in field pilot: the project sets `executionProfiles.fast.enabled` in Guided setup and
+their opt-in field pilot: the project sets `executionProfiles.fast.enabled` in setup (Guided or a Targeted request) and
 starts a Quality-only baseline through a confirmed setup action; a later `build` or `refactor` run
 activates the generation automatically once the preregistered baseline conditions are met. In an active
 generation, Fast may be requested only for the first implementation attempt of an eligible

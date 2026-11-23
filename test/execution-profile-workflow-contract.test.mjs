@@ -2041,7 +2041,7 @@ test('every correction seam after the initial phase is Quality-only', () => {
 });
 
 // Invariant: a reserved pilot record is finalized exactly once before the completion report, build
-// never calls the confirmed Guided lifecycle operations, and `activate` is automatic and confined to
+// never calls the confirmed setup lifecycle operations, and `activate` is automatic and confined to
 // the preflight.
 test('build finalizes a reserved record once and activates only automatically', () => {
   const phase7 = section(build, '### Phase 7: Completion', '\n## Rules');
@@ -2057,13 +2057,13 @@ test('build finalizes a reserved record once and activates only automatically', 
   }
   assert.match(
     flat(fragment),
-    /A workflow run never calls `begin-baseline` or `resume`; those two are confirmed Guided setup actions\./,
+    /A workflow run never calls `begin-baseline` or `resume`; those two are confirmed setup actions \(Guided block 10 or a Targeted request\)\./,
   );
   assert.equal(fragment.match(/`begin-baseline`/g).length, 1, 'begin-baseline is only excluded');
   assert.equal(
     fragment.match(/`resume`/g).length,
     2,
-    'resume is named only to exclude it and as the Guided way out of a suspension',
+    'resume is named only to exclude it and as the setup way out of a suspension',
   );
   // Every `activate` lies in the preflight's automatic-activation step, which runs before start.
   const activation = section(fragment, '4. **Automatic activation.**', '### Reservation');
@@ -2349,7 +2349,7 @@ test('incidents are recorded by category and a failed finalize offers one same-r
   assert.match(incidentAsks[0][1], /- label: Leave\n/);
   assert.match(
     text,
-    /A declined, unanswered, non-interactive, or failed retry leaves no suspension\. The completion report then states that no durable state keeps a later measured run off Fast, and that the confirmed recovery path is `\{\{SKILL:setup\}\}` Guided block 10 `Disable`/,
+    /A declined, unanswered, non-interactive, or failed retry leaves no suspension\. The completion report then states that no durable state keeps a later measured run off Fast, and that the confirmed recovery path is `\{\{SKILL:setup\}\}` block 10 `Disable`, from Guided or a Targeted request/,
   );
   assert.doesNotMatch(text, /keep later preflights fail-closed/);
   assert.match(
@@ -2412,11 +2412,11 @@ test('incidents are recorded by category and a failed finalize offers one same-r
   );
   assert.match(
     failureText,
-    /Only a suspension the helper persisted, from a successful `record-incident` or an envelope with `controlStatePersisted: true`, keeps later runs off Fast: each later run observes that persisted suspension until an explicit confirmed Guided `resume`/,
+    /Only a suspension the helper persisted, from a successful `record-incident` or an envelope with `controlStatePersisted: true`, keeps later runs off Fast: each later run observes that persisted suspension until an explicit confirmed setup `resume`/,
   );
   assert.match(
     failureText,
-    /An incident that could not be persisted leaves no durable state, so nothing keeps a later measured run off Fast; the only confirmed recovery is `\{\{SKILL:setup\}\}` Guided block 10 `Disable`, and Fast returns only through a confirmed `Enable` there\./,
+    /An incident that could not be persisted leaves no durable state, so nothing keeps a later measured run off Fast; the only confirmed recovery is `\{\{SKILL:setup\}\}` block 10 `Disable`, from Guided or a Targeted request, and Fast returns only through a confirmed `Enable` there\./,
   );
 });
 

@@ -275,8 +275,9 @@ disabled; malformed, ambiguous, or unreadable input is invalid. Both outcomes fa
 lifecycle; it does not start a baseline, activate Fast, or prove that the current host can enforce
 Fast.
 
-Set the row with `/effective-flow setup guided` → **Advanced settings** → **Block 10
-(`executionProfiles`)**: **Keep** leaves the recorded value unchanged, **Enable** writes `true`, and
+Set the row with a Targeted request such as `/effective-flow setup enable the Fast pilot`, or with
+`/effective-flow setup guided` → **Advanced settings** → **Block 10 (`executionProfiles`)**; both
+ask the same question: **Keep** leaves the recorded value unchanged, **Enable** writes `true`, and
 **Disable** writes `false`. Profile and Express never ask this question and keep an existing value
 exactly as recorded. After the configuration write, the same block offers at most one confirmed
 generation action, depending on the stored pilot state: start the Quality-only baseline, or resume
@@ -886,7 +887,7 @@ topology and Chat answer are such a change: their narrow overlay intentionally w
 keys, while all other known and unknown rows remain untouched.
 
 The `executionProfiles.fast.enabled` key is intentionally absent from this base. Absence is its
-default-off form and selects Quality; only Guided block 10 writes it.
+default-off form and selects Quality; only setup block 10 writes it, from Guided or a Targeted request.
 
 `visibility` is absent too: a standard setup writes no `visibility` row, and absence means
 `standard`. Only the hidden local file carries `visibility | hidden`. That file also gets the forced
