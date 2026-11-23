@@ -2000,9 +2000,14 @@ test(
         resolve(publicationLock, `${staleToken}.owner.json`),
         `${JSON.stringify({ pid: 2_147_483_647, token: staleToken }, null, 2)}\n`,
       );
+      // Both contenders race for the reaped lock, so the loser must wait out the winner's entire
+      // in-lock publication, a full `buildPortableSkill` among the rest. Under full-suite load that
+      // exceeds the 10 s default sized for a parked hold, so each gets a budget for a whole
+      // publication; the explicit value also wins over any inherited override.
+      const contenderEnv = { env: { EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS: '180000' } };
       const staleContenders = [
-        runCoreChild('publishRound', publicationArguments),
-        runCoreChild('publishRound', publicationArguments),
+        runCoreChild('publishRound', publicationArguments, contenderEnv),
+        runCoreChild('publishRound', publicationArguments, contenderEnv),
       ];
       const staleContenderResults = await Promise.all(staleContenders.map(childResult));
       assert.ok(
@@ -2043,13 +2048,13 @@ test(
       // prove nothing about serialization. Instead the second one is spawned into the held lock and
       // observed waiting on it, so the contention is proven rather than timed. Its wait now has to
       // cover the first publisher's entire in-lock publication — a second full `buildPortableSkill`
-      // among the rest — so it gets the validator's own ceiling rather than the 10 s default that
-      // was sized for a parked hold.
+      // among the rest — so, like the stale contenders above, it gets a whole-publication budget
+      // rather than the 10 s default that was sized for a parked hold.
       const secondPublisherMarker = resolve(temporary, 'second-publisher-is-waiting');
       const secondPublisher = runCoreChild('publishRound', publicationArguments, {
         env: {
           EFFECTIVE_FLOW_EVAL_LOCK_WAIT_MARKER: secondPublisherMarker,
-          EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS: '30000',
+          EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS: '180000',
         },
       });
       const secondPublisherResult = childResult(secondPublisher);
@@ -3950,4 +3955,34 @@ test('the mark-ready evaluator holds the fresh reads to the second classificatio
   const earlyDryRun = [...passing];
   earlyDryRun.splice(1, 0, 'pr-mark-ready');
   assert.deepEqual(evaluate(earlyDryRun), []);
+});
+
+// Invariant: the publication lock wait defaults to 10 s, and its env override accepts any integer up
+// to 300000 ms — large enough for a contender to outlast a whole in-lock publication including a
+// full build under load — while still rejecting anything above that ceiling. `lockWaitMilliseconds`
+// is not exported, so the real function text is lifted from the source and run in a fresh context.
+test('the publication lock wait defaults to 10 s and its override is capped at 300000 ms', () => {
+  const source = readFileSync(
+    resolve(import.meta.dirname, '..', 'evals', '_scaffold', 'round-core.mjs'),
+    'utf8',
+  );
+  const match = source.match(/^function lockWaitMilliseconds\(kind\) \{[\s\S]*?^\}$/m);
+  assert.ok(match, 'lockWaitMilliseconds must stay a top-level function in round-core.mjs');
+  const wait = (value) => {
+    const env = value === undefined ? {} : { EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS: value };
+    const script = `const process = { env: ${JSON.stringify(env)} }; ${match[0]}; try { console.log(JSON.stringify({ ok: lockWaitMilliseconds('publication') })); } catch (e) { console.log(JSON.stringify({ error: e.message })); }`;
+    const run = spawnSync(process.execPath, ['--input-type=commonjs', '--eval', script], {
+      encoding: 'utf8',
+    });
+    assert.equal(run.status, 0, run.stderr);
+    return JSON.parse(run.stdout);
+  };
+  assert.deepEqual(wait(undefined), { ok: 10_000 });
+  assert.deepEqual(wait('180000'), { ok: 180_000 });
+  assert.deepEqual(wait('300000'), { ok: 300_000 });
+  assert.match(
+    wait('300001').error,
+    /EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS must be an integer/,
+  );
+  assert.match(wait('-1').error, /must be an integer/);
 });
