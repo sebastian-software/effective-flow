@@ -333,6 +333,9 @@ Retain the exact result as `collect`, including `baseOid`, `eligible`, `eligible
 before judgment counting/slicing and recovery authorization; preserve its twelve skip reasons.
 Goal epics and obsolete marks (`effective-flow-goal-epic`, `effective-flow-goal-obsolete`) skip as
 `lifecycle-label`, an issue with a backlog-audit split-marker comment as `plan-issue-comment`.
+Triage verdicts `effective-flow-triage-reject` and `effective-flow-triage-needs-work` and a trusted
+`<!-- effective-flow-triage security ` notice also skip as `lifecycle-label`; the helper drops every
+other trusted comment starting with `<!-- effective-flow-triage ` (with the space) from trusted text.
 `issue-in-progress` is a local planning claim, not the lifecycle label
 `effective-flow-issue-in-progress`, which skips as `lifecycle-label`.
 Leftovers create no verdict, retry or recovery authority. Changed collection metadata cannot be

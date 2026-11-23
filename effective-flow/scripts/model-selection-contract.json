@@ -395,7 +395,7 @@
       ]
     },
     {
-      "id": "fix/implementation",
+      "id": "fix/initial-implementation",
       "downAllowed": false,
       "panel": false,
       "clauses": [
@@ -423,7 +423,7 @@
     },
     {
       "id": "fix/regression-test",
-      "downAllowed": true,
+      "downAllowed": false,
       "panel": false,
       "clauses": [
         {
@@ -434,7 +434,7 @@
     },
     {
       "id": "fix/verification",
-      "downAllowed": true,
+      "downAllowed": false,
       "panel": false,
       "clauses": [
         {
@@ -443,6 +443,25 @@
         },
         {
           "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "fix/routed-review",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
           "tier": "deep"
         }
       ]
@@ -1026,6 +1045,7 @@
     },
     "sites": [
       "build-delegated-run/initial-implementation",
+      "fix/initial-implementation",
       "refactor/initial-implementation"
     ]
   }

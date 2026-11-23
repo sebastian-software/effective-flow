@@ -631,7 +631,12 @@ not `ok` or answers `NOT_OWNER`; never prune instead. A killed session leaves on
    `<!-- firmo-plan-issues -->`; retain its normalized positive comment ID, exact body, and body
    hash. Treat it as the canonical update basis. Never create a second planning comment while such
    a comment exists. An issue labeled `effective-flow-goal-obsolete` is reported with that mark and
-   planned only after the user explicitly overrides it in this run; otherwise skip it unchanged.
+   planned only after the user explicitly overrides it in this run; otherwise, and in a
+   non-interactive delegation, skip it unchanged. `effective-flow-triage-reject` or a
+   write-permitted `<!-- effective-flow-triage security ` notice gets the same guard. Drop every comment whose first line starts with `<!-- effective-flow-triage ` (the
+   security notice included) and whose author has write permission (`collaborator-permission-read`,
+   on an external target the permission the connection states) from the issue context any analysis
+   receives.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `plan-issue/codebase-examination` (`shared/model-selection.md`).
 2. Apply the clarification methodology from `effective-flow plan` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.

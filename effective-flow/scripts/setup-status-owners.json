@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.77.0",
+  "version": "1.78.0",
   "exposedTools": [
     "concept",
     "investigate",
@@ -2004,6 +2004,7 @@
         "apply",
         "autopilot",
         "build",
+        "fix",
         "iterate",
         "maintain",
         "merge-gate",
@@ -2021,6 +2022,10 @@
         },
         {
           "tool": "build",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "fix",
           "scope": "agents.frontend-reviewer"
         },
         {
@@ -2625,6 +2630,10 @@
         },
         {
           "tool": "fix",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "fix",
           "scope": "agents.generic-implementer"
         },
         {
@@ -2645,7 +2654,15 @@
         },
         {
           "tool": "fix",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "fix",
           "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.rust-reviewer"
         },
         {
           "tool": "fix",

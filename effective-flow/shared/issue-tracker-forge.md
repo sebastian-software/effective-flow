@@ -73,8 +73,13 @@ In remote mode, use these labels and create missing labels idempotently. The hel
 | `effective-flow-needs-planning`                                                                | skipped by `tools/apply-issues.md`; planning via `effective-flow plan-issue` needed   |
 | `effective-flow-goal-epic`                                                                     | goal epic maintained by `effective-flow backlog-audit`                                 |
 | `effective-flow-goal-obsolete`                                                                 | contradicts the current architecture per `effective-flow backlog-audit`; stays open    |
+| `effective-flow-triage-reject`                                                                 | triage verdict: the project declines the issue                                    |
+| `effective-flow-triage-implement`                                                              | triage verdict: accepted for planning or implementation                           |
+| `effective-flow-triage-needs-work`                                                             | triage verdict: open questions to the author                                      |
 
 `wontfix` already exists on many trackers; the helper creates it only if it is missing.
+`effective-flow-goal-obsolete` keeps an issue open relative to a goal, while
+`effective-flow-triage-reject` is the final project decision on the issue itself; both can coexist.
 `effective-flow-issue-in-progress`, `effective-flow-issue-done`, and
 `effective-flow-needs-planning` belong to the issue-driven lifecycle and are created idempotently
 where needed. The in-progress label is a forge fallback for a native started state; the done label

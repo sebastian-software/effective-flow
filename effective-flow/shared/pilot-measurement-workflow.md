@@ -20,6 +20,10 @@ operational prose, paths, diffs, or worker text into a payload, and never relay 
 Every report about the pilot is value-free: name the operation, the stable error code, and the
 closed outcome, never a capability, run or packet identifier, or payload value.
 
+Invoke the helper directly from the tool's shell, never through a wrapper or subshell such as
+`timeout` or `sh -c`: `start` binds the reservation to the calling session's processes, and a
+wrapper that has exited can make a later cleanup read the session as gone.
+
 `runId`, `workflowCapability`, and every `packetId`/`packetCapability` exist only in the
 orchestrator's transient state for the current run. Never write them to the wisdom file, chat, a
 worker handoff, a retained-state continuation, a commit, a pull request, or any tracked artifact.
@@ -90,7 +94,7 @@ inventory-proven persisted state separately as the incident target.
    - `activated` makes the generation `active`, persisted and effective alike.
    - `not-ready` whose `unmet` is a nonempty subset of `busy` and `sample` keeps it `baseline`;
      `busy` means another run's reservation or a gate observation is open, which does not block
-     the `start` below.
+     the `start` below; `effective-flow cleanup` closes a reservation that a crashed run left open.
    - `LOCKED`, once its retry is exhausted, keeps it `baseline`: a held lock fails before any check.
    - `INVALID_STATE`, `WRITE_FAILED`, a lost or malformed response, or an unknown result is
      ambiguous: re-read `inventory` with the `generationId` and take its proven state as in step 3,
@@ -137,7 +141,7 @@ packet entry per classified initial packet in a fixed order:
   "repositoryIdentity": "<verified repository identity>",
   "generationId": "<inventory generationId>",
   "configState": "enabled",
-  "workflow": "<build|refactor>",
+  "workflow": "<build|refactor|fix>",
   "installKind": "<native|portable>",
   "harnessFamily": "<claude|codex>",
   "packets": ["<one wire-shape entry per packet>"]
@@ -189,8 +193,12 @@ The packet timing and identity operations take exactly these keys:
   A re-sent `start-packet` of a `fast` packet checks admission again, since nothing has spawned
   yet: `ADMISSION_CHANGED` or `PROFILE_UNAVAILABLE` then wrote nothing and takes the same single
   `"fallback": "admission-changed"` re-send and Quality spawn as under "Start before spawn".
-  Any other failure leaves the record unfinalizable: send no further packet operation or fabricated
-  outcome, continue implementation with Quality, and apply "Finalization failure" at the exit.
+- `NOT_FOUND` from any packet operation usually means this run's record was already closed by a
+  `effective-flow cleanup` session; `finalize`'s result decides. Send no further packet operation,
+  continue implementation with Quality, and still call `finalize` once at the exit.
+- Any other packet-operation failure leaves the record unfinalizable: send no further packet
+  operation or fabricated outcome, continue implementation with Quality, and apply "Finalization
+  failure" at the exit.
 
 ### Finalization
 
@@ -252,6 +260,10 @@ keys:
   handoff prose never enter it.
 - A lost response may be re-sent once with the identical payload; the helper deduplicates it.
   Every other failure, `LOCKED` after its longer retry included, is a finalization failure.
+- Report the status the helper returns: `finalized`, or `abandoned` when a cleanup session already
+  closed it (stale, or its session proven gone), so this run's outcome was not recorded. An
+  `abandoned` record needs no reconciliation: report that a cleanup session closed it and skip
+  "Finalization failure".
 
 ### Incidents and pilot control
 
@@ -312,7 +324,7 @@ capability:
 
 Ask the user: **The pilot record of this run could not be finalized. Mark it abandoned now?**
 - Reconcile -- Mark this run's incomplete pilot record abandoned; product changes stay unchanged
-- Keep -- Leave the incomplete record in place; only discarding the generation clears it
+- Keep -- Leave the incomplete record in place; a later cleanup can abandon a still-open one after 24 hours, or earlier once this session and its recorded parent processes have provably ended on this host
 
 Under an Automation caller's scored decision mode, row S-PRC of `scored-decisions` decides.
 
@@ -326,8 +338,13 @@ remaining receipts and returns the stored `completionStatus`. Report the status 
 A declined, unanswered, non-interactive, or failed reconciliation leaves the incomplete record in
 place. The completion report then states that it blocks activation and aggregation, that it closes
 Fast admission for later runs or, when only timing receipts remain behind a persisted terminal
-record, makes every later `start` and `start-gate-observation` fail `INCOMPLETE_EVIDENCE`, and that
-no later run can reconcile it: only `begin-review` followed by `discard-generation` with the pilot
+record, makes every later `start` and `start-gate-observation` fail `INCOMPLETE_EVIDENCE`. A
+still-open reservation is abandoned by `effective-flow cleanup` after its confirmation once the
+reservation is older than 24 hours, or earlier once this session and its recorded parent processes
+have provably ended on this host (Linux `/proc`, a resolved owner, and the same host binding); a
+parent process that outlives the session, such as its terminal, keeps that proof unknown, so the
+24-hour path is the usual one. For receipts behind a terminal record, no
+later run can reconcile it: only `begin-review` followed by `discard-generation` with the pilot
 disabled clears it, losing the generation.
 
 Only a suspension the helper persisted, from a successful `record-incident` or an envelope with

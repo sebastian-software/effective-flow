@@ -1,5 +1,5 @@
 import { createHash, randomBytes as cryptoRandomBytes, timingSafeEqual } from 'node:crypto';
-import { constants as fsConstants } from 'node:fs';
+import { constants as fsConstants, readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import {
   chmod,
   link,
@@ -16,7 +16,13 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { localHost, sessionOwner } from './effective-flow-state-planning-claim-core.mjs';
+import { UNKNOWN_HOST } from './effective-flow-state-core.mjs';
+import {
+  localHost,
+  procStatFields,
+  processStartTime,
+  sessionOwner,
+} from './effective-flow-state-planning-claim-core.mjs';
 import {
   PILOT_MEASUREMENT_POLICY_PROJECTION,
   PILOT_MEASUREMENT_PROTOCOL,
@@ -43,6 +49,8 @@ export const PILOT_MEASUREMENT_OPERATIONS = Object.freeze([
   'reconcile-record',
   'reconcile-lock',
   'reconcile-temporary',
+  'list-reservations',
+  'abandon-reservation',
   'begin-review',
   'aggregate',
   'evaluate',
@@ -1542,11 +1550,126 @@ async function foreignEvidenceLeftover(root, generationId, runId, deps) {
   return false;
 }
 
+// The host a reservation's owner pid is meaningful on: the host name, the kernel boot id, and the pid
+// namespace inode of `pid` (`self` for the calling helper). A host name alone is shared by a
+// container with its own pid namespace and by two machines of one name, and either would read
+// another host's live session as gone; the boot id separates machines and boots, the namespace
+// separates containers. `/proc/self` must name this helper's own pid, or the mounted procfs belongs
+// to another pid namespace and its pids name other processes. Null when any part is unreadable.
+// `deps.readBootId()`, `deps.readPidNamespace(pid)`, and `deps.readProcSelf()` replace the procfs
+// reads.
+const BOOT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const PID_NAMESPACE = /^pid:\[[1-9][0-9]{0,19}\]$/;
+function pidNamespaceOf(pid, deps) {
+  try {
+    const value = (deps.readPidNamespace ?? ((target) => readlinkSync(`/proc/${target}/ns/pid`)))(
+      pid,
+    );
+    return typeof value === 'string' && PID_NAMESPACE.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+function hostIdentity(pid, deps) {
+  const hostname = localHost(deps);
+  if (hostname === UNKNOWN_HOST || (pid !== 'self' && !(Number.isSafeInteger(pid) && pid > 0))) {
+    return null;
+  }
+  let bootId;
+  let procSelf;
+  try {
+    bootId = (deps.readBootId ?? (() => readFileSync('/proc/sys/kernel/random/boot_id', 'utf8')))();
+    procSelf = (deps.readProcSelf ?? (() => readlinkSync('/proc/self')))();
+  } catch {
+    return null;
+  }
+  if (typeof bootId !== 'string' || procSelf !== String(process.pid)) return null;
+  bootId = bootId.trim();
+  const pidNamespace = pidNamespaceOf(pid, deps);
+  if (!BOOT_ID.test(bootId) || pidNamespace === null) return null;
+  return { hostname, bootId, pidNamespace };
+}
+
+// The opaque owner salt is 24 random bytes (32 base64url characters), then a host binding of 16
+// bytes (22 characters), then up to two ancestor digests of 12 bytes (16 characters) each. The host
+// binding digests the random part with the owner's host identity (null when it was unreadable) and
+// the ancestor digests. An ancestor digest names, salted by the random part and the host identity,
+// one recorded ancestor of the owner by pid and start time: the parent of the owner and its parent
+// in turn, while each is readable with its start time and in the owner's pid namespace, so a helper
+// started through a wrapper (`timeout`, a subshell, a sandbox launcher) whose short-lived shell is
+// the recorded owner is still tied to its live session. The whole salt, 54 to 86 characters, keeps
+// the `[A-Za-z0-9_-]{32,128}` form every 1.3.0 helper validates, so the stored reservation keeps
+// exactly the 1.3.0 shape, while a later session can test whether it runs on the owner's host and
+// whether any recorded process is still live.
+const OWNER_SALT_RANDOM_LENGTH = 32;
+const OWNER_SALT_BINDING_LENGTH = 22;
+const OWNER_ANCESTOR_LENGTH = 16;
+const OWNER_ANCESTOR_LIMIT = 2;
+function truncatedDigest(value, bytes) {
+  const digest = canonicalDigest(value);
+  return Buffer.from(digest.slice('sha256:'.length, 'sha256:'.length + bytes * 2), 'hex').toString(
+    'base64url',
+  );
+}
+function hostBinding(random, identity, ancestors) {
+  return truncatedDigest({ kind: 'reservation-host', random, identity, ancestors }, 16);
+}
+function ancestorDigest(random, identity, pid, pidStartTime) {
+  return truncatedDigest({ kind: 'reservation-ancestor', random, identity, pid, pidStartTime }, 12);
+}
+
+// The parent pid of `pid` (`/proc/<pid>/stat` field 4), or null when it is unreadable or init.
+// `deps.readProcStat(pid)` replaces the procfs read.
+function parentProcessId(pid, deps) {
+  const parent = procStatFields(pid, deps)?.[1] ?? '';
+  return /^[1-9][0-9]{0,9}$/.test(parent) && Number(parent) > 1 ? Number(parent) : null;
+}
+
+// The ancestor digests of a resolved owner: up to OWNER_ANCESTOR_LIMIT levels above it, stopping
+// at the first one that is init, whose pid or start time is unreadable, or whose pid namespace is
+// unreadable or not the owner's. An unreadable ancestor is never guessed; the salt then binds
+// fewer.
+function ownerAncestors(ownerPid, identity, random, deps) {
+  const ancestors = [];
+  let pid = ownerPid;
+  while (ancestors.length < OWNER_ANCESTOR_LIMIT) {
+    const parent = parentProcessId(pid, deps);
+    if (parent === null) break;
+    const pidStartTime = processStartTime(parent, deps);
+    if (pidStartTime === null || pidNamespaceOf(parent, deps) !== identity.pidNamespace) break;
+    ancestors.push(ancestorDigest(random, identity, parent, pidStartTime));
+    pid = parent;
+  }
+  return ancestors;
+}
+
+// The parts of a salt in the current layout, or null for any other (a 1.77.0 salt of 32
+// characters carries no binding).
+function ownerSaltParts(salt) {
+  const head = OWNER_SALT_RANDOM_LENGTH + OWNER_SALT_BINDING_LENGTH;
+  const tail = salt.length - head;
+  if (tail < 0 || tail % OWNER_ANCESTOR_LENGTH !== 0) return null;
+  if (tail / OWNER_ANCESTOR_LENGTH > OWNER_ANCESTOR_LIMIT) return null;
+  const ancestors = [];
+  for (let offset = head; offset < salt.length; offset += OWNER_ANCESTOR_LENGTH) {
+    ancestors.push(salt.slice(offset, offset + OWNER_ANCESTOR_LENGTH));
+  }
+  return {
+    random: salt.slice(0, OWNER_SALT_RANDOM_LENGTH),
+    binding: salt.slice(OWNER_SALT_RANDOM_LENGTH, head),
+    ancestors,
+  };
+}
+
 // The owning session process of a new reservation, as a reservation-salted digest of host name,
-// pid, and pid start time (resolved like the planning claims), plus the reservation time.
+// pid, and pid start time (resolved like the planning claims), with the owner's host and its
+// recorded ancestors bound into the salt.
 async function reservationOwner(deps) {
   const { pid, pidStartTime } = await sessionOwner({ runner: deps.runner }, deps);
-  const ownerSalt = randomOpaque(deps, 24);
+  const random = randomOpaque(deps, 24);
+  const identity = pid === null ? null : hostIdentity(pid, deps);
+  const ancestors = identity === null ? [] : ownerAncestors(pid, identity, random, deps);
+  const ownerSalt = `${random}${hostBinding(random, identity, ancestors)}${ancestors.join('')}`;
   return {
     ownerSalt,
     ownerDigest: canonicalDigest({ salt: ownerSalt, hostname: localHost(deps), pid, pidStartTime }),
@@ -1554,9 +1677,10 @@ async function reservationOwner(deps) {
 }
 
 // Busy means a workflow reservation, packet timing, or gate observation is still open while the
-// evidence is otherwise sound. A crashed run's reservation is indistinguishable from a live one:
-// only its owning run can finalize or reconcile it (reconcile-record needs that run's workflow
-// capability), so an orphan otherwise stays busy until the generation is discarded.
+// evidence is otherwise sound. Only its owning run can finalize or reconcile a reservation
+// (reconcile-record needs that run's workflow capability); a later cleanup session abandons a
+// crashed run's reservation through abandon-reservation once its owner is proven gone or it is
+// stale. An orphaned gate observation stays busy until the generation is discarded.
 function evidenceBusy(evidence) {
   return busyCause(evidence) !== null;
 }
@@ -2049,7 +2173,9 @@ function assertCorrectionPassUniform(firstReasons) {
 
 // The transient reservation fields: the owning session process as a reservation-salted digest of
 // host name, pid, and pid start time, the reservation time, and the overlap flag. They live only in
-// an open reservation and never reach a terminal record.
+// an open reservation and never reach a terminal record. The shape is fixed by protocol 1.3.0: a
+// helper of every release under that protocol reads the same reservation, so the host binding of
+// the orphan check lives inside the opaque salt (`reservationOwner`) instead of a field of its own.
 const RESERVATION_TRANSIENT_FIELDS = Object.freeze([
   'ownerSalt',
   'ownerDigest',
@@ -2733,8 +2859,9 @@ async function inventoryOperation(input, deps) {
     protocolCurrent: evidence.state.protocolDigest === PILOT_MEASUREMENT_PROTOCOL_DIGEST,
     // Activation needs an idle generation: an open workflow reservation, packet timing, or gate
     // observation blocks it until its own run finalizes it (or reconciles a workflow reservation
-    // with `reconcile-record`). An orphan clears only by discarding the generation; purge needs a
-    // complete aggregate and is unreachable while anything is open.
+    // with `reconcile-record`). An orphaned reservation clears through `abandon-reservation`, an
+    // orphaned observation only by discarding the generation; purge needs a complete aggregate and
+    // is unreachable while anything is open.
     busyCause: busyCause(evidence),
     normalTombstones,
     discardTombstones,
@@ -3236,6 +3363,14 @@ async function loadReservation(context, generationId, runId) {
   return { root, target, record };
 }
 
+// A packet operation of an authenticated run whose record is already terminal: its reservation no
+// longer exists, finalized by the run itself or abandoned by a later cleanup session. NOT_FOUND
+// names exactly this, so the run can still call `finalize` once, which reports the stored status
+// without writing, instead of reading the record as unfinalizable.
+function assertReservationOpen(record) {
+  if (record.kind !== 'workflow-reservation') fail('NOT_FOUND');
+}
+
 async function startPacket(input, deps) {
   commonInput(input, ['runId', 'packetId', 'workflowCapability', 'packetCapability'], ['fallback']);
   opaque(input.runId);
@@ -3252,8 +3387,8 @@ async function startPacket(input, deps) {
     async () => {
       const { root, record } = await loadReservation(context, input.generationId, input.runId);
       const { state } = await loadState(context, input.generationId);
-      if (record.kind !== 'workflow-reservation') fail('INVALID_STATE');
       authenticate(input.workflowCapability, record.workflowCapabilityHash);
+      assertReservationOpen(record);
       const packet = record.packets.find(({ packetId }) => packetId === input.packetId);
       if (!packet) fail('AUTHENTICATION_FAILED');
       authenticate(input.packetCapability, packet.packetCapabilityHash);
@@ -3396,11 +3531,15 @@ async function finishPacket(input, deps) {
     async () => {
       const { root, record } = await loadReservation(context, input.generationId, input.runId);
       authenticate(input.workflowCapability, record.workflowCapabilityHash);
+      assertReservationOpen(record);
       const packet = record.packets.find(({ packetId }) => packetId === input.packetId);
       if (!packet) fail('AUTHENTICATION_FAILED');
       authenticate(input.packetCapability, packet.packetCapabilityHash);
       const target = path.join(root, 'records', `${input.runId}.${input.packetId}.timing.json`);
-      const receipt = await readJson(target);
+      // A packet without a receipt never started: the lifecycle refuses its finish, and NOT_FOUND
+      // stays reserved for a run whose reservation is gone.
+      const receipt = await readJson(target, { missing: true });
+      if (receipt === null) fail('INVALID_STATE');
       authenticate(input.packetCapability, receipt.packetCapabilityHash);
       // A Fast spawn reports its verification outcome; a Quality packet or an admission-changed
       // fallback has nothing to verify.
@@ -3635,7 +3774,12 @@ async function finalizeWorkflow(input, deps) {
         if (!outcome) fail('INVALID_PAYLOAD');
       }
       await removeWorkflowTimingReceipts(context, root, input, packetOutcomes, deps);
-      return { status: 'finalized', runId: input.runId };
+      // A record a cleanup session already abandoned reports that status, never `finalized`: this
+      // run's own outcome was not recorded. A run's own finalize never stores `abandoned`.
+      return {
+        status: reservation.completionStatus === 'abandoned' ? 'abandoned' : 'finalized',
+        runId: input.runId,
+      };
     }
     if (reservation.kind !== 'workflow-reservation') fail('INVALID_STATE');
     assertReservationPolicy(reservation);
@@ -4191,6 +4335,88 @@ async function resumeGeneration(input, deps) {
   });
 }
 
+// Finalizes an open reservation as `abandoned` under the caller's lifecycle lock: every packet's
+// attempt is `unknown`, the transient owner, time, and overlap fields are dropped, and the run's
+// timing receipts are drained. `input` carries the guarded roots, `generationId`, and `runId`;
+// `operation` is the locked operation that names the write.
+async function writeAbandonedRecord(context, root, target, record, input, operation, deps) {
+  assertReservationPolicy(record);
+  // A receipt that proves the pre-spawn admission-changed fallback keeps that packet out of the
+  // Fast attempts; every other packet of an abandoned run stays unknown.
+  const receiptFallbacks = new Map();
+  for (const packet of record.packets) {
+    const receipt = await readJson(
+      path.join(root, 'records', `${input.runId}.${packet.packetId}.timing.json`),
+      { missing: true },
+    );
+    if (receipt === null) continue;
+    if (
+      receipt.kind !== 'packet-timing-receipt' ||
+      receipt.generationId !== input.generationId ||
+      receipt.runId !== input.runId ||
+      receipt.packetId !== packet.packetId ||
+      receipt.packetCapabilityHash !== packet.packetCapabilityHash
+    ) {
+      fail('UNSAFE_STORAGE');
+    }
+    receiptFallbacks.set(packet.packetId, receipt.fallback);
+  }
+  const abandonedFallback = (packet) =>
+    packet.selectedProfile === 'fast' &&
+    receiptFallbacks.get(packet.packetId) === 'admission-changed'
+      ? 'admission-changed'
+      : 'none';
+  const abandoned = {
+    schema: RECORD_SCHEMA,
+    kind: 'workflow-record',
+    runId: record.runId,
+    workflowCapabilityHash: record.workflowCapabilityHash,
+    generationId: record.generationId,
+    protocolDigest: record.protocolDigest,
+    cohort: record.cohort,
+    configState: record.configState,
+    generationState: record.generationState,
+    workflow: record.workflow,
+    harnessFamily: record.harnessFamily,
+    installKind: record.installKind,
+    ordinal: record.ordinal,
+    packets: record.packets.map((packet) => ({
+      packetId: packet.packetId,
+      selectedProfile: packet.selectedProfile,
+      wouldBeFastEligible: packet.wouldBeFastEligible,
+      firstGateReason: packet.gate.firstReason,
+      implementationDuration: { status: 'unavailable' },
+      fallback: abandonedFallback(packet),
+      escalated: false,
+      costProxy: { status: 'unavailable' },
+      attempt: 'unknown',
+      modelCompliance: allowedModelCompliance(
+        packet.selectedProfile,
+        abandonedFallback(packet),
+        'unknown',
+        record.installKind,
+      ).includes('unverified')
+        ? 'unverified'
+        : 'not-applicable',
+    })),
+    validation: { status: 'unavailable', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
+    review: {
+      status: 'unavailable',
+      severityCounts: { critical: 0, important: 0, note: 0 },
+    },
+    completionStatus: 'abandoned',
+    qualityCorrectionRounds: 0,
+    detailTrace: false,
+    overlapped:
+      record.overlapFlag ||
+      (await otherReservationOpen(root, input.generationId, input.runId, {
+        observations: true,
+      })),
+  };
+  await atomicWrite(context, target, abandoned, operation, input.generationId, deps);
+  await removeWorkflowTimingReceipts(context, root, input, null, deps);
+}
+
 async function reconcileRecord(input, deps) {
   commonInput(input, ['runId', 'workflowCapability', 'expectedInventoryDigest', 'confirmation']);
   opaque(input.runId);
@@ -4207,81 +4433,15 @@ async function reconcileRecord(input, deps) {
       return { status: record.completionStatus, runId: input.runId };
     }
     if (record.kind !== 'workflow-reservation') fail('INVALID_STATE');
-    assertReservationPolicy(record);
-    // A receipt that proves the pre-spawn admission-changed fallback keeps that packet out of the
-    // Fast attempts; every other packet of an abandoned run stays unknown.
-    const receiptFallbacks = new Map();
-    for (const packet of record.packets) {
-      const receipt = await readJson(
-        path.join(evidence.root, 'records', `${input.runId}.${packet.packetId}.timing.json`),
-        { missing: true },
-      );
-      if (receipt === null) continue;
-      if (
-        receipt.kind !== 'packet-timing-receipt' ||
-        receipt.generationId !== input.generationId ||
-        receipt.runId !== input.runId ||
-        receipt.packetId !== packet.packetId ||
-        receipt.packetCapabilityHash !== packet.packetCapabilityHash
-      ) {
-        fail('UNSAFE_STORAGE');
-      }
-      receiptFallbacks.set(packet.packetId, receipt.fallback);
-    }
-    const abandonedFallback = (packet) =>
-      packet.selectedProfile === 'fast' &&
-      receiptFallbacks.get(packet.packetId) === 'admission-changed'
-        ? 'admission-changed'
-        : 'none';
-    const abandoned = {
-      schema: RECORD_SCHEMA,
-      kind: 'workflow-record',
-      runId: record.runId,
-      workflowCapabilityHash: record.workflowCapabilityHash,
-      generationId: record.generationId,
-      protocolDigest: record.protocolDigest,
-      cohort: record.cohort,
-      configState: record.configState,
-      generationState: record.generationState,
-      workflow: record.workflow,
-      harnessFamily: record.harnessFamily,
-      installKind: record.installKind,
-      ordinal: record.ordinal,
-      packets: record.packets.map((packet) => ({
-        packetId: packet.packetId,
-        selectedProfile: packet.selectedProfile,
-        wouldBeFastEligible: packet.wouldBeFastEligible,
-        firstGateReason: packet.gate.firstReason,
-        implementationDuration: { status: 'unavailable' },
-        fallback: abandonedFallback(packet),
-        escalated: false,
-        costProxy: { status: 'unavailable' },
-        attempt: 'unknown',
-        modelCompliance: allowedModelCompliance(
-          packet.selectedProfile,
-          abandonedFallback(packet),
-          'unknown',
-          record.installKind,
-        ).includes('unverified')
-          ? 'unverified'
-          : 'not-applicable',
-      })),
-      validation: { status: 'unavailable', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
-      review: {
-        status: 'unavailable',
-        severityCounts: { critical: 0, important: 0, note: 0 },
-      },
-      completionStatus: 'abandoned',
-      qualityCorrectionRounds: 0,
-      detailTrace: false,
-      overlapped:
-        record.overlapFlag ||
-        (await otherReservationOpen(evidence.root, input.generationId, input.runId, {
-          observations: true,
-        })),
-    };
-    await atomicWrite(context, target, abandoned, 'reconcile-record', input.generationId, deps);
-    await removeWorkflowTimingReceipts(context, evidence.root, input, null, deps);
+    await writeAbandonedRecord(
+      context,
+      evidence.root,
+      target,
+      record,
+      input,
+      'reconcile-record',
+      deps,
+    );
     return { status: 'abandoned', runId: input.runId };
   });
 }
@@ -4293,6 +4453,235 @@ function probePid(pid, deps) {
   } catch (error) {
     return error?.code === 'ESRCH' ? 'stale-provable' : 'live-or-unknown';
   }
+}
+
+// An open reservation is stale once it is older than this; the owning session may still be live.
+const RESERVATION_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+// The process ids procfs lists, or null where it lists none or hides processes: pid 1 is visible to
+// every user unless procfs hides other users' processes, and a hidden owner would read as gone.
+// `deps.listProcessIds()` replaces the `/proc` read.
+function visibleProcessIds(deps) {
+  let names;
+  try {
+    names = (deps.listProcessIds ?? (() => readdirSync('/proc')))();
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(names)) return null;
+  const pids = names
+    .map((name) =>
+      typeof name === 'number' ? name : /^[1-9][0-9]{0,9}$/.test(name) ? Number(name) : null,
+    )
+    .filter((pid) => Number.isSafeInteger(pid) && pid > 0);
+  return pids.includes(1) ? pids : null;
+}
+
+// The liveness of the session that owns an open reservation, judged like a planning claim but from
+// the salted owner and ancestor digests, so no pid is ever stored: `unknown` unless the salt's host
+// binding names this helper's host identity (host name, boot id, and pid namespace, all readable,
+// and procfs this helper's own), the owner was resolved, and procfs lists every process with a
+// readable start time; then `alive` when some live process hashes to the owner digest, `unknown`
+// when the owner is gone but a live process hashes to a recorded ancestor digest (the ancestor may
+// be the session a wrapper ran under, or only a long-lived parent of a session that ended), and
+// `dead` only when neither does, because the owner and every recorded ancestor are gone or their
+// pids now belong to processes with other start times. A salt without a binding (a reservation from
+// before the orphan check) or with a binding to an unreadable identity is `unknown`.
+function reservationLiveness(reservation, deps) {
+  const salt = reservation.ownerSalt;
+  const parts = ownerSaltParts(salt);
+  if (parts === null) return 'unknown';
+  const identity = hostIdentity('self', deps);
+  if (identity === null || hostBinding(parts.random, identity, parts.ancestors) !== parts.binding) {
+    return 'unknown';
+  }
+  const { hostname } = identity;
+  const owner = (pid, pidStartTime) => canonicalDigest({ salt, hostname, pid, pidStartTime });
+  if (owner(null, null) === reservation.ownerDigest) return 'unknown';
+  const pids = visibleProcessIds(deps);
+  if (pids === null) return 'unknown';
+  const ancestors = new Set(parts.ancestors);
+  let unreadable = false;
+  let ancestorLive = false;
+  for (const pid of pids) {
+    if (pid === 1) continue;
+    // A recorded owner without a start time cannot be told from a reused pid: alive while present.
+    if (owner(pid, null) === reservation.ownerDigest) return 'alive';
+    const pidStartTime = processStartTime(pid, deps);
+    if (pidStartTime === null) {
+      if (probePid(pid, deps) !== 'stale-provable') unreadable = true;
+      continue;
+    }
+    if (owner(pid, pidStartTime) === reservation.ownerDigest) return 'alive';
+    // A live recorded ancestor without the owner never proves the session alive or dead.
+    if (
+      ancestors.size > 0 &&
+      ancestors.has(ancestorDigest(parts.random, identity, pid, pidStartTime))
+    ) {
+      ancestorLive = true;
+    }
+  }
+  return unreadable || ancestorLive ? 'unknown' : 'dead';
+}
+
+// The opaque handle of one open reservation in the cleanup listing; it names no run.
+function reservationItemId(generationId, runId) {
+  return canonicalDigest({ kind: 'workflow-reservation', generationId, runId });
+}
+
+function reservationAgeMs(reservation, deps) {
+  return Math.max(0, nowMs(deps) - Date.parse(reservation.reservedAt));
+}
+
+// An abandoned record whose timing receipts were not all drained, because the abandonment faulted
+// or crashed after writing it: its leftover receipts close admission for every later run until a
+// repeated abandonment drains them.
+function pendingDrain(record, leftoverTimings) {
+  return (
+    record.kind === 'workflow-record' &&
+    record.completionStatus === 'abandoned' &&
+    record.packets.some(({ packetId }) => leftoverTimings.has(packetId))
+  );
+}
+
+// Read-only listing of the open workflow reservations of the current-protocol generation for a
+// later cleanup session, which holds no run capability. Each item carries an opaque `itemId`, its
+// `state` (`open`), the workflow, the age, `stale` (older than 24 hours), the owner's `liveness`,
+// the `proof` an abandonment may cite (`process-dead`, or null), and the `recordDigest` the
+// abandonment binds to. An abandoned record with leftover timing receipts is listed too, as
+// `state: "pending-drain"` with `proof: "already-abandoned"` and no age, staleness, or liveness, so
+// cleanup can finish its abandonment. Gate observations carry no owner or time fields and are not
+// listed.
+async function listReservations(input, deps) {
+  exactObject(input, ['runtimeStateRoot', 'repositoryIdentity'], ['generationId']);
+  stringValue(input.runtimeStateRoot, 4096);
+  stringValue(input.repositoryIdentity, 4096);
+  if (input.generationId !== undefined) opaque(input.generationId);
+  const context = await inspectNamespace(input, deps);
+  const discovered = await discoverGenerationIds(context);
+  if (input.generationId === undefined && discovered.length > 1) fail('INVALID_STATE');
+  const generationId = input.generationId ?? discovered[0] ?? null;
+  const staleAfterHours = RESERVATION_STALE_AFTER_MS / 3_600_000;
+  if (
+    generationId === null ||
+    !context.exists ||
+    !(await directoryState(generationPath(context, generationId)))
+  ) {
+    return { generationId, generationStatus: 'absent', staleAfterHours, reservations: [] };
+  }
+  const evidence = await evidenceInventory(context, generationId, { previousProtocol: true });
+  const protocolCurrent = evidence.state.protocolDigest === PILOT_MEASUREMENT_PROTOCOL_DIGEST;
+  const leftoverTimings = new Set(evidence.leftoverTimings);
+  const item = (record) => {
+    if (record.kind !== 'workflow-reservation') {
+      return {
+        itemId: reservationItemId(generationId, record.runId),
+        state: 'pending-drain',
+        workflow: record.workflow,
+        reservedAt: null,
+        ageMs: null,
+        stale: false,
+        liveness: null,
+        proof: 'already-abandoned',
+        recordDigest: canonicalDigest(record),
+      };
+    }
+    const ageMs = reservationAgeMs(record, deps);
+    const liveness = reservationLiveness(record, deps);
+    return {
+      itemId: reservationItemId(generationId, record.runId),
+      state: 'open',
+      workflow: record.workflow,
+      reservedAt: record.reservedAt,
+      ageMs,
+      stale: ageMs > RESERVATION_STALE_AFTER_MS,
+      liveness,
+      proof: liveness === 'dead' ? 'process-dead' : null,
+      recordDigest: canonicalDigest(record),
+    };
+  };
+  const reservations = protocolCurrent
+    ? evidence.workflows
+        .filter(
+          (record) =>
+            record.kind === 'workflow-reservation' || pendingDrain(record, leftoverTimings),
+        )
+        .map(item)
+        .sort((left, right) => left.itemId.localeCompare(right.itemId))
+    : [];
+  return {
+    generationId,
+    generationStatus: 'present',
+    generationState: evidence.state.generationState,
+    protocolCurrent,
+    staleAfterHours,
+    reservations,
+  };
+}
+
+// Abandons one open reservation a later session listed, without the run's capability: under the
+// lifecycle lock it finds the item again, requires the unchanged record (`recordDigest`) and the
+// confirmed basis to hold still, the `process-dead` proof or confirmed staleness, and finalizes the
+// reservation as `abandoned`. It writes only that record and drains only that run's receipts.
+// It is idempotent for a record it already abandoned: when the receipt drain faulted or crashed
+// after the record was written, a repeated call (the identical one, or one citing the listed
+// `already-abandoned` proof) drains the remaining receipts by membership, as `reconcile-record` does
+// behind a terminal record, and changes nothing else. The lock and every write name the
+// `reconcile-record` operation, whose lock and temporary names every 1.3.0 helper accepts, so a
+// helper of an earlier release that meets them while the lock is held or after a crash reads them
+// as an ordinary reconciliation instead of unsafe storage.
+async function abandonReservation(input, deps) {
+  commonInput(input, ['itemId', 'recordDigest', 'confirmation'], ['proof', 'confirmStale']);
+  digestValue(input.itemId);
+  digestValue(input.recordDigest);
+  if (!booleanValue(input.confirmation)) fail('INVALID_PAYLOAD');
+  if (input.proof !== undefined) enumValue(input.proof, ['process-dead', 'already-abandoned']);
+  if (input.confirmStale !== undefined && input.confirmStale !== true) fail('INVALID_PAYLOAD');
+  if ((input.proof !== undefined) === (input.confirmStale === true)) fail('INVALID_PAYLOAD');
+  if (!(await inspectNamespace(input, deps)).exists) fail('NOT_FOUND');
+  const context = await ensureNamespace(input, deps);
+  await assertGenerationExists(context, input.generationId);
+  return await withLock(context, input.generationId, 'reconcile-record', deps, async () => {
+    const evidence = await evidenceInventory(context, input.generationId);
+    const record = evidence.workflows.find(
+      ({ kind, completionStatus, runId }) =>
+        (kind === 'workflow-reservation' ||
+          (kind === 'workflow-record' && completionStatus === 'abandoned')) &&
+        reservationItemId(input.generationId, runId) === input.itemId,
+    );
+    if (record === undefined) fail('NOT_FOUND');
+    if (record.kind === 'workflow-record') {
+      await removeWorkflowTimingReceipts(
+        context,
+        evidence.root,
+        { ...input, runId: record.runId },
+        null,
+        deps,
+      );
+      return { status: 'abandoned', itemId: input.itemId, basis: 'already-abandoned' };
+    }
+    if (input.proof === 'already-abandoned') fail('INVALID_STATE');
+    if (canonicalDigest(record) !== input.recordDigest) fail('STALE_REVIEW');
+    const holds =
+      input.proof === 'process-dead'
+        ? reservationLiveness(record, deps) === 'dead'
+        : reservationAgeMs(record, deps) > RESERVATION_STALE_AFTER_MS;
+    if (!holds) fail('INVALID_STATE');
+    await writeAbandonedRecord(
+      context,
+      evidence.root,
+      path.join(evidence.root, 'records', `${record.runId}.json`),
+      record,
+      { ...input, runId: record.runId },
+      'reconcile-record',
+      deps,
+    );
+    return {
+      status: 'abandoned',
+      itemId: input.itemId,
+      basis: input.proof === 'process-dead' ? 'process-dead' : 'stale',
+    };
+  });
 }
 
 async function reconcileLock(input, deps) {
@@ -5428,6 +5817,12 @@ async function executeOperationUnchecked(operation, input, deps) {
       break;
     case 'reconcile-temporary':
       result = await reconcileTemporary(input, deps);
+      break;
+    case 'list-reservations':
+      result = await listReservations(input, deps);
+      break;
+    case 'abandon-reservation':
+      result = await abandonReservation(input, deps);
       break;
     case 'begin-review':
       result = await beginReview(input, deps);

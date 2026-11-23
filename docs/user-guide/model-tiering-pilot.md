@@ -1,13 +1,12 @@
 # Model-tiering pilot data and privacy
 
 Effective Flow includes a local measurement subsystem for the opt-in Quality/Fast field pilot of
-`/effective-flow build` and `/effective-flow refactor`. The subsystem can create a preregistered Quality-only baseline, retain
+`/effective-flow build`, `/effective-flow refactor` and `/effective-flow fix`. The subsystem can create a preregistered Quality-only baseline, retain
 pilot evidence, evaluate the protocol gates, and remove one reviewed generation safely. Nothing
 starts by itself: you opt in and start the baseline through a confirmed action in
-`/effective-flow setup` (a Targeted request or Guided), and a later `build` or `refactor` run
-activates the generation automatically once the preregistered baseline conditions pass. These two
-are the only workflows that record runs and may select Fast; `fix` is admitted by the protocol but
-not yet measured. The pilot works in native installations and in the portable build that DALO
+`/effective-flow setup` (a Targeted request or Guided), and a later `build`, `refactor` or `fix` run
+activates the generation automatically once the preregistered baseline conditions pass. These three
+are the only workflows that record runs and may select Fast. The pilot works in native installations and in the portable build that DALO
 installs, where Fast needs a qualified harness (see "Portable Fast and harness qualification").
 
 ## Where evidence lives
@@ -34,7 +33,7 @@ While a baseline or active generation exists, non-observer `merge-gate` runs may
 anonymous period observation. It records only the mode and terminal outcome, harness family,
 required-check summary, install kind, and counts of actual CI repair, configured-reviewer implementation, and
 conflict-resolution work. It contains no PR, repository, branch, workflow-record, check-name,
-comment, finding, or path identifier and cannot be linked to a `build` or `refactor` run. An
+comment, finding, or path identifier and cannot be linked to a `build`, `refactor` or `fix` run. An
 observer-only re-entry records nothing. An observation is also skipped, without affecting the
 pilot, when admission closes as it starts (for example because the baseline is activating at that
 moment). An observation under T3 Code is kept across the gate's wait suspensions and recorded once
@@ -58,13 +57,13 @@ most one per run and only for the state the stored generation proves:
    the local minimal-data collection, names the preregistered minimum (at least 10 eligible packets
    in at least 5 completed baseline records, no calendar window), snapshots the harness
    qualification, and starts a Quality-only baseline only after your confirmation. From then on,
-   `build` and `refactor` runs record minimal measurements while every packet still runs Quality.
+   `build`, `refactor` and `fix` runs record minimal measurements while every packet still runs Quality.
 2. **Resume.** A suspended generation with healthy evidence can be resumed after setup shows the
    inventory and suspension digests the resume is bound to. The helper restores the state stored
    at suspension. A generation in `review` never resumes.
 
 The baseline confirmation is the only one for activation: activation follows automatically. Every
-measured `build` or `refactor` run in a baseline generation asks the helper to activate it before
+measured `build`, `refactor` or `fix` run in a baseline generation asks the helper to activate it before
 reserving its record. The helper activates once the preregistered baseline sample conditions pass:
 at least 10 eligible packets in at least 5 completed baseline records. Records of runs that
 `iterate` delegated (correction passes, always Quality) are measured but count toward neither
@@ -74,9 +73,9 @@ generation stays in its baseline, but runs keep recording. A `merge-gate` run th
 under T3 Code keeps its observation open until the gate run ends; setup reports that as open
 observations. An orphaned reservation (a crashed or aborted run that never finalized) keeps the
 generation from activating, and setup reports it as open reservations. Only the run that
-made a reservation can reconcile it, so an orphan clears only by reviewing and then discarding the
-generation with the pilot disabled, which loses the generation's evidence. A cleanup action for
-orphaned reservations is planned but not shipped. In an active generation, an eligible packet uses
+made a reservation can reconcile it; `/effective-flow cleanup` abandons an orphan after your
+confirmation (see below), and otherwise it clears only by reviewing and then discarding the
+generation with the pilot disabled, which loses the generation's evidence. In an active generation, an eligible packet uses
 Fast for its first implementation attempt only. In `refactor`, that attempt comes only after the
 before-change baseline checks, and a packet whose baseline shows a pre-existing failure or lacks
 optional evidence stays Quality; missing required evidence stops the run before any change.
@@ -138,7 +137,7 @@ Fast stops until an explicit resume; an incident it cannot store suspends nothin
 below. Only a still-suspended generation can resume; a generation in `review` is terminal
 and cannot return to admission.
 
-A `build` or `refactor` run reports such an incident to the helper by its category, and the helper
+A `build`, `refactor` or `fix` run reports such an incident to the helper by its category, and the helper
 records the suspension; your product changes are kept either way. From that point the same run
 starts no further Fast attempt: every packet it has not yet started runs Quality. If the helper
 cannot store the suspension, the run shows an alert and offers once to retry. Without a stored
@@ -149,8 +148,25 @@ generation itself, while lock contention, a rejected request, or a location faul
 state unchanged. Either way the run asks once, in the same run, whether to mark that record
 abandoned; an abandoned record counts none of its packets as a success. Only that run can do so. If
 you decline, or the run cannot ask, the incomplete record stays: it blocks activation, aggregation,
-and later Fast spawns until the generation is reviewed and discarded with the pilot disabled. Purge
-is no way out, because it needs a completed aggregation, which an open record prevents.
+and later Fast spawns until it is closed. Purge is no way out, because it needs a completed
+aggregation, which an open record prevents.
+
+An open record that a crashed or aborted run left behind is cleared by `/effective-flow cleanup`. It
+lists open pilot records with the workflow, age and whether the owning session is still running,
+and abandons one only after a dry run and your confirmation for that item, under one of two
+proofs: the session that reserved it and its recorded parent processes are provably gone on this
+host (which needs Linux `/proc`), or
+the record is older than 24 hours and you confirm that. A crashed session usually leaves a parent
+process running, such as its terminal, so its record usually shows unknown liveness and the 24-hour
+path applies. The 24-hour path cannot see a session on
+another host, and a very long run may still be alive; such a run then records nothing more, and its
+own completion report shows the record as `abandoned`. Records written before the host binding
+below existed can only be cleared by the 24-hour path. If an abandonment is interrupted after it
+closed the record but before it removed the run's timing receipts, the next cleanup lists that
+record again and finishes the removal after your confirmation. Cleanup changes no product file and
+no other record. An open `merge-gate` observation has no owner proof and is not offered; it, and
+leftover timing receipts behind a record its own run finished, still clear only by reviewing and
+discarding the generation with the pilot disabled.
 
 A packet that a run never started, because the run stopped earlier, is recorded as not
 started and left out of every packet metric, so it cannot count as a Fast attempt.
@@ -174,7 +190,7 @@ aggregate view carries a generation identifier; the local review wrapper owns th
 Evaluation enforces the required cohort (5 records), metric-stratum, and period-observation sizes;
 the chronological halves are reported for information and never make Keep unavailable alone. The
 comparison is pooled and observational, so task mix, overlap, harness, install kind and whether a
-review ran confound it, and no `build` or `refactor` split is required. Gate observations compare
+review ran confound it, and no per-workflow split is required. Gate observations compare
 like `merge|report` and harness groups, while cost compares the
 baseline's would-be-Fast Quality work with the pilot's attempted-Fast work only when kind and unit
 are identical. Insufficient or incompatible evidence is unavailable.
@@ -204,10 +220,23 @@ its stale initialization lock could be released, the retry returns that same bas
 creating another one. A live or unproved lock still blocks the retry. A final pilot directory that
 lacks the exact ownership record is treated as foreign and is never adopted automatically.
 
-While a record is open, its reservation also holds three transient fields: a reservation-salted hash of
-the host name, process id and process start time that identifies the owning session, the reservation
-time, and the overlap flag. They exist only until the record is finalized or reconciled; every
-terminal record drops them, so nothing in a finished record identifies a session.
+While a record is open, its reservation also holds four transient fields: a reservation-salted hash of
+the host name, process id and process start time that identifies the owning session, the random
+salt itself, the reservation time, and the overlap flag. The salt also carries a short hash of the
+salt's random part with the owner's host identity (host name, kernel boot id and process-namespace
+id), and short salted hashes of up to two parent processes of the owner (process id and start
+time), which let a later cleanup on the same host and in the same process namespace prove that a
+session is gone: only when the owner and every recorded parent are gone. A recorded parent that
+still runs, such as the session above a wrapper like `timeout` or the terminal a crashed session ran
+in, keeps the owner's liveness unknown, never dead; only the owner itself counts as alive. The
+run's workflow still calls the helper directly from its own shell. That proof needs Linux `/proc`; elsewhere, or for a record from another host, a
+container with its own process namespace, or an earlier boot, liveness stays unknown and only the
+24-hour stale confirmation applies. The fields exist only until the record is finalized,
+reconciled or abandoned; every terminal record drops them, so nothing in a finished record
+identifies a session or a host. The salt is per reservation, so the hashes are not comparable
+across records. They are not secret from someone who can read an open reservation, though: the
+salt sits beside the hashes, so such a reader can test a guessed host name, process id or host
+identity against them. That exposure ends with the terminal write.
 
 Packet timing is capability-bound and may cross processes. The helper accepts a duration only when
 monotonic time, wall time, system uptime, and a packet-salted host proof remain continuous. A reboot,

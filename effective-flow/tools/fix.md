@@ -449,11 +449,40 @@ worktree may already be withdrawn. The self-check never removes or claims a work
    diff baseline, and resumes here: the test-writer revises the already written test in place.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `fix/failing-test` (`shared/model-selection.md`).
-2. Start every implementer selected by the canonical routing contract. Before
-   `effective-flow-generic-product-implementer`, emit the reduced-depth notice. Never send product code
-   to `effective-flow-generic-implementer`.
+
+**Load on demand:** Read `shared/execution-profiles.md`, when steps 0 and 1 are complete and the initial packets are about to be classified, or a Fast fallback is handled.
+
+**Load on demand:** Read `shared/pilot-measurement-workflow.md`, when steps 0 and 1 are complete and packets are about to be classified, and at every exit once a pilot record is reserved.
+
+**Profile seam.** Once steps 0 and 1 are complete, every initial packet follows "Initial
+implementation phase" of the loaded `execution-profiles` fragment: its per-packet state, preflight,
+delegation, requirements check, and Fast→Quality transition, with `fix` as the record's `workflow`.
+Bind each packet to the approved diagnosis, root cause, fix scope, Phase 2 reproduction, and step 1
+test result. The step 1 failing-test paths are write exclusions of a Fast packet, named in its
+handoff and in a Fast→Quality handoff, and its packet snapshot also covers them. A packet whose
+required write paths overlap a failing-test path fails gate row 9 `unclear-ownership`, so it never
+selects Fast. After a Fast attempt returns, the orchestrator compares those paths with the pre-spawn
+packet snapshot; any change is the `scope-incident` fallback, even when another post-attempt
+fallback also ended that attempt: fix gives `scope-incident` precedence over any other post-attempt
+fallback. It is a scope fallback only and sends
+no `record-incident`, whose `scope` category is for genuine critical incidents. The Quality
+continuation first restores their step 1 version, the one write the exclusion permits it. The
+orchestrator captures their step 1 content with the pre-spawn snapshot and adds it to the
+Fast→Quality handoff as fix's own addition, since a new untracked test has no diff in the snapshot
+summary. `fastAttemptConsumed` survives every later entry, and eligibility is never evaluated again.
+
+2. Start every implementer selected by the canonical routing contract. The Quality selector is the default; the Fast
+   reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
+   is set immediately before that call. The `Tier` line below binds each Quality selector; a Fast reference takes only its own values (portable: the `Fast tier` line):
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
-   Model selection site: `fix/implementation` (`shared/model-selection.md`).
+   Fast tier: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `execution-profiles`).
+   Model selection site: `fix/initial-implementation` (`shared/model-selection.md`).
+   - Frontend: `Use the effective-flow-ui-implementer skill for this phase.` Fast: `effective-flow-ui-implementer` at the Fast tier.
+   - Backend/CLI: `Use the effective-flow-nodejs-implementer skill for this phase.` Fast: `effective-flow-nodejs-implementer` at the Fast tier.
+   - Rust: `Use the effective-flow-rust-implementer skill for this phase.` Fast: `effective-flow-rust-implementer` at the Fast tier.
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the effective-flow-generic-product-implementer skill for this phase.` Fast: `effective-flow-generic-product-implementer` at the Fast tier.
+   - Tooling/CI/configuration/repository metadata: `Use the effective-flow-generic-implementer skill for this phase.` Fast: `effective-flow-generic-implementer` at the Fast tier.
+   - Never send product code to the tooling-only generic implementer.
 3. Give a precise assignment:
    - root cause
    - affected files
@@ -484,11 +513,11 @@ surface prevents completion under the blocking rule of the detail contract.
 ### Phase 4: Verification
 
 1. First `effective-flow-test-writer`
-   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `fix/regression-test` (`shared/model-selection.md`).
    - confirms that the Phase 3 failing test now passes, or writes a regression test
 2. Then render the diff baseline, retain its `currentTree` as `reviewTree`, and hand the path list per "Diff baseline" to, in parallel if possible:
-   Tier `standard` for `effective-flow-code-validator`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium`. Tier `deep` for `effective-flow-generic-product-reviewer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Tier `standard` for `effective-flow-code-validator`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium`. Tier `deep` for `effective-flow-generic-product-reviewer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`, no downward move).
    Model selection site: `fix/verification` (`shared/model-selection.md`).
    - `effective-flow-code-validator`: repository-native lint, type, build and documentation checks that
      can be discovered safely
@@ -501,12 +530,19 @@ surface prevents completion under the blocking rule of the detail contract.
      supply only its triggering path list and each path's confirmed route. When `reviewTree` is
      unavailable, this reviewer also stands in for the routed reviewers; give it the full
      cumulative path list and confirmed routes under the same explicit assignment.
+   - for every packet whose Fast attempt started a child, also after its Fast→Quality transition, the
+     reviewer the canonical routing contract selects for its bucket (`effective-flow-frontend-reviewer`,
+     `effective-flow-nodejs-reviewer` or `effective-flow-rust-reviewer`): a read-only review of that packet's
+     paths, reporting all severities. A degraded bucket has its review above, a tooling-only
+     bucket keeps technical validation, and a Quality packet adds no reviewer
+     Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+     Model selection site: `fix/routed-review` (`shared/model-selection.md`).
 
 **Load on demand:** Read `shared/review-depth.md`, when Phase 4 aggregates findings for the incorporation pass.
 
 If findings or residual risks arise, make one automatic incorporation pass for new current-scope
-items, then apply `review-depth` without a reviewer re-check unless a floor hit or trigger starts
-step 2's full-pass reviewer on its triggering paths: the orchestrator runs both renders,
+items through the routed Quality implementer, then apply `review-depth` without a reviewer re-check
+unless a floor hit or trigger starts step 2's full-pass reviewer on its triggering paths: the orchestrator runs both renders,
 classifies the floor, and writes the three-part report itself from the delta render, the corrected
 findings with their evidence, and the open evidence. Then pass the residual batch through “Gated residual review-finding reports”. The Phase 4 report carries the
 floor classification record and the three-part report. Document only
@@ -529,7 +565,15 @@ floor classification record and the three-part report. Document only
 
 ### Phase 5: Completion
 
-1. If errors were found in Phase 4: fix them and re-verify Phase 4, including its render, per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
+**Pilot record.** A pilot record reserved in Phase 3 is finalized exactly once on every terminal
+exit – success, a controlled stop, an abort, an exhausted correction loop, an incident that ends
+the run, or a missing outcome – per the loaded `pilot-measurement-workflow` fragment. Its
+`validation` comes from the last Phase 4 run, its regression-test confirmation included, and
+`review` from that run's reviewers. `completionStatus` is `completed` only after the completion
+condition holds, `aborted` after a controlled stop or a user abort, and `failed` after an incident
+that ends the run, a missing outcome, or an exhausted correction loop.
+
+1. If errors were found in Phase 4: fix them through the routed Quality implementer and re-verify Phase 4, including its render, per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
 2. If admitted findings or residual risks with a canonical open or unimplemented status in the complete
    report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain from
    verification, regression test or review-like check:
@@ -542,14 +586,15 @@ floor classification record and the three-part report. Document only
    `verification-evidence` from the last Phase 4 `reviewTree`. Delete the wisdom file and discard the diff baseline.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Run the worktree-record exit self-check.
-7. Summarize:
+7. Finalize a reserved pilot record per "Pilot record" above.
+8. Summarize:
    - root cause
    - changes
    - new or adjusted tests
    - residual risks
    - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
    - worktree-record exit self-check result
-8. Emit the next-step block per `next-steps` as the last element of the report.
+9. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Pre-commit gate
 
@@ -567,4 +612,5 @@ Before every commit, the checks configured in the project must pass without erro
 - give the user a short status update after each phase
 - fix errors before continuing
 - keep changes minimal
+- every implementation pass after a packet's initial Phase 3 attempt – Phase 4 incorporation, Phase 5 correction, retry – is Quality-only through the routed Quality implementer
 - give internal sub-agents the done protocol

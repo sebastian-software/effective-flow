@@ -189,8 +189,8 @@ after `build` asks you to approve it in Phase 1. Contracts:
 [`build-failure-attribution`](../../src/shared/build-failure-attribution.md),
 [`environment-signature-classes`](../../src/shared/environment-signature-classes.md).
 
-**Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
-Quality/Fast pilot; `refactor`'s differences are listed in its section below.
+**Fast field pilot:** `build`, `refactor` and `fix` are the three workflows that take part in the opt-in
+Quality/Fast pilot; the differences of `refactor` and `fix` are listed in their sections.
 Without `executionProfiles.fast.enabled: true`, without a harness family (the run could not tell
 which agent runtime it runs on), or while no pilot generation is in `baseline` or `active`, every
 implementer runs Quality and nothing is recorded. With the opt-in, `build` classifies every initial implementation packet (its
@@ -218,8 +218,14 @@ the packet from the Fast measurement. Setup and baseline start are described und
 diagnosis validation, minimal fix, regression test, validation, and completion – leaner
 than `build`, since by default no dedicated planning phase is prepended.
 
-**Fast field pilot:** the pilot protocol admits `fix`, but it is not yet measured or wired, so `fix`
-always runs Quality and records nothing.
+**Fast field pilot:** `fix` takes part in the opt-in Quality/Fast pilot and follows the `build` pilot
+rules for its initial implementation packets. They are classified once phase 3 has prepared its
+working location and, when phase 2 specified a failing test, only after that test fails as
+expected. The failing-test files are write exclusions of a Fast packet, and a packet whose Fast
+attempt started a worker adds a routed read-only deep review in phase 4. Every later
+implementation pass (incorporation, correction, retry) uses Quality; the regression-test
+confirmation and validation keep their own model tier and never move to a cheaper one. The run
+records its pilot measurement on every exit.
 
 **When to use:** A concrete defect is to be fixed: something doesn't work as
 expected or there is a regression.
