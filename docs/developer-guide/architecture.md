@@ -891,12 +891,14 @@ mechanical and deep tier variants for the six standard roles. Codex role-file mo
 settings take precedence over spawn parameters, so generated role names carry the effective native
 selection while direct base-role invocation remains safe. The mappings and eligible route
 classification are centralized in `build.mjs`.
-Portable builds do not receive inventories, Fast sidecars, aliases, or native profile metadata and
-remain Quality-only.
+Portable builds do not receive inventories, Fast sidecars, aliases, or native profile metadata,
+but may still select Fast through the rendered Fast tier line on a harness the generation's
+qualification snapshot records as qualified.
 
-`src/tools/build.md` and `src/tools/refactor.md` are the only sources authorized to use a Fast
-profile reference, each only inside its initial implementation phase. Both adopt it: `build`
-Phase 2 and `refactor` Phase 3, after its Phase 2 baseline, carry the five Fast references inline
+`src/shared/build-delegated-run.md` (the `build` run body), `src/tools/refactor.md` and
+`src/tools/fix.md` are the only sources authorized to use a Fast profile reference, each only inside its initial implementation phase (the
+`profilePhaseAuthorizations` map in `build.mjs`). All three adopt it: `build` Phase 2, `refactor`
+Phase 3 after its Phase 2 baseline, and `fix` Phase 3 after its failing-test step, carry the five Fast references inline
 on the implementer selector lines and lazy-load the policy, whose "Initial implementation phase"
 section owns their shared packet contract, and the workflow-record fragment. A native artifact or
 valid inventory therefore does not make a run select Fast by itself: the adopting workflow executes the runtime
@@ -905,7 +907,10 @@ only for the first attempted spawn of an eligible packet in an active generation
 failed attempt exactly once with the routed Quality implementer from the retained state in the same
 checkout. On Claude Code, the presence of
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` produces `profile-unavailable` and selects Quality; an actual
-host rejection after a Fast request remains the distinct `spawn-rejected` fallback.
+host rejection after a Fast request remains the distinct `spawn-rejected` fallback. In `fix`, the
+failing-test paths of Phase 3 step 1 are write exclusions of a Fast packet, a Fast packet adds the
+routed deep reviewer in Phase 4 (spawn site `fix/routed-review`), and every later implementation
+pass is Quality-only.
 
 ## Local pilot measurement boundary
 
@@ -940,9 +945,10 @@ unpersisted incident is retried only on confirmation, otherwise pointing to Guid
 `Disable`. The workflow never suspends for a failed finalization: the helper persists
 `finalization-failed` itself on a mid-write fault, and lock contention or a rejected request leaves
 the pilot unchanged. Either way the run offers a confirmed `reconcile-record` in the same run,
-because no later run holds the workflow capability; otherwise the incomplete record is cleared only
-by `begin-review` and `discard-generation` with the pilot disabled, which discards the generation.
-`refactor` follows the same recording contract.
+because no later run holds the workflow capability; otherwise an open reservation is closed by
+`abandon-reservation` in a later `cleanup` run (once its owning process is proven gone, or after 24
+hours with confirmation), and any other incomplete record only by `begin-review` and
+`discard-generation` with the pilot disabled, which discards the generation. `refactor` and `fix` follow the same recording contract.
 
 Minimal workflow records and optional detailed traces are separate channels. A trace requires an
 explicit request in the current run; project configuration cannot confer that consent and no

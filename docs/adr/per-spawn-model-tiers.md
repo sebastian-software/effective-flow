@@ -300,7 +300,7 @@ for the delegated runs only; the `deep` mapping is unchanged.
 contract and revises that portable restriction; see
 [Native execution-profile representation](./native-execution-profile-representation.md).
 
-- **Fast tier line.** The first implementation spawn of `build` and `refactor` renders a Fast tier
+- **Fast tier line.** The first implementation spawn of `build`, `refactor` and `fix` renders a Fast tier
   line from `AGENT_PROFILE_MAPPINGS.fast` next to its Quality (`deep`) line; the orchestrator uses
   exactly one per the packet's selected profile. Every other spawn keeps its site tier with no
   downward move. The Fast values equal the `standard` tier today; the provider-alias guard exempts

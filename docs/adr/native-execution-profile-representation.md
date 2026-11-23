@@ -36,7 +36,7 @@ with Quality. The run never claims enforcement that the host prevented.
 
 Portable output may select Fast through the per-spawn Fast tier, but only on a qualified harness
 (revised 2026-11-21). The build renders a Fast tier line from `AGENT_PROFILE_MAPPINGS.fast` beside
-the Quality (`deep`) line at the first implementation spawn of `build` and `refactor`; a portable
+the Quality (`deep`) line at the first implementation spawn of `build`, `refactor` and `fix`; a portable
 manager has no role file that could override a per-spawn parameter, so the parameter decides. A
 harness is qualified only when the shipped qualification record
 (`src/scripts/fast-harness-qualification.json`) states a `qualified` probe outcome and a Fast-mapping
@@ -56,8 +56,8 @@ The build now renders this native capability and publishes strict schema-2 nativ
 as build/install consistency manifests. It generates five Fast implementer sidecars for each native
 harness and Codex's twelve mechanical/deep variants for the six standard roles. Portable output
 still contains no native profile artifact. Capability remains separate from activation: a valid
-inventory does not prove runtime discovery or host acceptance. `build` Phase 2 and `refactor` Phase
-3 are the two adopting phases; each renders the five Fast references inline and executes the
+inventory does not prove runtime discovery or host acceptance. `build` Phase 2, `refactor` Phase
+3 and `fix` Phase 3 are the three adopting phases; each renders the five Fast references inline and executes the
 policy's runtime capability gate immediately before selection, and only an eligible packet in an
 active pilot generation requests Fast.
 

@@ -83,13 +83,13 @@ aggregation, evaluation, purge, and exceptional discard operations. Evidence rem
 optional detailed traces require an explicit request in the current run and never inherit consent
 from project configuration. While a baseline or active generation exists, `merge-gate` may record
 anonymous period-level correction observations, but those observations carry no workflow-record or
-forge/repository identity and cannot be linked to a `build` or `refactor` run.
+forge/repository identity and cannot be linked to a `build`, `refactor` or `fix` run.
 
-Lifecycle capability still does not activate the pilot by itself. `build` and `refactor` are the
-two adopting workflows: each reads the key and the generation, records its measured runs, lets the
+Lifecycle capability still does not activate the pilot by itself. `build`, `refactor` and `fix` are the
+three adopting workflows: each reads the key and the generation, records its measured runs, lets the
 helper activate an enabled baseline generation automatically during a measured run's preflight once
 the preregistered conditions pass, and requests Fast only for an eligible native packet in an active
-generation. Both share one initial-implementation packet contract in the policy source. A
+generation. All share one initial-implementation packet contract in the policy source. A
 refactoring's correctness evidence is behavior invariance against its own pre-change checks, so
 `refactor` admits Fast only after that baseline is complete, binds each packet to it, and keeps a
 packet Quality when a pre-existing failure or missing optional evidence means its eligibility is
@@ -120,8 +120,7 @@ recorded.
 >   comparison is informational and no longer makes Keep unavailable. Records whose only first
 >   reason is `correction-pass` (an `iterate`-delegated run, always Quality) are measured but count
 >   toward neither minimum.
-> - **Coverage.** `fix` is admitted by the protocol (`1.3.0`) but not yet measured or wired; only
->   `build` and `refactor` record runs today. `merge-gate` observations also run under T3 Code.
+> - **Coverage.** `build`, `refactor` and `fix` record runs under protocol `1.3.0`. `merge-gate` observations also run under T3 Code.
 > - **Overlap.** Records and observations may be open together. A record opened or overlapped by
 >   another is flagged `overlapped`, an unlinked confounder. A Fast packet whose admission closed
 >   before its first spawn runs Quality with `admission-changed`, which consumes no Fast attempt.
@@ -133,8 +132,10 @@ recorded.
 >   suspended once with `protocol-parameters-changed` and can only be inspected, reviewed and
 >   discarded. Activation still requires an idle generation, so an orphaned open reservation or
 >   observation blocks it; the inventory reports that cause. Only the owning run can reconcile a
->   reservation, so an orphaned observation clears only by discarding the generation, and an
->   orphaned reservation does too until the planned, not yet shipped cleanup action exists.
+>   reservation, so an orphaned observation clears only by discarding the generation, while a later
+>   `cleanup` run abandons an orphaned reservation once its owner process is proven gone on the
+>   same host, boot and pid namespace (bound inside the reservation's salt, so the stored 1.3.0
+>   shape is unchanged) or after 24 hours with confirmation.
 
 Configuration, generation state, trace consent, native capability, and publication approval remain
 separate decisions. Review freezes new reservations; private aggregate evaluation precedes any
@@ -172,8 +173,8 @@ generation identifier in the private review binding rather than either metric vi
 ## Consequences
 
 - Existing projects retain Quality behavior until they opt in, explicitly confirm a baseline, and
-  that baseline activates automatically; every workflow other than `build` and `refactor` stays
-  Quality-only (`fix` is admitted by the protocol but not yet wired).
+  that baseline activates automatically; every workflow other than `build`, `refactor` and `fix`
+  stays Quality-only.
 - The pilot can fail closed when configuration, evidence, lifecycle state, or native enforcement is
   uncertain.
 - A possible performance gain is deliberately forgone for excluded, coupled, corrective, unqualified-harness,

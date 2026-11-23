@@ -363,13 +363,15 @@ The build aborts with an error message if any of these guards is violated:
 - **Reference guard:** Every `{{SKILL:X}}` must point to an existing `src/tools/X.md`, every
   `{{AGENT:X}}` and `{{AGENT_PROFILE:X:fast}}` to an existing `src/agents/X.md`. The profile form
   accepts only `fast`, only for an implementation worker selected by the validated routing table,
-  and only inside the initial implementation phase of `src/tools/build.md` (between
-  `### Phase 2: Implementation` and `### Phase 3: Documentation`) or `src/tools/refactor.md`
-  (between `### Phase 3: Refactoring` and `### Phase 3.5: Documentation sync`). A legacy `sf-`
+  and only inside the initial implementation phase of `src/shared/build-delegated-run.md` (between
+  `### Phase 2: Implementation` and `### Phase 3: Documentation`), `src/tools/refactor.md`
+  (between `### Phase 3: Refactoring` and `### Phase 3.5: Documentation sync`) or
+  `src/tools/fix.md` (between `### Phase 3: Fix` and `### Phase 3.5: Documentation sync`); the
+  `profilePhaseAuthorizations` map in `build.mjs` holds these three phase bounds. A legacy `sf-`
   prefix (see "No legacy aliases" above) is deliberately rejected with a migration message. The
   same guard also runs during rendering (`transformRefs`), so no accepted placeholder can produce a
   non-existent target. `build` uses the profile form on its five Phase 2 implementer selector
-  lines and `refactor` on its five Phase 3 implementer selector lines.
+  lines, `refactor` and `fix` on their five Phase 3 implementer selector lines each.
 - **Automation emission guard:** Only the source of a tool in the `Automation` `TOOL_GROUPS`
   entry, or a shared fragment that only such tools reach through eager or lazy includes, may emit
   the scored control lines `Decision mode: scored`, `Autopilot run:` and
@@ -619,7 +621,7 @@ The build aborts with an error message if any of these guards is violated:
   `dist/` swap. Focused positive and mutation/error coverage lives in
   `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. The policy remains
   separate from the rendered native capability: the build emits the sanctioned Claude sidecars
-  and native inventories, `build` Phase 2 and `refactor` Phase 3 are the only phases that lazy-load
+  and native inventories, `build` Phase 2, `refactor` Phase 3 and `fix` Phase 3 are the only phases that lazy-load
   the policy fragment and request Fast, and portable output contains no native profile artifact. Every Fast reference of such a phase must
   bind to one spawn-site marker, which must resolve to `deep` alone and is the only site that
   renders the portable Fast tier line (the Fast tier line guard rejects it anywhere else).
@@ -1043,7 +1045,7 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   operations, `purge`, and `discard-generation` require explicit digest-bound confirmation;
   `activate` needs none, because the confirmed baseline is the consent, and returns `activated` or
   `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. Besides the
-  `merge-gate` observation, `build` and `refactor` record their measured runs, call `activate`
+  `merge-gate` observation, `build`, `refactor` and `fix` record their measured runs, call `activate`
   automatically in an enabled baseline generation's preflight, and record incidents through
   `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; setup block 10
   (Guided or Targeted) runs the confirmed `begin-baseline` and `resume` actions through
@@ -1863,9 +1865,9 @@ time, whether Fast is allowed (see the protocol guide). A portable build is meas
 fragments read `{{BUILD_TARGET}}` only for `installKind`. Build guards reject native metadata,
 Fast sidecar identifiers, inventories, and unresolved profile tokens in portable output, and
 provider model names there outside build-generated tier text and the Fast tier line (see "Model
-tiers"). The token is authorized only in the initial implementation phase of `build` and
-`refactor`. `build` Phase 2 and `refactor` Phase 3 each use it for their five Fast-capable
-implementers.
+tiers"). The token is authorized only in the initial implementation phase of `build`,
+`refactor` and `fix`. `build` Phase 2, `refactor` Phase 3 and `fix` Phase 3 each use it for their
+five Fast-capable implementers.
 
 Native builds also write `native-agent-inventory.json` beside each skill. Its `baseWorkers` list is
 identical across harnesses. Claude's `fastWorkers` and Codex's `fastWorkers` each list the five
