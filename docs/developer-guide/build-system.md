@@ -1459,6 +1459,10 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   core; an external tracker is never contacted, its items arrive from the caller, its writes leave
   as an ordered call list, and each call is cleared against the target the caller re-read. Every
   write comes from a hash-bound write set with a closed action vocabulary. The `backlog-audit` source tool owns orchestration and the user gates.
+  The runner's permission proof, the per-login permission cache and author trust live in
+  `issue-intake-core.mjs`, a shared intake core with no CLI of its own: `backlog-audit-core.mjs`
+  imports it and injects its error class, write vocabulary, capability mapping and hashing, while
+  input parsing and the tracker session stay with the caller.
 
 - **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
   closed-schema JSON object on standard input. The entry point exposes the pass record
