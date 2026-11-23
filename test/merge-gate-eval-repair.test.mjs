@@ -97,6 +97,7 @@ function provision(scenario) {
 function originGit(slot, args) {
   return execFileSync('git', ['--git-dir', slot.remote, ...args], {
     encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: childEnv(),
   }).trim();
 }
