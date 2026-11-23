@@ -44,6 +44,7 @@ a pure runtime directory and completely gitignored.
 | mergeGate.bots.recensor.trigger   | /recensor review           |
 | mergeGate.bots.recensor.check     | recensor/review            |
 | mergeGate.conflictValidation      | quick                      |
+| executionProfiles.fast.enabled    | true                       |
 
 ## Branch model
 
