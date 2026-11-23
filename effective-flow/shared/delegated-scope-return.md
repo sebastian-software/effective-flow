@@ -20,13 +20,24 @@ Scope expansion: [{"identifier":"<minted identifier>","paths":["<path>"]}]
   identifier without a commit is left out, no SHA appears under two identifiers, and a commit made
   through the `HOOKS_UNTRUSTED` fallback is listed like one `commit create` made.
 - **`Scope expansion:`** names, per minted identifier, the paths "Authorized scope" refused for it:
-  the scope check's `outside` and `undetermined` paths, or the checked paths after a failed call. The free-text
+  the scope check's `outside` and `undetermined` paths, or the checked paths after a call that
+  returned no envelope; a well-formed refusal declares only what it reports. The free-text
   repair and a correction item are declared under their scope-line identifiers, though neither has
   an entry in the returned outcome record.
 - **An empty list is stated as `[]`**, never omitted: the caller ends the run on a missing
-  `Scope expansion:` line and counts no attempt for a missing `Returned commits:` line.
+  `Scope expansion:` line after one line request and counts no attempt for a missing
+  `Returned commits:` line.
 - Write each value as compact JSON on that one line. Never restate either list elsewhere, and
   never name an identifier the caller did not mint: a thread ID, `ci` or `validation` is no key.
+
+**Answering a line request.** A caller that asks for the missing `Returned commits:` and
+`Scope expansion:` lines of the final return gets only the requested lines, then the same keyword
+line again: no `Review-fix validation result:` line, no other text, and no edit, commit, push, reply
+or resolve. Take each SHA from this run's own `commit create` results, a fallback commit's captured
+hash included, never from the wisdom file, and where the worktree still exists confirm them
+read-only with `git log <head before the run>..HEAD`; never name a SHA this run did not create.
+Without certainty about that mapping, omit `Returned commits:`, which the caller reads as `[]`, and
+still state `Scope expansion:`.
 
 **A refused manifest item returns `unassessed`**, under the "refused by the authorized-scope check"
 row of the outcome mapping, and never `deferred` or `rejected`: the refusal decided where the repair

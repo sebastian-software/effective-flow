@@ -81,6 +81,9 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       uptimeSeconds: io.uptimeSeconds,
       hostname: io.hostname,
       kill: io.kill,
+      ownerPid: io.ownerPid,
+      ownerPidStartTime: io.ownerPidStartTime,
+      harnessQualificationPath: io.harnessQualificationPath,
     });
   } catch (error) {
     envelope = errorEnvelope(operation, error);

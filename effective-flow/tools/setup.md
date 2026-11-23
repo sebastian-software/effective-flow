@@ -14,8 +14,8 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 - migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
 - always start from safe defaults; use **Profile** as the standard two-question path and retain
   **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
-- after setup, apply a free-text request (**Targeted**) as changes to the named keys only, behind
-  one confirmed before/after list, or answer a read-only question about the current configuration
+- after setup, apply a free-text request (**Targeted**) to the named keys only, behind one confirmed
+  before/after list, offer the confirmed Fast pilot actions, or answer a read-only setup question
 - in Claude Code, offer allow rules for the Effective Flow helpers' non-destructive or bounded and read-only operations in the untracked `.claude/settings.local.json`, behind a preview and an explicit confirmation (also alone as `setup allowlist`)
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
 - for an existing config, show and pre-select the currently recorded value at every choice; on a scored choice, name it in the question or explanation only, never as a label marker or by moving its option
@@ -406,7 +406,7 @@ resolving step and path.
   and `invalid` (malformed, ambiguous, or unreadable) select Quality and stop new measurement
   without rewriting persisted pilot-generation state. `enabled` (only the literal `true`) admits
   the project to the pilot lifecycle but does not start a baseline, activate a generation, prove
-  native Fast capability, or itself permit Fast. Only Guided setup (advanced block 10) sets it;
+  native Fast capability, or itself permit Fast. Only setup block 10 (Guided or Targeted) sets it;
   Profile and Express preserve an existing value and never enable it. It has no legacy migration
   and names no provider model.
 - **`delivery.prReview`** → `ask`, `always`, or `off`; unset resolves to `ask`. What it governs is
@@ -604,7 +604,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in `tools/apply-review.md` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
 - **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; in hidden mode the configuration resolver forces its fixed values (the hidden file's rows are listed under "Safe defaults").
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
-- **`executionProfiles`** (source: the configuration building block): `fast.enabled` (strict Boolean, unset by default — missing or `false` is disabled, a malformed, ambiguous, or unreadable value invalid, and both run Quality; `true` only admits the project to the `effective-flow build` field pilot; never a provider model name). Set only in Guided block 10; Profile and Express preserve an existing value.
+- **`executionProfiles`** (source: the configuration building block): `fast.enabled` (strict Boolean, unset by default — missing or `false` is disabled, a malformed, ambiguous, or unreadable value invalid, and both run Quality; `true` only admits the project to the `effective-flow build` and `effective-flow refactor` field pilot; never a provider model name). Set only by setup block 10, from Guided or a Targeted request; Profile and Express preserve an existing value.
 
 ### Safe defaults (the single base)
 

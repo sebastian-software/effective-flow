@@ -131,6 +131,7 @@ request in any language; setup maps it to configuration keys from
 /effective-flow setup reset language.chat
 /effective-flow setup which tracker is configured?
 /effective-flow setup add coderabbitai as a merge-gate bot
+/effective-flow setup enable the Fast pilot and start the baseline
 ```
 
 - **A change** proposes the value you named, here `fast` for `review.profile`, and shows the
@@ -145,6 +146,18 @@ request in any language; setup maps it to configuration keys from
   context, where "not set" is a valid answer. A placeholder you paste unchanged, such as
   `<exact check context>`, is never written; setup asks for the real value instead. Removing a
   reviewer also removes its trigger and `.check` rows in the same preview.
+- **The Fast pilot** (`executionProfiles.fast.enabled`) takes the same route:
+  `/effective-flow setup enable the Fast pilot and start the baseline` asks the block 10 question
+  (see [Fast pilot block](#fast-pilot-block)) with **Enable** pre-selected, then offers the one
+  confirmed baseline action that fits the stored pilot state. A bare "fast" is ambiguous, so setup
+  asks whether you mean the Fast pilot or `review.profile`; "Fast pilot", "start the baseline" or
+  "review profile fast" need no such question. A request to stop the pilot gets one question:
+  **Disable**, or leave it unchanged. "Is the pilot running?" is a read-only pilot state question
+  that reports the generation state, any busy cause, and the qualification, and offers no action. The
+  Baseline ask always needs its own confirmation: your request never confirms it, a disabled or
+  unset pilot is asked first (a recorded `false` is named as your earlier decision to disable), and
+  a run that cannot ask starts nothing. Guided → **Advanced settings** → **Block 10** remains an
+  alternative.
 - **Switching the tracker** to `external` also asks for each missing or invalid external detail:
   tool, connection hint, started state, and done state. Switching to `remote` asks for the provider
   override only when the host is ambiguous.
@@ -186,9 +199,10 @@ route to take and still offers the remaining changes:
 
 - **Visibility:** to hide, run `/effective-flow setup hidden`; to unhide, run
   `/effective-flow setup` or `/effective-flow setup guided` and answer `Standard`.
-- **Fast pilot** (`executionProfiles.fast.enabled`): run `/effective-flow setup guided` →
-  **Advanced settings** → **Block 10 (`executionProfiles`)**; see
-  [Fast pilot block](#fast-pilot-block).
+- **Pilot generation actions beyond start and resume** (`begin-review`, `discard-generation`):
+  run the pilot helper directly, with the pilot disabled, as the
+  [Fast pilot block](#fast-pilot-block) names it. Measurement edits and model or provider names
+  have no route, because the helper owns measurement and no model or provider is ever configured.
 - **First-time steps** (`.gitignore`, marker, `CLAUDE.md` import, session-rename check, legacy JSON
   migration): run `/effective-flow setup`.
 - **In hidden mode**, every `tracker.*` key, the other
@@ -250,10 +264,11 @@ Every problem comes with the setup form that would fix it, such as `/effective-f
 owner comes with its install step, a disabled one with the targeted request that re-enables it.
 Status runs none of them. When at least one problem can be fixed by setup, the report ends with a
 recommendation with one line per setup form the problems need, at most two, in the order
-`/effective-flow setup`, `/effective-flow setup guided`, `/effective-flow setup hidden`, then the
-first targeted request, then `/effective-flow setup allowlist`; further requests or forms follow the same way, and plain
-`/effective-flow setup` appears only when that form itself is needed. A deliberate `skills` exclusion or a missing skill never triggers that
-recommendation; without a setup-fixable problem the report suggests no next step.
+`/effective-flow setup`, `/effective-flow setup hidden`, then the first targeted request, then
+`/effective-flow setup allowlist`; further requests or forms follow the same way, and plain
+`/effective-flow setup` appears only when that form itself is needed. A deliberate `skills`
+exclusion or a missing skill never triggers that recommendation; without a setup-fixable problem
+the report suggests no next step.
 
 ### Allow rules (Claude Code)
 
@@ -498,7 +513,8 @@ unchanged ADR/convention writes.
 
 ### Fast pilot block
 
-Guided's advanced settings end with **Block 10 (`executionProfiles`)**, the opt-in for the
+Guided's advanced settings end with **Block 10 (`executionProfiles`)**, which a
+[Targeted request](#targeted-changes-and-questions) reaches as well. It is the opt-in for the
 Quality/Fast field pilot of `/effective-flow build` and `/effective-flow refactor`. Profile and Express never ask it and keep an
 existing `executionProfiles.fast.enabled` row exactly as recorded, including an invalid one. The
 block first explains that `true` only admits the project to the pilot, shows the recorded value as
@@ -518,17 +534,27 @@ Once the configuration step has finished (a declined confirmation or a stopped r
 action), the block reads the stored pilot generation and, only while the key is enabled, offers at
 most one confirmed action:
 
-| Stored generation                                   | Offered action                                                                                                                                                                                    |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| none                                                | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum baseline window and packet count required for activation |
-| `suspended`, evidence healthy                       | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                               |
-| `baseline`, `active`, `review`, unhealthy suspended | none; a baseline activates automatically, `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                   |
+| Stored generation                                   | Offered action                                                                                                                                                                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none                                                | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum packet and record count required for activation (10 eligible packets in at least 5 completed baseline records, no calendar window) |
+| `suspended`, evidence healthy                       | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                                                                                                         |
+| `baseline`, `active`, `review`, unhealthy suspended | none; a baseline activates automatically, `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                                                                                             |
+
+The block also reports each harness family's qualification (the probe outcome and host version the
+release shipped) and, when something unfinished blocks activation, that cause: open reservations
+of workflow runs, or open observations of a `merge-gate` run, which may be waiting for a PR across
+re-dispatches. One host's probe qualifies the harness for every install of the release, and a
+provider gateway may map model aliases differently. Only the run that holds an open record can
+finalize or reconcile it. An orphaned one blocks activation until the generation is reviewed and
+discarded with the pilot disabled, which loses its evidence; a cleanup action for orphaned
+reservations is planned but not shipped. Portable (DALO) installations offer the same actions as
+native ones.
 
 Declining, skipping, or a non-interactive run sends nothing. No action changes the configuration
 row, and the final report names the opt-in value, the stored generation state, and each offered
 action's outcome. Setup never activates a generation: the confirmed baseline is the only consent,
-and the next measured native `build` or `refactor` run activates it automatically once the preregistered window
-and sample are met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
+and the next measured `build` or `refactor` run activates it automatically once the preregistered sample
+is met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
 baseline records.
 
 ## `/effective-flow cleanup`

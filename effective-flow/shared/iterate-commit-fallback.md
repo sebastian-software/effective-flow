@@ -1,7 +1,8 @@
 ## Iterate commit fallback (`HOOKS_UNTRUSTED`)
 
 `commit create` refused this item because the head's hook configuration is not trusted (a fork
-head, or a hook-relevant configuration change). Commit this one item through the prose sequence
+head, or a hook-relevant configuration change), after its paths passed the bound scope check of a
+scoped run, which precedes the hook trust check. Commit this one item through the prose sequence
 below instead; its `git commit` runs those hooks and prompts in default mode, so the user sees
 it. It keeps the item's `iterate-commit` owner, paths and message. Only the `iterate` orchestrator
 loads this fragment, and it already carries the helper call shape and the commit-lock contract

@@ -67,10 +67,10 @@ remediation of your own.
 End the report with the next-steps block per the shared `next-steps` contract: it recommends
 `effective-flow setup` only when `data.setupFixable` is true; otherwise the run emits no block. The
 options follow `data.setupForms` in order, one per form and at most two: `setup` is bare
-`effective-flow setup` (an empty setup argument), `setup guided` is `effective-flow setup guided`,
-`setup hidden` is `effective-flow setup hidden`, `targeted` is `effective-flow setup <request>` with the
-first Targeted request the remediations name, its line saying that any others follow the same way,
-and `allowlist` is `effective-flow setup allowlist`.
+`effective-flow setup` (an empty setup argument), `setup hidden` is `effective-flow setup hidden`,
+`targeted` is `effective-flow setup <request>` with the first Targeted request the remediations name,
+its line saying that any others follow the same way, and `allowlist` is
+`effective-flow setup allowlist`.
 With more than two forms, the second line also says that the report's remaining forms follow the
 same way. Bare `effective-flow setup` is an option only for the `setup` form. An owner missing from the
 session's skill list never makes the report setup-fixable.

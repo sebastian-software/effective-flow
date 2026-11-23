@@ -350,14 +350,15 @@ check, and Fast→Quality transition, with `build` as the record's `workflow`.
 
 1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the default; the Fast
    reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
-   is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
+   is set immediately before that call. The `Tier` line below binds each Quality selector; a Fast reference takes only its own values (portable: the `Fast tier` line):
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Fast tier: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `execution-profiles`).
    Model selection site: `build-delegated-run/initial-implementation` (`shared/model-selection.md`).
-   - Frontend: `Use the effective-flow-ui-implementer skill for this phase.` Fast: `effective-flow-ui-implementer` (portable build: Fast unavailable, Quality only).
-   - Backend/CLI: `Use the effective-flow-nodejs-implementer skill for this phase.` Fast: `effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).
-   - Rust: `Use the effective-flow-rust-implementer skill for this phase.` Fast: `effective-flow-rust-implementer` (portable build: Fast unavailable, Quality only).
-   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the effective-flow-generic-product-implementer skill for this phase.` Fast: `effective-flow-generic-product-implementer` (portable build: Fast unavailable, Quality only).
-   - Tooling/CI/configuration/repository metadata: `Use the effective-flow-generic-implementer skill for this phase.` Fast: `effective-flow-generic-implementer` (portable build: Fast unavailable, Quality only).
+   - Frontend: `Use the effective-flow-ui-implementer skill for this phase.` Fast: `effective-flow-ui-implementer` at the Fast tier.
+   - Backend/CLI: `Use the effective-flow-nodejs-implementer skill for this phase.` Fast: `effective-flow-nodejs-implementer` at the Fast tier.
+   - Rust: `Use the effective-flow-rust-implementer skill for this phase.` Fast: `effective-flow-rust-implementer` at the Fast tier.
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the effective-flow-generic-product-implementer skill for this phase.` Fast: `effective-flow-generic-product-implementer` at the Fast tier.
+   - Tooling/CI/configuration/repository metadata: `Use the effective-flow-generic-implementer skill for this phase.` Fast: `effective-flow-generic-implementer` at the Fast tier.
    - Fullstack: both in parallel or in clearly separated subphases
 
 2. Check for the done protocol when delegating internally, and check the result against the

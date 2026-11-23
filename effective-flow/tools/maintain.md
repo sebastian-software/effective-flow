@@ -131,6 +131,8 @@ Apply the matchers in table order:
 - **Generic product fallback:** clearly identified product code outside the specialized routes uses the generic product implementer and reviewer. This includes Python, Go, JVM, .NET, Ruby, PHP, Swift, and other or unknown languages when the task, path, manifest, or neighboring code establishes the product role.
 - **Ambiguous:** if neither file role nor product/tooling ownership can be established safely, pause for one focused clarification. Never use the tooling-only generic implementer merely because no specialist language matched.
 
+Skill and prompt sources that a build ships as product behaviour (such as an agent skill's `src/**/*.md`) are product source, not documentation: route them through the product route of their build, `node-backend-cli` for a Node.js-built skill. User and developer guides stay `documentation`.
+
 Explicit task scope and the closest repository instructions take precedence over filename heuristics. Generated, vendored, documentation, and tooling roles take precedence over language signals.
 
 ## Mixed repositories
@@ -185,7 +187,7 @@ resolving step and path.
   and `invalid` (malformed, ambiguous, or unreadable) select Quality and stop new measurement
   without rewriting persisted pilot-generation state. `enabled` (only the literal `true`) admits
   the project to the pilot lifecycle but does not start a baseline, activate a generation, prove
-  native Fast capability, or itself permit Fast. Only Guided setup (advanced block 10) sets it;
+  native Fast capability, or itself permit Fast. Only setup block 10 (Guided or Targeted) sets it;
   Profile and Express preserve an existing value and never enable it. It has no legacy migration
   and names no provider model.
 - **`delivery.prReview`** → `ask`, `always`, or `off`; unset resolves to `ask`. What it governs is

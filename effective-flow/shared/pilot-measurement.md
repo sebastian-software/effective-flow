@@ -41,11 +41,11 @@ before Phase 1 performs gate work.
    consume only explicit helper-returned pilot-control metadata as described in step 6, and
    continue the merge gate unchanged.
 
-2. Determine the native harness family as the closed value `claude|codex`. Portable execution has
-   no native pilot capability and records no observation. It continues the merge gate unchanged.
-   A dispatch carrying `Host: t3-code`, and an inline run on the T3 path of `host-pr-watch`, reserves
-   no observation either, so a `SUSPENDED host-pr-watch` return has nothing to finalize and a
-   `Resumed wait:` dispatch reserves nothing.
+2. `harnessFamily` is the `model-selection` harness of the spawn tool this run holds, and
+   `installKind` is `portable` for the `portable` build `portable`, else `native`. Without
+   a harness family the run records no observation and continues the merge gate unchanged. A
+   `Resumed wait:` dispatch, or a re-dispatch whose wisdom file holds an observation handle, reserves
+   nothing and continues that observation per "Suspended observation".
 3. When inventory returned exactly one present generation, invoke `start-gate-observation` with an
    stdin object containing exactly these keys:
 
@@ -57,6 +57,7 @@ before Phase 1 performs gate work.
      "configState": "<disabled|invalid|enabled>",
      "generationState": "<inventory generationState>",
      "mode": "<merge|report>",
+     "installKind": "<native|portable>",
      "harnessFamily": "<claude|codex>"
    }
    ```
@@ -70,8 +71,8 @@ before Phase 1 performs gate work.
 
 4. On a reservation, retain the returned `observationId`, capability, cohort, and ordinal only in
    the current run's transient state. Never place the raw capability or observation identifier in
-   the wisdom file, chat, a delegation message, a pull-request artifact, or another record. Start
-   three counters at zero:
+   chat, a delegation message, a pull-request artifact, or another record, nor in the wisdom file
+   except as the handle of "Suspended observation". Start three counters at zero:
    `ciRepairDelegations`, `reviewerImplementationDelegations`, and
    `conflictResolutionAttempts`.
 5. If inventory or reservation fails, continue the merge gate with the same mode and outcome it
@@ -85,6 +86,17 @@ before Phase 1 performs gate work.
    a `none` outcome, or `controlStatePersisted: false` authorizes no persistence claim. This metadata
    never changes the current merge/report result, and the workflow performs no pilot state write of
    its own.
+
+### Suspended observation
+
+On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an
+**observation handle** to the wisdom file, holding `generationId`, `observationId`, capability and
+the three counters. A `Resumed wait:` re-dispatch or wake restores the observation from that handle,
+keeps counting, and reserves nothing, so the gate run holds exactly one observation, which its final
+ending finalizes once and then removes the handle. Every caller-side ending that deletes a
+wisdom file still holding a handle first finalizes it under "Phase 6 observation finalization" with
+the pre-Phase-4 unavailable check evidence and the outcome `reported-blocked` in `report` mode,
+`failed` in `merge` mode.
 
 ### Correction counters
 

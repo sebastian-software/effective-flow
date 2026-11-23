@@ -191,20 +191,25 @@ after `build` asks you to approve it in Phase 1. Contracts:
 
 **Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
 Quality/Fast pilot; `refactor`'s differences are listed in its section below.
-Without `executionProfiles.fast.enabled: true`, on a portable installation, or while no pilot
-generation is in `baseline` or `active`, every implementer runs Quality and nothing is recorded.
-With the opt-in on a native harness, `build` classifies every initial implementation packet (its
+Without `executionProfiles.fast.enabled: true`, without a harness family (the run could not tell
+which agent runtime it runs on), or while no pilot generation is in `baseline` or `active`, every
+implementer runs Quality and nothing is recorded. With the opt-in, `build` classifies every initial implementation packet (its
 routing bucket, or a narrower plan packet with independent ownership) through the fail-closed
 eligibility gate before the first implementer starts, and records the run locally. During the
 baseline every packet still runs Quality. In an active generation, an eligible packet uses the Fast
-implementer for its first attempt only; coupled packets, unclear ownership, missing native
-capability, or a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` keep it on Quality. If the Fast attempt
+implementer for its first attempt only; coupled packets, unclear ownership, missing capability, a portable harness that the
+release has not qualified, a run that `iterate` delegated (always Quality, recorded as a correction
+pass), or a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` keep it on Quality. If the Fast attempt
 fails, the routed Quality implementer continues exactly once from the retained changes in the same
 checkout, and it never returns to Fast. Every later correction—requirements repair, validator
 repair, review incorporation, final-validator repair, conflict resolution, and retries—uses Quality.
 Documentation, tests, validation, review, and delivery are unchanged. In a baseline generation,
 each measured run first asks the helper to activate the generation, which happens automatically
-once the preregistered window and sample are met. Setup and baseline start are described under
+once the preregistered sample is met (10 eligible packets in at least 5 completed baseline
+records). Another open run does not stop a run from recording: overlapping records are flagged, and
+a Fast packet whose admission closed before its spawn runs Quality. After a Fast spawn on a portable
+install, the run checks the child's actual model and version; a mismatch keeps the work and drops
+the packet from the Fast measurement. Setup and baseline start are described under
 [Setup](tools-setup.md#fast-pilot-block).
 
 ## `/effective-flow fix`
@@ -212,6 +217,9 @@ once the preregistered window and sample are met. Setup and baseline start are d
 **Purpose:** Orchestrates the bugfix workflow: investigation, reproduction, gap analysis,
 diagnosis validation, minimal fix, regression test, validation, and completion – leaner
 than `build`, since by default no dedicated planning phase is prepended.
+
+**Fast field pilot:** the pilot protocol admits `fix`, but it is not yet measured or wired, so `fix`
+always runs Quality and records nothing.
 
 **When to use:** A concrete defect is to be fixed: something doesn't work as
 expected or there is a regression.

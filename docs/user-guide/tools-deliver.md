@@ -627,21 +627,24 @@ successful merge.
 While a local pilot generation exists in `baseline` or `active`, a non-observer `merge-gate` run
 may create one anonymous period observation. It counts actual CI-repair delegations, configured-
 reviewer implementation delegations, and conflict-resolution attempts, then records the closed
-`merge|report` mode, terminal outcome, native harness family, and required-check summary. Pending
+`merge|report` mode, terminal outcome, harness family, install kind (native or portable), and
+required-check summary. This includes a gate run under T3 Code, whose observation is kept across the
+wait suspensions and recorded once when the gate run ends. Pending
 waits, ordinary rounds, keyword-less resumes, and Phase-4 returns without implementation are not
 corrections.
 
 The gate discovers the current generation with a read-only helper call carrying the verified
 runtime root and repository identity. Zero generations is a no-op, exactly one supplies the state,
 and multiple generations fail closed without choosing one. Reservation then passes that generation
-with the separately resolved configuration state, `merge|report` mode, and `claude|codex` harness.
+with the separately resolved configuration state, `merge|report` mode, `claude|codex` harness, and install kind.
 
 The observation has no PR, repository, branch, workflow-record, check-name, comment, finding, or
 path identifier and no per-run link to `build` or `refactor`. It is grouped only at the generation
 period level. Disabled or invalid configuration and `none`, `suspended`, or `review` generation
 states make observation a read-only no-op; observer-only post-merge re-entry records nothing. The
 observation is also skipped, with nothing persisted and no effect on the pilot, when admission
-closes as it starts or while another measured run is still in flight.
+closes as it starts. Another open record or observation does not skip it; the records it overlaps
+are flagged instead.
 
 Reservation or finalization failure never changes whether the current run merges or reports ready.
 After a reservation, every normal, controlled, or early exit finalizes exactly once. A report-mode
@@ -746,7 +749,7 @@ Five details worth knowing:
   writes the base-merge-unavailable record once per run with the proof `different-commit`.
 - **The base merge can be proven unavailable.** The gate looks for one of three proofs – two before
   it provisions anything for a merge, one at the head-identity check. Each writes the one
-  base-merge-unavailable record, once per run, and from then on neither trigger merges again.
+  base-merge-unavailable record, once per run, and from then on no trigger merges again.
   - `fork` – the pull request states that its head is in another repository.
   - `missing-branch` – `git ls-remote` finds no same-name branch on `origin`. A lookup that fails
     any other way proves nothing: the gate reports it and carries on. A head branch name that fails
@@ -767,14 +770,14 @@ filesystem and network access. Under the default `auto` this happens automatical
 asked. A project that gates pull requests it does not trust should set
 `mergeGate.conflictResolution: ask`, so a human authorizes every resolution, or `off`, so no
 untrusted branch's commands are executed by this gate at all. This holds on Forgejo too, where a
-failing check on a behind head can now reach the auto-resolution (see below): set `ask` or `off`
-there as well.
+failing check on a behind head and a locally proven conflict – on a draft too, and without any CI –
+can now reach the auto-resolution (see below): set `ask` or `off` there as well.
 
 Whether the gate may do this at all is `mergeGate.conflictResolution` (default `auto`); see
 [Block `mergeGate`](configuration.md#block-mergegate). On Forgejo the forge reports no merge state,
-so neither `BEHIND` nor `DIRTY` is ever observed there. The path is reachable there only through a
-failing check on a behind head (see below); a genuine conflict on a head without a failing check
-still surfaces as a bounded loop ending in a report rather than as the fast conflict path. A
+so neither `BEHIND` nor `DIRTY` is ever observed there. The path is reachable there through a
+failing check on a behind head and through a local conflict proof (both below), so a genuine
+conflict gets one resolution attempt per run there too, also on a draft and without any CI. A
 conflict met through a failing check whose cause the base does not fix ends in a controlled stop
 without an `iterate` repair: the resolution's full verification runs into that red check.
 
@@ -928,6 +931,16 @@ green and merely behind stays untouched.
   again either.
 - **Same boundaries as `BEHIND`.** The human-comment guard and `report` mode do not block it; only a
   caller limit of `no-branch-writes` prevents it. The head-identity check above applies.
+
+#### A local conflict without a forge merge state
+
+A forge that reports neither a merge state nor mergeability – Forgejo for any conflicting or
+work-in-progress pull request – would otherwise leave a genuine conflict unresolved whenever no
+check fails, for example without CI. The gate therefore has a third trigger for the same merge.
+When neither other trigger fired, it fetches the base and the head and runs a local merge proof;
+only a proven conflict starts the merge with conflict resolution, on a draft as on a ready pull
+request, **at most once per run** and with the same boundaries as above. A clean or unavailable
+proof starts nothing and is reported. The gate never rebases or force-pushes to resolve it.
 
 #### Three reviewer states, not two
 
@@ -1135,7 +1148,7 @@ that the commit addressed the finding – and it closes the "claim implemented, 
 `mergeGate.maxRounds` bounds the whole run and keeps its meaning. Beside it the gate counts
 **repair attempts**: a commit that `iterate` returned for a reviewer finding it implemented, or for
 a failing check. Waiting is not repairing. A check wait, a bot wait, a review resubmission, a
-delegation that moved no head, and the gate's own base merges – either trigger, or a conflict
+delegation that moved no head, and the gate's own base merges – any trigger, or a conflict
 resolution – use **no** repair attempt, so a base-only update followed by the same finding never
 counts against the finding. Commits the delegated run makes for a Phase-4 correction count for no
 cause. Every run reports attempt counts; a stop report lists every attempt and the waits and base

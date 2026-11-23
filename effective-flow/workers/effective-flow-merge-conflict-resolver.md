@@ -160,6 +160,8 @@ Apply the matchers in table order:
 - **Generic product fallback:** clearly identified product code outside the specialized routes uses the generic product implementer and reviewer. This includes Python, Go, JVM, .NET, Ruby, PHP, Swift, and other or unknown languages when the task, path, manifest, or neighboring code establishes the product role.
 - **Ambiguous:** if neither file role nor product/tooling ownership can be established safely, pause for one focused clarification. Never use the tooling-only generic implementer merely because no specialist language matched.
 
+Skill and prompt sources that a build ships as product behaviour (such as an agent skill's `src/**/*.md`) are product source, not documentation: route them through the product route of their build, `node-backend-cli` for a Node.js-built skill. User and developer guides stay `documentation`.
+
 Explicit task scope and the closest repository instructions take precedence over filename heuristics. Generated, vendored, documentation, and tooling roles take precedence over language signals.
 
 ## Mixed repositories

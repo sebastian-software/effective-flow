@@ -1012,5 +1012,21 @@
         }
       ]
     }
-  ]
+  ],
+  "fast": {
+    "mappings": {
+      "claude": {
+        "model": "sonnet",
+        "effort": "medium"
+      },
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "medium"
+      }
+    },
+    "sites": [
+      "build-delegated-run/initial-implementation",
+      "refactor/initial-implementation"
+    ]
+  }
 }

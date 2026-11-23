@@ -2,8 +2,10 @@
 
 This fragment is loaded only when the Guided `Advanced` question of Step 5 was answered `Yes`, or
 when a Targeted run (`setup-targeted-change`) touches a block key. Targeted asks only the touched
-key's question, never a whole block, and never block 10. Step 5 in `effective-flow setup` keeps that question, its `No` branch, and "Collapsing two
-`mergeGate.bots` spellings of one reviewer", which Express and every Step 6 write run as well.
+key's question, never a whole block, and never block 10 through this fragment: Targeted loads
+`setup-execution-profiles` directly. Step 5 in `effective-flow setup` keeps that question, its `No`
+branch, and "Collapsing two `mergeGate.bots` spellings of one reviewer", which Express and every
+Step 6 write run as well.
 
 Ask for each key block by block, each with a short explanation, the valid values from the config
 schema in `effective-flow setup`, and the current config value or default as the pre-selection:
@@ -20,7 +22,7 @@ schema in `effective-flow setup`, and the current config value or default as the
 7. `tracker` (skipped in hidden mode, whose tracker is forced to `local`): `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState` and `tracker.externalDoneState` (the latter terminal and writable, read by the merge gate's offered post-merge transition and by its post-merge observation of an already-terminal issue). Re-run state discovery before changing either; never accept arbitrary free text or a display-name-only match.
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `effective-delivery`) are carried over unchanged.
 9. `mergeGate` – the **merge gate** of `effective-flow merge-gate`, asked as its own block together with `iterate.reviewFixValidation`: see below.
-10. `executionProfiles`: the field-pilot opt-in `executionProfiles.fast.enabled` (strict Boolean) and its confirmed baseline-start and resume actions, owned by the fragment below; activation is automatic in `effective-flow build`. Profile and Express never ask this block and preserve an existing value.
+10. `executionProfiles`: the field-pilot opt-in `executionProfiles.fast.enabled` (strict Boolean) and its confirmed baseline-start and resume actions, owned by the fragment below; activation is automatic in `effective-flow build` and `effective-flow refactor`. Profile and Express never ask this block and preserve an existing value.
 
 **Load on demand:** Read `shared/setup-execution-profiles.md`, when the user chose the advanced settings and block 10 (`executionProfiles`) is being asked.
 

@@ -127,6 +127,8 @@ Apply the matchers in table order:
 - **Generic product fallback:** clearly identified product code outside the specialized routes uses the generic product implementer and reviewer. This includes Python, Go, JVM, .NET, Ruby, PHP, Swift, and other or unknown languages when the task, path, manifest, or neighboring code establishes the product role.
 - **Ambiguous:** if neither file role nor product/tooling ownership can be established safely, pause for one focused clarification. Never use the tooling-only generic implementer merely because no specialist language matched.
 
+Skill and prompt sources that a build ships as product behaviour (such as an agent skill's `src/**/*.md`) are product source, not documentation: route them through the product route of their build, `node-backend-cli` for a Node.js-built skill. User and developer guides stay `documentation`.
+
 Explicit task scope and the closest repository instructions take precedence over filename heuristics. Generated, vendored, documentation, and tooling roles take precedence over language signals.
 
 ## Mixed repositories
@@ -181,7 +183,7 @@ resolving step and path.
   and `invalid` (malformed, ambiguous, or unreadable) select Quality and stop new measurement
   without rewriting persisted pilot-generation state. `enabled` (only the literal `true`) admits
   the project to the pilot lifecycle but does not start a baseline, activate a generation, prove
-  native Fast capability, or itself permit Fast. Only Guided setup (advanced block 10) sets it;
+  native Fast capability, or itself permit Fast. Only setup block 10 (Guided or Targeted) sets it;
   Profile and Express preserve an existing value and never enable it. It has no legacy migration
   and names no provider model.
 - **`delivery.prReview`** → `ask`, `always`, or `off`; unset resolves to `ask`. What it governs is
@@ -778,14 +780,15 @@ eligibility is never evaluated again.
 
 1. Start the appropriate implementer skill. The Quality selector is the default; the Fast reference
    serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
-   is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
+   is set immediately before that call. The `Tier` line below binds each Quality selector; a Fast reference takes only its own values (portable: the `Fast tier` line):
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Fast tier: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `execution-profiles`).
    Model selection site: `refactor/initial-implementation` (`shared/model-selection.md`).
-   - Frontend: `Use the effective-flow-ui-implementer skill for this phase.` Fast: `effective-flow-ui-implementer` (portable build: Fast unavailable, Quality only).
-   - Backend/CLI: `Use the effective-flow-nodejs-implementer skill for this phase.` Fast: `effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).
-   - Rust: `Use the effective-flow-rust-implementer skill for this phase.` Fast: `effective-flow-rust-implementer` (portable build: Fast unavailable, Quality only).
-   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the effective-flow-generic-product-implementer skill for this phase.` Fast: `effective-flow-generic-product-implementer` (portable build: Fast unavailable, Quality only).
-   - Tooling/CI/configuration/repository metadata: `Use the effective-flow-generic-implementer skill for this phase.` Fast: `effective-flow-generic-implementer` (portable build: Fast unavailable, Quality only).
+   - Frontend: `Use the effective-flow-ui-implementer skill for this phase.` Fast: `effective-flow-ui-implementer` at the Fast tier.
+   - Backend/CLI: `Use the effective-flow-nodejs-implementer skill for this phase.` Fast: `effective-flow-nodejs-implementer` at the Fast tier.
+   - Rust: `Use the effective-flow-rust-implementer skill for this phase.` Fast: `effective-flow-rust-implementer` at the Fast tier.
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the effective-flow-generic-product-implementer skill for this phase.` Fast: `effective-flow-generic-product-implementer` at the Fast tier.
+   - Tooling/CI/configuration/repository metadata: `Use the effective-flow-generic-implementer skill for this phase.` Fast: `effective-flow-generic-implementer` at the Fast tier.
    - Use every bucket selected by project routing; preserve specialist buckets in mixed scopes.
    - Never demote unsupported product code to the tooling-only generic implementer.
 2. Assignment, repeated with the Phase 2 baseline evidence in every implementer handoff of Phases

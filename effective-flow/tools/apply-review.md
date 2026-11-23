@@ -125,7 +125,7 @@ resolving step and path.
   and `invalid` (malformed, ambiguous, or unreadable) select Quality and stop new measurement
   without rewriting persisted pilot-generation state. `enabled` (only the literal `true`) admits
   the project to the pilot lifecycle but does not start a baseline, activate a generation, prove
-  native Fast capability, or itself permit Fast. Only Guided setup (advanced block 10) sets it;
+  native Fast capability, or itself permit Fast. Only setup block 10 (Guided or Targeted) sets it;
   Profile and Express preserve an existing value and never enable it. It has no legacy migration
   and names no provider model.
 - **`delivery.prReview`** → `ask`, `always`, or `off`; unset resolves to `ask`. What it governs is

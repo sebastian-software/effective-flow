@@ -26,7 +26,7 @@ same-session calls integrate into the existing overview without inventing a reci
 
 Output the following Effective Flow version:
 
-**1.76.0 (00686537)**
+**1.77.0 (a952c8a2)**
 
 ## Version maintenance
 

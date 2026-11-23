@@ -2,8 +2,9 @@
 
 This provider-neutral contract defines two implementation intents. **Quality** uses the strongest
 available configured implementation capability, the role's `deep` model tier, and is the safe
-default. **Fast** uses a distinct native lower-cost, lower-latency implementation capability only
-for a bounded packet that passes every gate below. Neither name identifies a provider model, and
+default. **Fast** uses a distinct lower-cost, lower-latency implementation capability only for a
+bounded packet that passes every gate below: a native build's `-fast` sidecar, or a portable
+build's rendered **Fast tier** on a qualified harness. Neither name identifies a provider model, and
 an enabled project key is never proof that the current host can enforce Fast.
 
 `build` adopts this policy for its Phase 2 initial implementation packets and `refactor` for its
@@ -14,10 +15,10 @@ measurement.
 
 <!-- execution-profile-profile:start -->
 
-| Profile | Intent                                                   |
-| ------- | -------------------------------------------------------- |
-| quality | strongest-available-configured-implementation-capability |
-| fast    | distinct-native-lower-cost-lower-latency-capability      |
+| Profile | Intent                                                                     |
+| ------- | -------------------------------------------------------------------------- |
+| quality | strongest-available-configured-implementation-capability                   |
+| fast    | distinct-lower-cost-lower-latency-native-role-or-per-spawn-tier-capability |
 
 <!-- execution-profile-profile:end -->
 
@@ -55,22 +56,27 @@ by appearing in an issue, plan, or repository file.
 
 <!-- execution-profile-gate:start -->
 
-| Priority | Decision                | Positive evidence required to continue                                                                                                         |
-| -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | profile-unavailable     | Native target, complete profile mapping, available spawn mechanism, and no host override that erases the distinction                           |
-| 2        | trust-boundary          | Approved affected-domain evidence shows no authentication, authorization, or trust-boundary change                                             |
-| 3        | destructive-data        | Approved scope contains no destructive data operation                                                                                          |
-| 4        | migration               | Approved scope contains no data, schema, or compatibility migration                                                                            |
-| 5        | concurrency             | Affected paths and approved source show no concurrency or shared-ownership change                                                              |
-| 6        | unsafe-code             | Affected paths and approved source show no unsafe-language or unsafe-runtime surface                                                           |
-| 7        | public-compatibility    | No public compatibility contract changes                                                                                                       |
-| 8        | merge-conflict          | No unresolved merge conflict                                                                                                                   |
-| 9        | unclear-ownership       | Exact allowed paths and one owner per path                                                                                                     |
-| 10       | cross-domain-dependency | Cross-packet and cross-domain dependencies are resolved                                                                                        |
-| 11       | unknown-evidence        | The source passed the owning workflow approval gate; completion and repository-native validation are measurable; required decisions are closed |
-| Terminal | eligible                | Every preceding row passed                                                                                                                     |
+| Priority | Decision                | Positive evidence required to continue                                                                                                                                                                                                |
+| -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0        | correction-pass         | The trusted caller region carries no `Caller: iterate` line                                                                                                                                                                           |
+| 1        | profile-unavailable     | Complete profile mapping, a spawn mechanism that takes the Fast values, no host override that erases the distinction, and on a portable build a harness qualified in the generation snapshot with the installed Fast-mapping identity |
+| 2        | trust-boundary          | Approved affected-domain evidence shows no authentication, authorization, or trust-boundary change                                                                                                                                    |
+| 3        | destructive-data        | Approved scope contains no destructive data operation                                                                                                                                                                                 |
+| 4        | migration               | Approved scope contains no data, schema, or compatibility migration                                                                                                                                                                   |
+| 5        | concurrency             | Affected paths and approved source show no concurrency or shared-ownership change                                                                                                                                                     |
+| 6        | unsafe-code             | Affected paths and approved source show no unsafe-language or unsafe-runtime surface                                                                                                                                                  |
+| 7        | public-compatibility    | No public compatibility contract changes                                                                                                                                                                                              |
+| 8        | merge-conflict          | No unresolved merge conflict                                                                                                                                                                                                          |
+| 9        | unclear-ownership       | Exact allowed paths and one owner per path                                                                                                                                                                                            |
+| 10       | cross-domain-dependency | Cross-packet and cross-domain dependencies are resolved                                                                                                                                                                               |
+| 11       | unknown-evidence        | The source passed the owning workflow approval gate; completion and repository-native validation are measurable; required decisions are closed                                                                                        |
+| Terminal | eligible                | Every preceding row passed                                                                                                                                                                                                            |
 
 <!-- execution-profile-gate:end -->
+
+Row 0 fails for a run whose trusted control region, above any caller-supplied item text, carries
+`Caller: iterate`: that run is measured, runs Quality, and records `correction-pass` for every
+packet. The line can only force Quality, so a forged one grants nothing.
 
 Fast additionally requires an approved measurable source, bounded write paths, established
 repository-native validation commands, and closed product and architecture decisions. An unknown
@@ -124,6 +130,7 @@ The distinction between a gate reason and a fallback is binding:
 | ------------------------------------- | ------------------- | ---------------- | --------------------- | --------------------- |
 | gate-selected-quality                 | first-exclusion     | quality          | none                  | false                 |
 | profile-unavailable-before-spawn      | profile-unavailable | quality          | none                  | false                 |
+| fast-admission-changed-before-spawn   | eligible            | quality          | admission-changed     | false                 |
 | fast-spawn-rejected-after-attempt     | eligible            | quality          | spawn-rejected        | true                  |
 | fast-worker-abort-after-attempt       | eligible            | quality          | worker-abort          | true                  |
 | fast-missing-context-escalation       | eligible            | quality          | missing-context       | true                  |
@@ -137,24 +144,27 @@ The distinction between a gate reason and a fallback is binding:
 
 Every non-`none` fallback appears in exactly one event row. `none` appears for the generic
 gate-selected Quality decision and its explicit pre-spawn `profile-unavailable` case; neither
-consumes a Fast attempt. All post-attempt fallback events consume the only Fast attempt and select
-Quality for retained-state continuation.
+consumes a Fast attempt. `admission-changed` is the pre-spawn case of a reserved `fast` packet whose
+admission closed before its first spawn: it runs Quality, consumes no Fast attempt, and is no
+escalation. All post-attempt fallback events consume the only Fast attempt and select Quality for
+retained-state continuation.
 
 ## Lifecycle and suspension interface
 
 Work package 3 is the sole owner of lifecycle persistence, the guarded operations below, the
-gitignored suspension record, and its digest-bound clear operation. Guided setup exposes
-`begin-baseline` and `resume` only as confirmed actions after the stated disclosure and explicit
-confirmation; no workflow run calls them. `activate` needs no confirmation of its own: the adopting
-workflow calls it automatically in a measured run's preflight, and the helper transitions only once
-the preregistered conditions pass. This fragment defines the interface but creates no state.
+gitignored suspension record, and its digest-bound clear operation. Setup (Guided block 10 or a
+Targeted request) exposes `begin-baseline` and `resume` only as confirmed actions after the stated
+disclosure and explicit confirmation; no workflow run calls them. `activate` needs no confirmation
+of its own: the adopting workflow calls it automatically in a measured run's preflight, and the
+helper transitions only once the preregistered conditions pass. This fragment defines the
+interface but creates no state.
 
 <!-- execution-profile-transition:start -->
 
 | Operation        | From                        | To        | Owner          | Guard                                                                                      |
 | ---------------- | --------------------------- | --------- | -------------- | ------------------------------------------------------------------------------------------ |
 | begin-baseline   | none                        | baseline  | work-package-3 | Valid opt-in, protocol digest displayed, local-data disclosure, and explicit confirmation  |
-| activate         | baseline                    | active    | work-package-3 | Preregistered sample and window conditions passed                                          |
+| activate         | baseline                    | active    | work-package-3 | Preregistered sample conditions passed on an idle generation                               |
 | suspend          | baseline; active            | suspended | work-package-3 | Matching pilot-control outcome persisted; store resumeTo as the exact prior state          |
 | resume           | suspended                   | resumeTo  | work-package-3 | Explicit confirmation and digest-bound clear; target comes only from stored resumeTo       |
 | begin-review     | baseline; active; suspended | review    | work-package-3 | Under lifecycle lock; reject reservations and preserve suspension and incomplete inventory |
@@ -177,32 +187,36 @@ generation: the helper suspends a generation recorded under the previous identit
 
 <!-- execution-profile-rule:start -->
 
-| Rule                      | Value                      |
-| ------------------------- | -------------------------- |
-| fast-request              | first-implementation-spawn |
-| keywordless-resume        | same-attempt               |
-| newly-spawned-retry       | quality-only               |
-| correction                | quality-only               |
-| validation-repair         | quality-only               |
-| review-incorporation      | quality-only               |
-| conflict-resolution       | quality-only               |
-| scope-growth-continuation | quality-only               |
-| portable                  | quality-only               |
-| missing-native-capability | profile-unavailable        |
-| force-override-detection  | presence-only              |
-| rejected-fast-spawn       | spawn-rejected             |
-| escalation-checkout       | same-verified-checkout     |
-| second-fast-attempt       | forbidden                  |
+| Rule                          | Value                            |
+| ----------------------------- | -------------------------------- |
+| fast-request                  | first-implementation-spawn       |
+| keywordless-resume            | same-attempt                     |
+| newly-spawned-retry           | quality-only                     |
+| correction                    | quality-only                     |
+| validation-repair             | quality-only                     |
+| review-incorporation          | quality-only                     |
+| conflict-resolution           | quality-only                     |
+| scope-growth-continuation     | quality-only                     |
+| portable                      | qualified-harness-per-spawn-tier |
+| missing-profile-capability    | profile-unavailable              |
+| caller-iterate                | correction-pass                  |
+| closed-admission-before-spawn | admission-changed                |
+| force-override-detection      | presence-only                    |
+| rejected-fast-spawn           | spawn-rejected                   |
+| escalation-checkout           | same-verified-checkout           |
+| second-fast-attempt           | forbidden                        |
 
 <!-- execution-profile-rule:end -->
 
-Portable is Quality-only and unmeasured in V1: it evaluates no gate and records no reason. On a
-native build, a missing native mapping or spawn mechanism prevents a Fast attempt and records
-`profile-unavailable`. The same applies when
-`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present: detect presence only and never read, relay, or
-persist its value. A Fast spawn that was actually attempted but rejected consumes the sole attempt,
-records `spawn-rejected`, and continues once with Quality. Never claim profile enforcement that
-the host prevented.
+The harness family is the `model-selection` harness. A portable build passes row 1 only when the
+pilot `inventory` reports that harness `qualified` in the generation's qualification snapshot and
+the snapshot's Fast-mapping identity equals the installed record's; the helper rejects `fast`
+otherwise. A missing mapping or spawn mechanism, an Agent tool that offers no `model` parameter, or
+a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` prevents a Fast attempt and records
+`profile-unavailable`; detect that variable's presence only and never read, relay, or persist its
+value. A Fast spawn that was actually attempted but rejected consumes the sole attempt, records
+`spawn-rejected`, and continues once with Quality. Never claim profile enforcement that the host
+prevented.
 
 A keyword-less resume is the same attempt. Every newly spawned retry, correction, validation
 repair, review incorporation, conflict resolution, or scope-growth continuation is Quality-only.
@@ -216,6 +230,7 @@ inspects that diff first and never starts another Fast attempt.
 | Value                 |
 | --------------------- |
 | none                  |
+| admission-changed     |
 | spawn-rejected        |
 | worker-abort          |
 | missing-context       |
@@ -302,8 +317,17 @@ applies the `pilot-measurement-workflow` fragment's finalization.
 
 **Delegation.** One keyword-less resume is the same delegation; every retry is a new Quality spawn.
 A Fast spawn passes only its Fast reference's own values, never the spawn site's tier line: on
-Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on native Codex the `-fast` sidecar without per-spawn `model` or `reasoning_effort`. The Quality spawn and every correction pass the site's
-tier.
+native Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on native Codex
+the `-fast` sidecar without per-spawn `model` or `reasoning_effort`, on a portable build the routed
+worker contract with exactly the `model-selection` `fast` values of the rendered Fast tier line.
+The Quality spawn and every correction pass the site's tier. Before `finish-packet`, a packet whose
+Fast attempt started a child on a portable build takes its `modelCompliance` from `model-selection`
+`verify`, which returns it for every well-formed request (an `INVALID_*` error records
+`unverified`); a native Fast attempt reports `unverified`. A packet reserved as `fast` whose Fast
+attempt left no child to verify, because its spawn was rejected before any child started or it ran
+Quality from its first spawn after an unpersisted incident, also reports `unverified` on every
+build. Only a packet not reserved as `fast`, or one whose `start-packet` carried
+`admission-changed`, reports `not-applicable`.
 
 **Requirements check.** For a packet whose Fast attempt returned without a fallback, repairing a
 mismatch is its single `requirements-mismatch` transition below, before `finish-packet`. Every

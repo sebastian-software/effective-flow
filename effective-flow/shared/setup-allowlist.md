@@ -20,8 +20,8 @@ install's absolute path, so later runs call the helpers without a permission pro
   `ci-evidence-match` and `quick-marker-scan`.
 
 `commit create` writes Git history and runs the repository's hooks without a prompt; it commits
-only the listed paths, refuses paths below `.effective-flow/` and an untrusted hook configuration,
-and never pushes, amends, resets or rebases. For its report, `review write-report`
+only the listed paths, refuses paths below `.effective-flow/`, paths outside a scoped `iterate`
+run's bound scope and an untrusted hook configuration, and never pushes, amends, resets or rebases. For its report, `review write-report`
 writes only a new, generated-name file below `.effective-flow/review/` (through a
 `.write-report-*.tmp` sibling) and the ID counter in `.effective-flow/memory.json`, never
 overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful

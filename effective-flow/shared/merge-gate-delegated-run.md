@@ -85,8 +85,8 @@ In this order, before any other write:
   nothing; one from Entry steps 1 to 5 is an Entry abort of the return contract. Every other return finalizes a pilot reservation per Phase 6 and `pilot-measurement`, and
   `DONE` and `ABORT` run Phase 6 exactly once. `BLOCKED-USER` first ends an in-progress merge as
   Phase 2 step 1's controlled stop, then runs Phase 6 without its report and without deleting the
-  wisdom file, which the re-dispatch continues. `SUSPENDED host-pr-watch` ends the same way; a T3-path run
-  holds no reservation to finalize, per `pilot-measurement`.
+  wisdom file, which the re-dispatch continues. `SUSPENDED host-pr-watch` ends the same way but
+  finalizes no observation: it keeps the observation handle per `pilot-measurement`.
 - **A delegated orchestrator.** The delegation mandate's pending-child bullet binds this run: every
   child runs in the foreground, and no turn ends while one is pending. This foreground shape stays
   blocked for progress until useful pre-terminal delivery plus terminal joins is observed in that
@@ -111,7 +111,7 @@ authority limits; a worker that cannot honor it returns `ABORT`.
   `effective-flow iterate` delegation – CI repair and bot round – unavailable. Where Phase 2 step 1 would
   provision a checkout, or Phase 2 step 3 or Phase 3 would build a delegation, the run instead ends
   with its report and Phase 6, names the limit as the blocking condition, and makes no commit, no
-  push and no merge. That covers trigger (b) of Phase 2 step 1 exactly as trigger (a), while the
+  push and no merge. That covers trigger (b) and trigger (c) of Phase 2 step 1 exactly as trigger (a), while the
   ancestry check's fetch, which updates refs and touches no branch, stays permitted under
   `no-branch-writes` and in `report` mode. It withholds no write outside the head branch: a bot trigger comment, the
   confirmed `pr-mark-ready` of "Draft ready for review" and Phase 5.5's `issueClose` stay governed
@@ -314,8 +314,9 @@ resolved merge conflict – inside the delegated `effective-flow-merge-conflict-
 Read this before loading the delivery and worktree integration fragment, because only a narrow
 part of that fragment applies here. One thing is used from it: provisioning a checkout for the Git
 write of Phase 2 step 1 – the same one checkout whether that merge applies cleanly or has to be
-resolved first, and whichever of its two triggers called for it: (a) the head branch reported
-`BEHIND` or `DIRTY`, or (b) a failing check with the ancestry check stating "behind". That is why
+resolved first, and whichever of its three triggers called for it: (a) the head branch reported
+`BEHIND` or `DIRTY`, (b) a failing check with the ancestry check stating "behind", or (c) the local
+merge proof stating `conflict`. That is why
 the fragment is deferred until that step. The verified execution location with its two roots is **not** what this pointer brings: it reaches the run earlier, through
 the runtime-state write safety block, which includes `execution-location` eagerly and is itself
 loaded before the first write below `.effective-flow/`.
@@ -327,9 +328,9 @@ isolated worktree. Its lifecycle record uses purpose `merge-gate`, not `effectiv
 rebase, never force. Reading the deferred `worktree-integration` fragment is mandatory before that
 worktree is created.
 
-**Load on demand:** Read `shared/worktree-integration.md`, when Phase 2 step 1 must provision a checkout because trigger (a) fired – the fresh read reports the head branch `BEHIND` or `DIRTY` – or trigger (b) fired – a failing check with the ancestry check stating "behind".
+**Load on demand:** Read `shared/worktree-integration.md`, when Phase 2 step 1 must provision a checkout because trigger (a) fired – the fresh read reports the head branch `BEHIND` or `DIRTY` – or trigger (b) fired – a failing check with the ancestry check stating "behind" – or trigger (c) fired – the local merge proof states `conflict`.
 
-**Load on demand:** Read `shared/merge-gate-checkout-boundary.md`, when Phase 2 step 1 must provision a checkout because trigger (a) fired – the fresh read reports the head branch `BEHIND` or `DIRTY` – or trigger (b) fired – a failing check with the ancestry check stating "behind" – which is the same moment `worktree-integration` is loaded.
+**Load on demand:** Read `shared/merge-gate-checkout-boundary.md`, when Phase 2 step 1 must provision a checkout because trigger (a) fired – the fresh read reports the head branch `BEHIND` or `DIRTY` – or trigger (b) fired – a failing check with the ancestry check stating "behind" – or trigger (c) fired – the local merge proof states `conflict` – which is the same moment `worktree-integration` is loaded.
 
 **Load on demand:** Read `shared/pr-merge-completion.md`, when Phase 5 is about to merge the pull request, or Phase 5.5 is about to offer an issue closure.
 
@@ -495,10 +496,10 @@ merge – `origin/<base>` merged into the head branch as a merge commit and push
 merge applies without a conflict – and the **conflict-resolving** base-into-head merge, where the
 same merge conflicts, `effective-flow-merge-conflict-resolver` resolves the conflicted files, and the gate
 commits and pushes the result. Each is a **kind** of write, not a one-time allowance: either applies
-in every Phase-2 round in which one of step 1's two triggers calls for it – (a) a fresh read
-reporting `BEHIND` or `DIRTY`, until a base-merge-unavailable record exists, or (b) a failing
-check on a head the ancestry check states "behind",
-at most once per run – each occurrence is exactly one merge commit plus one normal push of the head
+in every Phase-2 round in which one of step 1's three triggers calls for it – (a) a fresh read
+reporting `BEHIND` or `DIRTY`, until a base-merge-unavailable record exists, (b) a failing
+check on a head the ancestry check states "behind", at most once per run, or (c) a local merge
+proof stating `conflict`, at most once per run – each occurrence is exactly one merge commit plus one normal push of the head
 branch, and no Git write of any other kind is permitted at any point.
 
 **The ancestry check of Phase 2 step 1 is a read, outside both kinds.** Neither of its fetches
@@ -507,7 +508,7 @@ and the head fetch writes no ref at all. Both are ref operations rooted in
 `RUNTIME_STATE_ROOT` per `execution-location` that touch no working tree and no branch. Step 1's
 `ls-remote` reads of the head branch, which write nothing, and its mismatch classification's
 `refs/pull/<N>/head` fetch, made exactly as the ancestry check's, are reads in the same way. So is
-`merge-proof-local` of the Forgejo WIP-draft exit and of Phase 4: it fetches nothing, and its
+every `merge-proof-local` call, Phase 2 step 1's, the Forgejo WIP-draft exit's and Phase 4's: it fetches nothing, and its
 `git merge-tree --write-tree` writes only into a private temporary object directory the helper
 removes, leaving the repository's objects and refs unchanged.
 
@@ -743,7 +744,7 @@ gate run inline generates it at the start. Use
   its surface – top-level comment or review-thread item – and its comment or thread-item identifier,
   appended and keyed exactly like the identity-rule record above
 - per round: the round number, the check result, the merge state, which trigger of Phase 2 step 1
-  fired, if any, with the ancestry check's result, what was delegated, and what came back – for
+  fired, if any, with the ancestry check's and trigger (c)'s proof result, what was delegated, and what came back – for
   every delegation the identifier → durable-key map `build` returned, recorded before dispatch, with its message path until the file is deleted, every refused item with its reason, and
   any sender-contract error code; and every returned outcome the receiver rule of `## Returned outcome record` in `merge-gate-configured-reviewer` counted, the
   identifiers of the inert ones with their count, and any mismatch that ended the round; plus
@@ -778,8 +779,8 @@ gate run inline generates it at the start. Use
   push-confirmed times and any quick-validated conflict commit
 - per bot-round delegation, the records of `merge-gate-review-fix-validation`: the ceiling, the
   detection, the candidate with every unmet condition, and any **quick-validated review-fix head**
-- trigger (b)'s once-per-run record, written per Phase 2 step 1: its round and whether its merge
-  was clean, conflict-resolved or a no-op
+- trigger (b)'s and trigger (c)'s once-per-run record each, written per Phase 2 step 1: its round
+  and whether its merge was clean, conflict-resolved or a no-op
 - an undetermined ancestry check, once per run, with its reason
 - every head-identity mismatch of Phase 2 step 1: its round, the read's `headSha` and the
   provisioned tip
@@ -801,7 +802,8 @@ gate run inline generates it at the start. Use
 - per "Draft ready for review": every `merge-proof-local` result, the class with its blocker count
   and `appendixTrust`, why no question was posed or the answer, and the ready step's result
 - when a pilot observation was reserved, its three anonymous correction counters; never its
-  observation identifier or capability
+  observation identifier or capability outside the handle `pilot-measurement` keeps across a
+  `SUSPENDED host-pr-watch` return
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
   every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
   retain that every delegated `effective-flow iterate` round carried `Summary comment: suppressed`, so it
@@ -827,7 +829,7 @@ without an observation, and a `BLOCKED-USER` return uses that fragment's rule fo
 **Load on demand:** Read `shared/merge-gate-provider-settled-threads.md`, when the forge preflight reports both `reviewThreadReplies` and `reviewThreadResolution` unsupported, before Phase 3 selects bot threads.
 
 **`report` scopes the merge, not the run.** In both modes the gate waits for the checks, has failing
-checks repaired through `effective-flow iterate`, brings the head branch forward under either trigger
+checks repaired through `effective-flow iterate`, brings the head branch forward under any trigger
 of Phase 2 step 1, posts a configured bot trigger where a bot has **not started**, has the bot
 threads answered and resolved through `effective-flow iterate`, and – where the head branch conflicts with its base and `mergeGate.conflictResolution` allows it – resolves that
 conflict and pushes the resulting merge commit. `report` withholds exactly one action: the merge in
@@ -984,7 +986,8 @@ While the guard is active:
   conflict with the merge target is an objective defect of the branch, not a position a reviewer is
   negotiating, and the repair is the one the gate already performs for a branch that is merely
   `BEHIND` – which the guard has never blocked either – and that trigger (b) of Phase 2 step 1
-  performs for a behind branch with a failing check, which the guard leaves running alike. What the
+  performs for a behind branch with a failing check and trigger (c) for a locally proven conflict,
+  which the guard leaves running alike. What the
   guard keeps blocking is unchanged: the review-driven implementation and the merge. The resolution runs, the merge does not;
 - **no thread reply, and no thread resolution, of any kind** – see the rule below.
 
@@ -1040,7 +1043,7 @@ round under "Round accounting". Every wait and every repair is therefore counted
 run can push an unbounded number of commits onto someone's pull request.
 
 1. **Bring the head branch forward.** First apply the stop check of "Repair checkpoints". One local
-   operation – merge `origin/<base>` into the head branch – has two triggers. Then, before either is
+   operation – merge `origin/<base>` into the head branch – has three triggers. Then, before any is
    evaluated, where the wisdom file holds a
    `different-commit` base-merge-unavailable record and the run's latest check result reports
    `BEHIND` or `DIRTY`, apply the report-only run end. **Trigger (a):** the forge reports `BEHIND`
@@ -1051,14 +1054,21 @@ run can push an unbounded number of commits onto someone's pull request.
    nor a base-merge-unavailable record. Step 4's
    criterion is what keeps it off for checks that are only pending, `SKIPPED` or `NEUTRAL`, for
    `checksReported: false`, and for a red optional check under `mergeGate.requireAllChecks: false`.
+   **Trigger (c):** neither trigger (a) nor trigger (b) has fired, the run's latest check result
+   states neither a merge state nor `mergeable`, the wisdom file holds neither a trigger-(c) record
+   nor a base-merge-unavailable record, and – after the ancestry check's steps 1 to 3 for that
+   read's `headSha` and `baseRef` – `merge-proof-local`, called as in the Forgejo WIP-draft exit,
+   returns `conflict`, whatever the check results and whether or not the pull request is a draft. `clean`
+   starts nothing; `unavailable`, a failed fetch or call, a shallow repository or a missing commit
+   starts nothing either, and the report names the `reason`.
    - **The run's latest check result** is the most recent `pr-status-read` of this run, whichever
      step performed it – Phase 1, Entry step 4 on a re-dispatch, this step's post-push or mismatch
      re-read, step 3's guard read, step 4, Phase 4, or the `host-pr-watch` pending or resume read. A `pr-checks-wait` result never supplies trigger (b)'s criterion or its
      `headSha`: it carries no `headSha` and keeps superseded runs.
    - **The ancestry check** uses that read's `headSha` and `baseRef` as `<base>`, runs rooted in
      `RUNTIME_STATE_ROOT` with ref operations only and no working tree, and runs only once the
-     other conditions of trigger (b) hold, or, for steps 1 to 3, before the proof of the Forgejo
-     WIP-draft exit below:
+     other conditions of trigger (b) hold, or, for steps 1 to 3, before the proof of trigger (c) or
+     of the Forgejo WIP-draft exit below:
      1. `git fetch --no-write-fetch-head origin +refs/heads/<base>:refs/remotes/origin/<base>`;
      2. `git fetch --no-write-fetch-head --refmap= origin refs/pull/<N>/head` with no destination
         refspec – the empty `--refmap=` also disables the opportunistic remote-tracking update a
@@ -1073,17 +1083,20 @@ run can push an unbounded number of commits onto someone's pull request.
      code. Undetermined merges nothing and keeps the path to step 3; record it once per run in the
      wisdom file, as step 2 records its question, and Phase 6 names it with its reason.
    - **Trigger (b) provisions nothing before the ancestry check states "behind"**, so a head that
-     already contains the base never gets a worktree.
+     already contains the base never gets a worktree, and **trigger (c) provisions nothing before
+     its proof states `conflict`**.
    - **Trigger (b) fires at most once per run.** Its record in the wisdom file is written once
      trigger (b)'s merge commit – clean or conflict-resolved – has been pushed and the push is
      confirmed, or when its merge is a no-op, and in no other case: never on a `BLOCKED-USER` return, a controlled stop,
      a rejected push or a head-identity mismatch. Once the record exists, no later round, relayed
      run or re-dispatched run fires trigger (b) again. Trigger (a) is not limited by it and writes
      none.
-   - **The base-merge-unavailable record** is written once per run, by either trigger, when a proof
+   - **Trigger (c) fires at most once per run** under the same rule: its trigger-(c) record is
+     written in exactly the cases trigger (b)'s is, and once it exists trigger (c) fires no more.
+   - **The base-merge-unavailable record** is written once per run, by any trigger, when a proof
      below shows the base merge cannot be made here. It names the trigger that called for the
      merge, its round, its **proof kind** – `fork`, `missing-branch` or `different-commit` – and
-     its evidence, and it keeps both triggers off for the rest of the run.
+     its evidence, and it keeps all three triggers off for the rest of the run.
    - **The report-only run end** applies to a `fork` or `missing-branch` record where that record
      is written, whatever the merge state, and to a `different-commit` record wherever a read
      reports `BEHIND` or `DIRTY`: (i) at the mismatch re-read that wrote it, (ii) at the start of
@@ -1112,13 +1125,13 @@ run can push an unbounded number of commits onto someone's pull request.
         Anything else is an **undetermined existence check**: record it once per run, like an
         undetermined ancestry check, write no base-merge-unavailable record, and continue
         provisioning.
-   - **The operation is the same under both triggers**, and step 1 stays one step: provision a
+   - **The operation is the same under every trigger**, and step 1 stays one step: provision a
      checkout of the existing head branch per "Checkout provisioning boundary" (verified execution
      location, rooted operations), fetch the base, and **check the head identity** – the
      checkout's tip must equal the `headSha` of the `pr-status-read` that called for the merge.
      Then merge `origin/<base>` into the head branch as a **merge commit**. Use Git's default
      merge-commit message; add no `Co-Authored-By` trailer and no AI attribution. Every outcome
-     below applies to both triggers alike, except that a trigger-(b) round ends with its confirmed
+     below applies to every trigger alike, except that a trigger-(b) round ends with its confirmed
      push.
    - **The tip is not that `headSha`** – the head moved after the read, or the branch of that name
      on `origin` is not the pull request's head: merge nothing, commit nothing and push nothing,
@@ -1153,8 +1166,8 @@ run can push an unbounded number of commits onto someone's pull request.
      must be completed **before** any `effective-flow iterate` delegation in this or a later round.
    - **The conflict is discovered locally, never read from the forge.** `pr-status-read` reports
      `mergeState` and `mergeable` but no conflicted-file list, so `DIRTY` and `CONFLICTING` are an
-     advance warning and nothing more. A branch reported `BEHIND`, or brought forward by trigger (b),
-     whose merge conflicts anyway enters exactly the same path, which is why this is one step and
+     advance warning and nothing more. A branch reported `BEHIND`, or brought forward by trigger (b)
+     or trigger (c), whose merge conflicts enters exactly the same path, which is why this is one step and
      not two: the conflict appears in one place either way.
    - **Close the checkout's lifecycle in the same step.** Once the push is confirmed, an Effective
      Flow-owned worktree is withdrawn with one `worktree remove` call per
@@ -1252,17 +1265,18 @@ fabricating a `CLEAN` — which means `BEHIND` is undetectable there, and a bran
 that blocks an outdated branch fails the merge closed server-side instead. An unstated
 **mergeability** still blocks in both arms, and Forgejo leaves it unstated whenever the forge said
 `false` – it reports `false` while a conflict check is still running and for any WIP-titled pull
-request – so outside the exit below a genuine conflict there loops to `mergeGate.maxRounds` and
-ends with a report instead of taking the fast "stop and report the conflict" path.
+request – so a genuine conflict there is found locally by trigger (c) of Phase 2 step 1 instead, once per run.
 
 **The Forgejo WIP-draft exit.** Only under `Provider: forgejo`, a read that states `draft: true` and
 no `mergeable` leaves the loop where the check criterion is satisfied, every other exit criterion
 holds and a local merge proof is clean: run the ancestry check's steps 1 to 3 for that read's
 `headSha` and `baseRef`, then
 `node <skill-root>/scripts/remote-tracker.mjs merge-proof-local <<< '{"cwd":"<RUNTIME_STATE_ROOT>","headSha":"<headSha>","baseRef":"<baseRef>"}'`.
-A `status` of `clean` leaves the loop. `conflict` ends the run here with a conflict report naming
-its `conflictCount` – the round stays counted, nothing is merged, delegated or asked, and Phase 6
-runs. `unavailable`, a failed fetch or call, a shallow repository or a missing commit makes no
+A `status` of `clean` leaves the loop. Where the wisdom file holds a trigger-(c) record or a
+base-merge-unavailable record, `conflict` ends the run here with a conflict report naming its
+`conflictCount` – the round stays counted, nothing is merged, delegated or asked, and Phase 6
+runs. Any other `conflict` ends the round under "A round runs forward only", and the next round's
+step 1 fires trigger (c). `unavailable`, a failed fetch or call, a shallow repository or a missing commit makes no
 exception: the loop keeps running as for any absent mergeability, and the report names the
 `reason`. The proof meets only the
 mergeable half of condition 3; Phase 4 decides the draft.
@@ -1327,7 +1341,7 @@ same-round re-suspensions for a progress or unchanged wake are the exceptions to
 returned `effective-flow iterate` commit the helper attributes to one minted identifier: one per
 `implemented` reviewer item with its own SHA in the attributed range, and one per failing check a
 free-text CI repair with a returned SHA names. A CI wait, a bot wait, a review resubmission, a
-resolved delegation without a head movement, and a gate base merge – either trigger, or a conflict
+resolved delegation without a head movement, and a gate base merge – any trigger, or a conflict
 resolution – consume **zero** attempts, and correction-bucket commits count for no cause. CI
 attempts are counted and reported and never stop the run. A reviewer cause whose **second**
 verified attempt is still blocking stops it per "Repair checkpoints" step 4. The repair state lives
@@ -1362,7 +1376,8 @@ several.
    stored for the dispatch that returned the question.
 3. **Record after each round.** After every return of a dispatched round, `ABORT` included and
    `BLOCKED-USER` excepted – its dispatch is recorded once, on the return of the dispatch consuming
-   its answer –, take
+   its answer –, and only after any line request of the delegation contract's receiver rule was
+   answered or could not be sent, never on the return that prompted it, take
    `after` from the next fresh `pr-status-read` and run the ancestry check's fetches 1 and 2. Run
    `record` with `scope`, `dispatch` and `before` from step 2, `round` the current round, `after`,
    `gateMerges` (every base-merge SHA this run pushed),
@@ -1384,7 +1399,7 @@ several.
 4. **Stop check and run end.** Where the stored state carries a `stop` – it is sticky – end the run.
    Ending the run at any repair checkpoint means no further delegation, base merge or merge, no
    revert and no force push, and Phase 6 reports why. A stop never merges. Phase 2 step 1 runs this
-   check before either trigger, Phase 2 step 3 before its delegation, and configured-reviewer
+   check before any trigger, Phase 2 step 3 before its delegation, and configured-reviewer
    Phase 3 step 5 before its own.
 5. **Evaluate.** "Repair evaluation per configured reviewer" runs `evaluate` with `head`, `events`
    `[{"type","sha"}]` – `type` one of `ci-wait`, `bot-wait`, `review-wait`, `review-resubmission`
@@ -1635,8 +1650,9 @@ ends this phase without heuristic tracker access.
 
 ### Phase 6: Summary
 
-Before step 1, if Phase 0 reserved a pilot observation and no earlier controlled ending finalized
-it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement` fragment. This
+Before step 1, if Phase 0 reserved or restored a pilot observation and no earlier controlled ending
+finalized it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement`
+fragment; a `SUSPENDED host-pr-watch` return writes its handle per "Suspended observation" instead. This
 ordering is mandatory: finalization needs the counters and final status evidence that step 1
 deletes. The mutually exclusive earlier-ending and normal-Phase-6 routes together finalize every
 reservation exactly once. On the T3 path of `host-pr-watch`, step 1 keeps the wisdom file on a
@@ -1678,7 +1694,7 @@ that fragment's report-and-stop path.
      `merge-gate-review-fix-validation` where its conditions held;
    - per round, the provisioned-checkout line from the wisdom record with this run's
      worktree-record exit self-check result;
-   - a trigger-(b) merge of Phase 2 step 1 with its round, any undetermined ancestry check or
+   - a trigger-(b) merge or trigger-(c) merge of Phase 2 step 1 with its round, any undetermined ancestry check or
      existence check or failed provisioning fetch with its reason, every head-identity mismatch with
      its round, the read's `headSha` and the provisioned tip, a run ended on local divergence with
      the reused checkout or the retained head branch with its commits not on `origin/<head>`, and a
@@ -1828,9 +1844,9 @@ that fragment's report-and-stop path.
   record `aborted`, an error sets it `failed`, and no run ends with an `active` record.
 - Make **one** resolution attempt per round; `mergeGate.maxRounds` bounds how often the run returns.
 - Fire Phase 2 step 1's trigger (b) at most once per run, never before the ancestry check states
-  "behind"; merge the base into no provisioned tip other than the `headSha` of the read that called
+  "behind", and trigger (c) at most once per run, never before its proof states `conflict`; merge the base into no provisioned tip other than the `headSha` of the read that called
   for the merge.
-- Fire neither trigger of Phase 2 step 1 once the base-merge-unavailable record exists.
+- Fire no trigger of Phase 2 step 1 once the base-merge-unavailable record exists.
 - Never approve a pull request and never request changes, not even to unblock a merge.
 - Evaluate the guard in Phase 1's order across all three counting surfaces, and let its
   **exclusions** read authorship only: no exclusion rule reads a body, and none reads a thread's
