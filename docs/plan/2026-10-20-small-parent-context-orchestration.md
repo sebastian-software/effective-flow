@@ -5,6 +5,11 @@
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
+**Current policy note (November 23, 2026):** The [pragmatic test and release policy](../adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry)
+supersedes earlier blanket release-freshness rules. This plan's build-context full populations,
+paired workloads, native lanes, and strict activation criteria still govern any claim of completion
+or capability activation.
+
 ## Requirement
 
 Keep the user-facing parent session small while implementing an approved Feature plan. Preserve the complete implementation, documentation, testing, independent review, validation, approval, and delivery obligations. The first implementation covers `apply <Feature plan>` and `build <Feature plan>`; it establishes a measurable pattern before extending other workflows.

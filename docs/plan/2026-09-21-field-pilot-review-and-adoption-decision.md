@@ -4,6 +4,11 @@
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
+**Current policy note (November 23, 2026):** The [pragmatic test and release policy](../adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry)
+supersedes earlier blanket release-freshness rules. This plan's own pilot sample, strict
+qualification, and adoption criteria still govern any claim that the pilot is complete or a
+capability is activated.
+
 **Planned against:** `91afe89` on 2026-09-21.
 **Working state:** Preserve the untracked `docs/concept/` tree and
 `docs/plan/2026-09-21-iterate-behavioural-eval-coverage.md`.

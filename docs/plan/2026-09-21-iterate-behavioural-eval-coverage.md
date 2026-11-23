@@ -5,6 +5,10 @@
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
+**Current policy note (November 23, 2026):** The [pragmatic test and release policy](../adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry)
+supersedes the earlier release-freshness instructions below. The plan's recording criteria govern
+claims of complete planned coverage.
+
 ## Planning baseline
 
 - **Planned at:** `91afe89`, 2026-09-21.

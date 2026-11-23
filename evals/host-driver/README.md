@@ -5,9 +5,10 @@ host runner. It is a model-hosting driver, not a suite evaluator: the suite oper
 tasks and owns qualification and sealing; the driver starts each already-qualified slot, records
 local process evidence, and stops the cohort on the first unsafe or invalid result.
 
-The fixed local round contains 155 slots: 9 merge-gate, 7 iterate, and 15 next-steps scenarios,
-each with five independent runs (45/35/75). It does not establish native-executor acceptance.
-A successful fixture run is local process evidence only.
+The driver is scoped to the original 155-slot cohort of 9 merge-gate, 7 iterate, and 15 next-steps
+scenarios, each with five independent runs (45/35/75). A successful fixture run establishes local
+process evidence only. Use the [release policy](../../docs/adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry)
+to determine the scope of a new recording.
 
 The maintenance-only [fixed stages](#private-first-stage-adapter) use the same complete corpus:
 five original D3 slots, followed only under a separate exact grant by the
