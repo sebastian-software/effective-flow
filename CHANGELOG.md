@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.78.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.77.0...effective-flow-v1.78.0) (2026-11-23)
+
+
+### Features
+
+* **issue-buddy:** exclude triage verdicts and comments from issue consumers ([#713](https://github.com/sebastian-software/effective-flow/issues/713)) ([86c482e](https://github.com/sebastian-software/effective-flow/commit/86c482ead2a3778bc6d37da8470d4ca46e437c23))
+* **pilot:** measure fix runs and let cleanup close orphaned reservations ([#715](https://github.com/sebastian-software/effective-flow/issues/715)) ([4575365](https://github.com/sebastian-software/effective-flow/commit/4575365550aed9898ead8b9ac927bf6d30252a76))
+
 ## [1.77.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.76.0...effective-flow-v1.77.0) (2026-11-23)
 
 
