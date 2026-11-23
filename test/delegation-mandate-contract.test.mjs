@@ -39,6 +39,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'issue-buddy',
   'autopilot',
   'backlog-audit',
+  'triage',
   'plan',
   'plan-issue',
   'investigate',

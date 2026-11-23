@@ -737,6 +737,34 @@ test('planning and file review keep distinct entry controls and the exact artifa
   );
 });
 
+// Invariant: planning-readiness owns R1–R4 once for every caller. Each caller states its input
+// scope, and issue-buddy's projection stays the exact three-line form its orchestrator validates,
+// while triage projects the same criteria into the assessment JSON instead of a second copy.
+test('readiness keeps the issue-buddy three-line projection beside the triage projection', () => {
+  const readiness = shared('planning-readiness').replace(/\s+/g, ' ');
+  assert.match(readiness, /This fragment owns the planning-readiness criteria R1–R4\./);
+  assert.match(
+    readiness,
+    /`issue-buddy` passes only the trusted issue text already filtered by WP3/,
+  );
+  assert.match(
+    readiness,
+    /`triage` passes one issue as quoted text from any author\. R4 counts a direction question from any commenter as unresolved\./,
+  );
+  assert.match(
+    readiness,
+    /`triage` projects the result as the `readiness` field defined in `issue-assessment`\. For `issue-buddy`, return exactly three lines with stable keys and values/,
+  );
+  assert.match(
+    shared('planning-readiness'),
+    /```text\nVerdict: ready\|not-ready\nFailed: <R-ids or none>\nReason: <one line, at most 160 characters, in language\.workflow>\n```/,
+  );
+  assert.match(
+    shared('planning-readiness'),
+    /```lazy-include\nissue-assessment-criteria\nwhen: [^\n]+\n```/,
+  );
+});
+
 test('readiness requires all R1-R4, treats doubt and labels correctly, and tags examples for both verdicts', () => {
   const readiness = shared('planning-readiness');
   for (const literal of [

@@ -185,6 +185,8 @@ that does not suppress a valid candidate from the associated plan or issue.
 | `open-plans`    | no open plan, status-unclear plan                                               | `/effective-flow plan <status-unclear plan>`          | —                                                                  |
 | `plan-issue`    | released                                                                        | `/effective-flow apply #<issue>`                      | `/effective-flow plan-issue <issue>`                               |
 | `plan-issue`    | retained for planning                                                           | `/effective-flow plan-issue <issue>`                  | —                                                                  |
+| `triage`        | implement verdict                                                               | `/effective-flow plan-issue #<issue>`                 | `/effective-flow apply #<issue>`                                   |
+| `triage`        | needs-work verdict, questions to the author or maintainer open                  | `/effective-flow triage #<issue>`                     | `/effective-flow triage --untriaged`                               |
 | `issue-buddy`   | dry run; would-publish issue in public repository                               | `/effective-flow issue-buddy --publish`               | `/effective-flow plan-issue <not-ready or readiness-failed issue>` |
 | `issue-buddy`   | draft plan PR published; restore plan file from branch first                    | `/effective-flow build <plan-file>`                   | `/effective-flow plan-issue <not-ready or readiness-failed issue>` |
 | `issue-buddy`   | completed pass with a not-ready or readiness-failed issue, no other row applies | `/effective-flow plan-issue <issue>`                  | —                                                                  |
@@ -256,3 +258,8 @@ Everything else in the table – `investigate`, `concept`, `plan-issue`,
 different entry point or closes a smaller loop around one of its stops. `deliver` is the local
 changes entry point: after it opens the confirmed multi-commit pull request, it points directly to
 `merge-gate`.
+
+`triage` sits in front of that spine and decides whether an issue should be worked on at all. An
+`implement` verdict points to `plan-issue` or `apply` on the same issue; a `needs-work` verdict
+points to a re-run on that issue, or to `triage --untriaged`, once its questions are answered; a
+`reject` verdict is final and ends without a recommendation.

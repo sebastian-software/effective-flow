@@ -212,6 +212,8 @@ backstop for one that carries open points.
 | open-plans    | no open plan, status-unclear plan                                               | {{SKILL:plan}} <status-unclear plan>          | —                                                          |
 | plan-issue    | released                                                                        | {{SKILL:apply}} #<issue>                      | {{SKILL:plan-issue}} <issue>                               |
 | plan-issue    | retained for planning                                                           | {{SKILL:plan-issue}} <issue>                  | —                                                          |
+| triage        | implement verdict                                                               | {{SKILL:plan-issue}} #<issue>                 | {{SKILL:apply}} #<issue>                                   |
+| triage        | needs-work verdict, questions to the author or maintainer open                  | {{SKILL:triage}} #<issue>                     | {{SKILL:triage}} --untriaged                               |
 | issue-buddy   | dry run; would-publish issue in public repository                               | {{SKILL:issue-buddy}} --publish               | {{SKILL:plan-issue}} <not-ready or readiness-failed issue> |
 | issue-buddy   | draft plan PR published; restore plan file from branch first                    | {{SKILL:build}} <plan-file>                   | {{SKILL:plan-issue}} <not-ready or readiness-failed issue> |
 | issue-buddy   | completed pass with a not-ready or readiness-failed issue, no other row applies | {{SKILL:plan-issue}} <issue>                  | —                                                          |
@@ -277,6 +279,7 @@ These end states carry no generic fallback row:
 - a `setup` run with nothing staged, unless it is a `setup status` report that found a
   setup-fixable problem;
 - a `cleanup` run whose mandatory report found nothing to carry over, delete, or refer on;
+- a `triage` run whose every decision is `reject`: the decision is final and nothing follows it;
 - an `investigate` run that ends in no bug, deliberately no action, or a pending product decision —
   the documentation row covers a documentation gap, never a non-finding;
 - a delivery that **merged** the branch rather than retaining it, in `apply`, `build`, `fix`,

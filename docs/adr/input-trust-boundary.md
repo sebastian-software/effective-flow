@@ -56,6 +56,40 @@ instruction-level exclusion because their orchestrator still reads them, and act
 explicit override in an interactive run. Children created from a split keep
 the interactive baseline of two previews; this residual risk is accepted.
 
+**Scoped exception: `triage`.** Deciding on an issue from any author requires reading it, so the
+interactive `triage` tool extends the `backlog-audit` exception to its architecture, assessment and
+comment-draft leaves, with the same mitigations:
+
+- The orchestrator never reads the snapshot or the overlap index; it acts on helper metadata,
+  helper-validated rubric JSON without issue text, and drafted text only. Only the assessment leaf
+  receives issue text, as quoted third-party snapshot files.
+- Every write comes from a helper-built write set with a closed vocabulary
+  (`issue-comment-upsert`, `issue-label-swap` and the labels a confirmed entry needs), shown as an
+  exact preview and confirmed one issue at a time. Without a proven runner write permission, or in
+  hidden mode, the run is report-only.
+- The report flags every issue whose author or commenter lacks proven write permission.
+- A managed triage comment is recognized only when its author passes the intake module's marker
+  trust, for selection, re-entry and the `issue-buddy` exclusion alike. The upsert edits only the
+  runner's own managed comment; another trusted managed comment is left untouched and reported as
+  superseded.
+
+The residual channels and their deterministic exclusions:
+
+- **Overlap index titles** of other issues and plans reach only the assessment leaf, as quoted
+  data; an A5 issue target must be a number from the index.
+- **The A1 summary** is length-bounded by the helper and rendered only into the local report and
+  chat; it never enters a drafted comment or a decision.
+- **The triage comment** carries text derived from untrusted authors under the runner's identity.
+  Its draft leaf receives no snapshot and no A1, and the helper rejects a draft containing `<!--`,
+  an attribution pattern, a permission term or a verbatim snapshot substring of 40 or more
+  characters. `issue-buddy` drops the comment, as stated above.
+- **The triage labels** carry only the verdict; `issue-buddy` skips `reject` and `needs-work`, and
+  `plan-issue` and `apply-issues` guard `reject`. A security-flagged issue gets no verdict label
+  (an earlier one may be removed) and only a fixed neutral notice with its own marker, naming a
+  private channel only when `SECURITY.md` or `.github/SECURITY.md` states one; the notice is the
+  deterministic anchor of those exclusions, and this public signal that an issue is sensitive is
+  accepted.
+
 ## Consequences
 
 Issue Buddy fails closed when author permission is missing or unreadable. The boundary is reusable
@@ -66,3 +100,6 @@ serialization rules. See [`issue-buddy-core.mjs`](../../src/scripts/issue-buddy-
 
 - [Focus cross-session messages](./focus-cross-session-messages.md)
 - [`backlog-audit-core.mjs`](../../src/scripts/backlog-audit-core.mjs)
+- [`triage-core.mjs`](../../src/scripts/triage-core.mjs)
+- [`issue-intake-core.mjs`](../../src/scripts/issue-intake-core.mjs)
+- [Issue assessment rubric](./issue-assessment-rubric.md)

@@ -1,7 +1,7 @@
 ---
 description: "Audits every open tracker issue and open local plan in scope against one explicitly named goal: a deep assessment judges goal fit and names the minimal goal path, and after one bundled confirmation the run creates or updates one goal epic, hands oversized issues to {{SKILL:plan-issue}}, and marks individually confirmed obsolete issues. Deletes and closes nothing."
 catalogHint: "Checks open issues and plans against one goal and maintains its goal epic."
-contextBudget: 389
+contextBudget: 412
 ---
 
 # Effective Flow Backlog Audit
@@ -167,6 +167,10 @@ options:
 
 ## Phase 2: Inventory and architecture context
 
+```include
+architecture-context
+```
+
 1. Call `inventory-build` with `{cwd, runtimeStateRoot, target, permission, planDir, config}`,
    adding `scope` (`label`, `issuesOnly`, `plansOnly`), `baseRef` (the configured base branch when
    set), `epic: {reference}` for a bound epic and `externalIssues` on an external target.
@@ -176,28 +180,30 @@ options:
    never shards or truncates. `ISSUES_ONLY_UNAVAILABLE` stops with its message. Retain `data` as
    `inventory` and show its counts, its `partial` notice and, for `permission-unreadable`, that
    the forge does not state other users' permission, so their items are flagged as unknown.
-2. Apply the runtime guard to `inventory.architectureSummaryPath`, then start one read-only leaf.
-   It reads the repository's ADRs, README, concepts and module layout under `CHECKOUT_ROOT`,
-   never `.effective-flow/` or issue data, and writes one summary of the current architecture to
-   exactly that new file, citing a repository path, with a line where useful, for every claim. It
-   returns `DONE` or `ABORT`.
+2. Apply the runtime guard to `inventory.architectureSummaryPath`, then start one read-only leaf
+   with the architecture-context brief, naming that path as its new file.
    <!-- spawn-site:backlog-audit/architecture-context -->
 3. Call `bounds-check` with `{runtimeStateRoot, inventory, architectureSummaryPath}`. A stopped
    result is the same bound stop; the helper has already removed the snapshot.
 
 ## Phase 3: Assessment
 
+```include
+issue-assessment-criteria
+```
+
 1. Start one read-only `deep` leaf. Hand it the goal, quoted as the user's goal; `snapshotDir`; each
    item's `id`, `kind`, `state`, plan `path` or `snapshotFile`; the architecture summary path; the
-   repository root; and this output contract. It returns one JSON object and nothing else, with
-   `verdicts` (per item `item`, `verdict`, `rationale`, optional `evidence` as repository
+   repository root; the issue-assessment criteria above; and this output contract. It returns one
+   JSON object and nothing else, with `verdicts` (per item `item`, `verdict`, `rationale`, optional `evidence` as repository
    `path[:line]` references only, `citations`, `overlapTarget` and `relevance`), `path` (item ids)
    and `splits` (`item`, `outline`). Exactly
    one verdict per item: `core` (required for the goal), `supporting` (helps; the goal is reachable without it), `drift`
-   (scope expansion the goal does not need), `oversized` (goal-relevant but too large),
-   `overlap` (duplicates or partly covers the named `overlapTarget`, with `relevance`),
-   `obsolete-architecture` (contradicts the current architecture; cites at least one repository
-   file as `path[:line]`, never the summary alone), `unclear` (not decidable from the text). `path`
+   (scope expansion the goal does not need), `oversized` (goal-relevant and A4 `oversized`),
+   `overlap` (A5 `overlap` or `duplicate` whose target is an inventory item, named as
+   `overlapTarget`, with `relevance`), `obsolete-architecture` (A2 `contradicts`, with its
+   citations), `unclear` (not decidable from the text). Any other A5 target and
+   `already-implemented` become rationale and evidence under the goal-relative verdict. `path`
    orders every `core` and `oversized` item as the minimal goal path; `splits` outlines a split for
    each `oversized` issue without an active decomposition. Rationales and evidence quote no issue
    text. If the host forces the subagent model (`model-tiers`, "Host overrides"), the assessment

@@ -199,6 +199,8 @@ const RUNTIME_SCRIPT_FILES = [
   'conflict-validation-core.mjs',
   'setup-status.mjs',
   'setup-status-core.mjs',
+  'triage.mjs',
+  'triage-core.mjs',
   'verification-evidence.mjs',
   'verification-evidence-core.mjs',
 ];
@@ -317,6 +319,7 @@ const TOOL_GROUPS = [
       'plan',
       'open-plans',
       'plan-issue',
+      'triage',
       'issue-buddy',
       'backlog-audit',
     ],
