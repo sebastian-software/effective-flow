@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.77.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.76.0...effective-flow-v1.77.0) (2026-11-23)
+
+
+### Features
+
+* **pilot:** portable Fast pilot opt-in with a short baseline (package A) ([#704](https://github.com/sebastian-software/effective-flow/issues/704)) ([db28709](https://github.com/sebastian-software/effective-flow/commit/db287090a4b036a7935b31323fb619774158450d))
+* **setup:** enable the Fast pilot and start its baseline from a Targeted request ([#708](https://github.com/sebastian-software/effective-flow/issues/708)) ([3714fef](https://github.com/sebastian-software/effective-flow/commit/3714fef0d1dbcc3256ed662468ba8e69f86b7f91))
+
+
+### Bug Fixes
+
+* **iterate:** enforce the authorized scope at commit time and recover missing scoped return lines ([#705](https://github.com/sebastian-software/effective-flow/issues/705)) ([a461299](https://github.com/sebastian-software/effective-flow/commit/a4612996ed52dd468670ad7ab75e8e1095e5165d))
+* **merge-gate:** resolve a locally proven base conflict when the forge states no merge state ([#706](https://github.com/sebastian-software/effective-flow/issues/706)) ([07f2fa8](https://github.com/sebastian-software/effective-flow/commit/07f2fa863973c6db937d8865309cb7c6c35a3514))
+
 ## [1.76.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.75.0...effective-flow-v1.76.0) (2026-11-20)
 
 
