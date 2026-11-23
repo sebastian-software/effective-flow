@@ -240,10 +240,11 @@ const suite = {
   // head against `origin/develop` before it does, so `configured-reviewer-origin.mjs` gives that one
   // scenario a local `origin` holding the fixture's head commit. The two run-state scenarios find an
   // earlier dispatch's record or another run's presence marker, the first with the history and
-  // `origin` its Phase-4 condition fetches, the second on top of its merging `origin`, so
-  // `run-state-seed.mjs` seeds exactly those two and hands every other scenario on to
-  // `merge-origin.mjs`, then `no-ci-checkout.mjs`. Each returns null for every scenario outside its
-  // group.
+  // `origin` its Phase-4 condition fetches, the second on top of its merging `origin`, and the
+  // Forgejo WIP-draft conflict scenario finds an earlier dispatch's trigger-(c) record on top of its
+  // draft-ready `origin`, so `run-state-seed.mjs` seeds exactly those three and hands every other
+  // scenario on to `merge-origin.mjs`, then `no-ci-checkout.mjs`. Each returns null for every
+  // scenario outside its group.
   prepareCheckout: (input) =>
     prepareRepairOrigin(input) ??
     prepareConfiguredReviewerOrigin(input) ??

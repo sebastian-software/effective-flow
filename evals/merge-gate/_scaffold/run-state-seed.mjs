@@ -1,9 +1,9 @@
-// The runtime state two scenarios find in their slot before the session starts: a gate run that is
-// re-dispatched with an earlier dispatch's record, and a second gate run's presence marker.
+// The runtime state three scenarios find in their slot before the session starts: two gate runs
+// that are re-dispatched with an earlier dispatch's record, and a second gate run's presence marker.
 //
-// **Why these two scenarios need it and the others do not.** Every other scenario starts a gate run
-// from nothing, so its slot holds no runtime state and the shared seed commit is all the checkout
-// needs. These two are about state a gate run reads rather than state it writes:
+// **Why these three scenarios need it and the others do not.** Every other scenario starts a gate
+// run from nothing, so its slot holds no runtime state and the shared seed commit is all the
+// checkout needs. These three are about state a gate run reads rather than state it writes:
 //
 //   * `quick-conflict-commit-without-ci-evidence-blocks` enters the gate where its Phase-4 condition
 //     11 applies: the wisdom file records a conflict-resolution commit that was validated in
@@ -22,6 +22,14 @@
 //     the same repository: one valid presence marker of another session for another pull request.
 //     Like `merge-proceeds` it is expected to merge, so its slot also gets the history and `origin`
 //     of `merge-origin.mjs` that the Phase-4 quick-marker scan fetches and reads.
+//   * `forgejo-wip-draft-conflict-asks-nothing` reaches the Forgejo WIP-draft exit of Phase 2 with a
+//     trigger-(c) record already in its wisdom file, so it isolates the exit's record-gated
+//     `conflict` end: one proof and no Git write. A first dispatch would end there too, but only
+//     after trigger (c) of Phase 2 step 1 fired its own proof and a provisioned no-op base merge.
+//     So the slot holds what a first dispatch leaves behind when trigger (c) fired in round 1 on a `conflict`
+//     proof, its base merge was a no-op — what Git does on this checkout, whose head already
+//     contains the seeded base — and its check wait then timed out: the record, this run's presence
+//     marker, and the pull-request `origin` of `merge-origin.mjs` the exit's ancestry fetches read.
 //
 // **The history is deterministic, and the fixture states it.** The seed commit is re-made at a fixed
 // instant with a fixed message, and every further commit has fixed content, identity and dates, so
@@ -41,7 +49,7 @@ import { devNull } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { prepareMergeOrigin } from './merge-origin.mjs';
+import { FORGEJO_WIP_CONFLICT_SCENARIO, prepareMergeOrigin } from './merge-origin.mjs';
 import { prepareCheckout as prepareNoCiCheckout } from './no-ci-checkout.mjs';
 
 export const QUICK_COMMIT_SCENARIO = 'quick-conflict-commit-without-ci-evidence-blocks';
@@ -72,6 +80,11 @@ export const QUICK_COMMIT_WISDOM_FILE = `${RUNTIME_STATE_DIR}/.wisdom-accumulati
 // The question the first dispatch returned, and the round it returned it in.
 export const RELAYED_QUESTION = 'checks-pending';
 export const RELAYED_ROUND = 1;
+
+// The Forgejo WIP-draft conflict run's own identity, named by its scenario prompt in the same way.
+export const FORGEJO_WIP_CONFLICT_SESSION_ID = `merge-gate-eval-${FORGEJO_WIP_CONFLICT_SCENARIO}`;
+export const FORGEJO_WIP_CONFLICT_PRESENCE_TOKEN = '54afce3225211234f8138d0f89b68770';
+export const FORGEJO_WIP_CONFLICT_WISDOM_FILE = `${RUNTIME_STATE_DIR}/.wisdom-accumulation-${FORGEJO_WIP_CONFLICT_SESSION_ID}.tmp.md`;
 
 // The other gate run of the presence scenario. Its head is a commit the sandbox does not hold, so a
 // correct notice names that run's pull request alone.
@@ -433,6 +446,72 @@ function seedQuickCommitRun({ scenario, fixture, projectRoot }) {
   return { remote, ...actual };
 }
 
+// The record the Forgejo WIP-draft conflict run's first dispatch left. Round 1 fired trigger (c) of
+// Phase 2 step 1 on the fixture's canned `conflict` proof, merged the base as a no-op — the seeded
+// head already contains `develop` — and wrote the trigger-(c) record, the once-per-run record
+// "Wisdom accumulation" asks for: its round and whether its merge was clean, conflict-resolved or a
+// no-op. Its check wait then timed out with `ci` pending, so it returned `BLOCKED-USER checks-pending`.
+export function forgejoWipConflictWisdomRecord(fixture) {
+  const pr = fixture.operations['pr-read'].envelope.data.result;
+  const proof = fixture.operations['merge-proof-local'].envelope.data;
+  const { headSha, pullRequest } = fixture;
+  const digest = relayedDigest(headSha);
+  return `# merge-gate wisdom record (session ${FORGEJO_WIP_CONFLICT_SESSION_ID})
+
+## Pull request
+
+- PR #${pullRequest} ${pr.url}; head branch ${pr.head}, base ${pr.base}; head SHA at Phase 0 ${headSha}
+- completion mode: merge (source: configuration, mergeGate.completion)
+- caller limits, dispatch 1: none
+- viewer-read login: ${fixture.viewerLogin}
+- nested-spawn probe passed
+- presence marker registered for session ${FORGEJO_WIP_CONFLICT_SESSION_ID}, token ${FORGEJO_WIP_CONFLICT_PRESENCE_TOKEN}
+
+## Human-comment guard
+
+- Phase 1: inactive. Review threads: none. Pull-request comments: none. Submitted reviews: none.
+- items the identity rule excluded: none
+- logins the catch-all counted: none
+- items excluded solely through mergeGate.botAccounts: none
+
+## Round 1
+
+- check result: ci IN_PROGRESS on ${headSha}; no merge state and no mergeable stated (Forgejo); draft
+- trigger (a) not fired (no merge state); trigger (b) not fired (no failing check)
+- trigger (c): ancestry check steps 1 to 3 passed for ${headSha} and ${pr.base}; merge-proof-local status ${proof.status}, conflictCount ${proof.conflictCount}, base ${proof.baseCommit}; trigger (c) fired
+- provisioned checkout: Effective Flow-owned worktree, purpose merge-gate; head identity matched ${headSha}
+- base merge: origin/${pr.base} into ${pr.head} was a no-op (Already up to date); nothing committed or pushed; worktree withdrawn with worktree remove (ok)
+- trigger-(c) record: round 1; merge no-op
+- Phase 2 step 2: the check wait timed out with ci pending; question ${RELAYED_QUESTION} posed (round ${RELAYED_ROUND}, state digest ${digest}); returned BLOCKED-USER ${RELAYED_QUESTION}
+`;
+}
+
+function seedForgejoWipConflictRun(args) {
+  const { fixture, projectRoot } = args;
+  const origin = prepareMergeOrigin(args);
+  const now = new Date();
+  const started = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
+  const refreshed = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  writePresenceMarker(
+    projectRoot,
+    {
+      sessionId: FORGEJO_WIP_CONFLICT_SESSION_ID,
+      token: FORGEJO_WIP_CONFLICT_PRESENCE_TOKEN,
+      prNumber: fixture.pullRequest,
+      head: fixture.headSha,
+      base: fixture.operations['pr-read'].envelope.data.result.base,
+    },
+    started,
+    refreshed,
+  );
+  writeFileSync(
+    resolve(projectRoot, FORGEJO_WIP_CONFLICT_WISDOM_FILE),
+    forgejoWipConflictWisdomRecord(fixture),
+    { flag: 'wx' },
+  );
+  return origin;
+}
+
 function seedOtherRunPresence({ projectRoot }) {
   const now = new Date();
   const started = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
@@ -441,12 +520,14 @@ function seedOtherRunPresence({ projectRoot }) {
   return { marker: OTHER_RUN.sessionId };
 }
 
-// The suite's checkout hook after the repair and configured-reviewer origins: the two seeded
-// scenarios here, the presence one on top of its merging `origin`; the six merging scenarios'
-// `origin` in `merge-origin.mjs`, two of them no-CI policy scenarios; the four blocking no-CI policy
-// scenarios in `no-ci-checkout.mjs`; and nothing for any other scenario.
+// The suite's checkout hook after the repair and configured-reviewer origins: the three seeded
+// scenarios here, the presence and the Forgejo WIP-draft conflict ones on top of the `origin` of
+// `merge-origin.mjs`; the six merging scenarios' `origin` and the other draft-ready ones there, two
+// of the merging ones no-CI policy scenarios; the four blocking no-CI policy scenarios in
+// `no-ci-checkout.mjs`; and nothing for any other scenario.
 export function prepareCheckout(args) {
   if (args.scenario === QUICK_COMMIT_SCENARIO) return seedQuickCommitRun(args);
+  if (args.scenario === FORGEJO_WIP_CONFLICT_SCENARIO) return seedForgejoWipConflictRun(args);
   if (args.scenario === PRESENCE_NOTICE_SCENARIO) {
     return { ...prepareMergeOrigin(args), ...seedOtherRunPresence(args) };
   }

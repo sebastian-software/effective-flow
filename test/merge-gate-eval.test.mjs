@@ -37,6 +37,9 @@ import { suiteConfigPath } from '../evals/_scaffold/suite-loader.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
 import iterateSuite from '../evals/iterate/suite.config.mjs';
 import {
+  FORGEJO_WIP_CONFLICT_PRESENCE_TOKEN,
+  FORGEJO_WIP_CONFLICT_SESSION_ID,
+  FORGEJO_WIP_CONFLICT_WISDOM_FILE,
   OTHER_RUN,
   PRESENCE_NOTICE_SCENARIO,
   QUICK_COMMIT_PRESENCE_TOKEN,
@@ -3346,6 +3349,101 @@ test('the quick-commit prompt names the seeded wisdom file and the relayed diges
   assert.equal(fixture.servesMerge, undefined, 'the refusal fixture serves a merge');
   assert.equal(Object.hasOwn(fixture.operations, 'pr-merge'), false);
   assert.equal(fixture.operations['pr-status-read'].input.includeCheckIdentity, true);
+});
+
+// Invariant: the Forgejo WIP-draft exit ends the run on a `conflict` proof only where the wisdom file
+// holds a trigger-(c) record (or a base-merge-unavailable one); any other `conflict` ends the round so
+// that trigger (c) of Phase 2 step 1 fires. The conflict scenario isolates that record-gated run end —
+// one proof, no Git write, no classification, no mutation — so its slot holds a trigger-(c) record
+// (a first dispatch would add trigger (c)'s own proof and a no-op base merge), and only a re-dispatch with a `Relayed answer:` line reads a present wisdom file. The record's no-op base
+// merge must be what Git does on the provisioned checkout, and the marker must be this run's.
+const FORGEJO_WIP_CONFLICT = 'forgejo-wip-draft-conflict-asks-nothing';
+
+test(`${FORGEJO_WIP_CONFLICT}: the delegated-run contract still ends the WIP-draft exit on a recorded trigger (c) only`, () => {
+  const contract = readFileSync(
+    resolve(SUITE_ROOT, '..', '..', 'src', 'shared', 'merge-gate-delegated-run.md'),
+    'utf8',
+  ).replace(/\s+/g, ' ');
+  assert.match(
+    contract,
+    /Where the wisdom file holds a trigger-\(c\) record or a base-merge-unavailable record, `conflict` ends the run here with a conflict report/,
+  );
+  assert.match(
+    contract,
+    /Any other `conflict` ends the round under "A round runs forward only", and the next round's step 1 fires trigger \(c\)\./,
+  );
+});
+
+test(`${FORGEJO_WIP_CONFLICT}: the provisioned slot holds the trigger-(c) record of an earlier dispatch and its presence marker`, () => {
+  const fixture = fixtureFor(FORGEJO_WIP_CONFLICT);
+  const attempt = mkdtempSync(resolve(tmpdir(), 'effective-flow-forgejo-wip-conflict-'));
+  const stateHelper = resolve(SUITE_ROOT, '..', '..', 'src', 'scripts', 'effective-flow-state.mjs');
+  const helper = (operation, input) =>
+    JSON.parse(
+      execFileSync(process.execPath, [stateHelper, ...operation.split(' ')], {
+        input: JSON.stringify(input),
+        encoding: 'utf8',
+      }),
+    );
+  try {
+    const projectRoot = join(attempt, 'project');
+    mkdirSync(projectRoot);
+    writeProject(
+      suite,
+      projectRoot,
+      FORGEJO_WIP_CONFLICT,
+      fixture,
+      suite.scenarioSetup(FORGEJO_WIP_CONFLICT).projectSetupRows,
+    );
+    const { headSha } = fixture;
+    const git = (...args) =>
+      execFileSync('git', args, { cwd: projectRoot, encoding: 'utf8' }).trim();
+    assert.equal(git('status', '--porcelain', '--untracked-files=all'), '');
+    // The recorded no-op: the head already contains the base, so merging it changes nothing.
+    git('merge-base', '--is-ancestor', 'origin/develop', headSha);
+
+    const wisdom = readFileSync(join(projectRoot, FORGEJO_WIP_CONFLICT_WISDOM_FILE), 'utf8');
+    assert.match(wisdom, /^- trigger-\(c\) record: round 1; merge no-op$/m);
+    assert.match(wisdom, /merge-proof-local status conflict, conflictCount 1/);
+    assert.ok(wisdom.includes(`head SHA at Phase 0 ${headSha}`));
+    assert.ok(wisdom.includes(`state digest ${relayedDigest(headSha)}`));
+    assert.ok(wisdom.includes('caller limits, dispatch 1: none'));
+    assert.ok(wisdom.includes('nested-spawn probe passed'));
+    assert.doesNotMatch(wisdom, /base-merge-unavailable/);
+
+    const listed = helper('presence list', { cwd: projectRoot });
+    assert.deepEqual(
+      listed.result.markers.map(({ sessionId, state, prNumber, head }) => ({
+        sessionId,
+        state,
+        prNumber,
+        head,
+      })),
+      [{ sessionId: FORGEJO_WIP_CONFLICT_SESSION_ID, state: 'valid', prNumber: 42, head: headSha }],
+    );
+    const refreshed = helper('presence refresh', {
+      cwd: projectRoot,
+      sessionId: FORGEJO_WIP_CONFLICT_SESSION_ID,
+      token: FORGEJO_WIP_CONFLICT_PRESENCE_TOKEN,
+      head: headSha,
+    });
+    assert.equal(refreshed.ok, true, JSON.stringify(refreshed));
+  } finally {
+    rmSync(attempt, { recursive: true, force: true });
+  }
+});
+
+test(`${FORGEJO_WIP_CONFLICT}: the prompt is the re-dispatch that reads the seeded wisdom file`, () => {
+  const fixture = fixtureFor(FORGEJO_WIP_CONFLICT);
+  const prompt = readFileSync(join(SUITE_ROOT, 'scenarios', `${FORGEJO_WIP_CONFLICT}.md`), 'utf8');
+  assert.ok(prompt.includes(`<runtime state root>/${FORGEJO_WIP_CONFLICT_WISDOM_FILE}`));
+  assert.ok(prompt.includes('This is a re-dispatch of the gate run'));
+  assert.doesNotMatch(prompt, /first dispatch of the\s+gate run/);
+  assert.ok(
+    prompt.includes(
+      `Relayed answer: checks-pending; round=1; digest=${relayedDigest(fixture.headSha)}; option=Continue`,
+    ),
+  );
 });
 
 // The presence slot holds exactly one marker, another run's, valid under the shipped helper and

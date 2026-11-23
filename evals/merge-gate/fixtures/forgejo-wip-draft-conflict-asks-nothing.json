@@ -1,6 +1,6 @@
 {
   "name": "forgejo-wip-draft-conflict-asks-nothing",
-  "description": "A Forgejo WIP-titled draft, mergeability absent, whose local merge proof finds a conflict: the run ends from Phase 2 with a conflict report, classifies nothing, asks nothing and mutates nothing.",
+  "description": "A Forgejo WIP-titled draft, mergeability absent, whose local merge proof finds a conflict on a re-dispatch whose wisdom file already holds the trigger-(c) record: the run ends from Phase 2 with a conflict report, classifies nothing, asks nothing and mutates nothing.",
   "viewerLogin": "flow-gate",
   "humanLogin": "casey-reviewer",
   "headSha": "4b74f096b3ac20c587cc25c89fe4990d1fec349a",
