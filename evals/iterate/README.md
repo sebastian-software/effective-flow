@@ -268,8 +268,8 @@ the exact next launch, then immediately spawn that same verified launch and audi
 digests externally. Set HOME/CODEX_HOME/PWD from its fields and send its stdin file bytes unchanged.
 A refusal stops the spawn; qualification changes neither the host receipt nor measured prompts.
 Use physical `attemptRoot/project`, fresh isolated homes outside the writable root, and absent
-last-message output. The new instrument identity owes all 155 fresh recordings across the three
-suites; deterministic fixtures and old attempts cannot replace them.
+last-message output. Select cases for a current round under the
+[release policy](../../docs/adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry).
 
 Launch each slot as a fresh, non-forked session rooted in its `project/`, with only its
 `prompt.txt` as input and no user-level skills — an installed Effective Flow release would shadow

@@ -28,6 +28,9 @@ campaign, is the behavioural measurement of Fast. Fast stays default-off everywh
 Claude Code probe qualified and the Codex probe stayed `unproven`, so Codex runs stay Quality. The
 decision below and every other capability boundary are unchanged.
 
+Status note, November 23, 2026: [recording scope](#recording-scope-and-capability-re-entry)
+defines when to record selected cases and when to record the full population.
+
 ## Context
 
 Package acceptance and experimental execution qualification answer different questions. A
@@ -74,6 +77,26 @@ delivery until repaired or demonstrably unreachable. Old failed evidence does no
 a current defect; missing evidence does not prove safety. A maintainer must resolve applicability
 and stop delivery when security-critical applicability is unresolved. There is no automated
 semantic safety classifier or new waiver registry.
+
+## Recording scope and capability re-entry
+
+Stale, absent or incomplete evidence stays visible in report mode. Drift in shared instrumentation
+can affect several suites at once. Assess its impact when the affected behaviour or qualification is
+in scope. Routine PRs and releases require zero new model runs for freshness alone.
+
+When live evidence is needed to verify a material change to model-mediated behaviour or an
+applicable regression, record the directly affected cases. Use `--scenario` where the suite
+supports it. For a changed action gate, include a decisive refusal and a permitted control.
+Follow the suite's run count, scoring and host qualification for every selected case. Standard
+rounds use five independent runs per case. Test machine-enforced behaviour through the relevant
+helper or integration test. A targeted recording supports a claim about its selected cases,
+candidate and profile.
+
+Record the full current population when an applicable capability acceptance contract requires it
+or a broader requalification is explicitly justified. Evaluate full-suite claims with the strict
+verifier. For `build-context`, the full contract applies to activation of planned-build delegation.
+For `focus`, use the trajectory suite to measure judgement quality and the
+[host acceptance record](../developer-guide/focus-host-acceptance.md) to qualify the T3 path.
 
 ## Capability boundaries and re-entry
 

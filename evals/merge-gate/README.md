@@ -393,10 +393,10 @@ Record the returned qualification, verifier-policy and selected-probe digests, m
 verification/expiry times alongside the identical actual launch identity in an external audit.
 The coordinator owns identical spawning, isolation, credential handling and replacement protection
 between verification and execution. Keep qualification material out of measured prompts and the
-existing host-receipt schema. This new instrument identity requires 45 merge-gate, 35 iterate and
-75 next-steps fresh behavioral recordings with their existing five valid independent runs and
-qualitative gates. Deterministic verifier fixtures are not behavioral evidence; retain prior
-attempts and findings unchanged without treating them as qualification or full acceptance.
+existing host-receipt schema. Use the [release policy](../../docs/adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry)
+to select cases for a current round. The [fixed host driver](../host-driver/README.md) serves the
+historical cohort. Retain prior attempts and findings with their original qualifications.
+Deterministic verifier fixtures exercise the instrument.
 
 Do not launch these as repository-root sub-agents or give them the scenario file: either can expose
 the expected outcome and turn the eval into a memory test. The repository CLI deliberately has no
@@ -675,24 +675,17 @@ profile flags either, so for a suite that pins its profile, as this one does, th
 
 ### Cost is quota and wall-clock time
 
-There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
-subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-serial runs of one scenario are therefore about half an hour, and forty-five serial runs for the nine
-scenarios that exist today are about three hours and forty-five minutes. The round layout makes those runs
-independent, so elapsed time now depends primarily on how many fresh sessions the host can run at
-once; it does not promise a particular speedup. Where the suite has to be shortened, the scenario
-count gives way — never the five-of-five requirement, because for a fail-closed rule a single
-deviating run is a finding. The one scenario that never gives way is the merging counterpart:
-without it the refusals prove less than they appear to.
+Each run consumes subscription quota and elapsed time. An earlier run took roughly **five
+minutes**. For a targeted round, choose fewer scenarios and keep five independent runs for each.
+A single deviation from a fail-closed rule counts as a finding. When testing a merge decision,
+include an allowed merge as a control for the refusal. Parallel execution can reduce elapsed
+time within the recording host's capacity.
 
-That hour comes due less often than the wall-clock figure suggests. A round is invalidated only by a
-change to what the gate loads — the router, `tools/merge-gate.md`, the artifacts the gate delegates
-into (`tools/iterate.md` and the `merge-conflict-resolver` and `code-validator` worker contracts),
-and the fragments any of those reach through their own load pointers — rather than by any change
-anywhere in the built skill, so an edit to an unrelated tool, an unreached worker contract or a
-fragment no run reads leaves the standing evidence intact. The shipped `scripts/remote-tracker.mjs`
-is not among them: the scaffold overwrites it with the stub, which is hashed separately as the
-instrument.
+A change to the loaded skill, instrument or scenario input can stale archived evidence. The skill
+identity covers the router, `tools/merge-gate.md`, delegated artifacts such as `tools/iterate.md`
+and the `merge-conflict-resolver` and `code-validator` worker contracts, and the fragments reached
+through their load pointers. The scaffold replaces the shipped `scripts/remote-tracker.mjs` with
+the stub, which is hashed as part of the instrument.
 
 A release does not invalidate a round, although it does change the router. `build.mjs` stamps the
 manifest version into `SKILL.md`, so a release-please pull request moves the skill digest of every

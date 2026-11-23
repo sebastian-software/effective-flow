@@ -300,32 +300,24 @@ because re-entry or mutation always needs the conservative default; `review`, `i
 PR-review integration load it at their admission decision. Keep admission before ID reservation and
 artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
 
-One consequence is worth knowing before you write the fence. Each behavioural eval suite under
-`evals/<tool>/` — `merge-gate`, `iterate`, `next-steps`, `build-context`, and `focus` — derives the content identity each archived
-round is stamped with by following exactly these rendered pointers through the built tree from its
-own seeds, so adding a `lazy-include` to a fragment a suite's tool can reach widens that identity,
-invalidates every archived round of that suite, and owes a re-record of the affected scenario
-evidence by hand through fresh agent sessions. `iterate` is inside the `merge-gate` load set, so a
-fragment `iterate` reaches stales both suites; changing shared `next-steps` affects its suite and any
-suite whose seeds reach it. The `build-context` suite owns native/portable continuation and host-policy
-evidence for the planned-build boundary; its README owns its scenario inventory and recording protocol.
-That debt comes due before the next release rather than before the next merge: `pnpm test`
-asserts only that the archived evidence is structurally
-sound, while `pnpm eval <tool> verify` reports the staleness on every pull request and fails the
-required check on the release one. A conditional pointer widens it whether or not any
-scenario takes its branch. The one build change that does **not** cost a re-record is the release
-version stamp: each round additionally carries a version-neutral skill
-digest, so a release-please bump of `.release-please-manifest.json` leaves the standing evidence
-valid as long as the built router is the only moved file and nothing but the version token moved in
-it. See
+Each behavioural eval suite under `evals/<tool>/` derives its archived build identity by following
+the rendered load pointers from its seeds. Adding a reachable `lazy-include` changes that identity,
+even when the pointer is conditional and a scenario skips its branch. A fragment reached through
+`iterate` can stale both `iterate` and `merge-gate` evidence. Changing shared `next-steps` affects its
+suite and any suite whose seeds reach the fragment.
+
+The unit suite checks archive structure. CI runs `pnpm eval <tool> verify --mode report` for all five
+suites on ordinary and release PRs. The
+[release policy](../adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry)
+defines when to re-record cases and when a full acceptance is due. A release-please version bump
+can preserve evidence through the version-neutral skill digest when only the router's version token
+changes and the other identity components match. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round,
 [`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ,
 [`evals/next-steps/README.md`](../../evals/next-steps/README.md) for the bounded final-report suite,
 [`evals/build-context/README.md`](../../evals/build-context/README.md) for planned-build host evidence,
 [`evals/focus/README.md`](../../evals/focus/README.md) for the observed focus verdicts,
-and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all five suites on
-every PR and requires current evidence on release PRs. Each suite's README owns its scenario count
-and recording requirements.
+and `evals/_scaffold/build-identity.mjs` for the derivation itself.
 
 ### Outcome continuation evidence
 

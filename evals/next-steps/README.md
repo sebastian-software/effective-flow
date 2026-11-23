@@ -6,8 +6,8 @@ rerun implementation, delivery, tracker transitions, or an entire Effective Flow
 integration guards separately protect real completion sites in merge-gate, apply, PR review, and
 automatic delivery. Neither evidence layer alone proves the other.
 
-There are twenty-one scenarios and **five fresh model sessions per scenario** (105 runs). Published real
-rounds are archived under `results/`. Deterministic tests exercise instrument integrity and
+There are twenty-one scenarios with **five fresh model sessions per selected scenario**.
+Published rounds are archived under `results/`. Deterministic tests exercise instrument integrity and
 discrimination, not model behavior. `pnpm eval next-steps verify` reports the current archived
 evidence and whether it matches the tree.
 
@@ -132,8 +132,8 @@ the exact next launch, then immediately spawn that same verified launch and audi
 digests externally. Set HOME/CODEX_HOME/PWD from its fields and send its stdin file bytes unchanged.
 A refusal stops the spawn; qualification changes neither the host receipt nor measured prompts.
 Use physical `attemptRoot/project`, fresh isolated homes outside the writable root, and absent
-last-message output. The new instrument identity owes all 155 fresh recordings across the three
-suites; deterministic fixtures and old attempts cannot replace them.
+last-message output. Select cases for a current round under the
+[release policy](../../docs/adr/pragmatic-test-release-policy.md#recording-scope-and-capability-re-entry).
 
 The coordinator owns launches, receipts, sealing and publication. No eval command launches a model.
 A native-worktree host coordinator may pass the verified physical main checkout of the same
