@@ -368,9 +368,9 @@ confirmation. Profile and Express never ask the block; they carry an existing ro
 invalid, over byte-for-byte. After a completed Step 6, the same fragment offers at most one
 confirmed generation action for the inventory-proven state: `begin-baseline` for `none` and
 `resume` for a `suspended` generation with healthy evidence. Neither writes the row, and setup never
-activates: `build` or `refactor` calls `activate` automatically in a measured run's preflight.
+activates: `build`, `refactor` or `fix` calls `activate` automatically in a measured run's preflight.
 
-`build` and `refactor` are the only consumers that read the key for profile selection. Their reader is split: the
+`build`, `refactor` and `fix` are the only consumers that read the key for profile selection. Their reader is split: the
 configuration contract classifies `configState`, and only `enabled` with a harness family (from the
 spawn tool's parameter shape) triggers the read-only helper `inventory` that yields the generation
 state. `none`, `suspended`, and `review`

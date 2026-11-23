@@ -1,0 +1,62 @@
+{
+  "name": "A portable fix on a qualified harness activates a ready baseline and attempts Fast through the per-spawn tier",
+  "harness": "claude",
+  "config": "true",
+  "installKind": "portable",
+  "qualification": "qualified",
+  "inventory": "baseline",
+  "baselineEvidence": "sample-met",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": "activated",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast"],
+        "fallback": "none",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

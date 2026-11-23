@@ -20,8 +20,8 @@ diagnosis of an existing or missing setup; see [Status](#status).
 planning/tracking and delivery topology. To change or check one or a few settings of an existing
 configuration, describe the change in free text. Use Guided when you want to walk through the
 individual settings with explanations (project and surface languages, worktree, completion action,
-tracker details, advanced review/apply-review values, skill discovery, or the `build`/`refactor`
-Fast pilot), and Express when you intentionally want the safe base without an interview. Use
+tracker details, advanced review/apply-review values, skill discovery, or the
+`build`/`refactor`/`fix` Fast pilot), and Express when you intentionally want the safe base without an interview. Use
 `status` to check whether the setup is healthy without changing anything. Any mode
 except Targeted, Status and Allowlist may offer the optional session-rename capability check described below.
 
@@ -515,7 +515,7 @@ unchanged ADR/convention writes.
 
 Guided's advanced settings end with **Block 10 (`executionProfiles`)**, which a
 [Targeted request](#targeted-changes-and-questions) reaches as well. It is the opt-in for the
-Quality/Fast field pilot of `/effective-flow build` and `/effective-flow refactor`. Profile and Express never ask it and keep an
+Quality/Fast field pilot of `/effective-flow build`, `/effective-flow refactor` and `/effective-flow fix`. Profile and Express never ask it and keep an
 existing `executionProfiles.fast.enabled` row exactly as recorded, including an invalid one. The
 block first explains that `true` only admits the project to the pilot, shows the recorded value as
 `enabled`, `disabled`, or `invalid – runs as Quality`, and asks with **Keep** pre-selected:
@@ -545,15 +545,16 @@ release shipped) and, when something unfinished blocks activation, that cause: o
 of workflow runs, or open observations of a `merge-gate` run, which may be waiting for a PR across
 re-dispatches. One host's probe qualifies the harness for every install of the release, and a
 provider gateway may map model aliases differently. Only the run that holds an open record can
-finalize or reconcile it. An orphaned one blocks activation until the generation is reviewed and
-discarded with the pilot disabled, which loses its evidence; a cleanup action for orphaned
-reservations is planned but not shipped. Portable (DALO) installations offer the same actions as
+finalize or reconcile it. An orphaned workflow reservation blocks activation until
+[`/effective-flow cleanup`](#effective-flow-cleanup) abandons it; an orphaned `merge-gate`
+observation, or a leftover timing receipt, blocks it until the generation is reviewed and
+discarded with the pilot disabled, which loses its evidence. Portable (DALO) installations offer the same actions as
 native ones.
 
 Declining, skipping, or a non-interactive run sends nothing. No action changes the configuration
 row, and the final report names the opt-in value, the stored generation state, and each offered
 action's outcome. Setup never activates a generation: the confirmed baseline is the only consent,
-and the next measured `build` or `refactor` run activates it automatically once the preregistered sample
+and the next measured `build`, `refactor` or `fix` run activates it automatically once the preregistered sample
 is met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
 baseline records.
 
@@ -677,8 +678,8 @@ and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`;
 state, not leftovers. It may copy confirmed runtime files into
 `.effective-flow/`, remove a confirmed legacy config from that directory, or remove a confirmed
 stale diff baseline, remove a merge-gate presence marker whose run is provably over, remove a
-finished autopilot ledger, or release a confirmed planning claim, Issue Buddy pass record or
-unlisted trusted issue text; otherwise
+finished autopilot ledger, release a confirmed planning claim, Issue Buddy pass record or
+unlisted trusted issue text, or abandon a confirmed open pilot record; otherwise
 it preserves active runtime state. A true no-op means there are no
 migration actions, no stale diff baselines, and no eligible worktrees, but the remaining-worktree
 report still appears.
@@ -709,6 +710,23 @@ once per claim or pass record. Pruning a pass record also releases the claims th
 holds. Trusted issue text that no pass record lists any more is offered in one more confirmation;
 while any pass record is unreadable, none is offered. A leftover
 `.effective-flow/issue-buddy/pass.lock` from an earlier version is reported, never removed.
+
+A crashed `build`, `fix` or `refactor` run can leave an open pilot record behind, a sixth class
+(see [Model-tiering pilot data and privacy](model-tiering-pilot.md)). It keeps the Fast pilot's
+activation busy. Cleanup lists each open record with its workflow, age, a stale flag after 24
+hours and whether the session that reserved it is still alive on this host, and asks once per
+record. It abandons one only after the helper re-verifies a proof – the reserving session and the
+up to two parent processes it recorded are provably gone on this host – or you confirm that a
+record older than 24 hours is stale. While a recorded parent still runs, such as the session
+above a wrapper like `timeout` or the terminal a crashed session ran in, liveness is unknown, never
+dead, so after a crash the record usually needs the 24-hour confirmation. The proof needs Linux
+`/proc` and the same host, kernel boot and process namespace as the reserving session.
+A record written before this check existed, on another host or machine of the same name, in a
+container with its own process namespace or before a reboot has unknown liveness and needs the
+24-hour confirmation; a run that is merely very long may still be alive and then records nothing
+more. Abandoning closes only that record as `abandoned`; no product file changes. An abandonment
+interrupted before it removed the run's timing receipts is listed again as pending and finished
+after your confirmation. An open `merge-gate` observation is never offered.
 
 When Issue Buddy cannot publish a plan, it keeps its `issue-planning` worktree with the plan and
 the report names both. Cleanup lists that worktree as kept while the plan is still in it, because

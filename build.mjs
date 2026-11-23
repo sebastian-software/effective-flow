@@ -1231,8 +1231,8 @@ try {
   }
 
   // Fast-profile tokens are legal only inside each workflow's initial implementation phase.
-  // `build` Phase 2 and `refactor` Phase 3 adopt them on their five Fast-capable implementer
-  // selector lines.
+  // `build` Phase 2, `refactor` Phase 3 and `fix` Phase 3 adopt them on their five Fast-capable
+  // implementer selector lines.
   const profilePhaseAuthorizations = new Map([
     [
       'shared/build-delegated-run.md',
@@ -1247,6 +1247,14 @@ try {
       {
         phase: 'Refactor Phase 3',
         startHeading: '### Phase 3: Refactoring',
+        endHeading: '### Phase 3.5: Documentation sync',
+      },
+    ],
+    [
+      'tools/fix.md',
+      {
+        phase: 'Fix Phase 3',
+        startHeading: '### Phase 3: Fix',
         endHeading: '### Phase 3.5: Documentation sync',
       },
     ],
@@ -1275,7 +1283,7 @@ try {
     const authorization = profilePhaseAuthorizations.get(source.context);
     if (!authorization) {
       throw new Error(
-        `Fast-profile references are allowed only in the initial implementation phases of shared/build-delegated-run.md and tools/refactor.md; found one in ${source.context}`,
+        `Fast-profile references are allowed only in the initial implementation phases of shared/build-delegated-run.md, tools/refactor.md and tools/fix.md; found one in ${source.context}`,
       );
     }
 
@@ -1330,7 +1338,7 @@ try {
 
   // --- Shared execution-profile contract guard ---
   // This Markdown policy remains canonical. `build` Phase 2 adopts it through a load
-  // pointer and inline profile tokens, and `refactor` Phase 3 does the same.
+  // pointer and inline profile tokens, and `refactor` Phase 3 and `fix` Phase 3 do the same.
   // Validate its closed tables and the shipped pilot runtime projection before
   // rendering so neither consumer can inherit a malformed or drifted contract.
   const executionProfileContext = 'shared/execution-profiles.md';

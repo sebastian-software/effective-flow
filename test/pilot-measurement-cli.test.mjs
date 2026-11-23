@@ -330,3 +330,165 @@ test('the spawned CLI activates without confirmation and records an incident by 
   assert.deepEqual(suspension.reasons, ['critical-data-integrity-incident']);
   assert.equal(suspension.resumeTo, 'baseline');
 });
+
+// Invariant: through the real procfs probe, the reservation of a still-running session never reads
+// as `dead`, and the spawned abandonment refuses it while it is fresh, with a stable envelope.
+test('the spawned CLI lists an open reservation without run identity and refuses a live abandonment', (t) => {
+  const fixture = repository(t);
+  const common = {
+    runtimeStateRoot: fixture.root,
+    repositoryIdentity: fixture.repositoryIdentity,
+  };
+  const begun = parseSingleEnvelope(
+    runCli(
+      ['begin-baseline'],
+      {
+        ...common,
+        configState: 'enabled',
+        fastEnabled: true,
+        protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+        protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+        confirmation: true,
+      },
+      { cwd: fixture.root },
+    ),
+  );
+  const { generationId } = begun.result;
+  const started = parseSingleEnvelope(
+    runCli(
+      ['start'],
+      {
+        ...common,
+        generationId,
+        configState: 'enabled',
+        workflow: 'build',
+        harnessFamily: 'codex',
+        installKind: 'native',
+        packets: [
+          {
+            selectedProfile: 'quality',
+            wouldBeFastEligible: true,
+            gate: { eligibility: 'eligible', firstReason: null },
+          },
+        ],
+      },
+      { cwd: fixture.root },
+    ),
+  );
+  assert.equal(started.ok, true);
+  const listed = runCli(['list-reservations'], common, { cwd: fixture.root });
+  assert.equal(listed.status, 0, listed.stderr);
+  const envelope = parseSingleEnvelope(listed);
+  const [item] = envelope.result.reservations;
+  assert.equal(envelope.result.reservations.length, 1);
+  assert.notEqual(item.liveness, 'dead');
+  assert.equal(item.stale, false);
+  assert.equal(listed.stdout.includes(started.result.runId), false);
+  assert.equal(listed.stdout.includes(started.result.workflowCapability), false);
+  const refused = runCli(
+    ['abandon-reservation'],
+    {
+      ...common,
+      generationId,
+      itemId: item.itemId,
+      recordDigest: item.recordDigest,
+      confirmation: true,
+      confirmStale: true,
+    },
+    { cwd: fixture.root },
+  );
+  assert.equal(refused.status, 4);
+  assert.equal(parseSingleEnvelope(refused).error.code, 'INVALID_STATE');
+  assert.equal(git(fixture.root, 'status', '--porcelain'), '');
+});
+
+// Invariant: a helper started through a forking wrapper records the wrapper's short-lived shell as
+// its owner, and the reservation still never reads as `dead` while the session above it runs.
+test('the spawned CLI started through a wrapper keeps its reservation off dead', (t) => {
+  const fixture = repository(t);
+  const common = {
+    runtimeStateRoot: fixture.root,
+    repositoryIdentity: fixture.repositoryIdentity,
+  };
+  const begun = parseSingleEnvelope(
+    runCli(
+      ['begin-baseline'],
+      {
+        ...common,
+        configState: 'enabled',
+        fastEnabled: true,
+        protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+        protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+        confirmation: true,
+      },
+      { cwd: fixture.root },
+    ),
+  );
+  const { generationId } = begun.result;
+  // Two forking shells between this test and the helper: the outer one, the helper's recorded
+  // owner, exits before the listing.
+  const wrapped = spawnSync(
+    'sh',
+    [
+      '-c',
+      'sh -c "\\"$0\\" \\"$1\\" start; exit \\$?" "$0" "$1"; exit $?',
+      process.execPath,
+      CLI.pathname,
+    ],
+    {
+      cwd: fixture.root,
+      env: GIT_ENV,
+      encoding: 'utf8',
+      input: JSON.stringify({
+        ...common,
+        generationId,
+        configState: 'enabled',
+        workflow: 'build',
+        harnessFamily: 'codex',
+        installKind: 'native',
+        packets: [
+          {
+            selectedProfile: 'quality',
+            wouldBeFastEligible: true,
+            gate: { eligibility: 'eligible', firstReason: null },
+          },
+        ],
+      }),
+    },
+  );
+  assert.equal(wrapped.status, 0, wrapped.stderr);
+  const started = parseSingleEnvelope(wrapped);
+  assert.equal(started.ok, true);
+  const record = JSON.parse(
+    readFileSync(
+      join(
+        fixture.root,
+        '.effective-flow/model-tiering-pilot/generations',
+        generationId,
+        'records',
+        `${started.result.runId}.json`,
+      ),
+      'utf8',
+    ),
+  );
+  assert.match(record.ownerSalt, /^[A-Za-z0-9_-]{32,128}$/);
+  // Where procfs answers, the salt binds this test process as an ancestor of the owner.
+  if (existsSync('/proc/self/stat')) assert.ok(record.ownerSalt.length >= 70);
+  const listed = runCli(['list-reservations'], common, { cwd: fixture.root });
+  assert.equal(listed.status, 0, listed.stderr);
+  const [item] = parseSingleEnvelope(listed).result.reservations;
+  assert.notEqual(item.liveness, 'dead');
+  const refused = runCli(
+    ['abandon-reservation'],
+    {
+      ...common,
+      generationId,
+      itemId: item.itemId,
+      recordDigest: item.recordDigest,
+      confirmation: true,
+      proof: 'process-dead',
+    },
+    { cwd: fixture.root },
+  );
+  assert.equal(parseSingleEnvelope(refused).error.code, 'INVALID_STATE');
+});

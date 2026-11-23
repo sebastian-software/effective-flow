@@ -7,11 +7,11 @@ bounded packet that passes every gate below: a native build's `-fast` sidecar, o
 build's rendered **Fast tier** on a qualified harness. Neither name identifies a provider model, and
 an enabled project key is never proof that the current host can enforce Fast.
 
-`build` adopts this policy for its Phase 2 initial implementation packets and `refactor` for its
-Phase 3 initial packets after the Phase 2 baseline; both load it on demand, and no other workflow
-has adopted it. The fragment itself defines no worker and writes no runtime state: the adopting
-workflow requests the profile, and the workflow-record fragment and the shipped helper own
-measurement.
+`build` adopts this policy for its Phase 2 initial implementation packets, `refactor` for its
+Phase 3 initial packets after the Phase 2 baseline, and `fix` for its Phase 3 initial packets after
+its failing-test step; each loads it on demand, and no other workflow has adopted it. The fragment
+itself defines no worker and writes no runtime state: the adopting workflow requests the profile,
+and the workflow-record fragment and the shipped helper own measurement.
 
 <!-- execution-profile-profile:start -->
 

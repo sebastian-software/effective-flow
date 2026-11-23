@@ -1,14 +1,14 @@
 # Model-tiering pilot protocol
 
 This guide documents the shipped, local measurement protocol for the Quality/Fast field pilot of
-`build` and `refactor` (protocol `1.3.0`). It explains the executable contract owned by
+`build`, `refactor` and `fix` (protocol `1.3.0`). It explains the executable contract owned by
 [`src/scripts/pilot-measurement-protocol.mjs`](../../src/scripts/pilot-measurement-protocol.mjs)
 and the guarded operations implemented by
 [`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). The
 protocol itself activates nothing: setup (Guided or Targeted) starts a baseline only through a confirmed action,
-a measured `build` or `refactor` run lets the helper activate that baseline automatically once its
-preregistered conditions pass, and these two are the only workflows that record runs and request
-Fast. `fix` is admitted by the protocol's `workflow` enum but not yet measured or wired. Portable
+a measured `build`, `refactor` or `fix` run lets the helper activate that baseline automatically once its
+preregistered conditions pass, and these three are the only workflows that record runs and request
+Fast. Portable
 builds are measured like native ones and may request Fast only on a qualified harness.
 
 ## Authority and drift control
@@ -75,7 +75,7 @@ not run. Native records keep the sidecar rendering and need no probe.
 The helper accepts one closed-schema JSON object on standard input and returns one stable JSON
 envelope. Its operation roster covers protocol inspection, inventory, baseline creation,
 activation, workflow and packet recording, anonymous gate observations, suspension, incident
-recording, explicit resume, reconciliation, review, aggregation, evaluation, purge, and exceptional
+recording, explicit resume, reconciliation, orphaned-reservation listing and abandonment, review, aggregation, evaluation, purge, and exceptional
 generation discard. Mutation is guarded by repository identity, the runtime-state migration prerequisite,
 protocol version and digest, generation capability, capacity limits, and per-generation locking.
 
@@ -163,11 +163,93 @@ with `INCOMPLETE_EVIDENCE`.
 
 A crashed run's open reservation reads as busy like a live one. Only the owning run can finalize it
 or reconcile it, because `reconcile-record` needs that run's transient `workflowCapability`; no
-later run or setup holds it. An orphaned reservation therefore clears only by `begin-review`
-followed by `discard-generation` with the pilot disabled (`configState: "disabled"`), which loses
-the generation. `purge` is no exit: it needs a reviewed aggregate, and `aggregate` fails
-`INCOMPLETE_EVIDENCE` while anything is open. The `effective-flow cleanup` action for orphaned
-reservations is planned for a later package and not shipped.
+later run or setup holds it. A later `effective-flow cleanup` session closes it through
+`abandon-reservation` (see "Orphaned reservations"); the only other exit is `begin-review` followed
+by `discard-generation` with the pilot disabled (`configState: "disabled"`), which loses the
+generation. `purge` is no exit: it needs a reviewed aggregate, and `aggregate` fails
+`INCOMPLETE_EVIDENCE` while anything is open.
+
+### Orphaned reservations
+
+Two operations serve `cleanup`
+([`src/shared/cleanup-pilot-reservations.md`](../../src/shared/cleanup-pilot-reservations.md)),
+which holds no run capability:
+
+- **`list-reservations`** is read-only and takes `runtimeStateRoot`, `repositoryIdentity` and an
+  optional `generationId`. It returns `generationStatus` (`absent` lists nothing), `protocolCurrent`
+  (an earlier protocol's generation lists nothing), `staleAfterHours` (24) and `reservations`. Each
+  item carries an opaque `itemId` (a digest of generation and run, naming no run), `state`,
+  `workflow`, `reservedAt`, `ageMs`, `stale` (older than 24 hours), `liveness`, `proof` and the
+  `recordDigest` an abandonment binds to. An open reservation is `state: "open"` with `proof`
+  `process-dead` only for `dead`, otherwise `null`. An abandoned record whose timing receipts were
+  not all drained (the abandonment faulted or crashed after writing it) is listed as
+  `state: "pending-drain"` with `proof: "already-abandoned"`, `reservedAt`, `ageMs` and `liveness`
+  `null` and `stale` `false`; its leftover receipts would otherwise fail every later `start` and
+  `start-gate-observation` with `INCOMPLETE_EVIDENCE`. Open gate observations carry no owner or
+  time fields and are never listed.
+- **`abandon-reservation`** takes the common keys plus `itemId`, `recordDigest`,
+  `confirmation: true` and exactly one basis: `proof: "process-dead"`,
+  `proof: "already-abandoned"` or `confirmStale: true`. Under the lifecycle lock it finds the item
+  again and finalizes an open reservation as `abandoned` (every attempt `unknown`, a receipt's
+  `admission-changed` fallback kept, transient fields dropped, that run's timing receipts drained)
+  through the same writer as `reconcile-record`; it writes no other record. It returns `abandoned`
+  with its `basis` (`process-dead` or `stale`). For a record it already abandoned it is idempotent:
+  whatever the basis and `recordDigest`, it only drains that run's remaining receipts by
+  membership, as `reconcile-record` does behind a terminal record, and returns `abandoned` with
+  `basis: "already-abandoned"`. It fails `NOT_FOUND` for an unknown or otherwise closed item,
+  `STALE_REVIEW` when an open record changed since the listing, `INVALID_STATE` when the chosen
+  basis no longer holds (also `already-abandoned` for a record still open), `PROTOCOL_DRIFT` for an
+  earlier protocol's generation, `INVALID_PAYLOAD` without `confirmation: true` or with both or
+  neither basis, and a retryable `LOCKED` when the lock is held. It holds the lifecycle lock and
+  stages its writes under the `reconcile-record` operation name, so a 1.3.0 helper of an earlier
+  release (1.77.0) that meets the held lock or a crashed write's temporary reads it as an ordinary
+  reconciliation, never as unsafe storage.
+
+The liveness rule derives from the reservation's salted `ownerDigest` without storing any process
+id, and the stored reservation keeps exactly the 1.3.0 shape, so an earlier 1.3.0 helper sharing the
+runtime state still accepts it. The host binding lives inside the opaque `ownerSalt`: 24 random
+bytes (32 base64url characters), then a 16-byte host binding (22 base64url characters), then up to
+two 12-byte ancestor digests (16 characters each). The owner is the parent of the helper's parent,
+the tool's shell; a helper started through a forking wrapper (`timeout`, `sh -c`, a sandbox
+launcher) would record the wrapper's short-lived shell instead, so the salt also binds the owner's
+parent and that parent's parent, each a truncated digest of the random part, the host identity, its
+pid and its start time. An ancestor that is unreadable, lacks a start time, is init, or runs in
+another pid namespace ends the chain; the salt then binds fewer, never a guessed one. The host
+binding is the first 16 bytes of the digest of the random part, the owner's host identity and the
+ancestor digests; the identity is the host name, the kernel boot id
+(`/proc/sys/kernel/random/boot_id`) and the owner's pid-namespace inode (`/proc/<pid>/ns/pid`), or
+null when any part was unreadable or `/proc/self` does not name the helper's own pid (a procfs of
+another pid namespace). The salt of 54 to 86 characters keeps the `[A-Za-z0-9_-]{32,128}` form every
+1.3.0 helper validates. A later session recomputes the binding from its own host name, boot id, pid
+namespace (`/proc/self/ns/pid`) and `/proc/self`. Liveness is `unknown` when the salt carries no
+binding (a 32-character salt from a release before the check, or any other length), the binding
+names another host identity (another machine of the same name, another boot, or a container with
+its own pid namespace) or any part is unreadable on either side, the owner could not be resolved,
+or procfs hides processes or a process start time is unreadable. Proof therefore needs Linux
+`/proc`. Otherwise it is `alive` only when a live process hashes to the owner digest; with the
+owner gone it is `unknown` while a live process hashes to a recorded ancestor digest, since that
+ancestor may be the session a wrapper ran under or only a long-lived parent of a session that
+ended; and it is `dead` only when neither does (the owner and every recorded ancestor are gone or
+their pids were reused with other start times). An owner recorded without a start time is `alive`
+while any process holds its pid. The workflow fragment still requires calling the helper directly
+from the tool's shell, so the owner is the session itself. The proof needs the session and its
+recorded parent processes gone, so after a crash under a still-running terminal or supervisor the
+record usually shows `unknown` and the 24-hour path applies. Two residuals remain, both for a
+wrapped call contrary to the direct-invocation rule: it can still read `dead` while the session
+runs when the ancestor chain ends at a pid-namespace boundary or at init, or when more wrapper
+levels lie between the helper and the session than the two recorded parents. Only `dead` offers
+the `process-dead` proof; every other open reservation can be abandoned only through
+`confirmStale` after 24 hours, and such a reservation may still belong to a live long run, which
+then records nothing more. Its
+`start-packet` and `finish-packet` then fail `NOT_FOUND` after its workflow capability
+authenticated (a packet without a receipt fails `INVALID_STATE` instead, so `NOT_FOUND` names only
+a closed or missing record), and its own `finalize` finds the terminal record, drains its receipts
+and returns `abandoned` instead of `finalized`. A 1.77.0 helper sharing the state reports
+`finalized` for such a record instead: the stored abandoned record stays correct, only that run's
+report differs. Terminal writes strip the salt with the other transient fields.
+
+The observation limitation stays: an open `merge-gate` observation carries no owner proof, is never
+listed, and clears only by `begin-review` followed by `discard-generation`.
 
 An open gate observation is `open-observations`. `merge-gate` under T3 Code keeps its observation
 open across `SUSPENDED host-pr-watch` re-dispatches, so a waiting gate run blocks activation until
@@ -234,13 +316,14 @@ then matches against the packet's fallback. Like a first fallback call it does n
 admission, so it succeeds even if admission reopened after the refused retry; it fails
 `INVALID_STATE` only for a receipt that is already finished or already a fallback.
 
-Open reservations carry transient fields that exist for the overlap and the planned orphan check:
-a reservation-salted hash of the host name, process id and process start time, the reservation time
-and the overlap flag. Every terminal write (`finalize`, `reconcile-record`) strips them.
+Open reservations carry transient fields that exist for the overlap and the orphan check: a
+reservation-salted hash of the host name, process id and process start time, the salt itself with
+its folded host binding and ancestor digests, the reservation time and the overlap flag. Every terminal write
+(`finalize`, `reconcile-record`, `abandon-reservation`) strips them.
 
 ### Callers
 
-Setup (Guided and Targeted), the two adopting workflows, and `merge-gate` call the helper, each through a lazy
+Setup (Guided and Targeted), the three adopting workflows, `cleanup` and `merge-gate` call the helper, each through a lazy
 fragment that owns its exact payloads:
 
 - **Setup block 10** (Guided advanced settings or a Targeted request)
@@ -252,10 +335,10 @@ fragment that owns its exact payloads:
   state. Setup never calls `activate`. `review` is terminal and never resumes. A portable build
   offers the same actions; it reports each harness family's installed qualification and the
   `busyCause`.
-- **`build` and `refactor`**
+- **`build`, `refactor` and `fix`**
   ([`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md))
   name themselves in `start`'s `workflow` field and follow the same order; `refactor` classifies
-  its packets only after its Phase 2 baseline. Each reads `inventory` only with an enabled configuration and a harness family, and records
+  its packets only after its Phase 2 baseline and `fix` only after its failing-test step. Each reads `inventory` only with an enabled configuration and a harness family, and records
   only for a `baseline` or `active` generation. The harness family comes only from the parameter shape
   of the spawn tool the run holds (Claude Code's Agent tool is `claude`, a Codex spawn is `codex`); a
   client surface such as T3 Code is no signal, and without the signal the run is unmeasured Quality.
@@ -305,6 +388,10 @@ fragment that owns its exact payloads:
   and to `failed` after an incident that ends the run, a missing outcome, an exhausted regression
   loop, or a required check Phase 5 could not repeat; an incident the run survives leaves the
   status to the comparison. Neither workflow calls `begin-baseline`, `resume`, or `suspend`.
+- **`cleanup`**
+  ([`src/shared/cleanup-pilot-reservations.md`](../../src/shared/cleanup-pilot-reservations.md))
+  lists open reservations with `list-reservations` and, after a dry run and one confirmation per
+  item, closes each with `abandon-reservation`; it reports only operation, error code and outcome.
 - **`merge-gate`** records the anonymous period observation described under "Evidence and
   consent", also under T3 Code. Its `harnessFamily` follows the same rule as above, and the
   observation carries `installKind`. Under T3 Code the observation survives

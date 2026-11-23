@@ -775,6 +775,9 @@ test('conflict-resolution verification, Fast-packet validation and deep sites ne
     'build-delegated-run/base-attribution',
     'refactor/post-validation-checks',
     'refactor/post-validation-tests',
+    'fix/regression-test',
+    'fix/verification',
+    'fix/routed-review',
   ]) {
     assert.ok(sites.has(id), `missing spawn site ${id}`);
     assert.equal(sites.get(id).downAllowed, false, `${id} must be Down: no`);
@@ -927,6 +930,45 @@ test('both pre-commit review sites route to deep reviewers and never move down',
   );
 });
 
+// `fix` has no routed review of its own, so a Fast packet's fix adds the routed deep reviewer of its
+// bucket in Phase 4; the degraded bucket keeps its existing review at fix/verification. That site
+// and the regression test validate a Fast packet, so neither moves down.
+test('a Fast fix packet adds the routed deep reviewer in Phase 4 and its validators never move down', () => {
+  const sites = new Map(spawnSites().map((site) => [site.id, site]));
+  const review = sites.get('fix/routed-review');
+  assert.ok(review, 'missing spawn site fix/routed-review');
+  assert.deepEqual(review.clauses.map(({ role }) => role).sort(), [
+    'frontend-reviewer',
+    'nodejs-reviewer',
+    'rust-reviewer',
+  ]);
+  assert.ok(
+    review.clauses.every(({ tier }) => tier === 'deep'),
+    'fix/routed-review resolves to deep',
+  );
+  assert.equal(review.panel, false);
+  for (const id of ['fix/routed-review', 'fix/regression-test', 'fix/verification']) {
+    assert.equal(sites.get(id).downAllowed, false, `${id} must be Down: no`);
+  }
+  assert.ok(
+    !sites.has('fix/implementation'),
+    'the initial packet site replaces fix/implementation',
+  );
+  const fix = readSource('tools/fix.md');
+  const phase4 = fix.slice(fix.indexOf('### Phase 4: Verification'), fix.indexOf('### Phase 5'));
+  const item = phase4.slice(
+    phase4.indexOf('   - for every packet whose Fast attempt started a child'),
+  );
+  // The routed-review bullet is the last list item, so the next lazy-include block bounds it.
+  const itemEnd = item.indexOf('\n```lazy-include');
+  assert.ok(itemEnd > 0, 'a lazy-include block follows the Fast-packet reviewer item');
+  assert.ok(
+    item.slice(0, itemEnd).includes('<!-- spawn-site:fix/routed-review -->'),
+    'the marker sits in the Fast-packet reviewer item',
+  );
+  assert.match(flatten(item), /a Quality packet adds no reviewer/);
+});
+
 // The PR body draft reads a branch diff and writes nothing, so it is mechanical and may move down.
 // Its marker sits in the step 9 description paragraph, so the rendered tier line reaches the
 // delegation instruction in every target.
@@ -1020,7 +1062,7 @@ test('a Fast spawn passes only its own reference values, stated once in executio
     ),
     'model-tiers.md points at the owner instead of restating the Fast rule',
   );
-  for (const tool of ['build', 'refactor']) {
+  for (const tool of ['build', 'refactor', 'fix']) {
     const lines = readSource(
       tool === 'build' ? 'shared/build-delegated-run.md' : `tools/${tool}.md`,
     ).split('\n');
@@ -1150,6 +1192,7 @@ test('every shipped selector resolves every generated site from the canonical bu
               },
               sites: [
                 'build-delegated-run/initial-implementation',
+                'fix/initial-implementation',
                 'refactor/initial-implementation',
               ],
             },
@@ -1267,7 +1310,7 @@ test('the initial-implementation tier line renders right after its Quality-only 
         'utf8',
       ),
     );
-    for (const tool of ['build', 'refactor']) {
+    for (const tool of ['build', 'refactor', 'fix']) {
       const owner = tool === 'build' ? 'build-delegated-run' : tool,
         site = `${owner}/initial-implementation`,
         where = `${target} ${tool}`;

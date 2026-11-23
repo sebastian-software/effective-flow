@@ -1,12 +1,11 @@
 # Fast pilot opt-in with a short baseline and broader workflow coverage
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
-**Implementation progress:** Package A is implemented on this branch (protocol `1.3.0`, portable
-Fast, harness qualification, overlap and admission, `correction-pass`, skill-Markdown routing).
-Still open: package B (`fix` integration, the `fix` reviewer site, the `cleanup` orphan action);
-the plan stays open until it lands.
+**Implementation progress:** Package A (protocol `1.3.0`, portable Fast, harness qualification,
+overlap and admission, `correction-pass`, skill-Markdown routing) and package B (`fix`
+integration, the `fix` reviewer site, the `cleanup` orphan action) are implemented.
 
 ## Requirement
 
@@ -464,6 +463,46 @@ All findings resolved:
   expectations fixed afterwards); all later changes were verified targeted (1508 affected tests,
   `agent:check`, build and the distribution smoke test passed).
 
+### Package B
+
+**Date:** 2026-11-23
+**Scope:** Package B, in a separate run after package A's release; no new generation and no
+protocol change (`pilot-measurement-protocol.mjs` untouched, digest unchanged).
+
+- **`fix` integration:** Phase 3 carries the per-route profile seam after its failing-test step, so
+  a test that does not fail as expected returns to Phase 2 before any reservation. The record is
+  reserved, started and finalized on every exit (Phase 5 "Pilot record" and finalize step). The
+  failing-test paths are Fast write exclusions: a packet whose required writes overlap them fails
+  `unclear-ownership`, and a Fast attempt that changed them takes the `scope-incident` fallback,
+  with the Quality continuation restoring the step-1 content. A packet whose Fast attempt started a
+  child adds the routed deep reviewer (new site `fix/routed-review`); later passes are Quality-only.
+  Site `fix/implementation` is renamed `fix/initial-implementation`; `fix/regression-test` and
+  `fix/verification` are `Down: no`. `build.mjs` `profilePhaseAuthorizations` admits `tools/fix.md`
+  between "Phase 3: Fix" and "Phase 3.5: Documentation sync"; `fix.md` `contextBudget` rises from
+  572 to 620 for the seam, the pilot-record step and the exclusion enforcement.
+- **`cleanup` orphan action:** new pilot helper operations `list-reservations` (read-only, opaque
+  item ids, age, 24-hour `stale`, liveness) and `abandon-reservation` (lifecycle lock, explicit
+  confirmation, basis `process-dead` or `confirmStale` re-verified under the lock, the same
+  abandoned shape as `reconcile-record`, idempotent re-abandon for a pending drain). `cleanup`
+  inventories, dry-runs and asks once per item through the lazy fragment
+  `shared/cleanup-pilot-reservations.md`. Packet operations on an abandoned record fail
+  `NOT_FOUND` and the run's own `finalize` returns `abandoned`.
+- **Deviations:**
+  - The host binding and up to two salted ancestor digests live inside the existing opaque
+    `ownerSalt`, so the stored reservation keeps package A's exact key set and a released 1.77.0
+    helper sharing the runtime state keeps working; abandonment stages under the `reconcile-record`
+    lock and temporary names for the same reason.
+  - Liveness is `dead` only when the owner and every recorded ancestor are gone on the same host,
+    boot and pid namespace with a readable process table; owner gone with a recorded parent still
+    running is `unknown` (owner decision, 2026-11-23). After a crash under a still-running terminal
+    or supervisor the 24-hour stale path is therefore the usual route.
+  - Merge-gate observations carry no owner proof and still clear only through `begin-review` and
+    `discard-generation`.
+- **Tests:** the full suite ran once before the review corrections (6356 passed, one
+  load-dependent lock-timeout failure in an untouched merge-gate eval test that passed on an
+  identity rerun); all later changes were verified targeted (2615 affected tests, `agent:check`,
+  build and the distribution smoke test passed).
+
 ## Review findings
 
 **Date:** 2026-11-21
@@ -478,3 +517,17 @@ All findings resolved:
 
 One Note (splitting `pilot-measurement-core.mjs` into smaller modules) was closed as outside this
 plan's scope.
+
+### Package B
+
+**Date:** 2026-11-23
+**Reviewer:** effective-flow-nodejs-reviewer (two disjoint halves, floor-triggered full passes and
+scoped re-checks)
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    33 |
+| Open / Not implemented |     0 |
+
+One Note (the recorded owner being a short-lived wrapper) was superseded by the ancestor binding
+fixed in the same review.

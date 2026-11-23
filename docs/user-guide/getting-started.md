@@ -133,20 +133,20 @@ inventories let the local installer reject missing, extra, malformed, or cross-t
 generated roles before it changes an installation. Those artifacts establish build and installation
 consistency, not runtime discovery or activation.
 
-`build` and `refactor` are the two workflows that request that representation, and only inside
+`build`, `refactor` and `fix` are the three workflows that request that representation, and only inside
 their opt-in field pilot: the project sets `executionProfiles.fast.enabled` in setup (Guided or a Targeted request) and
-starts a Quality-only baseline through a confirmed setup action; a later `build` or `refactor` run
+starts a Quality-only baseline through a confirmed setup action; a later `build`, `refactor` or `fix` run
 activates the generation automatically once the preregistered baseline conditions are met. In an active
 generation, Fast may be requested only for the first implementation attempt of an eligible
 packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
 scope-growth continuation uses Quality; coupled packets also share Quality. A project without the opt-in
 stays Quality-only. Portable installations, such as one installed through DALO, contain no native
 sidecar inventory, Fast sidecar, or native profile artifact. Their first implementation spawn of
-`build` and `refactor` carries a second, Fast tier line beside the Quality line, and Fast is
+`build`, `refactor` and `fix` carries a second, Fast tier line beside the Quality line, and Fast is
 requested only on a harness the release has qualified by a probe (Claude Code today; Codex is
 unproven and stays Quality). One host's probe covers every install of that release, and a provider
 gateway may map model aliases differently, so each Fast packet's actual model is checked afterwards.
-`fix` is admitted by the pilot protocol but not yet measured or wired for Fast. See the
+See the
 [configuration reference](./configuration.md#block-executionprofiles) for the default-off key.
 
 Claude skills can request a different caller model or effort for their current turn, but that
@@ -176,7 +176,7 @@ profile-aware workflow reaches selection, Effective Flow checks presence only—
 displays, relays, or stores the variable's value—records `profile-unavailable`, and selects Quality
 without attempting Fast. This is distinct from a Fast spawn that the host actually rejects: that
 attempted spawn records `spawn-rejected`, consumes the one Fast attempt, and then continues once
-with Quality. Only a `build` or `refactor` run with the opt-in enabled and a baseline or
+with Quality. Only a `build`, `refactor` or `fix` run with the opt-in enabled and a baseline or
 active pilot generation reaches this selection path. On a portable install, a missing `model`
 parameter on Claude Code's Agent tool has the same effect.
 

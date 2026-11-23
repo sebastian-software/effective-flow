@@ -249,7 +249,7 @@ with its context-budget, roster, and eval-freshness consequences.
   bytes, publishes nothing, and can never support Keep.
 - Portable Fast and the expansion into `fix`, `iterate`-delegated correction passes, and portable
   `merge-gate` observations are planned in
-  [`2026-11-21-fast-pilot-opt-in-with-a-short-baseline-and-broader-workflow-coverage.md`](2026-11-21-fast-pilot-opt-in-with-a-short-baseline-and-broader-workflow-coverage.md);
+  [`2026-11-21-fast-pilot-opt-in-with-a-short-baseline-and-broader-workflow-coverage.md`](archive/2026-11-21-fast-pilot-opt-in-with-a-short-baseline-and-broader-workflow-coverage.md);
   caller-model control still exceeds the concept and needs its own concept/plan.
 
 ## Acceptance criteria

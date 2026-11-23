@@ -1,0 +1,64 @@
+{
+  "name": "A foreign incomplete record turns a fix packet Fast reservation into admission-changed",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "external": [
+    {
+      "at": "before-start-packet",
+      "operation": "start"
+    }
+  ],
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "admission-changed",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "admission-changed",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

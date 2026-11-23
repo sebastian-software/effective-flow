@@ -1,7 +1,7 @@
 ---
 description: "Orchestrates the bugfix workflow: investigation, reproduction, gap analysis, diagnosis validation, routed minimal fix, regression tests, validation and completion."
 catalogHint: "Fixes a specific bug with a minimal, regression-guarded intervention."
-contextBudget: 572
+contextBudget: 620
 ---
 
 # Effective Flow Fix
@@ -242,10 +242,44 @@ worktree-record-obligation
    return to Phase 2 with the result. Re-entering Phase 3 skips step 0, keeping the receipt and
    diff baseline, and resumes here: the test-writer revises the already written test in place.
    <!-- spawn-site:fix/failing-test -->
-2. Start every implementer selected by the canonical routing contract. Before
-   `{{AGENT:generic-product-implementer}}`, emit the reduced-depth notice. Never send product code
-   to `{{AGENT:generic-implementer}}`.
-   <!-- spawn-site:fix/implementation -->
+
+```lazy-include
+execution-profiles
+when: steps 0 and 1 are complete and the initial packets are about to be classified, or a Fast fallback is handled
+```
+
+```lazy-include
+pilot-measurement-workflow
+when: steps 0 and 1 are complete and packets are about to be classified, and at every exit once a pilot record is reserved
+```
+
+**Profile seam.** Once steps 0 and 1 are complete, every initial packet follows "Initial
+implementation phase" of the loaded `execution-profiles` fragment: its per-packet state, preflight,
+delegation, requirements check, and Fast→Quality transition, with `fix` as the record's `workflow`.
+Bind each packet to the approved diagnosis, root cause, fix scope, Phase 2 reproduction, and step 1
+test result. The step 1 failing-test paths are write exclusions of a Fast packet, named in its
+handoff and in a Fast→Quality handoff, and its packet snapshot also covers them. A packet whose
+required write paths overlap a failing-test path fails gate row 9 `unclear-ownership`, so it never
+selects Fast. After a Fast attempt returns, the orchestrator compares those paths with the pre-spawn
+packet snapshot; any change is the `scope-incident` fallback, even when another post-attempt
+fallback also ended that attempt: fix gives `scope-incident` precedence over any other post-attempt
+fallback. It is a scope fallback only and sends
+no `record-incident`, whose `scope` category is for genuine critical incidents. The Quality
+continuation first restores their step 1 version, the one write the exclusion permits it. The
+orchestrator captures their step 1 content with the pre-spawn snapshot and adds it to the
+Fast→Quality handoff as fix's own addition, since a new untracked test has no diff in the snapshot
+summary. `fastAttemptConsumed` survives every later entry, and eligibility is never evaluated again.
+
+2. Start every implementer selected by the canonical routing contract. The Quality selector is the default; the Fast
+   reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
+   is set immediately before that call. The `Tier` line below binds each Quality selector; a Fast reference takes only its own values (portable: the `Fast tier` line):
+   <!-- spawn-site:fix/initial-implementation -->
+   - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:ui-implementer:fast}}.
+   - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:nodejs-implementer:fast}}.
+   - Rust: `Use the {{AGENT:rust-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:rust-implementer:fast}}.
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the {{AGENT:generic-product-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:generic-product-implementer:fast}}.
+   - Tooling/CI/configuration/repository metadata: `Use the {{AGENT:generic-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:generic-implementer:fast}}.
+   - Never send product code to the tooling-only generic implementer.
 3. Give a precise assignment:
    - root cause
    - affected files
@@ -280,6 +314,12 @@ documentation-sync
      supply only its triggering path list and each path's confirmed route. When `reviewTree` is
      unavailable, this reviewer also stands in for the routed reviewers; give it the full
      cumulative path list and confirmed routes under the same explicit assignment.
+   - for every packet whose Fast attempt started a child, also after its Fast→Quality transition, the
+     reviewer the canonical routing contract selects for its bucket (`{{AGENT:frontend-reviewer}}`,
+     `{{AGENT:nodejs-reviewer}}` or `{{AGENT:rust-reviewer}}`): a read-only review of that packet's
+     paths, reporting all severities. A degraded bucket has its review above, a tooling-only
+     bucket keeps technical validation, and a Quality packet adds no reviewer
+     <!-- spawn-site:fix/routed-review -->
 
 ```lazy-include
 review-depth
@@ -287,8 +327,8 @@ when: Phase 4 aggregates findings for the incorporation pass
 ```
 
 If findings or residual risks arise, make one automatic incorporation pass for new current-scope
-items, then apply `review-depth` without a reviewer re-check unless a floor hit or trigger starts
-step 2's full-pass reviewer on its triggering paths: the orchestrator runs both renders,
+items through the routed Quality implementer, then apply `review-depth` without a reviewer re-check
+unless a floor hit or trigger starts step 2's full-pass reviewer on its triggering paths: the orchestrator runs both renders,
 classifies the floor, and writes the three-part report itself from the delta render, the corrected
 findings with their evidence, and the open evidence. Then pass the residual batch through “Gated residual review-finding reports”. The Phase 4 report carries the
 floor classification record and the three-part report. Document only
@@ -311,7 +351,15 @@ floor classification record and the three-part report. Document only
 
 ### Phase 5: Completion
 
-1. If errors were found in Phase 4: fix them and re-verify Phase 4, including its render, per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
+**Pilot record.** A pilot record reserved in Phase 3 is finalized exactly once on every terminal
+exit – success, a controlled stop, an abort, an exhausted correction loop, an incident that ends
+the run, or a missing outcome – per the loaded `pilot-measurement-workflow` fragment. Its
+`validation` comes from the last Phase 4 run, its regression-test confirmation included, and
+`review` from that run's reviewers. `completionStatus` is `completed` only after the completion
+condition holds, `aborted` after a controlled stop or a user abort, and `failed` after an incident
+that ends the run, a missing outcome, or an exhausted correction loop.
+
+1. If errors were found in Phase 4: fix them through the routed Quality implementer and re-verify Phase 4, including its render, per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
 2. If admitted findings or residual risks with a canonical open or unimplemented status in the complete
    report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain from
    verification, regression test or review-like check:
@@ -324,14 +372,15 @@ floor classification record and the three-part report. Document only
    `verification-evidence` from the last Phase 4 `reviewTree`. Delete the wisdom file and discard the diff baseline.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Run the worktree-record exit self-check.
-7. Summarize:
+7. Finalize a reserved pilot record per "Pilot record" above.
+8. Summarize:
    - root cause
    - changes
    - new or adjusted tests
    - residual risks
    - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
    - worktree-record exit self-check result
-8. Emit the next-step block per `next-steps` as the last element of the report.
+9. Emit the next-step block per `next-steps` as the last element of the report.
 
 ```include
 pre-commit-gate
@@ -348,4 +397,5 @@ when: a commit message or Conventional Commit title is written
 - give the user a short status update after each phase
 - fix errors before continuing
 - keep changes minimal
+- every implementation pass after a packet's initial Phase 3 attempt – Phase 4 incorporation, Phase 5 correction, retry – is Quality-only through the routed Quality implementer
 - give internal sub-agents the done protocol
