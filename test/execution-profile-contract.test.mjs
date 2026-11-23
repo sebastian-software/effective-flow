@@ -170,6 +170,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'effective-flow-state.mjs',
   'issue-buddy-core.mjs',
   'issue-buddy.mjs',
+  'issue-intake-core.mjs',
   'model-selection-core.mjs',
   'model-selection.mjs',
   'pilot-measurement-core.mjs',

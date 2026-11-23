@@ -172,6 +172,7 @@ const RUNTIME_SCRIPT_FILES = [
   'effective-flow-mechanics-core.mjs',
   'issue-buddy.mjs',
   'issue-buddy-core.mjs',
+  'issue-intake-core.mjs',
   'model-selection.mjs',
   'model-selection-core.mjs',
   'remote-tracker.mjs',

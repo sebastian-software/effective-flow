@@ -8,7 +8,7 @@
 // from growing into a second core.
 
 // The `collaborator-permission-read` levels that count as write access, Forgejo's `owner`
-// included. `backlog-audit-core.mjs` and `autopilot-appendix-core.mjs` both decide with
+// included. `issue-intake-core.mjs` and `autopilot-appendix-core.mjs` both decide with
 // `isWritePermission`. A frozen array rather than an exported Set, whose `add` would let any
 // importer widen what counts as write access for every other one.
 export const COLLABORATOR_WRITE_PERMISSIONS = Object.freeze([

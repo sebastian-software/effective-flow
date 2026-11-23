@@ -18,10 +18,8 @@ import {
   parseDecompositionRecords,
 } from './remote-tracker-core.mjs';
 import { inspectDecompositionKey } from './remote-tracker-decomposition-core.mjs';
-import {
-  isWritePermission,
-  normalizeExternalLifecycleReference,
-} from './remote-tracker-shared-core.mjs';
+import { normalizeExternalLifecycleReference } from './remote-tracker-shared-core.mjs';
+import { createIssueIntake, resolveAuthor, trustedAuthor } from './issue-intake-core.mjs';
 import { slugify } from './dated-name-allocation.mjs';
 import { classifyPlanText, listTopLevel, readPlanFile, resolveRoots } from './plan-lint-core.mjs';
 import {
@@ -436,6 +434,17 @@ function forgeCapabilities(probe) {
   };
 }
 
+const intake = createIssueIntake({
+  ErrorClass: BacklogAuditError,
+  writeActions: WRITE_ACTIONS,
+  capabilitiesFromProbe: forgeCapabilities,
+  capabilitiesFromAttestation: (attestation) => ({
+    decompose: attestation.nativeContainer === true,
+    atomicCreateLabels: false,
+  }),
+  withHash,
+});
+
 function externalAttestation(value) {
   exactKeys(
     value,
@@ -461,89 +470,15 @@ async function permissionProve(input, deps) {
   exactKeys(input, ['cwd', 'target'], ['external'], 'permission-prove input');
   const cwd = absoluteDirectory(input.cwd, 'cwd');
   const target = normalizeTarget(input.target);
-  const base = { target, login: null, permission: null, provider: null, repository: null };
-  const plansOnly = (reason, extra = {}) =>
-    withHash(
-      {
-        ...base,
-        ...extra,
-        mode: 'plans-only',
-        proven: false,
-        reason,
-        ...(reason === 'unset-mode' ? { hint: 'setup' } : {}),
-        capabilities: null,
-      },
-      'proofHash',
-    );
   const forced = plansOnlyReason(target);
   if (input.external !== undefined && (target.kind !== 'external' || forced))
     invalid('external is accepted only for a non-hidden external target');
-  if (forced) return plansOnly(forced);
-  if (target.kind === 'external') {
-    // The orchestrator owns the external connection; this helper only records the attestation it
-    // was handed, and anything short of an explicit proof of both read and write is unproven.
-    if (input.external === undefined) return plansOnly('external-capability-unknown');
-    const attestation = externalAttestation(input.external);
-    if (!attestation.readProven || !attestation.writeProven)
-      return plansOnly('external-capability-unproven', { provider: 'external' });
-    const actions = Object.fromEntries(
-      WRITE_ACTIONS.map((action) => [action, attestation.actions?.[action] === true]),
-    );
-    return withHash(
-      {
-        ...base,
-        login: attestation.login === undefined ? null : attestation.login.trim().toLowerCase(),
-        provider: 'external',
-        mode: 'tracker',
-        proven: true,
-        reason: null,
-        connection: attestation.connection.trim(),
-        capabilities: {
-          ...actions,
-          decompose: attestation.nativeContainer === true,
-          atomicCreateLabels: false,
-        },
-      },
-      'proofHash',
-    );
-  }
-  const context = trackerContext(deps);
-  const session = await forgeSession(context, cwd, target);
-  const repository = {
-    host: session.repository.host,
-    owner: session.repository.owner,
-    repository: session.repository.repository,
-    slug: session.repository.slug ?? `${session.repository.owner}/${session.repository.repository}`,
-    provider: session.repository.provider,
-  };
-  const known = { ...base, provider: repository.provider, repository };
-  let login;
-  try {
-    login = (await session.call('viewer-read')).result?.login;
-  } catch (error) {
-    if (!(error instanceof BacklogAuditError)) throw error;
-    return plansOnly('viewer-unreadable', known);
-  }
-  if (typeof login !== 'string' || login === '') return plansOnly('viewer-unreadable', known);
-  let permission;
-  try {
-    permission = (await session.call('collaborator-permission-read', { login })).result?.permission;
-  } catch (error) {
-    if (!(error instanceof BacklogAuditError)) throw error;
-    return plansOnly('permission-unreadable', { ...known, login: login.toLowerCase() });
-  }
-  const identity = { ...known, login: login.toLowerCase(), permission: permission ?? null };
-  if (!isWritePermission(permission)) return plansOnly('permission-insufficient', identity);
-  return withHash(
-    {
-      ...identity,
-      mode: 'tracker',
-      proven: true,
-      reason: null,
-      capabilities: forgeCapabilities(session.probe),
-    },
-    'proofHash',
-  );
+  return intake.proveRunnerPermission({
+    target,
+    plansOnlyReason: forced,
+    external: input.external === undefined ? undefined : externalAttestation(input.external),
+    openSession: () => forgeSession(trackerContext(deps), cwd, target),
+  });
 }
 
 function requireProof(value) {
@@ -551,7 +486,7 @@ function requireProof(value) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Issue intake (forge listing or caller-supplied external items)
+// Issue listing (forge listing or caller-supplied external items)
 
 // One external author or comment author: `write` is what the connection states, `null` unknown.
 function externalAuthor(entry, where) {
@@ -624,58 +559,6 @@ function externalIssues(value) {
       }),
     };
   });
-}
-
-function forgeLogin(value) {
-  return typeof value === 'string' &&
-    /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,38}[A-Za-z0-9])?$/.test(value)
-    ? value.toLowerCase()
-    : null;
-}
-
-// Write permission per login, read once per login. Unknown permission never counts as write. A
-// forge that refuses to state another user's permission (Forgejo answers a non-admin with 403)
-// leaves that login unknown and is recorded in `unreadable`, so the run can say why so many items
-// are flagged instead of implying their authors lack write access.
-function permissionCache(session) {
-  const cache = new Map();
-  const unreadable = new Set();
-  const permissionOf = async (rawLogin) => {
-    const login = forgeLogin(rawLogin);
-    if (!login) return null;
-    if (!cache.has(login)) {
-      let value = null;
-      try {
-        const permission = (await session.call('collaborator-permission-read', { login })).result
-          ?.permission;
-        value = isWritePermission(permission);
-      } catch (error) {
-        if (!(error instanceof BacklogAuditError)) throw error;
-        value = error.trackerCode === 'TARGET_NOT_FOUND' ? false : null;
-        if (error.trackerStatus === 403) unreadable.add(login);
-      }
-      cache.set(login, value);
-    }
-    return cache.get(login);
-  };
-  permissionOf.unreadable = unreadable;
-  return permissionOf;
-}
-
-// A marker counts only from an author this run may trust: the proven runner itself, or an author
-// whose write permission is stated. Anyone else can paste the marker text into a comment.
-function trustedAuthor(author, runnerLogin) {
-  if (author?.write === true) return true;
-  return (
-    typeof runnerLogin === 'string' &&
-    typeof author?.login === 'string' &&
-    author.login.toLowerCase() === runnerLogin
-  );
-}
-
-async function resolveAuthor(author, permissionOf) {
-  if (author.write === undefined) author.write = await permissionOf(author.login);
-  return author;
 }
 
 function epicMarkerSlugs(body) {
@@ -776,7 +659,7 @@ async function trackerIssues(input, deps, cwd, target, permission) {
   if (input.externalIssues !== undefined) invalid('externalIssues is accepted only externally');
   const session = await forgeSession(trackerContext(deps), cwd, target);
   requireSameRepository(session, permission);
-  const permissionOf = permissionCache(session);
+  const permissionOf = intake.permissionCache(session);
   return { session, permissionOf, issues: await listForgeIssues(session) };
 }
 
@@ -2592,7 +2475,7 @@ async function writeSetApply(input, deps) {
 
   const session = await forgeSession(trackerContext(deps), cwd, target);
   requireSameRepository(session, permission);
-  const permissionOf = permissionCache(session);
+  const permissionOf = intake.permissionCache(session);
   const trusted = authorTrust(permissionOf, permission.login);
   const created = new Map();
   const outcome = new Map();
