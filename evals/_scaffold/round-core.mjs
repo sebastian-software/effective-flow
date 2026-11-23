@@ -270,9 +270,11 @@ function lockWaitMilliseconds(kind) {
       ? 'EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS'
       : 'EFFECTIVE_FLOW_EVAL_SLOT_LOCK_WAIT_MS';
   const fallback = kind === 'publication' ? 10_000 : 2_000;
+  // A publication contender may have to outlast a whole in-lock publication, full build included.
+  const ceiling = kind === 'publication' ? 300_000 : 30_000;
   const value = process.env[name] === undefined ? fallback : Number(process.env[name]);
-  if (!Number.isSafeInteger(value) || value < 0 || value > 30_000) {
-    throw new Error(`${name} must be an integer from 0 through 30000`);
+  if (!Number.isSafeInteger(value) || value < 0 || value > ceiling) {
+    throw new Error(`${name} must be an integer from 0 through ${ceiling}`);
   }
   return value;
 }
