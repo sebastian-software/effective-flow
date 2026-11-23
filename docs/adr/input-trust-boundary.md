@@ -46,8 +46,15 @@ the goal epic, split comments, and the children `plan-issue` creates from a spli
 would treat them as trusted exclude them deterministically: `issue-buddy` skips goal epics, obsolete
 marks and split-marked issues, and `apply-issues` routes a split-marked issue whose split is
 pending under the [`backlog-audit-split`](../../src/shared/backlog-audit-split.md) rule to
-`plan-issue`. Children created from a split keep the interactive baseline of
-two previews; this residual risk is accepted.
+`plan-issue`. Triage artifacts are excluded too: `issue-buddy` skips an issue labeled
+`effective-flow-triage-reject` or `effective-flow-triage-needs-work` or carrying a trusted
+`<!-- effective-flow-triage security ` notice, and its helper deterministically drops every
+write-permitted comment starting with `<!-- effective-flow-triage ` before any model step.
+`plan-issue` and `apply-issues` drop those comments from the context handed to their analysis, an
+instruction-level exclusion because their orchestrator still reads them, and act on an
+`effective-flow-triage-reject` issue or one with a write-permitted security notice only after an
+explicit override in an interactive run. Children created from a split keep
+the interactive baseline of two previews; this residual risk is accepted.
 
 ## Consequences
 

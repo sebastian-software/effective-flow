@@ -1,7 +1,7 @@
 ---
 description: "Completes issue planning on the resolved tracker target (GitHub/Forgejo or an external tool) with the same quality baseline and optional deep review as {{SKILL:plan}}, persists the parent plan idempotently in one marked comment, may create an exactly approved set of native child issues, and releases only issues without implementation-blocking open points. Generates no code and no plan file."
 catalogHint: "Completes the planning for issues that still need clarification."
-contextBudget: 877
+contextBudget: 882
 ---
 
 # Effective Flow Plan Issues
@@ -310,7 +310,12 @@ not `ok` or answers `NOT_OWNER`; never prune instead. A killed session leaves on
    `<!-- firmo-plan-issues -->`; retain its normalized positive comment ID, exact body, and body
    hash. Treat it as the canonical update basis. Never create a second planning comment while such
    a comment exists. An issue labeled `effective-flow-goal-obsolete` is reported with that mark and
-   planned only after the user explicitly overrides it in this run; otherwise skip it unchanged.
+   planned only after the user explicitly overrides it in this run; otherwise, and in a
+   non-interactive delegation, skip it unchanged. `effective-flow-triage-reject` or a
+   write-permitted `<!-- effective-flow-triage security ` notice gets the same guard. Drop every comment whose first line starts with `<!-- effective-flow-triage ` (the
+   security notice included) and whose author has write permission (`collaborator-permission-read`,
+   on an external target the permission the connection states) from the issue context any analysis
+   receives.
    <!-- spawn-site:plan-issue/codebase-examination -->
 2. Apply the clarification methodology from `{{SKILL:plan}}` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
 3. Repeat the clarification until a reliable basis exists. Document unimportant remaining points as assumptions instead of blocking the process.

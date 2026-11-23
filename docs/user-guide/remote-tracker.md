@@ -79,19 +79,20 @@ In remote mode, Effective Flow assigns labels with the prefix `effective-flow-` 
 missing labels idempotently as needed – it reads the repository's existing labels first and
 creates only the ones that are genuinely missing:
 
-| Label                                                                                             | Meaning                                                                                          |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `effective-flow-review-finding`                                                                   | single finding issue                                                                             |
-| `effective-flow-review-epic`                                                                      | legacy epic/tracking issue (read and reconciliation only)                                        |
-| `effective-flow-follow-up-closed`                                                                 | admission gate closed the finding; exclude it from implementation discovery                      |
-| `effective-flow-fix` / `effective-flow-refactor` / `effective-flow-build` / `effective-flow-docs` | target action of the finding (exactly one per finding issue)                                     |
-| `critical` / `important` / `note`                                                                 | severity (exactly one per finding issue; German `kritisch`/`wichtig`/`hinweis` still recognized) |
-| `wontfix`                                                                                         | deliberately not implemented (ADR instead of code)                                               |
-| `effective-flow-issue-in-progress`                                                                | issue-backed implementation has started; removed after terminal closure is observed              |
-| `effective-flow-issue-done`                                                                       | implemented by `/effective-flow apply` (issue-driven), PR created                                |
-| `effective-flow-needs-planning`                                                                   | skipped, clarification via `/effective-flow plan-issue` needed                                   |
-| `effective-flow-goal-epic`                                                                        | goal epic maintained by `/effective-flow backlog-audit`                                          |
-| `effective-flow-goal-obsolete`                                                                    | contradicts the current architecture per `backlog-audit`; the issue stays open                   |
+| Label                                                                                                   | Meaning                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `effective-flow-review-finding`                                                                         | single finding issue                                                                                                          |
+| `effective-flow-review-epic`                                                                            | legacy epic/tracking issue (read and reconciliation only)                                                                     |
+| `effective-flow-follow-up-closed`                                                                       | admission gate closed the finding; exclude it from implementation discovery                                                   |
+| `effective-flow-fix` / `effective-flow-refactor` / `effective-flow-build` / `effective-flow-docs`       | target action of the finding (exactly one per finding issue)                                                                  |
+| `critical` / `important` / `note`                                                                       | severity (exactly one per finding issue; German `kritisch`/`wichtig`/`hinweis` still recognized)                              |
+| `wontfix`                                                                                               | deliberately not implemented (ADR instead of code)                                                                            |
+| `effective-flow-issue-in-progress`                                                                      | issue-backed implementation has started; removed after terminal closure is observed                                           |
+| `effective-flow-issue-done`                                                                             | implemented by `/effective-flow apply` (issue-driven), PR created                                                             |
+| `effective-flow-needs-planning`                                                                         | skipped, clarification via `/effective-flow plan-issue` needed                                                                |
+| `effective-flow-goal-epic`                                                                              | goal epic maintained by `/effective-flow backlog-audit`                                                                       |
+| `effective-flow-goal-obsolete`                                                                          | contradicts the current architecture per `backlog-audit`; the issue stays open                                                |
+| `effective-flow-triage-reject` / `effective-flow-triage-implement` / `effective-flow-triage-needs-work` | triage verdict; `issue-buddy` skips reject and needs-work; `plan-issue`/`apply-issues` act on reject only after your override |
 
 Only `effective-flow-…` is newly created or set; when reading, listing, and deduplicating, the
 predecessor prefix `firmo-` additionally still counts as equivalent (one generation of
