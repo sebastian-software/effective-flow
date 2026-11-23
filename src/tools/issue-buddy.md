@@ -1,7 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 567
+contextBudget: 570
 ---
 
 # Effective Flow Issue Buddy
@@ -207,6 +207,9 @@ Retain the exact result as `collect`, including `baseOid`, `eligible`, `eligible
 before judgment counting/slicing and recovery authorization; preserve its twelve skip reasons.
 Goal epics and obsolete marks (`effective-flow-goal-epic`, `effective-flow-goal-obsolete`) skip as
 `lifecycle-label`, an issue with a backlog-audit split-marker comment as `plan-issue-comment`.
+Triage verdicts `effective-flow-triage-reject` and `effective-flow-triage-needs-work` and a trusted
+`<!-- effective-flow-triage security ` notice also skip as `lifecycle-label`; the helper drops every
+other trusted comment starting with `<!-- effective-flow-triage ` (with the space) from trusted text.
 `issue-in-progress` is a local planning claim, not the lifecycle label
 `effective-flow-issue-in-progress`, which skips as `lifecycle-label`.
 Leftovers create no verdict, retry or recovery authority. Changed collection metadata cannot be

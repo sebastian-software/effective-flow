@@ -1,6 +1,6 @@
 ---
 description: "Takes one or more issues of the resolved tracker target — GitHub/Forgejo or an external tool — (individually, as a list or as a container issue with sub-issues), analyzes and classifies the content and routes sufficiently specified issues to {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}} (one PR per issue). Insufficiently specified issues are skipped and marked for {{SKILL:plan-issue}}. Status updates run as issue comments."
-contextBudget: 1001
+contextBudget: 1005
 ---
 
 # Effective Flow Apply Issues
@@ -212,7 +212,11 @@ Do not expose internal tracking IDs or session details in comments.
    without analysis, names that split as the missing detail and goes to `{{SKILL:plan-issue}}`.
    An issue labeled `effective-flow-goal-obsolete` is reported with that mark and implemented only
    after the user explicitly overrides it in this run; otherwise, and in a non-interactive
-   delegation, skip it without a label or comment.
+   delegation, skip it without a label or comment. `effective-flow-triage-reject` or a
+   write-permitted `<!-- effective-flow-triage security ` notice gets the same guard. Drop every comment whose first line starts with `<!-- effective-flow-triage ` (the
+   security notice included) and whose author has write permission (`collaborator-permission-read`,
+   on an external target the permission the connection states) from the issue context any analysis
+   receives.
 4. Deduplicate the work list (the same issue number only once, even if it is reachable via multiple containers).
 5. Result: a flat list of work-item issues, each with an optional epic reference. Record it in the wisdom file.
 6. Create a task per work item (task tracking with per-issue granularity) and give the user an overview:

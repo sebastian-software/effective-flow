@@ -359,6 +359,83 @@ for (const [name, values, reason] of [
   test(`a backlog-audit ${name} skips the issue as ${reason}`, async (t) => {
     await skip(t, reason, values);
   });
+
+const triageNotice = (login = 'owner') => ({
+  id: 1,
+  body: `<!-- effective-flow-triage security fp=${'a'.repeat(64)} -->\nMaintainers are handling this separately.`,
+  user: { login },
+});
+// Invariant: a triage verdict that rejects an issue or leaves questions open, and a trusted
+// security notice, never reach the unattended pass; the notice is read before triage comments are
+// dropped from trusted text, so the drop cannot hide it.
+for (const [name, values] of [
+  ['reject label', { issues: [issue(1, { labels: ['effective-flow-triage-reject'] })] }],
+  ['needs-work label', { issues: [issue(1, { labels: ['effective-flow-triage-needs-work'] })] }],
+  ['security notice', { comments: { 1: [triageNotice()] } }],
+])
+  test(`a triage ${name} skips the issue as lifecycle-label`, async (t) => {
+    const { c } = await skip(t, 'lifecycle-label', values);
+    assert.doesNotMatch(JSON.stringify(c), /Maintainers/);
+  });
+
+// Invariant: a trusted triage comment carries text derived from unvetted authors under the
+// runner's identity, so only that comment leaves trusted text and fingerprint; an implement verdict,
+// an untrusted author's pasted security notice and a lookalike `effective-flow-triaged` marker
+// (the marker ends in a space) skip and drop nothing.
+test('trusted triage comments are dropped from trusted text and only verdict labels skip', async (t) => {
+  const f = await fixture(t, {
+    issues: [issue(1, { labels: ['effective-flow-triage-implement'] })],
+    permission: { stranger: 'read' },
+    comments: {
+      1: [
+        { ...triageNotice('stranger'), id: 1 },
+        {
+          id: 2,
+          body: `<!-- effective-flow-triage fp=${'b'.repeat(64)} -->\nTRIAGE_RATIONALE`,
+          user: { login: 'Owner' },
+        },
+        {
+          id: 4,
+          body: `<!-- effective-flow-triaged fp=${'c'.repeat(64)} -->\nNot a triage marker`,
+          user: { login: 'Owner' },
+        },
+        { id: 3, body: 'Kept', user: { login: 'Owner' } },
+      ],
+    },
+  });
+  const c = await collected(f);
+  assert.deepEqual(c.skipped, []);
+  assert.equal(c.eligible.length, 1);
+  const trusted = await fs.readFile(c.eligible[0].trustedTextPath, 'utf8');
+  assert.doesNotMatch(trusted, /TRIAGE_RATIONALE|effective-flow-triage |Maintainers/);
+  assert.deepEqual(
+    JSON.parse(trusted).comments.map((comment) => comment.id),
+    [4, 3],
+  );
+  const digest = await f.run('fingerprint', {
+    trustedTextPath: c.eligible[0].trustedTextPath,
+    issueAuthor: c.eligible[0].issueAuthor,
+  });
+  assert.equal(digest.data.fingerprint, c.eligible[0].fingerprint);
+});
+// Invariant: a trusted triage comment never enters the fingerprint, so posting or editing one
+// cannot make an unchanged issue look changed to the unattended pass.
+test('a trusted triage comment leaves the fingerprint unchanged', async (t) => {
+  const kept = { id: 3, body: 'Kept', user: { login: 'Owner' } };
+  const triage = (body) => ({
+    id: 2,
+    body: `<!-- effective-flow-triage fp=x -->\n${body}`,
+    user: { login: 'Owner' },
+  });
+  const prints = [];
+  for (const comments of [[kept], [triage('one'), kept], [triage('two'), kept]]) {
+    const f = await fixture(t, { issues: [issue(1)], comments: { 1: comments } });
+    const c = await collected(f);
+    assert.equal(c.eligible.length, 1);
+    prints.push(c.eligible[0].fingerprint);
+  }
+  assert.equal(new Set(prints).size, 1);
+});
 for (const [reason, verdict, currentMode] of [
   ['failed-exhausted', 'failed', 'publish'],
   ['unchanged-not-ready', 'not-ready', 'publish'],

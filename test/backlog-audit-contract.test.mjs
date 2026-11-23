@@ -150,6 +150,28 @@ test('plan-issue and apply-issues require an explicit override for an obsolete i
   assert.match(applyIssues, /otherwise, and in a non-interactive delegation, skip it/);
 });
 
+// Invariant: a triage reject or a write-permitted security notice is respected downstream like an
+// obsolete mark, and a write-permitted triage comment, the security notice included, never reaches
+// the analysis of either tool, because it carries text derived from unvetted authors under the
+// runner's identity.
+test('plan-issue and apply-issues guard a triage reject and drop trusted triage comments', () => {
+  for (const [name, text] of [
+    ['plan-issue', planIssue],
+    ['apply-issues', applyIssues],
+  ]) {
+    assert.match(
+      text,
+      /otherwise, and in a non-interactive delegation, skip it[^.]*\. `effective-flow-triage-reject` or a write-permitted `<!-- effective-flow-triage security ` notice gets the same guard\./,
+      `${name} guards a triage reject like an obsolete mark`,
+    );
+    assert.match(
+      text,
+      /Drop every comment whose first line starts with `<!-- effective-flow-triage ` \(the security notice included\) and whose author has write permission \(`collaborator-permission-read`, on an external target the permission the connection states\) from the issue context any analysis receives\./,
+      `${name} drops trusted triage comments from analysis context`,
+    );
+  }
+});
+
 // Invariant: the resolved/pending split rule is stated once, in `backlog-audit-split`, matches the
 // helper's rule (a later planning comment, or a canonical one that is active or all declined,
 // wherever it stands), and apply-issues routes a pending split to plan-issue through it.
@@ -286,8 +308,8 @@ test('backlog-audit sends large inputs as a runtime-state input file', () => {
   );
 });
 
-// Invariant: issue-buddy reuses its existing skip reasons for backlog-audit artifacts, so its
-// stated count stays the helper's count.
+// Invariant: issue-buddy reuses its existing skip reasons for backlog-audit and triage artifacts,
+// so its stated count stays the helper's count.
 test('issue-buddy documents the backlog-audit skips under its existing reasons', () => {
   const buddy = flat(read('tools/issue-buddy.md'));
   assert.equal(SKIP_REASONS.length, 12);
@@ -295,6 +317,10 @@ test('issue-buddy documents the backlog-audit skips under its existing reasons',
   assert.match(
     buddy,
     /\(`effective-flow-goal-epic`, `effective-flow-goal-obsolete`\) skip as `lifecycle-label`, an issue with a backlog-audit split-marker comment as `plan-issue-comment`/,
+  );
+  assert.match(
+    buddy,
+    /Triage verdicts `effective-flow-triage-reject` and `effective-flow-triage-needs-work` and a trusted `<!-- effective-flow-triage security ` notice also skip as `lifecycle-label`; the helper drops every other trusted comment starting with `<!-- effective-flow-triage ` \(with the space\) from trusted text\./,
   );
 });
 

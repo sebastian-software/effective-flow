@@ -110,6 +110,13 @@ const NEEDS_PLANNING = ['effective-flow-needs-planning', 'firmo-needs-planning']
 // split hand-off, which belongs to `plan-issue`, under `plan-issue-comment`.
 const GOAL_AUDIT_LABELS = ['effective-flow-goal-epic', 'effective-flow-goal-obsolete'];
 const BACKLOG_AUDIT_SPLIT_MARKER = '<!-- effective-flow-backlog-audit-split ';
+// Triage artifacts are excluded the same way: a reject or needs-work verdict label, or a trusted
+// security notice, skips the issue under `lifecycle-label`; any other trusted triage comment carries
+// text derived from unvetted authors under the runner's identity, so only that comment is dropped
+// from trusted text. The security check therefore reads the comments before the drop.
+const TRIAGE_SKIP_LABELS = ['effective-flow-triage-reject', 'effective-flow-triage-needs-work'];
+const TRIAGE_MARKER = '<!-- effective-flow-triage ';
+const TRIAGE_SECURITY_MARKER = '<!-- effective-flow-triage security ';
 const reportKeys = [
   'schemaVersion',
   'passId',
@@ -1594,15 +1601,18 @@ async function currentReads(context, input, repository) {
     }
     validOrdering(issue);
     const comments = [];
+    let securityNotice = false;
     for (const comment of array(
       await remote(context, 'issue-comments-read', { number: issue.number }, repository),
     )) {
-      if (await trusted(comment.author))
-        comments.push({
-          id: positive(comment.id),
-          author: requiredLogin(comment.author.login),
-          body: text(comment.body),
-        });
+      if (!(await trusted(comment.author))) continue;
+      const entry = {
+        id: positive(comment.id),
+        author: requiredLogin(comment.author.login),
+        body: text(comment.body),
+      };
+      if (entry.body.startsWith(TRIAGE_SECURITY_MARKER)) securityNotice = true;
+      if (!entry.body.startsWith(TRIAGE_MARKER)) comments.push(entry);
     }
     const value = {
       schemaVersion: 1,
@@ -1632,7 +1642,13 @@ async function currentReads(context, input, repository) {
       (pr) => pr.state === 'open' && prReference(pr, issue.number, repository, headRef),
     );
     if (
-      issue.labels.some((label) => LIFECYCLE.includes(label) || GOAL_AUDIT_LABELS.includes(label))
+      securityNotice ||
+      issue.labels.some(
+        (label) =>
+          LIFECYCLE.includes(label) ||
+          GOAL_AUDIT_LABELS.includes(label) ||
+          TRIAGE_SKIP_LABELS.includes(label),
+      )
     )
       candidate.skip = 'lifecycle-label';
     else if (
