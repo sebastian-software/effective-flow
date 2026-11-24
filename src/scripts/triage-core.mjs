@@ -84,9 +84,11 @@ const LABEL_DEFINITIONS = Object.freeze({
 export const TRIAGE_MARKER_PREFIX = '<!-- effective-flow-triage ';
 export const TRIAGE_SECURITY_MARKER_PREFIX = '<!-- effective-flow-triage security ';
 // A verdict marker states its verdict, so a deliberate comment-only reject or implement is told
-// apart from a needs-work comment whose label a partial run left unwritten.
+// apart from a needs-work comment whose label a partial run left unwritten. The optional `seq` is
+// the apply-time decision recency: an upsert edits a comment in place, so creation order alone
+// does not say which managed comment holds the latest decision.
 const MARKER_LINE =
-  /^<!-- effective-flow-triage (?:security fp=([a-f0-9]{64})|fp=([a-f0-9]{64}) v=(reject|implement|needs-work)) -->$/;
+  /^<!-- effective-flow-triage (?:security fp=([a-f0-9]{64})|fp=([a-f0-9]{64}) v=(reject|implement|needs-work))(?: seq=([1-9]\d{0,8}))? -->$/;
 const SPLIT_MARKER_PREFIX = '<!-- effective-flow-backlog-audit-split ';
 const GOAL_LABELS = Object.freeze({
   epic: 'effective-flow-goal-epic',
@@ -135,6 +137,12 @@ const RUN_ID = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/;
 const TRIAGE_SEGMENTS = Object.freeze([RUNTIME_STATE_DIR, 'triage']);
 const SNAPSHOT_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'snapshots']);
 const REPORT_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'reports']);
+const PENDING_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'pending']);
+const CURSOR_FILE = 'scan-cursor.json';
+const PENDING_FILE = /^issue-([1-9]\d{0,9})\.json$/;
+// `atomicWrite` temporaries: a leftover of an interrupted write, never state.
+const STATE_TEMP = /^\.(?:issue-[1-9]\d{0,9}|scan-cursor)\.json\.[0-9a-f]{16}\.tmp$/;
+const MAX_PENDING = 100;
 const INPUT_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'inputs']);
 const SNAPSHOT_FILE = /^issue-[1-9]\d{0,9}\.md$/;
 const SNAPSHOT_TEMP_PREFIX = '.triage-';
@@ -306,10 +314,11 @@ function firstLine(body) {
 export function managedMarker(body) {
   if (typeof body !== 'string' || !body.startsWith(TRIAGE_MARKER_PREFIX)) return null;
   const match = firstLine(body).match(MARKER_LINE);
-  if (!match) return { kind: 'malformed', fingerprint: null };
+  if (!match) return { kind: 'malformed', fingerprint: null, seq: 0 };
+  const seq = match[4] ? Number(match[4]) : 0;
   return match[1]
-    ? { kind: 'security', fingerprint: match[1] }
-    : { kind: 'verdict', fingerprint: match[2], verdict: match[3] };
+    ? { kind: 'security', fingerprint: match[1], seq }
+    : { kind: 'verdict', fingerprint: match[2], verdict: match[3], seq };
 }
 
 function isManaged(comment, runnerLogin) {
@@ -339,7 +348,16 @@ export function issueFingerprint(issue, comments, runnerLogin) {
   });
 }
 
-// Recognized managed comments, the runner's own newest one and the trusted others it supersedes.
+// The latest of recognized managed comments: the highest `seq`, a tie or a legacy unstamped one
+// (seq 0) by list order, the later entry winning.
+function latestOf(entries) {
+  let latest = null;
+  for (const entry of entries) if (!latest || entry.seq >= latest.seq) latest = entry;
+  return latest;
+}
+
+// Recognized managed comments, the runner's own latest one and the trusted others it supersedes.
+// `maxSeq` is the recency the next write has to exceed.
 function managedState(comments, runnerLogin) {
   const managed = comments
     .filter((comment) => isManaged(comment, runnerLogin))
@@ -350,14 +368,16 @@ function managedState(comments, runnerLogin) {
         String(comment.author?.login ?? '').toLowerCase() === runnerLogin,
       ...managedMarker(comment.body),
     }));
-  const own = managed.filter((entry) => entry.own).at(-1) ?? null;
+  const own = latestOf(managed.filter((entry) => entry.own));
   return {
-    newest: managed.at(-1) ?? null,
+    newest: latestOf(managed),
+    maxSeq: managed.reduce((value, entry) => Math.max(value, entry.seq), 0),
     own: own
       ? {
           commentId: own.commentId,
           kind: own.kind,
           fingerprint: own.fingerprint,
+          seq: own.seq,
           ...(own.verdict ? { verdict: own.verdict } : {}),
         }
       : null,
@@ -635,9 +655,10 @@ function normalizeSelection(value) {
 }
 
 // The `--untriaged` groups: new issues, repair cases (a needs-work or unreadable managed comment
-// without a label, left by a partial run) and re-entries (needs-work or a security notice whose
-// marker fingerprint differs from the current state). Issues with a reject or implement label, or
-// a deliberate comment-only reject or implement, never re-enter.
+// without a label, left by a partial run, or an issue with a pending write intent) and re-entries
+// (needs-work or a security notice whose marker fingerprint differs from the current state). Issues
+// with a reject or implement label, or a deliberate comment-only reject or implement, never
+// re-enter.
 function untriagedGroup(issue, comments, runnerLogin) {
   const label = triageLabelOf(issue.labels);
   const managed = managedState(comments, runnerLogin);
@@ -653,17 +674,107 @@ function untriagedGroup(issue, comments, runnerLogin) {
   return null;
 }
 
-async function selectUntriaged(session, openIssues, selection, runnerLogin, permissionOf) {
+// Scan progress and pending write intent, both private runtime state. The scan starts at issue
+// number `from`, so settled older issues cannot hide newer ones run after run.
+async function loadScanState(deps, runtimeStateRoot) {
+  const context = runtimeContext(deps);
+  try {
+    await resolveRuntimeRoot(context, runtimeStateRoot);
+    return {
+      from: readCursor(context.cwd),
+      pending: readPending(context.cwd),
+    };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+// An unusable cursor only costs a rescan from the oldest issue.
+function readCursor(root) {
+  realDirectoryOrNull(path.join(root, ...TRIAGE_SEGMENTS), 'the triage directory');
+  const file = path.join(root, ...TRIAGE_SEGMENTS, CURSOR_FILE);
+  const info = lstatOrNull(file);
+  if (!info?.isFile() || info.size > 256) return 0;
+  try {
+    const value = JSON.parse(nodeFs.readFileSync(file, 'utf8'));
+    return isObject(value) &&
+      Object.keys(value).sort().join() === 'from,version' &&
+      value.version === 1 &&
+      Number.isSafeInteger(value.from) &&
+      value.from >= 0
+      ? value.from
+      : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function readPending(root) {
+  const directory = path.join(root, ...PENDING_SEGMENTS);
+  if (!realDirectoryOrNull(directory, 'the pending directory')) return [];
+  const numbers = [];
+  for (const name of nodeFs.readdirSync(directory).sort()) {
+    if (STATE_TEMP.test(name)) continue;
+    const match = PENDING_FILE.exec(name);
+    if (!match || !nodeFs.lstatSync(path.join(directory, name)).isFile())
+      fail('UNSAFE_RUNTIME_STATE', 'the pending directory holds an unexpected entry', { name });
+    numbers.push(Number(match[1]));
+  }
+  return numbers.sort((left, right) => left - right);
+}
+
+async function writeScanCursor(deps, runtimeStateRoot, from) {
+  const context = runtimeContext(deps);
+  try {
+    await resolveRuntimeRoot(context, runtimeStateRoot);
+    const directory = await ensureChain(context, TRIAGE_SEGMENTS);
+    await atomicWrite(
+      context,
+      path.join(directory, CURSOR_FILE),
+      `${JSON.stringify({ version: 1, from })}\n`,
+    );
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+async function selectUntriaged(
+  session,
+  openIssues,
+  selection,
+  runnerLogin,
+  permissionOf,
+  { from = 0, pending = [] } = {},
+) {
   const ordered = [...openIssues].sort((left, right) => left.number - right.number);
+  // The scan order rotates to `from`, so the window moves on once a run left issues unscanned.
+  const scanOrder = [
+    ...ordered.filter((issue) => issue.number >= from),
+    ...ordered.filter((issue) => issue.number < from),
+  ];
+  const position = new Map(scanOrder.map((issue, index) => [issue.number, index]));
   const groups = { new: [], repair: [], reentry: [] };
   let scans = 0;
   let unscanned = 0;
+  let firstUnscanned = null;
   const loaded = new Map();
-  for (const issue of ordered) {
+  // A pending write intent makes its issue a repair case whatever its labels say, outside the
+  // scan window; only a pending count over the bound stays unread.
+  const open = pending.filter((number) => position.has(number));
+  for (const number of open.slice(0, MAX_PENDING)) {
+    const issue = scanOrder[position.get(number)];
+    const comments = await resolveMarkerAuthors(await readComments(session, number), permissionOf);
+    groups.repair.push(number);
+    loaded.set(number, { issue, comments, group: 'repair' });
+  }
+  unscanned += Math.max(0, open.length - MAX_PENDING);
+  for (const issue of scanOrder) {
+    if (loaded.has(issue.number)) continue;
     const label = triageLabelOf(issue.labels);
     if (label === 'reject' || label === 'implement') continue;
     if (scans >= MAX_COMMENT_SCANS) {
       unscanned += 1;
+      firstUnscanned ??= issue.number;
       continue;
     }
     scans += 1;
@@ -677,10 +788,22 @@ async function selectUntriaged(session, openIssues, selection, runnerLogin, perm
     loaded.set(issue.number, { issue, comments, group });
   }
   const queue = [...groups.new, ...groups.repair, ...groups.reentry];
+  const cutOff = queue.slice(selection.max);
+  const forced = new Set(open.slice(0, MAX_PENDING));
+  // The next scan resumes at the first cut-off candidate in scan order, else at the first issue
+  // this one left unscanned, else (a full pass) at the oldest issue.
+  const resume = cutOff
+    .filter((number) => !forced.has(number))
+    .reduce(
+      (best, number) =>
+        best === null || position.get(number) < position.get(best) ? number : best,
+      null,
+    );
   return {
     selected: queue.slice(0, selection.max).map((number) => loaded.get(number)),
-    cutOff: queue.slice(selection.max).map((number) => `#${number}`),
+    cutOff: cutOff.map((number) => `#${number}`),
     unscanned,
+    nextFrom: resume ?? firstUnscanned ?? 0,
   };
 }
 
@@ -1139,6 +1262,7 @@ async function inventoryBuild(input, deps) {
   let picked = [];
   let cutOff = [];
   let unscanned = 0;
+  let nextFrom = null;
   if (selection.kind === 'explicit') {
     for (const number of selection.numbers) {
       let issue;
@@ -1174,10 +1298,12 @@ async function inventoryBuild(input, deps) {
       selection,
       runnerLogin,
       permissionOf,
+      await loadScanState(deps, runtimeStateRoot),
     );
     picked = result.selected;
     cutOff = result.cutOff;
     unscanned = result.unscanned;
+    nextFrom = result.nextFrom;
   }
 
   const pulls =
@@ -1220,6 +1346,7 @@ async function inventoryBuild(input, deps) {
         label: triageLabelOf(issue.labels),
         own: managed.own,
         others: managed.others.map(({ commentId, kind }) => ({ commentId, kind })),
+        latestSeq: managed.maxSeq,
       },
       marks: {
         goalEpic: issue.labels.includes(GOAL_LABELS.epic),
@@ -1256,6 +1383,7 @@ async function inventoryBuild(input, deps) {
       },
     };
   files.push({ name: OVERLAP_INDEX_FILE, text: overlap.text });
+  if (nextFrom !== null) await writeScanCursor(deps, runtimeStateRoot, nextFrom);
 
   const runId = `${localDate(now)}-${(deps.randomBytes ?? cryptoRandomBytes)(4).toString('hex')}`;
   const { directory, root } = await writeSnapshot(deps, runtimeStateRoot, runId, files);
@@ -2200,6 +2328,51 @@ function trackerFailure(error) {
   };
 }
 
+// The managed state a concurrent triage run can change: the triage labels and the recognized
+// managed comments with their recency.
+function triageStateOf(labels, own, others, latestSeq) {
+  return canonical({
+    labels: TRIAGE_LABELS.filter((name) => labels.includes(name)),
+    own: own
+      ? [own.commentId, own.kind, own.fingerprint ?? null, own.verdict ?? null, own.seq ?? 0]
+      : null,
+    others: others.map(({ commentId, kind }) => [commentId, kind]).sort(),
+    latestSeq: latestSeq ?? 0,
+  });
+}
+
+// Stamps the decision recency into the first (marker) line of a verified comment body.
+function stampRecency(body, seq) {
+  return body.replace(/ -->\n/, ` seq=${seq} -->\n`);
+}
+
+// What a group's label writes are meant to leave: the retry anchor of a partial write. A group
+// without a label entry, such as a deliberate comment-only decision, records none.
+function intendedOutcome(group) {
+  const label = group.find((entry) => entry.action !== 'issue-comment-upsert');
+  if (!label) return null;
+  return label.action === 'issue-label-remove'
+    ? 'security'
+    : VERDICTS.find((verdict) => LABELS[verdict] === label.payload.label);
+}
+
+async function recordIntent(deps, runtimeStateRoot, number, expected) {
+  const context = runtimeContext(deps);
+  await resolveRuntimeRoot(context, runtimeStateRoot);
+  const directory = await ensureChain(context, PENDING_SEGMENTS);
+  const file = path.join(directory, `issue-${number}.json`);
+  const existed = lstatOrNull(file) !== null;
+  await atomicWrite(context, file, `${JSON.stringify({ version: 1, number, expected })}\n`);
+  return { existed };
+}
+
+async function removeIntent(deps, runtimeStateRoot, number) {
+  const context = runtimeContext(deps);
+  await resolveRuntimeRoot(context, runtimeStateRoot);
+  const file = path.join(context.cwd, ...PENDING_SEGMENTS, `issue-${number}.json`);
+  if (lstatOrNull(file)) await guardedUnlink(context, file);
+}
+
 // Re-reads one issue once, before its group of writes.
 async function rereadIssue(session, number, permissionOf, runnerLogin) {
   const issue = normalizeIssue((await session.call('issue-read', { number })).result);
@@ -2316,6 +2489,7 @@ async function writeSetApply(input, deps) {
     byIssue.get(entry.target.reference).push(entry);
   }
   const fingerprints = new Map(inventory.items.map((item) => [item.id, item.fingerprint]));
+  const items = new Map(inventory.items.map((item) => [item.id, item]));
   for (const [reference, group] of byIssue) {
     const record = perIssue.get(reference);
     const number = group[0].target.number;
@@ -2327,7 +2501,18 @@ async function writeSetApply(input, deps) {
       record.failed = { id: group[0].id, ...trackerFailure(error) };
       continue;
     }
-    if (current.issue.state !== 'open' || current.fingerprint !== fingerprints.get(reference)) {
+    // A concurrent triage change (labels or managed comments) is as stale as a content change.
+    const item = items.get(reference);
+    if (
+      current.issue.state !== 'open' ||
+      current.fingerprint !== fingerprints.get(reference) ||
+      triageStateOf(
+        current.issue.labels,
+        current.managed.own,
+        current.managed.others,
+        current.managed.maxSeq,
+      ) !== triageStateOf(item.labels, item.triage.own, item.triage.others, item.triage.latestSeq)
+    ) {
       record.outcome = 'stale';
       for (const entry of group)
         record.skipped.push({
@@ -2336,7 +2521,28 @@ async function writeSetApply(input, deps) {
         });
       continue;
     }
+    // The intent is kept before the first write and dropped only once nothing is left to repair.
+    const expected = intendedOutcome(group);
+    let intent = null;
+    let wrote = false;
+    if (expected) {
+      try {
+        intent = await recordIntent(deps, inventory.runtimeStateRoot, number, expected);
+      } catch (error) {
+        record.outcome = 'failed';
+        record.failed = {
+          id: group[0].id,
+          code: 'UNSAFE_RUNTIME_STATE',
+          message: error?.message ?? 'cannot record the write intent',
+        };
+        continue;
+      }
+    }
     const done = new Set();
+    const write = async (operation, input) => {
+      await session.call(operation, input, { apply: true });
+      wrote = true;
+    };
     for (const entry of group) {
       if (entry.dependsOn && !done.has(entry.dependsOn)) {
         record.skipped.push({ id: entry.id, reason: 'dependency-not-applied' });
@@ -2347,24 +2553,16 @@ async function writeSetApply(input, deps) {
           // The upsert edits only the runner's own managed comment; another trusted managed
           // comment stays untouched and is reported as superseded.
           const own = current.managed.own;
+          const body = stampRecency(entry.payload.body, current.managed.maxSeq + 1);
           if (own) {
             const existing = current.comments.find((comment) => comment.id === own.commentId);
-            await session.call(
-              'issue-comment-update',
-              {
-                number,
-                commentId: own.commentId,
-                expectedBodyHash: bodyHash(existing?.body ?? ''),
-                payload: { body: entry.payload.body },
-              },
-              { apply: true },
-            );
-          } else
-            await session.call(
-              'issue-comment',
-              { number, payload: { body: entry.payload.body } },
-              { apply: true },
-            );
+            await write('issue-comment-update', {
+              number,
+              commentId: own.commentId,
+              expectedBodyHash: bodyHash(existing?.body ?? ''),
+              payload: { body },
+            });
+          } else await write('issue-comment', { number, payload: { body } });
           record.superseded = current.managed.others
             .filter((other) => !other.own)
             .map(({ commentId }) => commentId);
@@ -2373,22 +2571,14 @@ async function writeSetApply(input, deps) {
           const labels = current.issue.labels;
           const add = entry.action === 'issue-label-swap' ? entry.payload.label : null;
           if (add && !labels.includes(add))
-            await session.call(
-              'issue-label-add',
-              { number, payload: { labels: [add] } },
-              { apply: true },
-            );
+            await write('issue-label-add', { number, payload: { labels: [add] } });
           const remove =
             entry.action === 'issue-label-swap'
               ? TRIAGE_LABELS.filter((name) => name !== add)
               : entry.payload.labels;
           for (const name of remove)
             if (labels.includes(name))
-              await session.call(
-                'issue-label-remove',
-                { number, payload: { label: name } },
-                { apply: true },
-              );
+              await write('issue-label-remove', { number, payload: { label: name } });
         }
         done.add(entry.id);
         record.applied.push(entry.id);
@@ -2400,6 +2590,12 @@ async function writeSetApply(input, deps) {
     if (record.failed) record.outcome = record.applied.length ? 'partial' : 'failed';
     else if (record.applied.length === group.length) record.outcome = 'applied';
     else record.outcome = record.applied.length ? 'partial' : 'skipped';
+    // An applied group settles every earlier intent of the issue, even one it did not record. A
+    // failed retry keeps an earlier intent; a new one is dropped when no write happened.
+    if (record.outcome === 'applied' || (intent && !intent.existed && !wrote))
+      await removeIntent(deps, inventory.runtimeStateRoot, number).catch(() => {
+        /* a leftover intent only repeats one repair */
+      });
   }
   result.issues = [...perIssue.values()];
   return result;

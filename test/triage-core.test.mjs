@@ -1463,6 +1463,444 @@ test('a label swap adds the new label before it removes the old one', async (t) 
   assert.deepEqual(triageLabels(fake, 1), [LABELS.reject, LABELS.implement]);
 });
 
+// --- Scan progress, decision recency and pending write intent -------------------------------
+
+const stateFile = (root, ...segments) => join(root, '.effective-flow', 'triage', ...segments);
+const markerLine = (value, verdict, seq) =>
+  `<!-- effective-flow-triage ${verdict === 'security' ? `security fp=${value}` : `fp=${value} v=${verdict}`}${seq === undefined ? '' : ` seq=${seq}`} -->\nText.\n`;
+const comment = (id, login, body) => ({ id, body, author: { login } });
+
+// `count` settled needs-work issues: current fingerprint in their marker, so none re-enters.
+function settledIssues(count) {
+  const issues = [];
+  const comments = {};
+  for (let number = 1; number <= count; number += 1) {
+    const entry = issue(number, { labels: [LABELS['needs-work']] });
+    issues.push(entry);
+    comments[number] = [
+      comment(
+        number * 10,
+        RUNNER,
+        markerLine(issueFingerprint(entry, [], RUNNER), 'needs-work', 1),
+      ),
+    ];
+  }
+  return { issues, comments };
+}
+
+test('--untriaged keeps its scan progress, so settled older issues cannot hide newer ones', async (t) => {
+  const root = repository(t);
+  const settled = settledIssues(100);
+  const newer = Array.from({ length: 30 }, (_, index) => issue(101 + index));
+  const fake = forge({ issues: [...settled.issues, ...newer], comments: settled.comments });
+  const first = await inventory(root, fake, { untriaged: true });
+  assert.deepEqual(first.inventory.items, []);
+  assert.equal(first.inventory.unscanned, 30);
+  assert.ok(first.inventory.notices.includes('scan-bound'));
+  assert.deepEqual(JSON.parse(readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8')), {
+    version: 1,
+    from: 101,
+  });
+  // The next run starts where the last one stopped and wraps to the oldest issues afterwards.
+  const second = await inventory(root, fake, { untriaged: true });
+  assert.deepEqual(
+    second.inventory.items.map(({ id }) => id),
+    Array.from({ length: 10 }, (_, index) => `#${101 + index}`),
+  );
+  assert.equal(second.inventory.cutOff.length, 20);
+  assert.equal(second.inventory.unscanned, 30);
+  // A cut-off candidate comes back first, ahead of the unscanned settled issues.
+  assert.equal(JSON.parse(readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8')).from, 111);
+  const third = await inventory(root, fake, { untriaged: true, max: 25 });
+  assert.equal(third.inventory.items.length, 20);
+  assert.deepEqual(third.inventory.cutOff, []);
+  assert.equal(JSON.parse(readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8')).from, 81);
+});
+
+test('--untriaged resets the scan cursor after a full pass and ignores an unusable cursor', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(3), issue(7)] });
+  mkdirSync(stateFile(root), { recursive: true });
+  for (const garbage of ['not json', '{"version":1,"from":-4}', '{"version":2,"from":5}', '[]']) {
+    writeFileSync(stateFile(root, 'scan-cursor.json'), garbage);
+    const run1 = await inventory(root, fake, { untriaged: true });
+    assert.deepEqual(
+      run1.inventory.items.map(({ id }) => id),
+      ['#3', '#7'],
+    );
+    assert.equal(JSON.parse(readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8')).from, 0);
+  }
+  // A valid cursor rotates the scan order, never the set.
+  writeFileSync(stateFile(root, 'scan-cursor.json'), '{"version":1,"from":5}\n');
+  const rotated = await inventory(root, fake, { untriaged: true });
+  assert.deepEqual(
+    rotated.inventory.items.map(({ id }) => id),
+    ['#7', '#3'],
+  );
+  assert.equal(JSON.parse(readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8')).from, 0);
+});
+
+test('the latest managed decision is the highest seq, not the last created comment', async (t) => {
+  const root = repository(t);
+  const fp = '0'.repeat(64);
+  const other = '1'.repeat(64);
+  const cases = [
+    // A edited her older comment to needs-work after B's newer implement comment.
+    [
+      [
+        comment(10, RUNNER, markerLine(fp, 'needs-work', 5)),
+        comment(20, 'maintainer', markerLine(other, 'implement', 3)),
+      ],
+      'repair',
+    ],
+    // B's later stamped decision wins.
+    [
+      [
+        comment(10, RUNNER, markerLine(fp, 'needs-work', 2)),
+        comment(20, 'maintainer', markerLine(other, 'implement', 3)),
+      ],
+      null,
+    ],
+    // Legacy comments carry no seq: the later one wins, and so does a tie.
+    [
+      [
+        comment(10, RUNNER, markerLine(fp, 'needs-work')),
+        comment(20, 'maintainer', markerLine(other, 'implement')),
+      ],
+      null,
+    ],
+    [
+      [
+        comment(10, RUNNER, markerLine(fp, 'needs-work', 4)),
+        comment(20, 'maintainer', markerLine(other, 'implement', 4)),
+      ],
+      null,
+    ],
+    // A stamped decision outranks a later legacy one.
+    [
+      [
+        comment(10, RUNNER, markerLine(fp, 'needs-work', 1)),
+        comment(20, 'maintainer', markerLine(other, 'implement')),
+      ],
+      'repair',
+    ],
+  ];
+  for (const [list, group] of cases) {
+    const fake = forge({ issues: [issue(1)], comments: { 1: list } });
+    const { inventory: data } = await inventory(root, fake, { untriaged: true });
+    assert.deepEqual(
+      data.items.map((item) => item.group),
+      group ? [group] : [],
+    );
+  }
+  const fake = forge({
+    issues: [issue(1)],
+    comments: {
+      1: [
+        comment(10, RUNNER, markerLine(fp, 'implement', 2)),
+        comment(11, RUNNER, markerLine(fp, 'needs-work', 6)),
+      ],
+    },
+  });
+  const { inventory: data } = await inventory(root, fake, { references: ['#1'] });
+  assert.equal(data.items[0].triage.own.commentId, 11);
+  assert.equal(data.items[0].triage.own.seq, 6);
+});
+
+test('an apply stamps a seq above every managed comment, and alternating maintainers keep the order', async (t) => {
+  const root = repository(t);
+  const fake = forge({
+    issues: [issue(1)],
+    comments: { 1: [comment(5, 'maintainer', markerLine('1'.repeat(64), 'implement', 7))] },
+  });
+  const options = {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: () => [{ item: '#1', body: 'Accepted; the next step is a plan.' }],
+  };
+  await triageRun(root, fake, options);
+  assert.match(
+    managedComments(fake, 1)[0].body,
+    /^<!-- effective-flow-triage fp=[a-f0-9]{64} v=implement seq=8 -->\n/,
+  );
+  // The other maintainer decides again; the runner's edit in place then outranks that comment.
+  fake.state.comments.get(1).find(({ id }) => id === 5).body = markerLine(
+    '1'.repeat(64),
+    'reject',
+    9,
+  );
+  const again = await triageRun(root, fake, options);
+  assert.equal(again.applied.issues[0].outcome, 'applied');
+  assert.match(managedComments(fake, 1)[0].body, / seq=10 -->\n/);
+  assert.equal(managedComments(fake, 1).length, 1);
+  const next = await inventory(root, fake, { references: ['#1'] });
+  assert.equal(next.inventory.items[0].triage.own.seq, 10);
+  // The run's own stamp changes no fingerprint.
+  assert.equal(next.inventory.items[0].fingerprint, again.inventory.items[0].fingerprint);
+});
+
+async function untriagedGroups(root, fake) {
+  const { inventory: data } = await inventory(root, fake, { untriaged: true });
+  return data.items.map(({ id, group }) => [id, group]);
+}
+
+const implementDrafts = (id) => () => [{ item: id, body: 'Accepted; the next step is a plan.' }];
+
+test('a failed label add after the comment stays a repair case until a retry succeeds', async (t) => {
+  const cases = [
+    ['an unlabelled implement', [], (item) => assessment(item)],
+    [
+      'an unlabelled reject',
+      [],
+      (item) =>
+        assessment(item, {
+          verdict: 'reject',
+          grounds: ['overlap-blocking'],
+          overlap: {
+            rating: 'duplicate',
+            target: { issue: 2 },
+            blocking: true,
+            rationale: 'Same as the closed #2.',
+          },
+        }),
+    ],
+    ['a needs-work label', [LABELS['needs-work']], (item) => assessment(item)],
+    ['a reject label', [LABELS.reject], (item) => assessment(item)],
+  ];
+  for (const [name, labels, assess] of cases) {
+    const root = repository(t);
+    let failLabel = true;
+    const entry = issue(1, { labels });
+    const comments =
+      labels[0] === LABELS['needs-work']
+        ? {
+            1: [
+              comment(10, RUNNER, markerLine(issueFingerprint(entry, [], RUNNER), 'needs-work', 1)),
+            ],
+          }
+        : {};
+    const fake = forge({
+      issues: [entry, issue(2, { state: 'closed', updatedAt: '2026-11-10T00:00:00Z' })],
+      comments,
+      fail: { 'issue-label-add': () => (failLabel ? 'COMMAND_FAILED' : null) },
+    });
+    const options = { selection: { references: ['#1'] }, assess, drafts: implementDrafts('#1') };
+    let first;
+    first = await triageRun(root, fake, options);
+    assert.equal(first.applied.issues[0].outcome, 'partial', name);
+    assert.ok(existsSync(stateFile(root, 'pending', 'issue-1.json')), name);
+    assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']], name);
+    failLabel = false;
+    const second = await triageRun(root, fake, options);
+    assert.equal(second.applied.issues[0].outcome, 'applied', name);
+    assert.equal(existsSync(stateFile(root, 'pending', 'issue-1.json')), false, name);
+    assert.deepEqual(await untriagedGroups(root, fake), [], name);
+  }
+});
+
+test('a failed retry keeps the intent, and an applied group without a label entry clears it', async (t) => {
+  const pending = (root) => existsSync(stateFile(root, 'pending', 'issue-1.json'));
+  const partial = async (root, fake) =>
+    triageRun(root, fake, {
+      selection: { references: ['#1'] },
+      assess: (item) => assessment(item),
+      drafts: implementDrafts('#1'),
+    });
+  // A retry whose first write fails changes nothing and keeps the earlier intent.
+  const root = repository(t);
+  let fail = 'issue-label-add';
+  const fake = forge({
+    issues: [issue(1)],
+    fail: {
+      'issue-label-add': () => (fail === 'issue-label-add' ? 'COMMAND_FAILED' : null),
+      'issue-comment-update': () => (fail === 'issue-comment-update' ? 'COMMAND_FAILED' : null),
+    },
+  });
+  assert.equal((await partial(root, fake)).applied.issues[0].outcome, 'partial');
+  fail = 'issue-comment-update';
+  assert.equal((await partial(root, fake)).applied.issues[0].outcome, 'failed');
+  assert.ok(pending(root));
+  assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']]);
+
+  // A comment-only retry settles the issue as a deliberate decision.
+  const root2 = repository(t);
+  const fake2 = forge({
+    issues: [issue(1)],
+    fail: { 'issue-label-add': () => (fake2.state.comments.size ? 'COMMAND_FAILED' : null) },
+  });
+  fake2.state.comments.set(1, []);
+  assert.equal((await partial(root2, fake2)).applied.issues[0].outcome, 'partial');
+  assert.ok(pending(root2));
+  await triageRun(root2, fake2, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+    filter: (entry) => entry.action === 'issue-comment-upsert',
+  });
+  assert.equal(pending(root2), false);
+  assert.deepEqual(await untriagedGroups(root2, fake2), []);
+
+  // A security reassessment has no label to remove here and clears the intent too.
+  const root3 = repository(t);
+  const fake3 = forge({
+    issues: [issue(1)],
+    fail: { 'issue-label-add': 'COMMAND_FAILED' },
+  });
+  assert.equal((await partial(root3, fake3)).applied.issues[0].outcome, 'partial');
+  const security = await triageRun(root3, fake3, {
+    selection: { references: ['#1'] },
+    assess: (item) => securityAssessment(item),
+  });
+  assert.equal(security.applied.issues[0].outcome, 'applied');
+  assert.equal(pending(root3), false);
+});
+
+test('a failed security-label removal and an interrupted group stay repair cases', async (t) => {
+  const root = repository(t);
+  const fake = forge({
+    issues: [issue(1, { labels: [LABELS.implement] })],
+    fail: { 'issue-label-remove': 'COMMAND_FAILED' },
+  });
+  const { permission, inventory: data } = await inventory(root, fake, { references: ['#1'] });
+  const checked = await validated(root, data, [securityAssessment('#1')]);
+  const writeSet = await ok('write-set-build', {
+    inventory: data,
+    validated: checked,
+    permission,
+    drafts: [],
+  });
+  const applied = await ok(
+    'write-set-apply',
+    { cwd: root, target: FORGE, permission, inventory: data, writeSet, selected: select(writeSet) },
+    { tracker: fake.tracker },
+  );
+  assert.equal(applied.issues[0].outcome, 'partial');
+  assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']]);
+
+  // A thrown error between comment and label leaves the intent too.
+  const root2 = repository(t);
+  const fake2 = forge({
+    issues: [issue(2)],
+    fail: {
+      'issue-label-add': () => {
+        throw new Error('interrupted');
+      },
+    },
+  });
+  const result = await triageRun(root2, fake2, {
+    selection: { references: ['#2'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#2'),
+  });
+  assert.equal(result.applied.issues[0].outcome, 'partial');
+  assert.deepEqual(await untriagedGroups(root2, fake2), [['#2', 'repair']]);
+});
+
+test('no intent remains for a comment-only decision, a write that never started or a stale issue', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2)] });
+  await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+    filter: (entry) => entry.action === 'issue-comment-upsert',
+  });
+  assert.equal(existsSync(stateFile(root, 'pending', 'issue-1.json')), false);
+  // A deliberate comment-only implement is a settled decision.
+  assert.deepEqual(await untriagedGroups(root, fake), [['#2', 'new']]);
+  const failing = forge({
+    issues: [issue(3)],
+    fail: { 'issue-comment': 'COMMAND_FAILED' },
+  });
+  const result = await triageRun(root, failing, {
+    selection: { references: ['#3'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#3'),
+  });
+  assert.equal(result.applied.issues[0].outcome, 'failed');
+  assert.equal(existsSync(stateFile(root, 'pending', 'issue-3.json')), false);
+});
+
+test('a pending issue is repaired first, outside the scan window, and a closed one is ignored', async (t) => {
+  const root = repository(t);
+  const settled = settledIssues(100);
+  const decided = issue(500, { labels: [LABELS.reject] });
+  const closed = issue(600, { state: 'closed' });
+  const fake = forge({ issues: [...settled.issues, decided, closed], comments: settled.comments });
+  mkdirSync(stateFile(root, 'pending'), { recursive: true });
+  for (const number of [500, 600])
+    writeFileSync(
+      stateFile(root, 'pending', `issue-${number}.json`),
+      `{"version":1,"number":${number},"expected":"implement"}\n`,
+    );
+  const { inventory: data } = await inventory(root, fake, { untriaged: true });
+  assert.deepEqual(
+    data.items.map(({ id, group }) => [id, group]),
+    [['#500', 'repair']],
+  );
+  // The 100 settled issues all fit the window: the pending read did not consume it.
+  assert.equal(data.unscanned, 0);
+  writeFileSync(stateFile(root, 'pending', 'notes.txt'), 'x');
+  const error = await refused(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: FORGE,
+      permission: await proven(root, fake),
+      planDir: 'docs/plan',
+      selection: { untriaged: true },
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(error.code, 'UNSAFE_RUNTIME_STATE');
+});
+
+test('a concurrent triage change between inventory and apply makes the issue stale with no write', async (t) => {
+  const changes = [
+    ['a label', (fake) => fake.state.issues.get(1).labels.push(LABELS.reject)],
+    [
+      'a managed comment',
+      (fake) =>
+        fake.state.comments.set(1, [
+          comment(77, 'maintainer', markerLine('2'.repeat(64), 'implement', 1)),
+        ]),
+    ],
+  ];
+  for (const [name, change] of changes) {
+    const root = repository(t);
+    const fake = forge({ issues: [issue(1)] });
+    const { permission, inventory: data } = await inventory(root, fake, { references: ['#1'] });
+    const checked = await validated(root, data, [assessment('#1')]);
+    const writeSet = await ok('write-set-build', {
+      inventory: data,
+      validated: checked,
+      permission,
+      drafts: implementDrafts('#1')(),
+    });
+    change(fake);
+    const applied = await ok(
+      'write-set-apply',
+      {
+        cwd: root,
+        target: FORGE,
+        permission,
+        inventory: data,
+        writeSet,
+        selected: select(writeSet),
+      },
+      { tracker: fake.tracker },
+    );
+    assert.equal(applied.issues[0].outcome, 'stale', name);
+    assert.equal(
+      fake.mutations().filter(({ operation }) => operation !== 'label-create').length,
+      0,
+      name,
+    );
+    assert.equal(existsSync(stateFile(root, 'pending', 'issue-1.json')), false, name);
+  }
+});
+
 // --- Runtime files ---------------------------------------------------------------------------
 
 test('snapshot-remove deletes the snapshot and the overlap index but keeps the report', async (t) => {

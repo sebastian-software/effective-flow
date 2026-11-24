@@ -1,7 +1,7 @@
 ---
 description: "Assesses single tracker issues from any author against the project's architecture, risk, feasibility, overlap, value and evidence, and returns one cited verdict per issue: reject, implement or needs-work, with the open questions. After an exact preview confirmed per issue, it may post or update one managed comment and swap one triage label. Closes, deletes and reassigns nothing."
 catalogHint: "Decides whether single issues should be rejected, implemented or need work, with cited reasons."
-contextBudget: 318
+contextBudget: 319
 ---
 
 # Effective Flow Triage
@@ -144,8 +144,10 @@ removal. The report stays; `{{SKILL:cleanup}}` lists finished reports as removab
    `not-found`), `closed` issue (reported, not assessed), `cutOff` issue, the `notices`
    (`overlap-index-cut`, `scan-bound`, and for `permission-unreadable` that the forge does not
    state other users' permission, so their items are flagged as unknown), and each item's existing
-   marks (`goalEpic`, `goalObsolete`, `split`), which this run never changes. No item left ends
-   the run after the exit rule.
+   marks (`goalEpic`, `goalObsolete`, `split`), which this run never changes. `--untriaged`
+   resumes at a private scan cursor, so a `scan-bound` run reaches the unscanned issues on the next
+   run, and re-selects an issue whose label write was left incomplete. No item left ends the run
+   after the exit rule.
 
 ## Phase 3: Architecture context
 
@@ -221,7 +223,8 @@ or generation footer.
    the forge language). `DRAFT_REJECTED` names the item and problem: redraft that item once, then
    drop its draft. Retain `data` as `writeSet`.
 2. **Per-issue gate, before any write.** Show every `writeSet.notices` entry. For each `previews`
-   entry, show the verdict, the exact comment, the label it sets and `removesLabels`, `supersedes`
+   entry, show the verdict, the exact comment (the helper adds a recency stamp to its marker line when it
+   writes), the label it sets and `removesLabels`, `supersedes`
    (another trusted maintainer's managed comment, left untouched), each `unavailable` entry with
    its `reason`, and for a security item its `planPullRequests` and that it gets only the fixed
    notice and, as its label entry, the removal of `removesLabels`, which depends on that notice.
@@ -250,8 +253,8 @@ options:
 Call `write-set-apply` with `{cwd, target, permission, inventory, writeSet, selected: [{id, hash}]}`,
 the hashes copied from `writeSet` unchanged; an empty selection skips the call. The helper creates
 only the labels a selected entry needs, re-reads each issue once before its group of writes, and
-reports per issue `applied`, `partial`, `stale` (changed or closed since the assessment, nothing
-written), `failed` or `skipped`. A run-level `failed` at `labels-ensure` stops every further write;
+reports per issue `applied`, `partial`, `stale` (content, triage labels or managed comments
+changed, or closed, since the assessment; nothing written), `failed` or `skipped`. A run-level `failed` at `labels-ensure` stops every further write;
 report it. Then call `report-write` again with `applied` set to that result.
 
 ## Phase 10: Completion
