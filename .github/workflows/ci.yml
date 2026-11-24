@@ -10,6 +10,10 @@ permissions:
   # Re-read the original protected hosted attempt and its logs for bounded admission.
   actions: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' && github.run_attempt == 1 }}
+
 jobs:
   build:
     name: Format, test and build

@@ -7842,6 +7842,39 @@ test('pr-status-read keeps the latest run whatever its state, wherever it sits i
   ]);
 });
 
+test('pr-status-read reads a cancelled superseded run on the current head as superseded, not as a failure', async () => {
+  // The current head carries a cancelled run of the same check and a newer one still going: a
+  // re-run or reopen displaced the older run in the concurrency group, or a push back to this
+  // commit followed a push that cancelled its earlier run. The cancelled run must neither fail
+  // nor hide the pending latest run.
+  const result = await readRollup([
+    checkRun('unit', {
+      conclusion: 'CANCELLED',
+      databaseId: 100,
+      startedAt: '2026-09-25T10:00:00Z',
+      completedAt: '2026-09-25T10:01:00Z',
+    }),
+    checkRun('unit', {
+      status: 'IN_PROGRESS',
+      conclusion: null,
+      databaseId: 200,
+      startedAt: '2026-09-25T10:02:00Z',
+      completedAt: null,
+    }),
+  ]);
+  assert.equal(result.checkCount, 1);
+  assert.equal(result.supersededCheckCount, 1);
+  assert.deepEqual(supersededRunsOf(result), [1]);
+  assert.deepEqual(checksAsInstants(result.checks), [
+    {
+      name: 'unit',
+      status: 'PENDING',
+      startedAt: instant('2026-09-25T10:02:00Z'),
+      supersededRuns: 1,
+    },
+  ]);
+});
+
 test('pr-status-read keeps same-named jobs of different workflows or events apart', async () => {
   // Each pair has the red run first and a later green one, so a name-only identity would let the
   // green run of another workflow, or of the other event's tree, hide the red one.
