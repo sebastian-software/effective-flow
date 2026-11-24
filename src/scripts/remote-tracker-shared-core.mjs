@@ -679,8 +679,23 @@ export function forgejoPagedEndpoint(endpoint, page, limit = FORGEJO_PAGE_LIMIT)
 // falls through to that same default with no error path — so a port that dropped or misspelled it
 // would return a plausible superset that nothing downstream could tell apart. The client-side
 // `pull_request` filter is the second line of defence, not the first.
+// `since` (both providers: issues updated at or after this UTC instant) bounds a listing at the
+// forge; a value outside the plain second-precision form is refused rather than passed through.
+export function issueListSince(input) {
+  if (input.since === undefined) return null;
+  if (
+    typeof input.since !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(input.since) ||
+    !Number.isFinite(Date.parse(input.since))
+  )
+    fail('INVALID_PAYLOAD', 'since must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ');
+  return input.since;
+}
+
 export function forgejoIssueListEndpoint(input, repository) {
   const query = new URLSearchParams({ state: input.state ?? 'all', type: 'issues' });
+  const since = issueListSince(input);
+  if (since) query.set('since', since);
   // One single-label query per variant, exactly as the renderer path passed. `/issues?labels=`
   // resolves label **names** and means **AND** — `count(*) = len(includedLabelIDs)` — so a
   // multi-label value would intersect rather than union. `labelQueryVariants` in

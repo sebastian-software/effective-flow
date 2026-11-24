@@ -124,6 +124,16 @@ test('Issue Buddy binds leftovers, readiness, nested planning and report state',
     'Always reach this phase on a controlled ending after `pass-open`.',
   );
   assert.match(source, /Require exactly the three lines defined by `planning-readiness`/);
+  assert.match(
+    prose,
+    /leaf\*\* with the absolute paths `<skill-root>\/shared\/planning-readiness\.md` and `<skill-root>\/shared\/issue-assessment-criteria\.md` to apply under `issue-buddy`'s input scope/,
+    'the readiness leaf receives the fragment R3 refers to as absolute paths, keeping both loads lazy',
+  );
+  assert.match(
+    prose,
+    /reads only WP3's trusted data under its guarded canonical path and the two named fragments/,
+    'the readiness leaf reads nothing beyond the trusted data and its two fragments',
+  );
   assert.match(source, /Verdict: ready\|not-ready/);
   assert.match(source, /Failed: <ordered R-ids or none>/);
   assert.match(source, /Reason: <one line, at most 160 characters>/);

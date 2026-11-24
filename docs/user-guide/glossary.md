@@ -160,6 +160,18 @@ connection you already have (an MCP connection or an authenticated CLI); Effecti
 product-specific adapter and aborts instead of guessing a target. Details in
 [Remote Tracker](./remote-tracker.md).
 
+## Triage
+
+Two different things carry this name. The tool
+[`/effective-flow triage`](./tools-understand.md#effective-flow-triage) decides on single issues and
+gives each one verdict, `reject`, `implement` or `needs-work`, recorded on the tracker as one of the
+labels `effective-flow-triage-reject`, `-implement` or `-needs-work`. `effective-flow-triage-reject`
+is the project's final decision on the issue itself, while `effective-flow-goal-obsolete` from
+`backlog-audit` only marks it as contradicting the architecture relative to one goal; both can
+coexist. **High-risk triage** in `iterate` and `review` is unrelated: it classifies review items
+and finding candidates by scope and risk before they are admitted or handled, and decides nothing
+about an issue.
+
 ## Worktree
 
 A separate Git working area (`git worktree`) with its own checkout and its own branch, in

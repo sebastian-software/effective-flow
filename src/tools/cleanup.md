@@ -1,7 +1,7 @@
 ---
-description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits, the files of schema-invalid lifecycle records whose worktree is already gone, merge-gate presence markers whose run's wisdom file is gone, closed autopilot run ledgers whose pull request is merged, closed or absent, planning claims or Issue Buddy pass records proven orphaned or confirmed stale with trusted issue text no pass record lists, open pilot measurement reservations it abandons through the pilot helper once their session is proven gone or their staleness is confirmed, and kept issue-planning worktrees once their preserved plan has been moved or discarded; it never forces removal, prunes worktrees, or force-deletes a branch other than a base-validation or issue-planning branch still at its creation commit. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
+description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits, the files of schema-invalid lifecycle records whose worktree is already gone, merge-gate presence markers whose run's wisdom file is gone, closed autopilot run ledgers whose pull request is merged, closed or absent, planning claims or Issue Buddy pass records proven orphaned or confirmed stale with trusted issue text no pass record lists, open pilot measurement reservations it abandons through the pilot helper once their session is proven gone or their staleness is confirmed, finished triage reports, and kept issue-planning worktrees once their preserved plan has been moved or discarded; it never forces removal, prunes worktrees, or force-deletes a branch other than a base-validation or issue-planning branch still at its creation commit. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
 catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers, autopilot ledgers, orphaned planning claims and pilot reservations."
-contextBudget: 993
+contextBudget: 1003
 ---
 
 # Effective Flow Cleanup
@@ -56,7 +56,7 @@ task-tracking
 
 ```lazy-include
 runtime-state-safety
-when: a stale diff baseline will be discarded, an autopilot ledger, planning claim, pass record or trusted text will be pruned, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent
+when: a stale diff baseline will be discarded, an autopilot ledger, planning claim, pass record, trusted text or triage report will be pruned, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent
 ```
 
 ```lazy-include
@@ -66,7 +66,7 @@ when: the run reaches its completion report, or aborts after spawning its first 
 
 ```lazy-include
 effective-flow-dir-migration
-when: Phase 1 step 6 finds at least one legacy runtime directory and no valid `runtimeMigration.directory.version: 1` marker in `.effective-flow/memory.json`, a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` marker), or any confirmed Phase 3 or Phase 5 mutation below `.effective-flow/` is about to run, even when Phase 1 found no legacy runtime directory (for example a carry-over copy or directory creation, a worktree lifecycle lock, claim, removal, reconcile, record write or deletion, a stale diff-baseline discard, an autopilot ledger, planning-claim, pass-record or trusted-text prune, or the confirmed removal of a legacy file such as a transitional `.effective-flow/config.json`)
+when: Phase 1 step 6 finds at least one legacy runtime directory and no valid `runtimeMigration.directory.version: 1` marker in `.effective-flow/memory.json`, a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` marker), or any confirmed Phase 3 or Phase 5 mutation below `.effective-flow/` is about to run, even when Phase 1 found no legacy runtime directory (for example a carry-over copy or directory creation, a worktree lifecycle lock, claim, removal, reconcile, record write or deletion, a stale diff-baseline discard, an autopilot ledger, planning-claim, pass-record, trusted-text or triage-report prune, or the confirmed removal of a legacy file such as a transitional `.effective-flow/config.json`)
 ```
 
 ```include
@@ -106,8 +106,9 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
   `cleanup apply` claim, a confirmed stale diff baseline, a confirmed merge-gate presence
   marker removed by `presence prune`, a confirmed autopilot run ledger removed by
   `ledger-prune`, a confirmed planning claim removed by `planning-claim prune`, a confirmed
-  Issue Buddy pass record removed by `pass-prune` and confirmed unlisted trusted text removed by
-  `trusted-prune`; no other active runtime file is a cleanup target. The one current runtime-state
+  Issue Buddy pass record removed by `pass-prune`, confirmed unlisted trusted text removed by
+  `trusted-prune` and a confirmed finished triage report removed by `report-prune`; no other active
+  runtime file is a cleanup target. The one current runtime-state
   rewrite is a confirmed open pilot reservation, which `abandon-reservation` finalizes as
   `abandoned` instead of deleting it.
 - **Never target the main or current execution worktree.** `RUNTIME_STATE_ROOT` and the worktree
@@ -182,6 +183,14 @@ cleanup-pilot-reservations
 when: Phase 1 step 4 finds the directory `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`
 ```
 
+Finished triage reports (`.effective-flow/triage/reports/<runId>.md`) are a seventh class, owned by
+the fragment below.
+
+```lazy-include
+cleanup-triage-reports
+when: Phase 1 step 4 finds the directory `<RUNTIME_STATE_ROOT>/.effective-flow/triage/reports/`
+```
+
 ## Workflow
 
 `cleanup plan` and `cleanup apply` are the helper operations of this tool, in the call shape of the
@@ -245,6 +254,8 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    unreadable, so none is offered.
    **Pilot reservations:** when `.effective-flow/model-tiering-pilot/` exists, inventory them as
    `cleanup-pilot-reservations` defines.
+   **Triage reports:** when `.effective-flow/triage/reports/` exists, inventory them as
+   `cleanup-triage-reports` defines.
 5. Capture the existing legacy remnants in the project root:
    - **Runtime directories and legacy `config.json`:** the plan's `legacy:` and `config:` items,
      ready or blocked.
@@ -280,9 +291,9 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    worktree counts (removal candidate, retained, recordless or not reliably checkable), stale
    diff baselines by run ID, presence markers by session ID and PR, autopilot ledgers by run
    ID, outcome and pull request, planning claims and pass records by issue, holder, age, `stale`
-   and `liveness`, unclaimed trusted text by issue, and pilot reservations by workflow, age,
-   `liveness` and `stale`. Never end for lack of migration remnants; worktree preview and the
-   final report still run.
+   and `liveness`, unclaimed trusted text by issue, pilot reservations by workflow, age,
+   `liveness` and `stale`, and triage reports by run ID, finished or `run-in-progress`. Never end
+   for lack of migration remnants; worktree preview and the final report still run.
 
 ### Phase 2: Carry-over check
 
@@ -363,12 +374,13 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    planning-claim and pass-record candidates with their issue, workflow, holder id, age, `stale`,
    `liveness` and proof or "stale, needs confirmation"; kept ones with their reason; unclaimed
    trusted text by issue and path. List pilot reservations as `cleanup-pilot-reservations` defines.
+   List triage reports as `cleanup-triage-reports` defines.
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
    `apply-review` branch is deleted only by `git branch -d`; when Git refuses, cleanup keeps it and
    reports it as `BRANCH_RETAINED`; a refused `base-validation` branch is deleted only under the
    lifecycle's exception, as is an `issue-planning` branch. Delivery, partial-diff and merge-gate
    branches remain. Cleanup never runs `git worktree prune` or `git branch -D`.
-9. If there are no deletable migration artifacts, stale diff baselines, presence-marker, ledger, claim, pass-record, trusted-text, pilot-reservation or worktree removal candidates, call the
+9. If there are no deletable migration artifacts, stale diff baselines, presence-marker, ledger, claim, pass-record, trusted-text, triage-report, pilot-reservation or worktree removal candidates, call the
    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
    still produced.
 
@@ -467,6 +479,7 @@ Execute per class:
   It re-checks each wisdom file and removes a marker only while that file is absent (`removed`);
   `possibly-suspended`, `missing`, `not-regular`, `wisdom-unreadable` and `changed` markers stay.
 - **Autopilot ledgers:** confirm and prune as `cleanup-autopilot-ledgers` defines.
+- **Triage reports:** confirm and prune as `cleanup-triage-reports` defines.
 - **Pass records and planning claims:** ask "Claim" above once per listed item, never for all at
   once. First prune each confirmed pass record with
   `node <skill-root>/scripts/issue-buddy.mjs pass-prune <<< '{"cwd":"<RUNTIME_STATE_ROOT>","passId":"<passId>","acquiredAt":"<acquiredAt from pass-list>","proof":"process-dead"}'`,
@@ -518,9 +531,10 @@ Report to the user:
 - what was carried over (files to `.effective-flow/`) and which config values `{{SKILL:setup}}` owns
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed,
   including discarded stale diff baselines, pruned presence markers, removed autopilot
-  ledgers, released planning claims, pruned pass records, removed trusted text and abandoned pilot
-  reservations, plus every kept marker with its `prune` result or `wisdomFile` state, every kept
-  ledger, claim, pass record and pilot reservation with its reason,
+  ledgers, released planning claims, pruned pass records, removed trusted text, abandoned pilot
+  reservations and removed triage reports, plus every kept marker with its `prune` result or
+  `wisdomFile` state, every kept ledger, claim, pass record, pilot reservation and triage report
+  with its reason,
   and every kept `issue-planning` worktree with its path, issue and preserved plan path
 - which outdated `.gitignore` lines remain and that `{{SKILL:setup}}` owns their repair, not this run
 - whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
@@ -590,7 +604,8 @@ report that found neither matches no row.
 - Preserve the active `.effective-flow/` directory and all unrelated runtime state. Mutate below
   it only for the explicitly confirmed carry-over copies, migration and `cleanup apply` above, a
   confirmed stale diff-baseline discard, a confirmed `presence prune`, or a confirmed
-  `ledger-prune`, a confirmed `planning-claim prune`, `pass-prune` or `trusted-prune`, always
+  `ledger-prune`, a confirmed `planning-claim prune`, `pass-prune`, `trusted-prune` or
+  `report-prune`, always
   through runtime-state safety, or a confirmed `abandon-reservation`, which guards itself. Remove a presence marker only through `presence prune`. Remove an
   autopilot ledger only through `ledger-prune`. Remove a planning claim only through
   `planning-claim prune`, a pass record only through `pass-prune` (never `pass-close`) and

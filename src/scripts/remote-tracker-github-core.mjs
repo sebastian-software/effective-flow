@@ -20,6 +20,7 @@ import {
   expectedHeadSha,
   fail,
   ghRepoArgs,
+  issueListSince,
   issueNumber,
   jsonStdin,
   markBody,
@@ -266,6 +267,8 @@ export function buildGithubCommandPlan(operation, input, repository) {
     case 'issue-list': {
       const query = new URLSearchParams({ state: input.state ?? 'all', per_page: '100' });
       if (input.labels?.length) query.set('labels', input.labels.join(','));
+      const since = issueListSince(input);
+      if (since) query.set('since', since);
       return mutationPlan('gh', [
         'api',
         ...hostArgs,

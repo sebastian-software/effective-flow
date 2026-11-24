@@ -50,6 +50,8 @@
         { "consumer": "retro", "classification": "delegate" },
         { "consumer": "focus", "classification": "route-when-relevant" },
         { "consumer": "backlog-audit", "classification": "route-when-relevant" },
+        { "consumer": "issue-assessment", "classification": "route-when-relevant" },
+        { "consumer": "triage", "classification": "route-when-relevant" },
         { "consumer": "investigation-method", "classification": "delegate" },
         { "consumer": "commit", "classification": "delegate" },
         { "consumer": "commit-message-rules", "classification": "delegate" },
@@ -82,6 +84,8 @@
         { "consumer": "rust-reviewer", "classification": "route-when-relevant" },
         { "consumer": "plan", "classification": "route-when-relevant" },
         { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "issue-assessment", "classification": "route-when-relevant" },
+        { "consumer": "triage", "classification": "route-when-relevant" },
         { "consumer": "concept", "classification": "route-when-relevant" },
         { "consumer": "concept-review", "classification": "route-when-relevant" }
       ]
@@ -106,6 +110,8 @@
         { "consumer": "plan", "classification": "route-when-relevant" },
         { "consumer": "plan-review", "classification": "route-when-relevant" },
         { "consumer": "concept", "classification": "delegate" },
+        { "consumer": "issue-assessment", "classification": "route-when-relevant" },
+        { "consumer": "triage", "classification": "route-when-relevant" },
         { "consumer": "durable-follow-up-gate", "classification": "delegate" },
         { "consumer": "outcome-continuation", "classification": "delegate" },
         { "consumer": "setup", "classification": "delegate" },

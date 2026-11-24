@@ -1116,6 +1116,21 @@ test('the renderer label split survives for the paths that still consume tea out
   assert.deepEqual((await detail(undefined)).data.result.labels, []);
 });
 
+// Triage bounds its closed-issue listing at the forge: `since` must reach both providers' query,
+// and a malformed value must be refused instead of reaching the forge CLI.
+test('issue-list passes a validated since bound to GitHub and Forgejo', () => {
+  const since = '2026-05-27T12:00:00Z';
+  const github = buildCommandPlan('issue-list', { state: 'closed', since }, githubRepository);
+  assert.match(github.args.at(-1), /[?&]since=2026-05-27T12%3A00%3A00Z(&|$)/);
+  const forgejo = buildCommandPlan('issue-list', { state: 'closed', since }, forgejoRepository);
+  assert.match(forgejo.args[1], /[?&]since=2026-05-27T12%3A00%3A00Z&/);
+  for (const value of ['yesterday', '2026-05-27', 17])
+    assert.throws(
+      () => buildCommandPlan('issue-list', { since: value }, githubRepository),
+      /since must be a UTC timestamp/,
+    );
+});
+
 test('the ported Forgejo issue list states type=issues and filters pull requests out', async () => {
   // The parameter has to be asserted, not merely its effect: `ListIssues` defaults `type` to "both"
   // and an unrecognized value falls through to that same default with no error path, so a port that

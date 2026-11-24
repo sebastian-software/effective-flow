@@ -132,6 +132,7 @@ const EXPECTED_TOOLS = [
   'retro',
   'review',
   'setup',
+  'triage',
   'version',
 ];
 
@@ -198,6 +199,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'runtime-state-guard.mjs',
   'setup-status-core.mjs',
   'setup-status.mjs',
+  'triage-core.mjs',
+  'triage.mjs',
   'verification-evidence-core.mjs',
   'verification-evidence.mjs',
 ];

@@ -376,6 +376,75 @@ stored in each canonical parent record is authoritative and must match exactly o
 language-appropriate workflow field in the child body. `apply` does not reclassify it: `Feature`
 routes to `build`, `Bugfix` to `fix`, `Refactoring` to `refactor`, and `Documentation` to `docs`.
 
+## `/effective-flow triage`
+
+**Purpose:** Decides whether single issues should be worked on at all. Issues from any author –
+maintainers, contributors or external reporters – are assessed in the context of this project, and
+each gets exactly one verdict: `reject` (declined, with a cited ground), `implement` (should be
+done) or `needs-work` (cannot be decided yet; the open questions are listed). It is no planner and
+writes no code; `implement` hands over to `plan-issue` or `apply`, whose own gates still apply.
+
+**Typical calls:**
+
+```text
+/effective-flow triage #412
+/effective-flow triage #412 #415 #420
+/effective-flow triage --untriaged --max 5
+```
+
+**Arguments:** one to 25 issue references, or `--untriaged [--max <n>]` (default 10, at most 25).
+`--untriaged` picks open issues without a triage verdict first, then issues a partial earlier run
+left without their label, then `needs-work` issues and security notices whose issue changed since
+the comment was written; the oldest come first and the remainder is reported as cut off. A
+pull-request reference is skipped, and a closed issue is reported but not assessed.
+
+**What is assessed:** a fresh read-only assessment per issue rates seven criteria, defined once in
+[the issue assessment rubric](../adr/issue-assessment-rubric.md): a neutral summary (A1), fit with
+the current architecture (A2), risk to the project (A3), size (A4), overlap with other issues, plans
+or existing code (A5), value versus cost (A6) and evidence and compatibility (A7), plus planning
+readiness R1–R4. The mapping is fail-safe: `implement` needs every criterion to pass, and any doubt
+becomes `needs-work` with at least one question.
+
+**Flow:** the run is interactive and refuses to start from another workflow.
+
+1. **Permission and inventory.** It proves the runner's write permission before reading any issue
+   and snapshots the selected issues, with a bounded index of other issues and plans for overlap.
+2. **Assessment and report.** A cited architecture summary and one assessment per issue produce the
+   verdicts; a private report under `.effective-flow/triage/reports/` and a chat summary show every
+   rating, the questions and the authors without proven write permission.
+3. **Per-issue gate.** For each issue you see the exact comment and the label, and confirm the
+   comment, the label, both or neither. A `needs-work` label is set only with its comment, which
+   asks the author the open questions; `reject` and `implement` comments give the cited rationale.
+4. **Apply.** The issue is re-read first; if it changed since the assessment, its writes are skipped
+   as stale. A re-run updates the one managed comment in place and swaps the one triage label
+   (`effective-flow-triage-reject`, `-implement` or `-needs-work`).
+
+The tool never closes, deletes or reassigns an issue and never sets `effective-flow-needs-planning`.
+A security-relevant issue gets no verdict label (the gate offers to remove an earlier one) and only a
+fixed neutral notice, which names a private reporting channel only when `SECURITY.md` or
+`.github/SECURITY.md` states one. Its verdict stays in the local report and chat, which also name
+any open `issue-buddy` plan pull request for it.
+
+**Targets and modes:** GitHub and Forgejo. Hidden mode, or a runner without proven write
+permission, gives a report-only run that offers no tracker write; a local or unset tracker stops with
+a hint to `/effective-flow setup`; an external tracker is not supported yet. Finished reports hold
+third-party logins and permission flags; [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup)
+lists them as removable.
+
+**Trust threshold:** issue and comment text is quoted data that carries no instructions, and the
+orchestrator never reads it. Like `backlog-audit`, the run reads text from authors without write
+permission, under the scoped exception of the
+[input trust boundary ADR](../adr/input-trust-boundary.md).
+
+**Interplay:** `triage` judges one issue on its own; `backlog-audit` judges the whole backlog
+against one goal and shares the architecture, size and overlap criteria with it. An
+`effective-flow-triage-reject` issue is the project's final decision and can coexist with a
+goal-relative `effective-flow-goal-obsolete` mark. `issue-buddy` skips rejected and `needs-work`
+issues and drops triage comments from the text it plans from; `plan-issue` and `apply` act on a
+rejected issue only after your explicit override. An `implement` verdict continues with
+`/effective-flow plan-issue #<issue>` or `/effective-flow apply #<issue>`; see
+[Tool flow](tool-flow.md).
+
 ## `/effective-flow issue-buddy`
 
 **Purpose:** Reviews a bounded set of trusted GitHub issues and turns eligible issues into

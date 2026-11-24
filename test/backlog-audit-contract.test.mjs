@@ -21,6 +21,24 @@ const position = (text, fragment) => {
   return index;
 };
 
+// Invariant: the architecture-context brief has one owning fragment shared by every tool that
+// summarizes the architecture, while each tool keeps its own spawn instruction and spawn-site
+// marker, so the model-tier row stays per tool.
+test('backlog-audit includes the shared architecture-context brief and keeps its own spawn site', () => {
+  const brief = flat(read('shared/architecture-context.md'));
+  assert.match(
+    brief,
+    /never `\.effective-flow\/` or issue data, and writes one summary of the current architecture to exactly the new file its handoff names, citing a repository path, with a line where useful, for every claim\. It returns `DONE` or `ABORT`\./,
+  );
+  const phase = tool.slice(tool.indexOf('## Phase 2:'), tool.indexOf('## Phase 3:'));
+  assert.match(phase, /^```include\narchitecture-context\n```$/m);
+  assert.match(
+    flat(phase),
+    /start one read-only leaf with the architecture-context brief, naming that path as its new file\. <!-- spawn-site:backlog-audit\/architecture-context -->/,
+  );
+  assert.doesNotMatch(prose, /writes one summary of the current architecture/);
+});
+
 // Invariant: the audit is interactive only. Any `Run state:` line, whatever its value, and a
 // control-line delimiter are refused before the first helper call or write, so no unattended or
 // delegated caller can reach the tracker writes this tool gates on user answers.

@@ -491,7 +491,7 @@ test('cleanup loads runtime safety for migrations, memory, and tracker markers',
   const cleanup = readSource('tools', 'cleanup.md');
   assert.match(
     cleanup,
-    /```lazy-include\s+runtime-state-safety\s+when: a stale diff baseline will be discarded, an autopilot ledger, planning claim, pass record or trusted text will be pruned, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent\s+```/,
+    /```lazy-include\s+runtime-state-safety\s+when: a stale diff baseline will be discarded, an autopilot ledger, planning claim, pass record, trusted text or triage report will be pruned, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent\s+```/,
   );
 });
 
@@ -575,7 +575,7 @@ test('cleanup guards lifecycle claims, updates, and record removal at the main r
   );
   assert.match(
     flat,
-    /The only current runtime-state deletions allowed are the lifecycle record of a successfully reconciled `cleanup apply` claim, a confirmed stale diff baseline, a confirmed merge-gate presence marker removed by `presence prune`, a confirmed autopilot run ledger removed by `ledger-prune`, a confirmed planning claim removed by `planning-claim prune`, a confirmed Issue Buddy pass record removed by `pass-prune` and confirmed unlisted trusted text removed by `trusted-prune`; no other active runtime file is a cleanup target/,
+    /The only current runtime-state deletions allowed are the lifecycle record of a successfully reconciled `cleanup apply` claim, a confirmed stale diff baseline, a confirmed merge-gate presence marker removed by `presence prune`, a confirmed autopilot run ledger removed by `ledger-prune`, a confirmed planning claim removed by `planning-claim prune`, a confirmed Issue Buddy pass record removed by `pass-prune`, confirmed unlisted trusted text removed by `trusted-prune` and a confirmed finished triage report removed by `report-prune`; no other active runtime file is a cleanup target/,
   );
   assert.match(
     cleanup,

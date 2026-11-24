@@ -20,6 +20,9 @@ the plan of its one issue on a private repository. See the [Issue Buddy guide](d
 draft pull request: it resolves every question by recorded option scores, always runs the deep plan
 review, and documents close decisions, blockers and architecture fit in the draft for a person to
 review. See the [Automation guide](docs/user-guide/tools-automation.md).
+`triage` decides on single issues from any author – reject, implement or needs-work, each with cited
+reasons and the open questions – and, after a preview you confirm per issue, posts one managed comment
+and one verdict label; it closes nothing. See the [Triage guide](docs/user-guide/tools-understand.md#effective-flow-triage).
 `backlog-audit` checks every open issue and open plan against one goal you name, marks drift and the
 minimal path to that goal, and, after your confirmation, maintains one goal epic; it deletes and closes
 nothing. See the [Backlog Audit guide](docs/user-guide/tools-understand.md#effective-flow-backlog-audit).
