@@ -2182,19 +2182,25 @@ test('setup generation actions are confirmed, digest-bound, disclosed, and state
   assert.match(afterStart, /Never re-send `begin-baseline` in the same run/);
 
   // activate is no setup action: the confirmed baseline is the only consent, and either adopting
-  // workflow (`build` or `refactor`) activates the generation automatically once the
-  // preregistered conditions pass, so the disclosure must name both.
+  // workflow (`build`, `refactor`, or `fix`) activates the generation automatically once the
+  // preregistered conditions pass, so the disclosure must name all three.
   assert.doesNotMatch(text, /`activate`|header: Activate/, 'setup never offers activation');
   assert.match(
     fragment,
-    /Setup never activates: a `baseline` generation is activated automatically by the next measured `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run once the preregistered sample is met/,
+    /Setup never activates: a `baseline` generation is activated automatically by the next measured `\{\{SKILL:build\}\}`, `\{\{SKILL:refactor\}\}`, or `\{\{SKILL:fix\}\}` run once the preregistered sample is met/,
   );
   assert.match(
     fragment,
-    /no second confirmation follows, because a later `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run activates the generation automatically/,
+    /no second confirmation follows, because a later `\{\{SKILL:build\}\}`, `\{\{SKILL:refactor\}\}`, or `\{\{SKILL:fix\}\}` run activates the generation automatically/,
   );
   // The data disclosure and the opt-in name every workflow that stores pilot records.
-  assert.match(text, /later `build` and `refactor` runs store minimal local records/);
+  assert.match(text, /later `build`, `refactor`, and `fix` runs store minimal local records/);
+  // It also names every transient owner datum an open reservation holds, the salt's host binding
+  // and ancestor digests included, and that all of it ends with the record.
+  assert.match(
+    fragment.replace(/\s+/g, ' '),
+    /a reservation-salted digest of the owning session process \(host name, process id, and start time\), a salt that also carries a salted host binding \(host name, kernel boot id, and process-namespace id\) and salted digests of up to two ancestor processes \(process id and start time\), and the reservation time, all removed when the record ends/,
+  );
   // Portable installations take part too: block 10 discloses the new minima, the qualification
   // snapshot, the busy cause and the probe and gateway limits instead of refusing the actions.
   const flatFragment = fragment.replace(/\s+/g, ' ');
@@ -2209,20 +2215,30 @@ test('setup generation actions are confirmed, digest-bound, disclosed, and state
     /one host's probe qualifies a harness for every installation of this release/,
   );
   assert.match(flatFragment, /a provider gateway may map the model aliases differently/);
-  // No cleanup action exists for pilot reservations yet: block 10 names only the real exits.
+  // Block 10 names the real exits: cleanup abandons an orphaned reservation under its proof or
+  // confirmed staleness, while an orphaned gate observation still clears only by review and discard.
   assert.match(
     flatFragment,
     /When `busyCause` names open reservations, report that they block activation until finalized/,
   );
-  assert.doesNotMatch(flatFragment, /\{\{SKILL:cleanup\}\}/);
+  assert.match(
+    flatFragment,
+    /`\{\{SKILL:cleanup\}\}` abandons an orphaned one after confirmation once its process is proven dead or its staleness beyond 24 hours is confirmed/,
+  );
+  assert.match(
+    flatFragment,
+    /an orphaned observation clears only by `begin-review` then `discard-generation` with the pilot disabled/,
+  );
+  assert.doesNotMatch(flatFragment, /An orphan of either kind clears only by/);
   assert.match(
     fragment,
-    /Quality\/Fast field pilot of `\{\{SKILL:build\}\}` and `\{\{SKILL:refactor\}\}`/,
+    /Quality\/Fast field pilot of `\{\{SKILL:build\}\}`, `\{\{SKILL:refactor\}\}`, and `\{\{SKILL:fix\}\}`/,
   );
   assert.match(
     setupPilotAsk('Baseline').options.find(({ label }) => label === 'Start').description,
-    /build and refactor keep running Quality/,
+    /build, refactor, and fix keep running Quality/,
   );
+  assert.match(setupPilotAsk('Fast pilot').question, /field pilot of build, refactor, and fix\?/);
 
   // resume: digest-bound, no cause summary, no caller-selected target.
   assert.match(setupPilotAsk('Resume').when, /showed both digests/);

@@ -12,7 +12,7 @@ profile, writes a workflow record, or adds a setup invocation: Profile, Express,
 ### The opt-in
 
 Explain first. `executionProfiles.fast.enabled` admits this project to the Quality/Fast field pilot
-of `{{SKILL:build}}` and `{{SKILL:refactor}}`. Literal `true` permits the pilot lifecycle, but starts no baseline, activates
+of `{{SKILL:build}}`, `{{SKILL:refactor}}`, and `{{SKILL:fix}}`. Literal `true` permits the pilot lifecycle, but starts no baseline, activates
 no generation, proves no native capability, and never selects Fast by itself; while a baseline or
 active generation exists, it also lets `{{SKILL:merge-gate}}` add anonymous period observations.
 Missing or `false` is disabled; a malformed, ambiguous, or unreadable value is invalid; both run
@@ -31,7 +31,7 @@ recorded".
 ```ask
 when: the user chose the advanced settings and block 10 is being asked, or a Targeted request touches executionProfiles.fast.enabled or implies the opt-in through a pilot action
 header: Fast pilot
-question: Should this project take part in the Quality/Fast field pilot of build and refactor?
+question: Should this project take part in the Quality/Fast field pilot of build, refactor, and fix?
 options:
   - label: Keep
     description: Leave executionProfiles.fast.enabled exactly as recorded, including a missing row or an invalid value
@@ -89,11 +89,13 @@ longer holds; nothing is claimed that the helper did not return.
    and the generation's `snapshot`) and a `busyCause`. Report each harness family's installed
    outcome and host version. When `busyCause` names open reservations, report that they block
    activation until finalized: only the run that holds a record's capability can still finalize or
-   reconcile it (`reconcile-record`). When it names open observations, report that a `merge-gate`
-   run, also one waiting across `SUSPENDED host-pr-watch` re-dispatches, holds a gate observation
-   that blocks activation until that run finalizes it. An orphan of either kind clears only by
-   `begin-review` then `discard-generation` with the pilot disabled, which loses the generation. An
-   ambiguous or failed inventory offers no action.
+   reconcile it (`reconcile-record`), and `{{SKILL:cleanup}}` abandons an orphaned one after
+   confirmation once its process is proven dead or its staleness beyond 24 hours is confirmed. When
+   it names open observations, report that a `merge-gate` run, also one waiting across
+   `SUSPENDED host-pr-watch` re-dispatches, holds a gate observation that blocks activation until
+   that run finalizes it; an orphaned observation clears only by `begin-review` then
+   `discard-generation` with the pilot disabled, which loses the generation. An ambiguous or failed
+   inventory offers no action.
 2. Offer at most the one action the proven state allows, and only with `configState=enabled`:
 
    | Proven generation state                                                   | Offered action   |
@@ -104,7 +106,7 @@ longer holds; nothing is claimed that the helper did not return.
 
    Evidence is healthy only when every `incompleteCounts` value is zero and no orphan temporary is
    listed. Setup never activates: a `baseline` generation is activated automatically by the next
-   measured `{{SKILL:build}}` or `{{SKILL:refactor}}` run once the preregistered sample is met, so
+   measured `{{SKILL:build}}`, `{{SKILL:refactor}}`, or `{{SKILL:fix}}` run once the preregistered sample is met, so
    report it as collecting its baseline. `review` is terminal under every configuration state,
    including disabled or invalid: report that the generation is under review and can never resume.
    An unhealthy `suspended` generation is reported as not resumable until its incomplete evidence
@@ -123,18 +125,20 @@ longer holds; nothing is claimed that the helper did not return.
 **`begin-baseline`.** Call `protocol` with `{}` and take `protocolVersion` from `result.version`
 and `protocolDigest` from the envelope, which must equal `result.digest`; on a mismatch send
 nothing. Before asking, display the exact digest and version and disclose: a Quality-only baseline
-starts; later `build` and `refactor` runs store minimal local records below
+starts; later `build`, `refactor`, and `fix` runs store minimal local records below
 `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, holding bounded structured
 measurements and no prompts, diffs, source, paths, commands or output, environment values, model
 aliases, URLs, or personal, repository, branch, task, PR, or session identifiers; while a run is
 open, its reservation also holds a reservation-salted digest of the owning session process (host
-name, process id, and start time) and the reservation time, both removed when the record ends;
+name, process id, and start time), a salt that also carries a salted host binding (host name,
+kernel boot id, and process-namespace id) and salted digests of up to two ancestor processes (process
+id and start time), and the reservation time, all removed when the record ends;
 after activation, a Fast packet on a portable build has its own child transcript (Claude Code) or
 rollout file (Codex) read locally for model, effort and host version only; on Claude Code the
 helper finds it through `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR` and may list project folder
 names, never their contents, below the projects root;
 nothing leaves this machine; a detailed trace needs separate current-run consent; no second confirmation follows,
-because a later `{{SKILL:build}}` or `{{SKILL:refactor}}` run activates the generation
+because a later `{{SKILL:build}}`, `{{SKILL:refactor}}`, or `{{SKILL:fix}}` run activates the generation
 automatically once the protocol's `aggregation.baselineEligiblePacketMinimum` eligible packets from
 `aggregation.baselineRecordMinimum` completed baseline records, shown with their values, are met,
 with no calendar window. Also disclose that the baseline snapshots the installed harness
@@ -148,7 +152,7 @@ header: Baseline
 question: Start the Quality-only pilot baseline under the protocol digest shown?
 options:
   - label: Start
-    description: Start the baseline; build and refactor keep running Quality and record the local minimal data disclosed above
+    description: Start the baseline; build, refactor, and fix keep running Quality and record the local minimal data disclosed above
   - label: Not now
     description: Start nothing; the opt-in stays as written
 ```

@@ -313,7 +313,7 @@ function validStartTime(value) {
 
 // The fields of `/proc/<pid>/stat` after the parenthesized command name (field 3 onward), or null
 // when the process has no readable stat. `deps.readProcStat(pid)` replaces the procfs read.
-function procStatFields(pid, deps) {
+export function procStatFields(pid, deps = {}) {
   try {
     const stat = (deps.readProcStat ?? ((value) => readFileSync(`/proc/${value}/stat`, 'utf8')))(
       pid,

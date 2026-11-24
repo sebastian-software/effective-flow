@@ -78,10 +78,11 @@ function phaseText(target, tool) {
       ? join(distRoot, target, 'effective-flow', 'shared', 'build-delegated-run.md')
       : join(distRoot, target, 'effective-flow', 'tools', `${tool}.md`);
   const text = readFileSync(path, 'utf8');
-  const bounds =
-    tool === 'build'
-      ? ['\n### Phase 2: Implementation\n', '\n### Phase 3: Documentation\n']
-      : ['\n### Phase 3: Refactoring\n', '\n### Phase 3.5: Documentation sync\n'];
+  const bounds = {
+    build: ['\n### Phase 2: Implementation\n', '\n### Phase 3: Documentation\n'],
+    refactor: ['\n### Phase 3: Refactoring\n', '\n### Phase 3.5: Documentation sync\n'],
+    fix: ['\n### Phase 3: Fix\n', '\n### Phase 3.5: Documentation sync\n'],
+  }[tool];
   const from = text.indexOf(bounds[0]);
   const to = text.indexOf(bounds[1], from + 1);
   assert.ok(from >= 0 && to > from, `${target} ${tool}: implementation phase must render`);
@@ -196,7 +197,7 @@ test('base Codex sidecars retain role defaults while tier guidance names allowed
 });
 
 test('Codex Fast selectors choose Fast sidecars without inline model overrides', () => {
-  for (const tool of ['build', 'refactor']) {
+  for (const tool of ['build', 'refactor', 'fix']) {
     const phase = phaseText('codex', tool);
     for (const worker of FAST_IMPLEMENTERS) {
       // One valid code span: the worker name renders bare inside it (plan decision 7).
@@ -227,7 +228,7 @@ test('portable output has no native tier or Fast variant artifacts and no Fast s
     files.some((path) => /(?:-fast|-tier-(?:mechanical|deep))\.(?:toml|md)$/.test(path)),
     false,
   );
-  for (const tool of ['build', 'refactor']) {
+  for (const tool of ['build', 'refactor', 'fix']) {
     const source = readFileSync(join(portable, 'tools', `${tool}.md`), 'utf8');
     assert.doesNotMatch(source, /effective-flow-[a-z-]+-fast\b/);
     assert.doesNotMatch(source, /tier-(?:mechanical|deep)\b/);

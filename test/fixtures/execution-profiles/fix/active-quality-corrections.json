@@ -1,0 +1,57 @@
+{
+  "name": "Fix Phase 4 incorporation and Phase 5 corrections count as Quality correction rounds",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "corrections": [
+    "review-incorporation",
+    "completion-correction",
+    "completion-correction",
+    "completion-correction"
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast"],
+        "fallback": "none",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 4,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

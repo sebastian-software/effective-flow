@@ -372,7 +372,11 @@ test('portable output contains only base workers and no native profile represent
       assert.deepEqual(contract.panelModels, PANEL_MODEL_ALLOWLIST);
       assert.deepEqual(contract.fast, {
         mappings: AGENT_PROFILE_MAPPINGS.fast,
-        sites: ['build-delegated-run/initial-implementation', 'refactor/initial-implementation'],
+        sites: [
+          'build-delegated-run/initial-implementation',
+          'fix/initial-implementation',
+          'refactor/initial-implementation',
+        ],
       });
       providerContent = JSON.stringify({ ...contract, mappings: {}, panelModels: {}, fast: {} });
     }
@@ -391,7 +395,7 @@ test('portable output contains only base workers and no native profile represent
   }
 });
 
-// `build` Phase 2 and `refactor` Phase 3 are the adopted Fast surfaces. Each of their five
+// `build` Phase 2, `refactor` Phase 3 and `fix` Phase 3 are the adopted Fast surfaces. Each of their five
 // implementer selector lines keeps the Quality reference and appends exactly one target-native Fast
 // rendering; portable output keeps the base worker at the one rendered Fast tier line of that
 // phase, without naming a native profile or a gate reason to record. A selector line is found by its Quality
@@ -399,6 +403,7 @@ test('portable output contains only base workers and no native profile represent
 const ADOPTED_RENDERED_PHASES = {
   build: { start: '\n### Phase 2: Implementation\n', end: '\n### Phase 3: Documentation\n' },
   refactor: { start: '\n### Phase 3: Refactoring\n', end: '\n### Phase 3.5: Documentation sync\n' },
+  fix: { start: '\n### Phase 3: Fix\n', end: '\n### Phase 3.5: Documentation sync\n' },
 };
 
 test('the adopted selector lines render the exact per-target Fast representation', () => {
@@ -435,7 +440,11 @@ test('the adopted selector lines render the exact per-target Fast representation
         const quality = `\`Use the ${worker} skill for this phase.\``;
         const lines = phase.split('\n').filter((line) => line.includes(quality));
         assert.equal(lines.length, 1, `${where} ${agent}: one selector line`);
-        assert.match(lines[0], /^ {3}- /, `${where} ${agent}: the selector is a step 1 item`);
+        assert.match(
+          lines[0],
+          /^ {3}- /,
+          `${where} ${agent}: the selector is a numbered-step item`,
+        );
         assert.ok(lines[0].endsWith(render(worker)), `${where} ${agent}: ${lines[0]}`);
       }
       // Whole-file counts: no Fast rendering exists outside the five selector lines.
@@ -638,7 +647,7 @@ test('route policy, authorization, eligibility, and generated-name errors fail b
         join(checkout, 'src/shared/goal-completion.md'),
         '\n{{AGENT_PROFILE:nodejs-implementer:fast}}\n',
       ),
-    /Fast-profile references are allowed only in the initial implementation phases of shared\/build-delegated-run\.md and tools\/refactor\.md/,
+    /Fast-profile references are allowed only in the initial implementation phases of shared\/build-delegated-run\.md, tools\/refactor\.md and tools\/fix\.md/,
   );
 });
 
@@ -663,6 +672,14 @@ test('profile tokens are accepted only in the initial implementation sections', 
       `   - ${token}\n   - Use every bucket selected by project routing`,
     );
     raiseBudget(checkout, 'refactor');
+  });
+  assertMutatedBuildSucceeds('fix-phase-3-profile-token', (checkout) => {
+    replaceOnce(
+      join(checkout, 'src/tools/fix.md'),
+      '   - Never send product code to the tooling-only generic implementer.',
+      `   - ${token}\n   - Never send product code to the tooling-only generic implementer.`,
+    );
+    raiseBudget(checkout, 'fix');
   });
   assertMutatedBuildFails(
     'build-phase-2-token-before-marker',
@@ -705,6 +722,28 @@ test('profile tokens are accepted only in the initial implementation sections', 
         `### Phase 4: Review\n\n${token}\n`,
       ),
     /Fast-profile references.*(?:initial implementation|Phase 3)/i,
+  );
+  // `fix` authorizes only Phase 3: its failing-test step before the marker and its Phase 4
+  // verification stay Fast-free.
+  assertMutatedBuildFails(
+    'fix-failing-test-token-before-marker',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'src/tools/fix.md'),
+        '### Phase 3: Fix\n',
+        `### Phase 3: Fix\n\n${token}\n`,
+      ),
+    /Fast-profile references in tools\/fix\.md must all follow one spawn-site marker inside Fix Phase 3/,
+  );
+  assertMutatedBuildFails(
+    'fix-verification-profile-token',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'src/tools/fix.md'),
+        '### Phase 4: Verification\n',
+        `### Phase 4: Verification\n\n${token}\n`,
+      ),
+    /Fast-profile references in tools\/fix\.md are allowed only inside Fix Phase 3/,
   );
 });
 

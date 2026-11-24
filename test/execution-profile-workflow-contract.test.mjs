@@ -1,6 +1,6 @@
-// `build` adopts the execution-profile policy in Phase 2, and `refactor` reuses that adoption for
-// its Phase 3 after the Phase 2 baseline; both record it through the pilot workflow-record
-// fragment. Neither is executable code, so this suite pins the adoption three times: a small
+// `build` adopts the execution-profile policy in Phase 2, `refactor` reuses that adoption for
+// its Phase 3 after the Phase 2 baseline, and `fix` for its Phase 3 after the failing-test step;
+// each records it through the pilot workflow-record fragment. None is executable code, so this suite pins the adoption three times: a small
 // reference model, derived from the parsed policy tables, replays the fixture scenarios under
 // test/fixtures/execution-profiles/<workflow>/; every replayable scenario's operations then run
 // against the shipped helper in a temporary runtime root, with payloads built from the keys the
@@ -47,6 +47,7 @@ const contract = parseExecutionProfileContract(source('src/shared/execution-prof
 });
 const build = source('src/shared/build-delegated-run.md');
 const refactor = source('src/tools/refactor.md');
+const fix = source('src/tools/fix.md');
 const fragment = source('src/shared/pilot-measurement-workflow.md');
 
 function section(text, start, end) {
@@ -1348,7 +1349,7 @@ async function replay(fixture, scenario) {
 // --- Fixture replay -------------------------------------------------------------------------
 
 const FIXTURE_ROOT = new URL('fixtures/execution-profiles/', import.meta.url);
-const ADOPTING_WORKFLOWS = ['build', 'refactor'];
+const ADOPTING_WORKFLOWS = ['build', 'refactor', 'fix'];
 const fixtures = ADOPTING_WORKFLOWS.flatMap((workflow) => {
   const directory = new URL(`${workflow}/`, FIXTURE_ROOT);
   return readdirSync(directory)
@@ -1362,6 +1363,7 @@ const fixtures = ADOPTING_WORKFLOWS.flatMap((workflow) => {
 });
 const buildFixtures = fixtures.filter(({ workflow }) => workflow === 'build');
 const refactorFixtures = fixtures.filter(({ workflow }) => workflow === 'refactor');
+const fixFixtures = fixtures.filter(({ workflow }) => workflow === 'fix');
 
 for (const fixture of fixtures) {
   test(`${fixture.workflow} execution-profile fixture: ${fixture.name}`, () => {
@@ -1647,7 +1649,7 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
       `no ${harness} fixture`,
     );
   }
-  // Both adopting workflows replay the portable path: an activated Fast attempt, a requalification
+  // `build` and `refactor` replay the portable path: an activated Fast attempt, a requalification
   // refused at `start` and at `start-packet`, and a foreign reservation closing admission.
   for (const set of [buildFixtures, refactorFixtures]) {
     const portable = set.filter((fixture) => installKindOf(fixture) === 'portable');
@@ -1748,6 +1750,37 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
       `no fixture replays a concurrent ${operation}`,
     );
   }
+});
+
+// Invariant: `fix` runs the shared record model unchanged, so its fixtures replay against the shipped
+// helper with `fix` as the record's workflow: an activated portable Fast attempt, a native Fast
+// success, a foreign reservation closing admission, Quality corrections, an `iterate` correction
+// pass, and every terminal status a reserved record can finalize with.
+test('the fix fixture set replays the shared record model on every exit', () => {
+  assert.ok(fixFixtures.length > 0, 'fix has replayable fixtures');
+  assert.ok(fixFixtures.every((fixture) => fixture.workflow === 'fix'));
+  const portable = fixFixtures.filter((fixture) => installKindOf(fixture) === 'portable');
+  assert.ok(portable.some(({ expected }) => expected.activation === 'activated'));
+  assert.ok(
+    fixFixtures.some(({ expected }) =>
+      expected.packets.some(({ attempts }) => attempts.includes('fast')),
+    ),
+    'a fix packet attempts Fast',
+  );
+  assert.ok(fixFixtures.some((fixture) => externalAt(fixture, 'before-start-packet', 'start')));
+  assert.ok(fixFixtures.some(({ expected }) => expected.finalize?.qualityCorrectionRounds > 0));
+  assert.ok(
+    fixFixtures.some(({ expected }) =>
+      expected.packets.some(({ eligibility }) => eligibility === 'excluded(correction-pass)'),
+    ),
+  );
+  assert.deepEqual(
+    [...new Set(fixFixtures.map(({ expected }) => expected.finalize?.completionStatus))]
+      .filter(Boolean)
+      .sort(),
+    ['aborted', 'completed', 'failed'],
+  );
+  assert.ok(fixFixtures.some(({ expected }) => expected.operations.length === 0));
 });
 
 // Invariant: the refactor fixtures exercise every refactor-specific branch the plan names — the
@@ -2173,10 +2206,9 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   ]);
   assert.equal(blocks[1].configState, 'enabled');
   assert.equal(blocks[1].installKind, '<native|portable>');
-  // The placeholder names exactly the adopting workflows; the helper's closed vocabulary admits them
-  // and already `fix`, which adopts the policy later.
+  // The placeholder names exactly the adopting workflows, the helper's closed vocabulary.
   assert.equal(blocks[1].workflow, `<${ADOPTING_WORKFLOWS.join('|')}>`);
-  assert.deepEqual(PILOT_MEASUREMENT_PROTOCOL.enums.workflows, [...ADOPTING_WORKFLOWS, 'fix']);
+  assert.deepEqual(PILOT_MEASUREMENT_PROTOCOL.enums.workflows, ADOPTING_WORKFLOWS);
   assert.match(flat(reservation), /`workflow` names the adopting workflow/);
   assert.match(flat(reservation), /`firstReason` is `null` exactly for `eligible`/);
   assert.match(flat(reservation), /`not-evaluated` is never sent/);
@@ -2394,8 +2426,9 @@ test('incidents are recorded by category and a failed finalize offers one same-r
     failureText,
     /closes Fast admission for later runs or, when only timing receipts remain behind a persisted terminal record, makes every later `start` and `start-gate-observation` fail `INCOMPLETE_EVIDENCE`/,
   );
-  // Only the owning run can reconcile; purge needs a complete aggregate, so a left record clears
-  // only by discarding the generation.
+  // Only the owning run can reconcile; purge needs a complete aggregate. Cleanup abandons a
+  // still-open reservation, but receipts left behind a terminal record clear only by discarding
+  // the generation.
   assert.match(
     failureText,
     /no later run can reconcile it: only `begin-review` followed by `discard-generation` with the pilot disabled clears it, losing the generation/,
@@ -2490,6 +2523,7 @@ test('neither adopting workflow reads another tool file', () => {
   for (const [name, text] of [
     ['build', build],
     ['refactor', refactor],
+    ['fix', fix],
   ]) {
     assert.doesNotMatch(text, /tools\/[a-z-]+\.md/, `${name} must not name a tool file`);
   }
@@ -2628,6 +2662,148 @@ test('refactor finalizes its pilot record on every exit with phase-owned fields'
     'Run the worktree-record exit self-check.',
     'finalize a reserved pilot record per "Pilot record" above',
     'summarize what was refactored',
+  );
+});
+
+const fixPhase3 = section(fix, '### Phase 3: Fix', '### Phase 3.5');
+const fixPhase4 = section(fix, '### Phase 4: Verification', '### Phase 5');
+const fixPhase5 = section(fix, '### Phase 5: Completion', '```include');
+
+// Invariant: fix selects profiles only once its failing test is confirmed, so a return to Phase 2
+// reserves nothing; it reuses the shared per-packet state and Fast→Quality transition by pointer,
+// and keeps the failing-test paths out of every Fast packet's writes.
+test('fix adopts the shared initial implementation phase after its failing-test step', () => {
+  ordered(
+    flat(fixPhase3),
+    'capture the diff baseline',
+    ' 1. If Phase 2 specified a failing test',
+    'start no implementer and return to Phase 2',
+    '```lazy-include execution-profiles ',
+    '```lazy-include pilot-measurement-workflow ',
+    '**Profile seam.**',
+    ' 2. Start every implementer',
+    ' 3. Give a precise assignment',
+  );
+  const seam = flat(section(fixPhase3, '**Profile seam.**', '\n2. Start'));
+  for (const clause of [
+    'Once steps 0 and 1 are complete, every initial packet follows "Initial implementation phase" of the loaded `execution-profiles` fragment: its per-packet state, preflight, delegation, requirements check, and Fast→Quality transition, with `fix` as the record\'s `workflow`',
+    'Bind each packet to the approved diagnosis, root cause, fix scope, Phase 2 reproduction, and step 1 test result',
+    'The step 1 failing-test paths are write exclusions of a Fast packet, named in its handoff and in a Fast→Quality handoff, and its packet snapshot also covers them',
+    'A packet whose required write paths overlap a failing-test path fails gate row 9 `unclear-ownership`, so it never selects Fast',
+    'After a Fast attempt returns, the orchestrator compares those paths with the pre-spawn packet snapshot; any change is the `scope-incident` fallback, even when another post-attempt fallback also ended that attempt: fix gives `scope-incident` precedence over any other post-attempt fallback',
+    'It is a scope fallback only and sends no `record-incident`, whose `scope` category is for genuine critical incidents',
+    'The Quality continuation first restores their step 1 version, the one write the exclusion permits it',
+    "The orchestrator captures their step 1 content with the pre-spawn snapshot and adds it to the Fast→Quality handoff as fix's own addition, since a new untracked test has no diff in the snapshot summary",
+    '`fastAttemptConsumed` survives every later entry, and eligibility is never evaluated again',
+  ]) {
+    assert.ok(seam.includes(clause), `the fix profile seam is missing: ${clause}`);
+  }
+  // The exclusion is enforced only through existing policy names: gate row 9 keeps an overlapping
+  // packet off Fast, and a changed failing test is the post-attempt `scope-incident` fallback, which
+  // consumes the only Fast attempt; the seam invents no gate decision or fallback of its own.
+  const rowNine = contract.gate.find(({ priority }) => String(priority) === '9');
+  assert.equal(rowNine?.decision, 'unclear-ownership');
+  const scopeIncident = contract.decisionMappings.find(
+    ({ fallback }) => fallback === 'scope-incident',
+  );
+  assert.equal(scopeIncident?.fastAttemptConsumed, 'true');
+  assert.equal(scopeIncident?.selectedProfile, 'quality');
+  const seamFallbacks = [...seam.matchAll(/`([a-z-]+)` fallback/g)].map(([, name]) => name);
+  assert.deepEqual(seamFallbacks, ['scope-incident']);
+  for (const owned of [
+    '**Per-packet state.**',
+    'Each of the eight post-attempt fallbacks',
+    'packet-to-path ownership map',
+    '`Fast consumed; no second Fast attempt`',
+    'One keyword-less resume is the same delegation',
+    'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',
+  ]) {
+    assert.ok(!fix.includes(owned), `fix must not copy: ${owned}`);
+  }
+  assert.match(
+    flat(section(fixPhase3, '\n2. Start', '\n3. Give')),
+    /The Quality selector is the default; the Fast reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed` is set immediately before that call/,
+  );
+});
+
+// Invariant: no fix seam after the initial Phase 3 attempt can reach a Fast worker; Phase 4
+// incorporation and every Phase 5 correction name the routed Quality implementer.
+test('every fix pass after the initial Phase 3 attempt is Quality-only', () => {
+  assert.match(
+    flat(fixPhase4),
+    /make one automatic incorporation pass for new current-scope items through the routed Quality implementer/,
+  );
+  assert.match(
+    flat(section(fixPhase5, '1. If errors were found', '2. If admitted')),
+    /fix them through the routed Quality implementer and re-verify Phase 4/,
+  );
+  assert.match(
+    flat(section(fix, '\n## Rules')),
+    /every implementation pass after a packet's initial Phase 3 attempt – Phase 4 incorporation, Phase 5 correction, retry – is Quality-only through the routed Quality implementer/,
+  );
+  const outsidePhase3 = fix.replace(fixPhase3, '');
+  assert.doesNotMatch(outsidePhase3, /\{\{AGENT_PROFILE:/, 'profile tokens stay in Phase 3');
+  assert.doesNotMatch(
+    outsidePhase3,
+    /\b(?:spawn|request|route|delegate)\b[^\n]{0,120}\bfast\b|\bfast\s+(?:profile|worker|model)\b/i,
+    'no later seam requests Fast',
+  );
+  for (const operation of ['begin-baseline', 'activate', 'resume']) {
+    assert.doesNotMatch(fix, new RegExp(`\`${operation}\``), `fix must not name ${operation}`);
+  }
+});
+
+// Invariant: only a packet whose Fast attempt started a child adds the routed deep reviewer, as
+// the last item of Phase 4 step 2 after the full-pass reviewer of fix/verification, and a
+// reserved record is finalized once on every exit, after the exit self-check and before the
+// summary, with the record fields its phases own.
+test('fix reviews a Fast packet at deep and finalizes its pilot record on every exit', () => {
+  const review = flat(
+    section(
+      fixPhase4,
+      '   - for every packet whose Fast attempt started a child',
+      '```lazy-include',
+    ),
+  );
+  ordered(
+    fixPhase4,
+    '<!-- spawn-site:fix/verification -->',
+    '   - after the incorporation pass',
+    '   - for every packet whose Fast attempt started a child',
+    '<!-- spawn-site:fix/routed-review -->',
+    '```lazy-include',
+  );
+  for (const clause of [
+    'also after its Fast→Quality transition',
+    'the reviewer the canonical routing contract selects for its bucket',
+    "a read-only review of that packet's paths, reporting all severities",
+    'a Quality packet adds no reviewer',
+    '<!-- spawn-site:fix/routed-review -->',
+  ]) {
+    assert.ok(review.includes(clause), `the Fast-packet review is missing: ${clause}`);
+  }
+  const record = flat(section(fixPhase5, '**Pilot record.**', '\n1. If errors'));
+  for (const clause of [
+    'A pilot record reserved in Phase 3 is finalized exactly once on every terminal exit – success, a controlled stop, an abort, an exhausted correction loop, an incident that ends the run, or a missing outcome – per the loaded `pilot-measurement-workflow` fragment',
+    'Its `validation` comes from the last Phase 4 run',
+    "`review` from that run's reviewers",
+    '`completionStatus` is `completed` only after the completion condition holds',
+    '`aborted` after a controlled stop or a user abort',
+    '`failed` after an incident that ends the run, a missing outcome, or an exhausted correction loop',
+  ]) {
+    assert.ok(record.includes(clause), `the fix pilot record paragraph is missing: ${clause}`);
+  }
+  assert.doesNotMatch(
+    fix.replace(section(fixPhase5, '**Pilot record.**', '\n1. If errors'), ''),
+    /`completionStatus`/,
+    'the status mapping lives in the paragraph alone',
+  );
+  ordered(
+    fixPhase5,
+    'perform the handback',
+    'Run the worktree-record exit self-check.',
+    'Finalize a reserved pilot record per "Pilot record" above.',
+    'Summarize:',
   );
 });
 

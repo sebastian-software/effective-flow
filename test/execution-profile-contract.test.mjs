@@ -225,7 +225,8 @@ function collectFiles(directory) {
   });
 }
 
-// `build` Phase 2 and `refactor` Phase 3 are the only adopted Fast surfaces. Each slice ends at
+// `build` Phase 2, `refactor` Phase 3 and `fix` Phase 3 are the only adopted Fast surfaces; each
+// names the numbered step that carries its selector lines. Each slice ends at
 // its next phase heading, so every later phase, the rules, and every shared include rendered
 // outside it stay under the full guard.
 const ADOPTED_PHASES = {
@@ -233,11 +234,19 @@ const ADOPTED_PHASES = {
     name: 'build Phase 2',
     start: '### Phase 2: Implementation',
     end: '### Phase 3: Documentation',
+    selectorStep: 1,
   },
   'tools/refactor.md': {
     name: 'refactor Phase 3',
     start: '### Phase 3: Refactoring',
     end: '### Phase 3.5: Documentation sync',
+    selectorStep: 1,
+  },
+  'tools/fix.md': {
+    name: 'fix Phase 3',
+    start: '### Phase 3: Fix',
+    end: '### Phase 3.5: Documentation sync',
+    selectorStep: 2,
   },
 };
 // The model-selection pair owns the portable Fast lookup and its verification; it authorizes no
@@ -924,7 +933,7 @@ test('the no-activation detector distinguishes direct Fast requests from unrelat
   }
 });
 
-// Invariant: Fast is adopted only in `build` Phase 2 and `refactor` Phase 3 – each with its five
+// Invariant: Fast is adopted only in `build` Phase 2, `refactor` Phase 3 and `fix` Phase 3 – each with its five
 // selector tokens and the two lazy policy pointers – while every other source stays free of Fast
 // requests, profile tokens, and the opt-in key (which only setup may name).
 test('the build assertion precedes the actual atomic swap and only the adopted phases request Fast', () => {
@@ -988,7 +997,7 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
     }
   }
 
-  for (const [tool, { name }] of Object.entries(ADOPTED_PHASES)) {
+  for (const [tool, { name, selectorStep }] of Object.entries(ADOPTED_PHASES)) {
     const text = readFileSync(new URL(`src/${tool}`, ROOT), 'utf8');
     const phase = adoptedPhase(tool, text);
     for (const fragment of adoptedFragments) {
@@ -1003,8 +1012,10 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
         `${tool} must not eagerly include ${fragment}`,
       );
     }
-    const step1 = phase.split(/\n(?=\d+\. )/).find((item) => item.startsWith('1. '));
-    assert.ok(step1, `${name} must keep its numbered step 1`);
+    const selectorItem = phase
+      .split(/\n(?=\d+\. )/)
+      .find((item) => item.startsWith(`${selectorStep}. `));
+    assert.ok(selectorItem, `${name} must keep its numbered step ${selectorStep}`);
     const tokens = [...text.matchAll(/\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g)];
     assert.deepEqual(
       tokens.map(([, agent]) => agent).sort(),
@@ -1013,13 +1024,13 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
     );
     assert.ok(tokens.every(([, , profile]) => profile === 'fast'));
     for (const agent of EXPECTED_FAST_WORKERS) {
-      const selector = step1
+      const selector = selectorItem
         .split('\n')
         .filter((line) => line.includes(`{{AGENT_PROFILE:${agent}:fast}}`));
       assert.equal(
         selector.length,
         1,
-        `${name} ${agent}: the Fast token must sit on one step 1 line`,
+        `${name} ${agent}: the Fast token must sit on one step ${selectorStep} line`,
       );
       assert.match(
         selector[0],
@@ -1050,13 +1061,13 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
       assert.doesNotMatch(
         source,
         /\{\{AGENT_PROFILE:/,
-        `${path} must remain profile-token-free; only build Phase 2 and refactor Phase 3 adopt Fast`,
+        `${path} must remain profile-token-free; only build Phase 2, refactor Phase 3 and fix Phase 3 adopt Fast`,
       );
     }
   }
 });
 
-test('an isolated build ships Fast only through the adopted build and refactor phases', (t) => {
+test('an isolated build ships Fast only through the adopted build, refactor and fix phases', (t) => {
   const outputRoot = mkdtempSync(join(tmpdir(), 'effective-flow-execution-profile-build-'));
   t.after(() => rmSync(outputRoot, { recursive: true, force: true }));
   const build = spawnSync(process.execPath, ['build.mjs'], {

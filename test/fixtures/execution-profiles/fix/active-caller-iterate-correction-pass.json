@@ -1,0 +1,52 @@
+{
+  "name": "An iterate-delegated fix records correction-pass and runs Quality",
+  "harness": "codex",
+  "caller": "iterate",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
+    "packets": [
+      {
+        "eligibility": "excluded(correction-pass)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "correction-pass"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

@@ -639,7 +639,7 @@ and multiple generations fail closed without choosing one. Reservation then pass
 with the separately resolved configuration state, `merge|report` mode, `claude|codex` harness, and install kind.
 
 The observation has no PR, repository, branch, workflow-record, check-name, comment, finding, or
-path identifier and no per-run link to `build` or `refactor`. It is grouped only at the generation
+path identifier and no per-run link to `build`, `refactor` or `fix`. It is grouped only at the generation
 period level. Disabled or invalid configuration and `none`, `suspended`, or `review` generation
 states make observation a read-only no-op; observer-only post-merge re-entry records nothing. The
 observation is also skipped, with nothing persisted and no effect on the pilot, when admission
@@ -653,7 +653,7 @@ evidence; a merge-mode failure records `failed`. The helper's explicit `pilotCon
 `controlStatePersisted`, and value-free `alert` metadata is the only authority for claiming an
 `evidence-gap` or durable suspension. The gate never infers either from an exit code, missing
 receipt, or failed write; if persistence cannot be proven, it says so without changing the gate
-result. The observation never influences profile selection: only `build` and `refactor` select
+result. The observation never influences profile selection: only `build`, `refactor` and `fix` select
 Fast, and only for an eligible packet in an active generation. See
 [Model-tiering pilot data and privacy](model-tiering-pilot.md) for the local evidence and retention
 boundary.
