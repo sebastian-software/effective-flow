@@ -257,9 +257,11 @@ reports per issue `applied`, `partial`, `stale` (content, triage labels or manag
 changed, or closed, since the assessment; nothing written), `failed` or `skipped`. For a `failed`
 code `TRIAGE_LOCKED`, relay its lock `path`, `ownerPid` and `mtime`, and tell the user to remove
 that file by hand only when no other triage apply is running. For a `failed` code
-`TRIAGE_WRITE_UNSETTLED`, relay its `retryAfter` and apply again then; the earlier write's request
-may still be in flight, and its intent stays until the window has passed. A run-level `failed` at `labels-ensure` stops every further write;
-report it. Then call `report-write` again with `applied` set to that result.
+`TRIAGE_WRITE_UNSETTLED`, relay its `retryAfter` and apply again then: every issue write stamps its
+intent first, and a write that did not settle (a failure that may have reached the forge, or an
+interrupted run) blocks a re-apply until `retryAfter`. A `failed` code `UNSAFE_RUNTIME_STATE` means
+the issue's runtime state (lock or intent) could not be read or written, so no further write was made; relay it.
+A run-level `failed` at `labels-ensure` stops every further write; report it. Then call `report-write` again with `applied` set to that result.
 
 ## Phase 10: Completion
 

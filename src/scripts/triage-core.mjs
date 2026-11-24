@@ -146,8 +146,8 @@ const PENDING_FILE = /^issue-([1-9]\d{0,9})\.json$/;
 // `atomicWrite` temporaries: a leftover of an interrupted write, never state.
 const STATE_TEMP = /^\.(?:issue-[1-9]\d{0,9}|scan-cursor)\.json\.[0-9a-f]{16}\.tmp$/;
 const MAX_PENDING = 100;
-// How long an intent stays unsettled after a write whose request may still be in flight: a later
-// apply could otherwise clear the intent and restore a verdict that the late request then undoes.
+// How long a stamped intent blocks a re-apply. Every forge write stamps its issue's intent first and
+// only a settled write clears the stamp, so a late request cannot undo a retry's restored verdict.
 const UNSETTLED_WRITE_GRACE_MS = 10 * 60 * 1000;
 const INPUT_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'inputs']);
 const SNAPSHOT_FILE = /^issue-[1-9]\d{0,9}\.md$/;
@@ -2367,8 +2367,8 @@ function stampRecency(body, seq) {
   return body.replace(/ -->\n/, ` seq=${seq} -->\n`);
 }
 
-// What a group's label writes are meant to leave: the retry anchor of a partial write. A group
-// without a label entry, such as a deliberate comment-only decision, records none.
+// What a group's label writes are meant to leave, recorded in its intent; a group without a label
+// entry, such as a deliberate comment-only decision, records `null`.
 function intendedOutcome(group) {
   const label = group.find((entry) => entry.action !== 'issue-comment-upsert');
   if (!label) return null;
@@ -2391,21 +2391,26 @@ function readIntent(root, number) {
 }
 
 // Each apply stamps its intent with an owner, so a settling apply can tell its own intent, or the
-// earlier one it replaced, from one a concurrent apply wrote in between.
-async function recordIntent(deps, runtimeStateRoot, number, expected) {
+// earlier one it replaced, from one a concurrent apply wrote in between. An unreadable or malformed
+// earlier intent, or one still stamped within its window, is never replaced.
+async function recordIntent(deps, runtimeStateRoot, number, expected, nowMs) {
   const context = runtimeContext(deps);
   await resolveRuntimeRoot(context, runtimeStateRoot);
   const directory = await ensureChain(context, PENDING_SEGMENTS);
   const file = path.join(directory, `issue-${number}.json`);
   const before = readIntent(context.cwd, number);
+  const earlier = parseIntent(before, number);
+  if (earlier === undefined)
+    fail('UNSAFE_RUNTIME_STATE', 'the earlier write intent is unreadable or malformed');
+  if (unsettledRemaining(earlier, nowMs) > 0)
+    fail('UNSAFE_RUNTIME_STATE', 'the earlier write intent is still unsettled');
   const owner = (deps.randomBytes ?? cryptoRandomBytes)(8).toString('hex');
   const content = `${JSON.stringify({ version: 1, number, expected, owner })}\n`;
   await atomicWrite(context, file, content);
   return { existed: before !== null, content, before };
 }
 
-// Removes the intent only while it is still the one this apply wrote or the one it found and
-// replaced; a newer intent belongs to a concurrent apply that has not settled yet.
+// Reads issue `number`'s intent; any failure reads as `undefined`, i.e. unreadable.
 async function snapshotIntent(deps, runtimeStateRoot, number) {
   try {
     const context = runtimeContext(deps);
@@ -2416,34 +2421,72 @@ async function snapshotIntent(deps, runtimeStateRoot, number) {
   }
 }
 
-// Milliseconds left of the unsettled window an earlier apply stamped into its intent, else 0. A
-// stamp from the future beyond the window is clock skew, never a reason to block.
-function unsettledRemaining(raw, nowMs) {
-  if (typeof raw !== 'string') return 0;
-  let stamp;
+const INTENT_KEYS = Object.freeze(['version', 'number', 'expected', 'owner']);
+const INTENT_OWNER = /^[0-9a-f]{1,64}$/;
+
+// The intent text `raw` as issue `number`'s validated intent: null when absent, `undefined` for an
+// unreadable file or anything other than what `recordIntent` and `intentStamped` write, which the
+// caller treats alike, so a damaged intent never lets a write through.
+function parseIntent(raw, number) {
+  if (raw === null) return null;
+  if (typeof raw !== 'string') return undefined;
+  let intent;
   try {
-    stamp = JSON.parse(raw)?.unsettledAt;
+    intent = JSON.parse(raw);
   } catch {
-    return 0;
+    return undefined;
   }
-  if (!Number.isSafeInteger(stamp)) return 0;
-  const remaining = stamp + UNSETTLED_WRITE_GRACE_MS - nowMs;
-  return remaining > 0 && remaining <= UNSETTLED_WRITE_GRACE_MS ? remaining : 0;
+  if (!intent || typeof intent !== 'object' || Array.isArray(intent)) return undefined;
+  const keys = Object.keys(intent);
+  const stamped = Object.hasOwn(intent, 'unsettledAt');
+  if (
+    keys.length !== INTENT_KEYS.length + (stamped ? 1 : 0) ||
+    !INTENT_KEYS.every((key) => Object.hasOwn(intent, key)) ||
+    intent.version !== 1 ||
+    intent.number !== number ||
+    !(
+      intent.expected === null ||
+      intent.expected === 'security' ||
+      VERDICTS.includes(intent.expected)
+    ) ||
+    typeof intent.owner !== 'string' ||
+    !INTENT_OWNER.test(intent.owner) ||
+    (stamped && !Number.isSafeInteger(intent.unsettledAt))
+  )
+    return undefined;
+  return intent;
 }
 
-// Stamps this apply's own intent as unsettled; a changed or missing intent is left alone.
-async function markIntentUnsettled(deps, runtimeStateRoot, number, content, nowMs) {
+// Milliseconds left of the unsettled window a validated intent carries, else 0. A stamp more than
+// the window ahead of now is clock skew, never a reason to block; a stamp ahead by at most the
+// window still blocks, so the result never exceeds twice the window.
+function unsettledRemaining(intent, nowMs) {
+  if (!intent || intent.unsettledAt === undefined) return 0;
+  if (intent.unsettledAt > nowMs + UNSETTLED_WRITE_GRACE_MS) return 0;
+  return Math.max(0, intent.unsettledAt + UNSETTLED_WRITE_GRACE_MS - nowMs);
+}
+
+// An intent's content with its unsettled stamp set to `nowMs`, or without one for `null`.
+function intentStamped(content, nowMs) {
+  const { unsettledAt, ...intent } = JSON.parse(content);
+  return `${JSON.stringify(nowMs === null ? intent : { ...intent, unsettledAt: nowMs })}\n`;
+}
+
+// Replaces this apply's own intent `content` with `next`; throws when the file holds anything else.
+async function rewriteIntent(deps, runtimeStateRoot, number, content, next) {
   const context = runtimeContext(deps);
   await resolveRuntimeRoot(context, runtimeStateRoot);
-  if (readIntent(context.cwd, number) !== content) return;
-  const file = path.join(context.cwd, ...PENDING_SEGMENTS, `issue-${number}.json`);
+  if (readIntent(context.cwd, number) !== content)
+    fail('UNSAFE_RUNTIME_STATE', 'the write intent no longer holds what this apply wrote');
   await atomicWrite(
     context,
-    file,
-    `${JSON.stringify({ ...JSON.parse(content), unsettledAt: nowMs })}\n`,
+    path.join(context.cwd, ...PENDING_SEGMENTS, `issue-${number}.json`),
+    next,
   );
 }
 
+// Removes the intent only while it is still the one this apply wrote or the one it found and
+// replaced; a newer intent belongs to a concurrent apply that has not settled yet.
 async function removeIntent(deps, runtimeStateRoot, number, { content = null, before = null }) {
   const context = runtimeContext(deps);
   await resolveRuntimeRoot(context, runtimeStateRoot);
@@ -2508,9 +2551,10 @@ async function releaseIssueLock(deps, runtimeStateRoot, { target, content }) {
   await guardedUnlink(context, target);
 }
 
-// Refusals that precede any forge write; every other failure may follow an accepted write whose
-// response was lost, so it counts as a write. `INVALID_PAYLOAD` is not among them: it is also what
-// parsing the response of an accepted comment create or update raises.
+// Refusals that precede any forge write, so they clear the call's unsettled stamp; every other
+// failure may follow an accepted write whose response was lost and keeps it. `INVALID_PAYLOAD` is
+// not among them: it is also what parsing the response of an accepted comment create or update
+// raises.
 const REFUSED_BEFORE_WRITE = new Set([
   'STALE_WRITE',
   'UNSUPPORTED_CAPABILITY',
@@ -2665,12 +2709,23 @@ async function writeSetApply(input, deps) {
       continue;
     }
     try {
-      // An earlier apply whose request may still be in flight keeps its intent and blocks a retry
-      // until the window has passed; clearing it sooner could be undone by that late request.
-      const unsettled = unsettledRemaining(
+      // An unreadable or malformed intent fails the issue closed, and an earlier write that did not
+      // settle blocks a retry until its window has passed; clearing it sooner could be undone by a
+      // late request.
+      const earlier = parseIntent(
         await snapshotIntent(deps, inventory.runtimeStateRoot, number),
-        nowOf(deps).getTime(),
+        number,
       );
+      if (earlier === undefined) {
+        record.outcome = 'failed';
+        record.failed = {
+          id: group[0].id,
+          code: 'UNSAFE_RUNTIME_STATE',
+          message: 'the write intent of this issue is unreadable or malformed; inspect it by hand',
+        };
+        continue;
+      }
+      const unsettled = unsettledRemaining(earlier, nowOf(deps).getTime());
       if (unsettled > 0) {
         record.outcome = 'failed';
         record.failed = {
@@ -2710,37 +2765,58 @@ async function writeSetApply(input, deps) {
         continue;
       }
       // The intent is kept before the first write and dropped only once nothing is left to repair.
-      const expected = intendedOutcome(group);
-      let intent = null;
+      let intent;
       let wrote = false;
-      let inFlight = false;
-      // A decision with no label to repair records no intent; it may settle only the one found here.
-      const found = expected
-        ? undefined
-        : await snapshotIntent(deps, inventory.runtimeStateRoot, number);
-      if (expected) {
-        try {
-          intent = await recordIntent(deps, inventory.runtimeStateRoot, number, expected);
-        } catch (error) {
-          record.outcome = 'failed';
-          record.failed = {
-            id: group[0].id,
-            code: 'UNSAFE_RUNTIME_STATE',
-            message: error?.message ?? 'cannot record the write intent',
-          };
-          continue;
-        }
+      try {
+        intent = await recordIntent(
+          deps,
+          inventory.runtimeStateRoot,
+          number,
+          intendedOutcome(group),
+          nowOf(deps).getTime(),
+        );
+      } catch (error) {
+        record.outcome = 'failed';
+        record.failed = {
+          id: group[0].id,
+          code: 'UNSAFE_RUNTIME_STATE',
+          message: error?.message ?? 'cannot record the write intent',
+        };
+        continue;
       }
       const done = new Set();
+      // Every forge call starts only after this apply's own intent carries its unsettled stamp, so
+      // a call that never settles (a lost response or a killed run) blocks a retry by construction.
       const write = async (operation, input) => {
+        try {
+          const stamped = intentStamped(intent.content, nowOf(deps).getTime());
+          await rewriteIntent(deps, inventory.runtimeStateRoot, number, intent.content, stamped);
+          intent.content = stamped;
+        } catch (error) {
+          fail('UNSAFE_RUNTIME_STATE', error?.message ?? 'cannot stamp the write intent');
+        }
         try {
           await session.call(operation, input, { apply: true });
         } catch (error) {
-          const { code } = trackerFailure(error);
-          if (!REFUSED_BEFORE_WRITE.has(code)) wrote = true;
-          // A command that ended without an exit status (a timeout or a kill) may not have reached
-          // the forge yet; one that exited, or answered unparseably, has finished.
-          if (code === 'COMMAND_FAILED' && !Number.isInteger(error?.trackerStatus)) inFlight = true;
+          if (!REFUSED_BEFORE_WRITE.has(trackerFailure(error).code)) {
+            wrote = true;
+            // The window restarts at the failure, since a call may hang longer than the window
+            // before it fails and still reach the forge.
+            try {
+              const restamped = intentStamped(intent.content, nowOf(deps).getTime());
+              await rewriteIntent(
+                deps,
+                inventory.runtimeStateRoot,
+                number,
+                intent.content,
+                restamped,
+              );
+              intent.content = restamped;
+            } catch {
+              /* best effort: the stamp from before the call stays and covers a retry only for what
+                 remains of its window */
+            }
+          }
           throw error;
         }
         wrote = true;
@@ -2792,28 +2868,32 @@ async function writeSetApply(input, deps) {
       if (record.failed) record.outcome = record.applied.length ? 'partial' : 'failed';
       else if (record.applied.length === group.length) record.outcome = 'applied';
       else record.outcome = record.applied.length ? 'partial' : 'skipped';
-      if (inFlight && intent)
-        await markIntentUnsettled(
-          deps,
-          inventory.runtimeStateRoot,
-          number,
-          intent.content,
-          nowOf(deps).getTime(),
-        ).catch(() => {
-          /* without the stamp the intent still repeats one repair */
-        });
-      // An applied group settles its own intent and the earlier one it found, never a concurrent
-      // apply's newer one. A failed retry keeps an earlier intent; a new one is dropped only when
-      // no write was attempted, so an ambiguous failure stays a repair case.
+      // Settlement touches only this apply's current intent or the earlier one it replaced, never a
+      // concurrent apply's newer one. An applied group, or a new intent with nothing written, is
+      // removed. A failure refused before its write, or a group that ended without a failure but
+      // not fully applied, keeps the intent without its stamp as a repair case. Any other failure
+      // keeps the stamp, since its call may have reached the forge.
       const settled = record.outcome === 'applied';
-      const unwritten = intent && !intent.existed && !wrote;
-      if (settled || unwritten)
+      if (settled || (!intent.existed && !wrote))
         await removeIntent(deps, inventory.runtimeStateRoot, number, {
-          content: intent?.content ?? null,
-          before: settled ? (intent ? intent.before : found) : null,
+          content: intent.content,
+          before: settled ? intent.before : null,
         }).catch(() => {
-          /* a leftover intent only repeats one repair */
+          /* a leftover stamped intent blocks a re-apply for its window, then repeats one repair */
         });
+      else if (!record.failed || REFUSED_BEFORE_WRITE.has(record.failed.code)) {
+        const unstamped = intentStamped(intent.content, null);
+        if (unstamped !== intent.content)
+          await rewriteIntent(
+            deps,
+            inventory.runtimeStateRoot,
+            number,
+            intent.content,
+            unstamped,
+          ).catch(() => {
+            /* a leftover stamp delays a retry until its window has passed */
+          });
+      }
     } finally {
       await releaseIssueLock(deps, inventory.runtimeStateRoot, lock).catch(() => {
         /* a lock left behind names itself on the next apply */

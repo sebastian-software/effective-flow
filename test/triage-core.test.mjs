@@ -35,6 +35,8 @@ import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 
 const runner = createProcessRunner();
 const NOW = () => new Date('2026-11-23T12:00:00Z');
+// Past the ten-minute window in which an unsettled write blocks a retry.
+const LATER = () => new Date(NOW().getTime() + 11 * 60 * 1000);
 const RANDOM = () => Buffer.from('a1b2c3d4', 'hex');
 const FORGE = { kind: 'forge' };
 const RUNNER = 'owner';
@@ -295,7 +297,7 @@ function select(writeSet, filter = () => true) {
 }
 
 // The full pipeline up to an apply: inventory, validation, write set, apply of `filter`.
-async function triageRun(root, fake, { selection, assess, drafts, filter = () => true }) {
+async function triageRun(root, fake, { selection, assess, drafts, filter = () => true, now }) {
   const { permission, inventory: data } = await inventory(root, fake, selection);
   const checked = await validated(
     root,
@@ -318,7 +320,7 @@ async function triageRun(root, fake, { selection, assess, drafts, filter = () =>
       writeSet,
       selected: select(writeSet, filter),
     },
-    { tracker: fake.tracker },
+    { tracker: fake.tracker, ...(now ? { now } : {}) },
   );
   return { permission, inventory: data, validated: checked, writeSet, applied };
 }
@@ -1452,7 +1454,12 @@ test('a failure between comment and label is partial, and a re-run converges', a
     repair.inventory.items.map(({ id, group }) => [id, group]),
     [['#1', 'repair']],
   );
-  const second = await triageRun(root, fake, { selection: { references: ['#1'] }, assess, drafts });
+  const second = await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess,
+    drafts,
+    now: LATER,
+  });
   assert.equal(second.applied.issues[0].outcome, 'applied');
   assert.equal(managedComments(fake, 1).length, 1);
   assert.deepEqual(triageLabels(fake, 1), [LABELS['needs-work']]);
@@ -1704,7 +1711,7 @@ test('a failed label add after the comment stays a repair case until a retry suc
     assert.ok(existsSync(stateFile(root, 'pending', 'issue-1.json')), name);
     assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']], name);
     failLabel = false;
-    const second = await triageRun(root, fake, options);
+    const second = await triageRun(root, fake, { ...options, now: LATER });
     assert.equal(second.applied.issues[0].outcome, 'applied', name);
     assert.equal(existsSync(stateFile(root, 'pending', 'issue-1.json')), false, name);
     assert.deepEqual(await untriagedGroups(root, fake), [], name);
@@ -1713,11 +1720,12 @@ test('a failed label add after the comment stays a repair case until a retry suc
 
 test('a failed retry keeps the intent, and an applied group without a label entry clears it', async (t) => {
   const pending = (root) => existsSync(stateFile(root, 'pending', 'issue-1.json'));
-  const partial = async (root, fake) =>
+  const partial = async (root, fake, now) =>
     triageRun(root, fake, {
       selection: { references: ['#1'] },
       assess: (item) => assessment(item),
       drafts: implementDrafts('#1'),
+      now,
     });
   // A retry whose first write fails changes nothing and keeps the earlier intent.
   const root = repository(t);
@@ -1731,7 +1739,10 @@ test('a failed retry keeps the intent, and an applied group without a label entr
   });
   assert.equal((await partial(root, fake)).applied.issues[0].outcome, 'partial');
   fail = 'issue-comment-update';
-  assert.equal((await partial(root, fake)).applied.issues[0].outcome, 'failed');
+  // The retry runs past the unsettled window, so it reaches the forge and fails there.
+  const retry = (await partial(root, fake, LATER)).applied.issues[0];
+  assert.equal(retry.outcome, 'failed');
+  assert.equal(retry.failed.code, 'COMMAND_FAILED');
   assert.ok(pending(root));
   assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']]);
 
@@ -1749,6 +1760,7 @@ test('a failed retry keeps the intent, and an applied group without a label entr
     assess: (item) => assessment(item),
     drafts: implementDrafts('#1'),
     filter: (entry) => entry.action === 'issue-comment-upsert',
+    now: LATER,
   });
   assert.equal(pending(root2), false);
   assert.deepEqual(await untriagedGroups(root2, fake2), []);
@@ -1763,6 +1775,7 @@ test('a failed retry keeps the intent, and an applied group without a label entr
   const security = await triageRun(root3, fake3, {
     selection: { references: ['#1'] },
     assess: (item) => securityAssessment(item),
+    now: LATER,
   });
   assert.equal(security.applied.issues[0].outcome, 'applied');
   assert.equal(pending(root3), false);
@@ -1930,6 +1943,338 @@ test('an applied group never removes the newer intent of a concurrent apply', as
   assert.equal(readFileSync(intentFile, 'utf8'), concurrent);
 });
 
+// Invariant: any write that may have reached the forge, whether it ended without an exit status or
+// with a non-zero one, leaves the intent stamped, so a retry waits out the window instead of
+// repeating a possibly accepted write.
+test('an exit-status failure of a label add after the comment stamps the intent and blocks an immediate retry', async (t) => {
+  const root = repository(t);
+  let fail = true;
+  const fake = forge({
+    issues: [issue(1)],
+    fail: { 'issue-label-add': () => (fail ? 'COMMAND_FAILED' : null) },
+  });
+  const options = {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  };
+  const first = await triageRun(root, fake, options);
+  assert.equal(first.applied.issues[0].outcome, 'partial');
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  const kept = readFileSync(intentFile, 'utf8');
+  assert.equal(JSON.parse(kept).unsettledAt, NOW().getTime());
+  fail = false;
+  const issueWrites = () => fake.mutations().filter(({ input }) => input.number === 1).length;
+  const before = issueWrites();
+  const early = await triageRun(root, fake, options);
+  assert.equal(early.applied.issues[0].outcome, 'failed');
+  assert.equal(early.applied.issues[0].failed.code, 'TRIAGE_WRITE_UNSETTLED');
+  assert.equal(issueWrites(), before);
+  assert.equal(readFileSync(intentFile, 'utf8'), kept);
+  const later = await triageRun(root, fake, { ...options, now: LATER });
+  assert.equal(later.applied.issues[0].outcome, 'applied');
+  assert.equal(existsSync(intentFile), false);
+});
+
+// Invariant: a failed write call is stamped with the time it failed, so a call that hung past the
+// window before failing still blocks an immediate retry.
+test('a write call that hangs past the window and then fails re-stamps the intent at the failure time', async (t) => {
+  const root = repository(t);
+  let clock = NOW().getTime();
+  const now = () => new Date(clock);
+  const fake = forge({
+    issues: [issue(1)],
+    fail: {
+      'issue-label-add': () => {
+        clock += 11 * 60 * 1000;
+        return 'COMMAND_FAILED';
+      },
+    },
+  });
+  const options = {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+    now,
+  };
+  const first = await triageRun(root, fake, options);
+  assert.equal(first.applied.issues[0].outcome, 'partial');
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  assert.equal(JSON.parse(readFileSync(intentFile, 'utf8')).unsettledAt, clock);
+  const issueWrites = () => fake.mutations().filter(({ input }) => input.number === 1).length;
+  const before = issueWrites();
+  const early = await triageRun(root, fake, options);
+  assert.equal(early.applied.issues[0].outcome, 'failed');
+  assert.equal(early.applied.issues[0].failed.code, 'TRIAGE_WRITE_UNSETTLED');
+  assert.equal(issueWrites(), before);
+});
+
+// Invariant: a stamp in the future by at most the window (a small backward clock step) still blocks
+// the retry until stamp + window; only a stamp more than the window ahead is clock skew and ignored.
+test('a stamp ahead by at most the window blocks the retry, a stamp further ahead is skew and does not', async (t) => {
+  const root = repository(t);
+  let fail = true;
+  const fake = forge({
+    issues: [issue(1)],
+    fail: { 'issue-label-add': () => (fail ? 'COMMAND_FAILED' : null) },
+  });
+  const options = {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  };
+  const first = await triageRun(root, fake, options);
+  assert.equal(first.applied.issues[0].outcome, 'partial');
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  const kept = readFileSync(intentFile, 'utf8');
+  assert.equal(JSON.parse(kept).unsettledAt, NOW().getTime());
+  fail = false;
+  const issueWrites = () => fake.mutations().filter(({ input }) => input.number === 1).length;
+  const before = issueWrites();
+  const stepped = await triageRun(root, fake, {
+    ...options,
+    now: () => new Date(NOW().getTime() - 15 * 1000),
+  });
+  assert.equal(stepped.applied.issues[0].outcome, 'failed');
+  assert.equal(stepped.applied.issues[0].failed.code, 'TRIAGE_WRITE_UNSETTLED');
+  assert.equal(stepped.applied.issues[0].failed.retryAfter, '2026-11-23T12:10:00.000Z');
+  assert.equal(issueWrites(), before);
+  assert.equal(readFileSync(intentFile, 'utf8'), kept);
+  const skewed = await triageRun(root, fake, {
+    ...options,
+    now: () => new Date(NOW().getTime() - 11 * 60 * 1000),
+  });
+  assert.notEqual(skewed.applied.issues[0].failed?.code, 'TRIAGE_WRITE_UNSETTLED');
+  assert.equal(skewed.applied.issues[0].outcome, 'applied');
+});
+
+test('a killed comment-only write leaves a stamped intent, a repair case and a blocked retry', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)], fail: { 'issue-comment': 'COMMAND_KILLED' } });
+  const options = {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+    filter: (entry) => entry.action === 'issue-comment-upsert',
+  };
+  const first = await triageRun(root, fake, options);
+  assert.equal(first.applied.issues[0].outcome, 'failed');
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  assert.equal(JSON.parse(readFileSync(intentFile, 'utf8')).unsettledAt, NOW().getTime());
+  assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']]);
+  const issueWrites = () => fake.mutations().filter(({ input }) => input.number === 1).length;
+  const before = issueWrites();
+  const early = await triageRun(root, fake, options);
+  assert.equal(early.applied.issues[0].failed.code, 'TRIAGE_WRITE_UNSETTLED');
+  assert.equal(issueWrites(), before);
+});
+
+test('a security verdict on an unlabelled issue records an intent, so a killed comment blocks a retry', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)], fail: { 'issue-comment': 'COMMAND_KILLED' } });
+  const options = { selection: { references: ['#1'] }, assess: (item) => securityAssessment(item) };
+  const first = await triageRun(root, fake, options);
+  assert.equal(first.applied.issues[0].outcome, 'failed');
+  const early = await triageRun(root, fake, options);
+  assert.equal(early.applied.issues[0].failed.code, 'TRIAGE_WRITE_UNSETTLED');
+});
+
+// Invariant: an intent file that cannot be read as this issue's intent fails the issue closed
+// before any forge write, and is never replaced.
+test('an unreadable intent fails the issue closed with no forge write and stays untouched', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const { permission, inventory: data } = await inventory(root, fake, { references: ['#1'] });
+  const checked = await validated(root, data, [assessment('#1')]);
+  const writeSet = await ok('write-set-build', {
+    inventory: data,
+    validated: checked,
+    permission,
+    drafts: implementDrafts('#1')(),
+  });
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  mkdirSync(stateFile(root, 'pending'), { recursive: true });
+  const oversized = JSON.stringify({
+    version: 1,
+    number: 1,
+    expected: 'implement',
+    pad: 'x'.repeat(1200),
+  });
+  writeFileSync(intentFile, oversized);
+  const applied = await ok(
+    'write-set-apply',
+    { cwd: root, target: FORGE, permission, inventory: data, writeSet, selected: select(writeSet) },
+    { tracker: fake.tracker },
+  );
+  assert.equal(applied.issues[0].outcome, 'failed');
+  assert.equal(applied.issues[0].failed.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(
+    fake.mutations().some(({ input }) => input.number === 1),
+    false,
+  );
+  assert.equal(readFileSync(intentFile, 'utf8'), oversized);
+});
+
+// Invariant: an intent that is readable but not a valid intent of this issue counts as unreadable.
+for (const [name, content] of [
+  ['an empty file', () => ''],
+  ['invalid JSON', () => '{not json'],
+  [
+    'a non-integer unsettledAt',
+    () =>
+      JSON.stringify({
+        version: 1,
+        number: 1,
+        expected: 'implement',
+        owner: 'abc123',
+        unsettledAt: 'soon',
+      }),
+  ],
+  [
+    'a wrong issue number',
+    () => JSON.stringify({ version: 1, number: 2, expected: 'implement', owner: 'abc123' }),
+  ],
+  ['a missing owner', () => JSON.stringify({ version: 1, number: 1, expected: 'implement' })],
+]) {
+  test(`a malformed intent (${name}) fails the issue closed with no forge write and stays untouched`, async (t) => {
+    const root = repository(t);
+    const fake = forge({ issues: [issue(1)] });
+    const { permission, inventory: data } = await inventory(root, fake, { references: ['#1'] });
+    const checked = await validated(root, data, [assessment('#1')]);
+    const writeSet = await ok('write-set-build', {
+      inventory: data,
+      validated: checked,
+      permission,
+      drafts: implementDrafts('#1')(),
+    });
+    const intentFile = stateFile(root, 'pending', 'issue-1.json');
+    mkdirSync(stateFile(root, 'pending'), { recursive: true });
+    const malformed = content();
+    writeFileSync(intentFile, malformed);
+    const applied = await ok(
+      'write-set-apply',
+      {
+        cwd: root,
+        target: FORGE,
+        permission,
+        inventory: data,
+        writeSet,
+        selected: select(writeSet),
+      },
+      { tracker: fake.tracker },
+    );
+    assert.equal(applied.issues[0].outcome, 'failed');
+    assert.equal(applied.issues[0].failed.code, 'UNSAFE_RUNTIME_STATE');
+    assert.equal(
+      fake.mutations().some(({ input }) => input.number === 1),
+      false,
+    );
+    assert.equal(readFileSync(intentFile, 'utf8'), malformed);
+  });
+}
+
+// Invariant: no forge call starts unless the unsettled stamp for it is saved first.
+test('the stamp is on disk before the first forge write starts', async (t) => {
+  const root = repository(t);
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  let seen = null;
+  const fake = forge({
+    issues: [issue(1)],
+    fail: {
+      'issue-comment': () => {
+        seen = existsSync(intentFile) ? JSON.parse(readFileSync(intentFile, 'utf8')) : null;
+        return null;
+      },
+    },
+  });
+  await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  });
+  assert.notEqual(seen, null);
+  assert.equal(seen.unsettledAt, NOW().getTime());
+});
+
+// Invariant: no forge call starts unless the unsettled stamp for it is saved first.
+test('a stamp that cannot be saved makes no forge call', async (t) => {
+  const root = repository(t);
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  const fake = forge({
+    issues: [issue(1)],
+    fail: {
+      'issue-comment': () => {
+        // The intent file turns into a directory while the comment is written.
+        rmSync(intentFile, { force: true });
+        mkdirSync(intentFile);
+        return null;
+      },
+    },
+  });
+  const result = await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  });
+  assert.equal(result.applied.issues[0].outcome, 'partial');
+  assert.equal(result.applied.issues[0].failed.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(managedComments(fake, 1).length, 1);
+  assert.equal(
+    fake.mutations().some(({ operation }) => operation === 'issue-label-add'),
+    false,
+  );
+});
+
+test('a refused-before-write failure clears the stamp of an earlier unsettled attempt', async (t) => {
+  const root = repository(t);
+  let mode = 'label';
+  const fake = forge({
+    issues: [issue(1)],
+    fail: {
+      'issue-label-add': () => (mode === 'label' ? 'COMMAND_FAILED' : null),
+      'issue-comment-update': () => (mode === 'stale' ? 'STALE_WRITE' : null),
+    },
+  });
+  const options = {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  };
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  const first = await triageRun(root, fake, options);
+  assert.equal(first.applied.issues[0].outcome, 'partial');
+  assert.equal(JSON.parse(readFileSync(intentFile, 'utf8')).unsettledAt, NOW().getTime());
+  mode = 'stale';
+  const refusedRetry = await triageRun(root, fake, { ...options, now: LATER });
+  assert.equal(refusedRetry.applied.issues[0].outcome, 'failed');
+  const intent = JSON.parse(readFileSync(intentFile, 'utf8'));
+  assert.equal('unsettledAt' in intent, false);
+  mode = 'ok';
+  const third = await triageRun(root, fake, { ...options, now: LATER });
+  assert.equal(third.applied.issues[0].outcome, 'applied');
+  assert.equal(existsSync(intentFile), false);
+});
+
+test('a fully applied label swap leaves no intent', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1, { labels: [LABELS.reject] })] });
+  const result = await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  });
+  assert.equal(result.applied.issues[0].outcome, 'applied');
+  assert.deepEqual(
+    fake
+      .mutations()
+      .filter(({ input }) => input.number === 1)
+      .map(({ operation }) => operation),
+    ['issue-comment', 'issue-label-add', 'issue-label-remove'],
+  );
+  assert.equal(existsSync(stateFile(root, 'pending', 'issue-1.json')), false);
+  assert.deepEqual(await untriagedGroups(root, fake), []);
+});
+
 test('a pending issue is repaired first, outside the scan window, and a closed one is ignored', async (t) => {
   const root = repository(t);
   const settled = settledIssues(100);
@@ -2089,7 +2434,12 @@ test('report-list fails closed on an unexpected entry in the report directory', 
 const lockFile = (root, number) => stateFile(root, 'locks', `issue-${number}.lock`);
 
 // Inventory, validation and write set for `references`, applicable any number of times.
-async function preparedApply(root, fake, references, { assess = (item) => assessment(item) } = {}) {
+async function preparedApply(
+  root,
+  fake,
+  references,
+  { assess = (item) => assessment(item), now } = {},
+) {
   const { permission, inventory: data } = await inventory(root, fake, { references });
   const checked = await validated(
     root,
@@ -2113,7 +2463,7 @@ async function preparedApply(root, fake, references, { assess = (item) => assess
         writeSet,
         selected: select(writeSet),
       },
-      { tracker: fake.tracker },
+      { tracker: fake.tracker, ...(now ? { now } : {}) },
     );
 }
 
@@ -2168,6 +2518,7 @@ test('an apply started while another holds the issue lock writes nothing, and th
     },
   });
   apply = await preparedApply(root, fake, ['#1']);
+  const applyLater = await preparedApply(root, fake, ['#1'], { now: LATER });
   const a = await apply();
   assert.ok(pendingB, 'apply B must have been started from the comment write of A');
   const b = await pendingB;
@@ -2191,7 +2542,8 @@ test('an apply started while another holds the issue lock writes nothing, and th
   assert.ok(existsSync(stateFile(root, 'pending', 'issue-1.json')));
   assert.equal(existsSync(lockFile(root, 1)), false);
   // A fresh apply of the same write set sees A's comment and refuses to write on stale input.
-  const again = await apply();
+  // (past the unsettled window, so the stale check is what refuses it).
+  const again = await applyLater();
   assert.equal(again.ok, true, JSON.stringify(again.error));
   assert.equal(again.data.issues[0].outcome, 'stale');
 });
