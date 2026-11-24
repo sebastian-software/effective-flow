@@ -53,7 +53,8 @@ running environment identifies T3 Code.
 **Pending read** (in place of Phase 2 step 2). Read `pr-status-read` once. The pending set is every
 reported check not yet completed, restricted to checks that are required or of unstated requiredness
 when `mergeGate.requireAllChecks` is `false`. An empty set continues to steps 3 and 4 in the same
-round. A non-empty set suspends. An unreported check list (`checksReported: false`) never suspends: it
+round. A non-empty set suspends, after `## Early entry` of `merge-gate-configured-reviewer` where
+that route is loaded. An unreported check list (`checksReported: false`) never suspends: it
 continues like an empty set, and Phase 2's loop-exit rule for an unreported list decides it – step
 2's once-per-run `checks-pending` handling or the declared no-CI policy's skip.
 
@@ -75,7 +76,8 @@ fresh reads; the caller passes no wake content. Its fresh entry read comes first
 merged or closed during the suspension takes Phase 0 step 1's observer-only or closed-PR path instead
 of any rule below.
 
-- **Checks** re-enter Phase 2 at step 2 of the recorded round, after the fresh pending read. An empty
+- **Checks** re-enter Phase 2 at step 2 of the recorded round, after the fresh pending read; at an
+  unchanged head, `## Early entry` of `merge-gate-configured-reviewer` decides first. An empty
   set continues to steps 3 and 4 in that round. A set that only shrank on an unchanged head is a
   **progress** wake: re-suspend in the same round, consume no round, reset the count to zero; the set
   only shrinks, so this repeats a bounded number of times. A changed head, or a pending check not in

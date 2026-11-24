@@ -31,7 +31,7 @@ made them for that base.
    `node <skill-root>/scripts/conflict-validation.mjs ci-detect <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<base>"}'`
    and record its `data` object verbatim as the detection. A failed call is `undetected`.
 3. **Candidate.** `quick` only where the ceiling is `quick`, the detection is `detected`,
-   `node <skill-root>/scripts/conflict-validation.mjs ci-integrity <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<base>","commit":"<baseCommit>","tree":"<VERIFIED_HEAD_SHA>"}'`
+   `node <skill-root>/scripts/conflict-validation.mjs ci-integrity <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<base>","commit":"<baseCommit>","tree":"<REVIEW_HEAD_SHA>"}'`
    holds – only `ok: true` with `data.status` `ok` does –, with `<baseCommit>` the detection's
    `data.baseCommit`, the provider is GitHub, and every `data.detectedJobs[]` entry is a required
    check: one `pr-status-read` with `includeCheckIdentity: true` reports every expected instance of

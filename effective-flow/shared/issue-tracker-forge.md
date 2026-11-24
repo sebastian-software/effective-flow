@@ -72,7 +72,7 @@ In remote mode, use these labels and create missing labels idempotently. The hel
 | `effective-flow-issue-in-progress`                                                             | forge fallback showing issue-backed implementation has started                    |
 | `effective-flow-needs-planning`                                                                | skipped by `tools/apply-issues.md`; planning via `effective-flow plan-issue` needed   |
 | `effective-flow-goal-epic`                                                                     | goal epic maintained by `effective-flow backlog-audit`                                 |
-| `effective-flow-goal-obsolete`                                                                 | contradicts the current architecture per `effective-flow backlog-audit`; stays open    |
+| `effective-flow-goal-obsolete`                                                                 | A2 `contradicts` relative to a goal per `effective-flow backlog-audit`; stays open     |
 | `effective-flow-triage-reject`                                                                 | triage verdict: the project declines the issue                                    |
 | `effective-flow-triage-implement`                                                              | triage verdict: accepted for planning or implementation                           |
 | `effective-flow-triage-needs-work`                                                             | triage verdict: open questions to the author                                      |

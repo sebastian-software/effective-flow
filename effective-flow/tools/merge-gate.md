@@ -13,9 +13,10 @@ merge. This workflow owns exactly that gap.
 Resolve a pull request from an argument or the current branch and drive an ordered gate:
 
 1. every check green – otherwise repair the pull request first;
-2. once green, hand the notes of the configured automatic reviewers (Greptile and comparable bots)
-   to `effective-flow iterate`, which fixes the valid ones and answers and resolves their threads, and
-   re-trigger the reviewer where needed;
+2. once green – or earlier, while checks are pending, on a settled changes-requested verdict at the
+   current integrable head – hand the notes of the configured automatic reviewers (Greptile and
+   comparable bots) to `effective-flow iterate`, which fixes the valid ones and answers and resolves their
+   threads, and re-trigger the reviewer where needed;
 3. if an open pull-request comment, an unresolved review thread, or a **changes-requested review**
    exists from an account that is **neither a bot nor the one this
    run is authenticated as**, implement no review note and merge nothing – the CI repair and the

@@ -432,6 +432,9 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    Forgejo, which declares neither thread write, the reviewer's own later approval settles a thread
    instead; see the Forgejo note under **Input/output**. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
+   When every configured reviewer has run and one of them already requests changes at the current
+   head while other checks are still pending, this round can start before the checks finish; see
+   [A reviewer round while checks are pending](#a-reviewer-round-while-checks-are-pending).
 3. **Human-comment guard** – if any unresolved comment or thread, **or any changes-requested
    review**, was written by an account that is
    **neither a bot nor the one the run is authenticated as**, the run implements no review note and
@@ -1008,6 +1011,28 @@ a pull request where a configured reviewer is still running, `iterate` no longer
 set that is still growing: it names the reviewer, says what proved it, and asks once whether to wait
 for it, proceed anyway, or abort. A non-interactive run that has nobody to ask aborts instead. A run
 the gate delegated is exempt, because the gate has already established the state.
+
+#### A reviewer round while checks are pending
+
+Normally the gate waits for the checks before it handles a reviewer's findings. It starts that
+round early – while at least one check is still pending – only when all of this holds at the
+current head:
+
+- every configured reviewer has a `.check` configured, has **run**, and its own check is completed
+  and not failing;
+- at least one reviewer's latest review for the head requests changes and was submitted after the
+  head commit;
+- the branch is integrable with its base, no check has failed, and at least one check is pending;
+- the human-comment guard is inactive and the caller did not forbid branch writes, and this head
+  has not already had a reviewer round.
+
+Anything the gate cannot prove counts as unmet, and the gate then waits for the checks as usual. A
+failing check is repaired first, never together with the reviewer's findings. The early round posts
+no trigger. If it leaves the head unchanged, the gate goes on waiting for the checks in the same
+round; if it moves the head, the round ends and the new head starts over. The merge is unchanged:
+it still requires every check green at the verified head. Without T3 Code the gain appears only
+when the verdict is already present when the gate looks, because the gate cannot be woken by a
+review that arrives while it waits for checks.
 
 #### A reviewer thread that arrives late
 

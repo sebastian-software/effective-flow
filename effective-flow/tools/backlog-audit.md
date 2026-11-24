@@ -214,6 +214,11 @@ If the run is in tracker mode and lists no duplicate epic slug: Ask the user: **
 
 ## Phase 2: Inventory and architecture context
 
+**Architecture-context brief.** The architecture leaf reads the repository's ADRs, README,
+concepts and module layout under `CHECKOUT_ROOT`, never `.effective-flow/` or issue data, and
+writes one summary of the current architecture to exactly the new file its handoff names, citing a
+repository path, with a line where useful, for every claim. It returns `DONE` or `ABORT`.
+
 1. Call `inventory-build` with `{cwd, runtimeStateRoot, target, permission, planDir, config}`,
    adding `scope` (`label`, `issuesOnly`, `plansOnly`), `baseRef` (the configured base branch when
    set), `epic: {reference}` for a bound epic and `externalIssues` on an external target.
@@ -223,11 +228,8 @@ If the run is in tracker mode and lists no duplicate epic slug: Ask the user: **
    never shards or truncates. `ISSUES_ONLY_UNAVAILABLE` stops with its message. Retain `data` as
    `inventory` and show its counts, its `partial` notice and, for `permission-unreadable`, that
    the forge does not state other users' permission, so their items are flagged as unknown.
-2. Apply the runtime guard to `inventory.architectureSummaryPath`, then start one read-only leaf.
-   It reads the repository's ADRs, README, concepts and module layout under `CHECKOUT_ROOT`,
-   never `.effective-flow/` or issue data, and writes one summary of the current architecture to
-   exactly that new file, citing a repository path, with a line where useful, for every claim. It
-   returns `DONE` or `ABORT`.
+2. Apply the runtime guard to `inventory.architectureSummaryPath`, then start one read-only leaf
+   with the architecture-context brief, naming that path as its new file.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `backlog-audit/architecture-context` (`shared/model-selection.md`).
 3. Call `bounds-check` with `{runtimeStateRoot, inventory, architectureSummaryPath}`. A stopped
@@ -235,17 +237,38 @@ If the run is in tracker mode and lists no duplicate epic slug: Ask the user: **
 
 ## Phase 3: Assessment
 
+**Issue-assessment criteria.** These three scales are item-intrinsic: each judges one issue or one
+local plan on its own, without a goal. A consumer adds its own goal or verdict rules on top and
+never redefines a scale.
+
+- **A2 architecture-fit:** `fits` / `needs-adaptation` / `contradicts`, against the current
+  architecture the repository states (ADRs, README, concepts, module layout). `needs-adaptation`
+  means the change works after a named adjustment of an existing boundary or contract;
+  `contradicts` means it reverses an accepted decision or boundary. `contradicts` cites at least
+  one repository file as `path[:line]`, never the summary alone.
+- **A4 size:** `S` / `M` / `L` / `oversized`. `S` is one local change, `M` several files in one
+  area, `L` several areas that one plan still delivers; `oversized` combines independent outcomes
+  or is too large for one plan and must be split first. This is the only definition of "fits one
+  plan": an item fits one plan exactly when A4 is not `oversized`.
+- **A5 overlap:** `none` / `overlap` / `duplicate` / `already-implemented`, against other issues,
+  plans and the repository. `overlap` partly covers its target, `duplicate` asks for the same
+  outcome as its target, and `already-implemented` is delivered by the current base. Each of the
+  last three names one target (an issue, a plan or a repository `path[:line]`) and carries
+  `blocking: true|false`: `true` when the target makes the item redundant. A partial `overlap` is
+  never blocking.
+
 1. Start one read-only `deep` leaf. Hand it the goal, quoted as the user's goal; `snapshotDir`; each
    item's `id`, `kind`, `state`, plan `path` or `snapshotFile`; the architecture summary path; the
-   repository root; and this output contract. It returns one JSON object and nothing else, with
-   `verdicts` (per item `item`, `verdict`, `rationale`, optional `evidence` as repository
+   repository root; the issue-assessment criteria above; and this output contract. It returns one
+   JSON object and nothing else, with `verdicts` (per item `item`, `verdict`, `rationale`, optional `evidence` as repository
    `path[:line]` references only, `citations`, `overlapTarget` and `relevance`), `path` (item ids)
    and `splits` (`item`, `outline`). Exactly
    one verdict per item: `core` (required for the goal), `supporting` (helps; the goal is reachable without it), `drift`
-   (scope expansion the goal does not need), `oversized` (goal-relevant but too large),
-   `overlap` (duplicates or partly covers the named `overlapTarget`, with `relevance`),
-   `obsolete-architecture` (contradicts the current architecture; cites at least one repository
-   file as `path[:line]`, never the summary alone), `unclear` (not decidable from the text). `path`
+   (scope expansion the goal does not need), `oversized` (goal-relevant and A4 `oversized`),
+   `overlap` (A5 `overlap` or `duplicate` whose target is an inventory item, named as
+   `overlapTarget`, with `relevance`), `obsolete-architecture` (A2 `contradicts`, with its
+   citations), `unclear` (not decidable from the text). Any other A5 target and
+   `already-implemented` become rationale and evidence under the goal-relative verdict. `path`
    orders every `core` and `oversized` item as the minimal goal path; `splits` outlines a split for
    each `oversized` issue without an active decomposition. Rationales and evidence quote no issue
    text. If the host forces the subagent model (`model-tiers`, "Host overrides"), the assessment

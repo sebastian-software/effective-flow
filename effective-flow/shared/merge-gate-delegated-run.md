@@ -73,8 +73,8 @@ In this order, before any other write:
 ### Answers and returns
 
 - **A re-dispatch continues the gate run its wisdom file records** – the guard state, the round
-  counter, every once-per-run record, the set-aside and waiver records and `VERIFIED_HEAD_SHA` –
-  while every read stays fresh.
+  counter, every once-per-run record, the set-aside and waiver records, `VERIFIED_HEAD_SHA` and
+  `REVIEW_HEAD_SHA` – while every read stays fresh.
 - **A relayed gate asks nothing.** Where its text would ask, it consumes a `Relayed answer:` of its
   id whose digest equals the one recomputed from this run's fresh read, exactly as the answer to a
   posed question; otherwise it discards any answer of that id and returns `BLOCKED-USER` for a new
@@ -748,7 +748,8 @@ gate run inline generates it at the start. Use
   every delegation the identifier → durable-key map `build` returned, recorded before dispatch, with its message path until the file is deleted, every refused item with its reason, and
   any sender-contract error code; and every returned outcome the receiver rule of `## Returned outcome record` in `merge-gate-configured-reviewer` counted, the
   identifiers of the inert ones with their count, and any mismatch that ended the round; plus
-  `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
+  `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart; and
+  `REVIEW_HEAD_SHA` as Phase 2's loop exit defines it
 - per "Repair checkpoints": the once-per-run scope record (merge-base SHA, head SHA, paths) or the
   undetermined scope read with its code; per dispatch its `dispatch` number, its `before` and
   `after` heads, the `scopeIdentifiers`, and `record`'s round data – attribution with foreign
@@ -1190,8 +1191,9 @@ run can push an unbounded number of commits onto someone's pull request.
      repository, and pushing to it additionally requires the contributor to have allowed maintainer
      edits.
    - Both stops retain the worktree and its branch for inspection.
-2. **Pending checks.** On the T3 path of `host-pr-watch`, apply its pending read instead of this
-   step. Otherwise call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
+2. **Pending checks.** Where the configured-reviewer route is loaded, first apply `## Early entry`
+   in that fragment. On the T3 path of `host-pr-watch`, apply its pending read instead of this
+   step; `## Early entry` takes it as its status read. Otherwise call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
    the provider watch or deterministic helper poller block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction. On **Forgejo**, where the policy read for the run's latest check result
@@ -1293,9 +1295,14 @@ records nothing; Phase 4 decides on its own fresh read.
 Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable; for a head
 that left through the Forgejo WIP-draft exit, mergeable only by the local proof, which condition 3
-of Phase 4 never accepts for a merge. Phases 4 and 5 use only that value, and nothing else in this
-workflow records a head SHA for later use, except the wait record of `host-pr-watch`, which serves
-only its changed-wait comparison and the report.
+of Phase 4 never accepts for a merge. Record the same SHA as **`REVIEW_HEAD_SHA`**, the head Phase 3
+assesses, which `## Early entry` of `merge-gate-configured-reviewer` may set earlier; recording an
+equal SHA keeps its early-entry guard. It and that guard are discarded on head movement, by Phase 3 step 6 and on
+a resume with a changed head, carried across a `BLOCKED-USER` re-dispatch and a resume at an
+unchanged head, and read only by Phase 3, the review-fix `ci-integrity` and early entry. Phases 4 and 5 use only `VERIFIED_HEAD_SHA`, and nothing else in this workflow
+records a head SHA for later use, except `REVIEW_HEAD_SHA` with that guard, the wait record of
+`host-pr-watch`, which serves only its changed-wait comparison and the report, and the non-entry
+record of `## Early entry`, which serves only its per-head replacement and the report.
 
 #### Round accounting
 
@@ -1335,7 +1342,8 @@ round** like any other, and so does the return into Phase 3. When the counter re
 merge.
 
 On the T3 path of `host-pr-watch`, a resume consumes rounds as that fragment's "Resume" states; its
-same-round re-suspensions for a progress or unchanged wake are the exceptions to this section.
+same-round re-suspensions for a progress or unchanged wake, and the one after an early Phase 3
+without head movement (`## Early entry`), are the exceptions to this section.
 
 **Repair attempts are accounted separately and change nothing above.** A repair attempt is a
 returned `effective-flow iterate` commit the helper attributes to one minted identifier: one per
@@ -1419,7 +1427,8 @@ If `mergeGate.bots` is empty, skip this phase entirely, record that no automatic
 configured, and do not block the merge on it.
 
 Otherwise, apply `## Phase 3: Automatic reviewer round` in the loaded
-`merge-gate-configured-reviewer` fragment.
+`merge-gate-configured-reviewer` fragment, entered from the Phase 2 loop exit or, earlier, from
+`## Early entry`.
 
 **With the human-comment guard active,** this phase neither delegates nor triggers: the trigger
 comment and its wait are skipped as well, because the outcome they wait for – an implementation – is

@@ -194,6 +194,39 @@
       ]
     },
     {
+      "id": "triage/architecture-context",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "triage/assessment",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "triage/comment-draft",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
       "id": "build/delegated-run",
       "downAllowed": false,
       "panel": false,

@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
-  "version": "1.78.0",
+  "version": "1.79.0",
   "exposedTools": [
     "concept",
     "investigate",
     "plan",
     "open-plans",
     "plan-issue",
+    "triage",
     "issue-buddy",
     "backlog-audit",
     "apply",
@@ -752,7 +753,8 @@
         "pr",
         "refactor",
         "review",
-        "setup"
+        "setup",
+        "triage"
       ],
       "reach": [
         {
@@ -1046,6 +1048,10 @@
         {
           "tool": "setup",
           "scope": "tools.setup"
+        },
+        {
+          "tool": "triage",
+          "scope": "tools.triage"
         }
       ]
     },
@@ -2277,7 +2283,8 @@
         "pr",
         "refactor",
         "review",
-        "setup"
+        "setup",
+        "triage"
       ],
       "reach": [
         {
@@ -3107,6 +3114,10 @@
         {
           "tool": "setup",
           "scope": "tools.setup"
+        },
+        {
+          "tool": "triage",
+          "scope": "tools.triage"
         }
       ]
     },
@@ -3139,7 +3150,8 @@
         "refactor",
         "retro",
         "review",
-        "setup"
+        "setup",
+        "triage"
       ],
       "reach": [
         {
@@ -3473,6 +3485,10 @@
         {
           "tool": "setup",
           "scope": "tools.setup"
+        },
+        {
+          "tool": "triage",
+          "scope": "tools.triage"
         }
       ]
     },
@@ -3890,7 +3906,8 @@
         "pr",
         "refactor",
         "review",
-        "setup"
+        "setup",
+        "triage"
       ],
       "reach": [
         {
@@ -4184,6 +4201,10 @@
         {
           "tool": "setup",
           "scope": "tools.setup"
+        },
+        {
+          "tool": "triage",
+          "scope": "tools.triage"
         }
       ]
     },
