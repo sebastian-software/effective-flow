@@ -308,6 +308,17 @@ both strings. Second, `ci.yml` currently runs on every `pull_request` with no `p
 is what lets a docs-only pull request satisfy the requirement — adding a path filter would deadlock
 every filtered pull request.
 
+`ci.yml` keeps one concurrency group per pull request number; every other event, today only a
+`push` to `develop`, gets a group of its own per run, so develop runs are never cancelled or queued.
+Only the first attempt of a run started by a new push to the pull request cancels that pull
+request's superseded run. A reopened pull request and any re-run attempt wait in the group instead,
+so re-run the current head's run, never a superseded one: it waits there and can displace a pending
+run. A fork pull request's `pull_request` run uses the workflow file from its own merge commit, so
+it can join any group and cancel another pull request's run, or a develop run whose public run ID it
+names. This is accepted residual risk, limited to the CI signal because the token is read-only and
+no `ci.yml` job writes anything external; the repository's fork-run approval setting is the trust
+boundary.
+
 The behavioural evidence step sits inside the same required job and carries no condition at job or
 step level. It reports all five suites identically on ordinary and release PRs after the broad
 checks, rejecting integrity/errors while retaining freshness debt. See

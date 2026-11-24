@@ -35,6 +35,7 @@ import {
   SUCCESSOR_SETS,
   successorOf,
 } from '../src/scripts/config-resolve-core.mjs';
+import { parseWorkflowYaml } from '../src/scripts/conflict-validation-core.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -12113,6 +12114,20 @@ test('ci.yml keeps the job names the develop ruleset requires', () => {
       `ci.yml must keep the job name "${name}"; the develop ruleset requires it by that exact string`,
     );
   }
+});
+
+test('ci.yml cancels a superseded pull-request run only on the first attempt of a new push', () => {
+  // Invariant: a pull request's runs share one group and only a new push's first attempt cancels
+  // its in-progress run, so neither a re-run nor a reopen cancels it; develop push runs get a group
+  // of their own per run id, so they never share a group with another run and never cancel
+  // (issue #720).
+  const group =
+    "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}";
+  const cancelInProgress =
+    "${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' && github.run_attempt == 1 }}";
+  const concurrency = parseWorkflowYaml(source('.github/workflows/ci.yml')).get('concurrency');
+  assert.equal(concurrency.get('group'), group);
+  assert.equal(concurrency.get('cancel-in-progress'), cancelInProgress);
 });
 
 test('package evidence reporting preserves broad checks and identical freshness policy on every PR', () => {
