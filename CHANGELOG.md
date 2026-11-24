@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.79.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.78.0...effective-flow-v1.79.0) (2026-11-24)
+
+
+### Features
+
+* **merge-gate:** start the bot round while checks are still pending ([#721](https://github.com/sebastian-software/effective-flow/issues/721)) ([274129c](https://github.com/sebastian-software/effective-flow/commit/274129c98f694b4f0916ae3287a27330280f58a1))
+* **triage:** assess single issues against a shared issue-assessment rubric ([#717](https://github.com/sebastian-software/effective-flow/issues/717)) ([021bb85](https://github.com/sebastian-software/effective-flow/commit/021bb8556fa139e4997fab52d846ea65af2708e0))
+
+
+### Bug Fixes
+
+* **evals:** let stale-lock publication contenders wait out a whole publication ([#718](https://github.com/sebastian-software/effective-flow/issues/718)) ([02e1743](https://github.com/sebastian-software/effective-flow/commit/02e1743c52f16ca4d1aaa6e4eb5d3689d377e5b4))
+
 ## [1.78.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.77.0...effective-flow-v1.78.0) (2026-11-23)
 
 
