@@ -7,6 +7,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -98,7 +99,7 @@ function issue(number, overrides = {}) {
 
 // An in-memory forge behind the remote-tracker operation surface. Mutations change its state, so a
 // re-read after a write observes it. `fail` maps an operation to an error code, or to a function
-// deciding per call.
+// deciding per call; the call awaits what that function returns.
 function forge({
   issues = [],
   comments = {},
@@ -122,8 +123,9 @@ function forge({
   const error = (code) => ({ ok: false, error: { code, message: code } });
   const tracker = async (operation, input, options = {}) => {
     calls.push({ operation, input, options });
-    const failure =
-      typeof failures[operation] === 'function' ? failures[operation](input) : failures[operation];
+    const failure = await (typeof failures[operation] === 'function'
+      ? failures[operation](input)
+      : failures[operation]);
     if (failure) return error(failure);
     const number = input.number;
     switch (operation) {
@@ -2009,4 +2011,218 @@ test('report-list fails closed on an unexpected entry in the report directory', 
     { runner },
   );
   assert.equal(malformed.error.code, 'INVALID_PAYLOAD');
+});
+
+// --- Per-issue apply lock --------------------------------------------------------------------
+
+const lockFile = (root, number) => stateFile(root, 'locks', `issue-${number}.lock`);
+
+// Inventory, validation and write set for `references`, applicable any number of times.
+async function preparedApply(root, fake, references, { assess = (item) => assessment(item) } = {}) {
+  const { permission, inventory: data } = await inventory(root, fake, { references });
+  const checked = await validated(
+    root,
+    data,
+    data.items.map((item) => assess(item.id)),
+  );
+  const writeSet = await ok('write-set-build', {
+    inventory: data,
+    validated: checked,
+    permission,
+    drafts: references.flatMap((reference) => implementDrafts(reference)()),
+  });
+  return () =>
+    run(
+      'write-set-apply',
+      {
+        cwd: root,
+        target: FORGE,
+        permission,
+        inventory: data,
+        writeSet,
+        selected: select(writeSet),
+      },
+      { tracker: fake.tracker },
+    );
+}
+
+test('a held issue lock blocks a second apply with no tracker write', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2)] });
+  const apply = await preparedApply(root, fake, ['#1', '#2']);
+  mkdirSync(stateFile(root, 'locks'), { recursive: true });
+  const held = '{"ownerPid":4242,"nonce":"other"}\n';
+  writeFileSync(lockFile(root, 1), held);
+  const envelope = await apply();
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  const [first, second] = envelope.data.issues;
+  assert.equal(first.outcome, 'failed');
+  assert.equal(first.failed.code, 'TRIAGE_LOCKED');
+  assert.equal(first.failed.path, lockFile(root, 1));
+  assert.equal(typeof first.failed.message, 'string');
+  // The holder's PID and the lock's age let a user tell a live holder from a crashed one.
+  assert.equal(first.failed.ownerPid, 4242);
+  assert.equal(first.failed.mtime, statSync(lockFile(root, 1)).mtime.toISOString());
+  // The lock is never broken and nothing was written for the locked issue.
+  assert.equal(readFileSync(lockFile(root, 1), 'utf8'), held);
+  assert.equal(managedComments(fake, 1).length, 0);
+  assert.deepEqual(triageLabels(fake, 1), []);
+  assert.equal(
+    fake.mutations().some(({ input }) => input.number === 1),
+    false,
+  );
+  // The run continues with the other issue, whose lock is released afterwards.
+  assert.equal(second.outcome, 'applied');
+  assert.equal(managedComments(fake, 2).length, 1);
+  assert.equal(existsSync(lockFile(root, 2)), false);
+});
+
+test('an apply started while another holds the issue lock writes nothing, and the holder keeps its intent after a failed label write', async (t) => {
+  const root = repository(t);
+  let pendingB = null;
+  let apply = null;
+  let bMutationsAtStart = 0;
+  const fake = forge({
+    issues: [issue(1)],
+    fail: {
+      // Apply A starts apply B from inside its comment write and stays there until B has
+      // returned, so B always meets A's held lock on the same root and tracker.
+      'issue-comment': () => {
+        if (pendingB) return null;
+        bMutationsAtStart = fake.mutations().length;
+        pendingB = apply();
+        return pendingB.then(() => null);
+      },
+      'issue-label-add': () => 'COMMAND_FAILED',
+    },
+  });
+  apply = await preparedApply(root, fake, ['#1']);
+  const a = await apply();
+  assert.ok(pendingB, 'apply B must have been started from the comment write of A');
+  const b = await pendingB;
+  assert.equal(a.ok, true, JSON.stringify(a.error));
+  assert.equal(b.ok, true, JSON.stringify(b.error));
+  assert.equal(a.data.issues[0].outcome, 'partial');
+  assert.equal(b.data.issues[0].outcome, 'failed');
+  assert.equal(b.data.issues[0].failed.code, 'TRIAGE_LOCKED');
+  // B contributed no write: A's comment is the only managed comment and nothing else was written.
+  assert.equal(managedComments(fake, 1).length, 1);
+  assert.deepEqual(
+    fake
+      .mutations()
+      .filter(({ input }) => input.number === 1)
+      .map(({ operation }) => operation),
+    ['issue-comment', 'issue-label-add'],
+  );
+  // B started while A was inside its comment write: only A's label-create and comment existed.
+  assert.equal(bMutationsAtStart, 2);
+  // The holder's repair intent survived, and no lock remains.
+  assert.ok(existsSync(stateFile(root, 'pending', 'issue-1.json')));
+  assert.equal(existsSync(lockFile(root, 1)), false);
+  // A fresh apply of the same write set sees A's comment and refuses to write on stale input.
+  const again = await apply();
+  assert.equal(again.ok, true, JSON.stringify(again.error));
+  assert.equal(again.data.issues[0].outcome, 'stale');
+});
+
+test('the issue lock is released after applied, partial, failed and unexpected-error paths', async (t) => {
+  const paths = [
+    ['applied', {}, 'applied'],
+    ['partial', { 'issue-label-add': () => 'COMMAND_FAILED' }, 'partial'],
+    ['failed', { 'issue-comment': () => 'AUTH_FAILED' }, 'failed'],
+    // A tracker that throws instead of answering is caught per entry as an internal error.
+    [
+      'unexpected tracker error',
+      {
+        'issue-comment': () => {
+          throw new Error('tracker exploded');
+        },
+      },
+      'failed',
+    ],
+  ];
+  for (const [name, fail, outcome] of paths) {
+    const root = repository(t);
+    const fake = forge({ issues: [issue(1)], fail });
+    const apply = await preparedApply(root, fake, ['#1']);
+    const envelope = await apply();
+    assert.equal(envelope.ok, true, `${name}: ${JSON.stringify(envelope.error)}`);
+    assert.equal(envelope.data.issues[0].outcome, outcome, name);
+    if (name === 'unexpected tracker error')
+      assert.equal(envelope.data.issues[0].failed.code, 'INTERNAL_ERROR');
+    assert.equal(existsSync(lockFile(root, 1)), false, `${name}: the lock must be released`);
+  }
+});
+
+test('a lock file outside pending leaves the untriaged inventory readable', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2, { labels: [LABELS.reject] })] });
+  mkdirSync(stateFile(root, 'locks'), { recursive: true });
+  writeFileSync(lockFile(root, 1), 'held\n');
+  mkdirSync(stateFile(root, 'pending'), { recursive: true });
+  writeFileSync(
+    stateFile(root, 'pending', 'issue-2.json'),
+    '{"version":1,"number":2,"expected":"implement"}\n',
+  );
+  const { inventory: data } = await inventory(root, fake, { untriaged: true });
+  assert.deepEqual(data.items.map(({ id, group }) => [id, group]).sort(), [
+    ['#1', 'new'],
+    ['#2', 'repair'],
+  ]);
+  assert.equal(readFileSync(lockFile(root, 1), 'utf8'), 'held\n');
+});
+
+// Invariant: a lock refusal reaches the user through the report with its code and lock path, and a
+// malformed `failed` value from the apply result is never rendered as text.
+test('the report names a TRIAGE_LOCKED failure with its lock path and drops a malformed failure', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const { permission, inventory: data } = await inventory(root, fake, { references: ['#1'] });
+  const checked = await validated(root, data, [assessment('#1')]);
+  const writeSet = await ok('write-set-build', {
+    inventory: data,
+    validated: checked,
+    permission,
+    drafts: implementDrafts('#1')(),
+  });
+  mkdirSync(stateFile(root, 'locks'), { recursive: true });
+  writeFileSync(lockFile(root, 1), 'held\n');
+  const applied = await ok(
+    'write-set-apply',
+    { cwd: root, target: FORGE, permission, inventory: data, writeSet, selected: select(writeSet) },
+    { tracker: fake.tracker },
+  );
+  assert.equal(applied.issues[0].failed.ownerPid, null);
+  const report = async (result, language) =>
+    readFileSync(
+      (
+        await ok('report-write', {
+          runtimeStateRoot: root,
+          inventory: data,
+          validated: checked,
+          applied: result,
+          language,
+        })
+      ).reportPath,
+      'utf8',
+    );
+  const line = `failed (TRIAGE_LOCKED: \`${lockFile(root, 1)}\`)`;
+  assert.ok((await report(applied, 'en')).includes(`- Write outcome: ${line}`));
+  assert.ok((await report(applied, 'de')).includes(`- Schreibergebnis: ${line}`));
+  const withFailed = (failed) => ({ ...applied, issues: [{ ...applied.issues[0], failed }] });
+  for (const failed of [
+    { code: 'TRIAGE_LOCKED\n## injected', path: lockFile(root, 1) },
+    { code: 'not-a-code' },
+    'TRIAGE_LOCKED',
+    null,
+  ]) {
+    const text = await report(withFailed(failed), 'en');
+    assert.match(text, /^- Write outcome: failed$/m);
+    assert.doesNotMatch(text, /injected|not-a-code/);
+  }
+  for (const path of ['relative/issue-1.lock', '/x\n## injected', '/x`y']) {
+    const text = await report(withFailed({ code: 'TRIAGE_LOCKED', path }), 'en');
+    assert.match(text, /^- Write outcome: failed \(TRIAGE_LOCKED\)$/m);
+    assert.doesNotMatch(text, /injected|x`y/);
+  }
 });

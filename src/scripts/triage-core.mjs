@@ -138,6 +138,9 @@ const TRIAGE_SEGMENTS = Object.freeze([RUNTIME_STATE_DIR, 'triage']);
 const SNAPSHOT_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'snapshots']);
 const REPORT_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'reports']);
 const PENDING_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'pending']);
+// Per-issue apply locks live outside `pending/`, so the intent reader never sees them.
+const LOCK_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'locks']);
+const LOCK_TEMP_PREFIX = '.triage-lock-';
 const CURSOR_FILE = 'scan-cursor.json';
 const PENDING_FILE = /^issue-([1-9]\d{0,9})\.json$/;
 // `atomicWrite` temporaries: a leftover of an interrupted write, never state.
@@ -1880,9 +1883,24 @@ function outcomesOf(value, inventory) {
     const superseded = Array.isArray(entry.superseded)
       ? entry.superseded.filter((id) => Number.isSafeInteger(id))
       : [];
-    map.set(entry.item, { outcome: entry.outcome, superseded });
+    const failure =
+      entry.outcome === 'failed' || entry.outcome === 'partial' ? failureOf(entry.failed) : null;
+    map.set(entry.item, { outcome: entry.outcome, superseded, failure });
   }
   return map;
+}
+
+// The failure code, and a lock path where one is named, in a form safe to render; anything else
+// renders nothing.
+function failureOf(failed) {
+  if (!isObject(failed) || typeof failed.code !== 'string') return null;
+  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(failed.code)) return null;
+  const pathSafe =
+    typeof failed.path === 'string' &&
+    failed.path.length <= 4096 &&
+    path.isAbsolute(failed.path) &&
+    !/[\u0000-\u001f\u007f`]/u.test(failed.path);
+  return pathSafe ? `${failed.code}: \`${failed.path}\`` : failed.code;
 }
 
 function renderReport(inventory, validated, strings, outcomes) {
@@ -1943,7 +1961,7 @@ function renderReport(inventory, validated, strings, outcomes) {
     const outcome = outcomes.get(item.id);
     if (outcome)
       lines.push(
-        `- ${strings.outcome}: ${outcome.outcome}${outcome.superseded.length ? `; superseded managed comments: ${outcome.superseded.join(', ')}` : ''}`,
+        `- ${strings.outcome}: ${outcome.outcome}${outcome.failure ? ` (${outcome.failure})` : ''}${outcome.superseded.length ? `; superseded managed comments: ${outcome.superseded.join(', ')}` : ''}`,
       );
   }
   return `${lines.join('\n')}\n`;
@@ -2403,6 +2421,62 @@ async function removeIntent(deps, runtimeStateRoot, number, { content = null, be
   await guardedUnlink(context, path.join(context.cwd, ...PENDING_SEGMENTS, `issue-${number}.json`));
 }
 
+// The issue lock: one file created without clobbering, holding its owner's PID and a random nonce.
+// A held lock, from a concurrent apply or a crashed one, is never broken: telling a live holder from
+// a dead one would be a guess. Returns `{ target, content }`, with `content` null when it is held.
+async function acquireIssueLock(deps, runtimeStateRoot, number) {
+  const context = runtimeContext(deps);
+  await resolveRuntimeRoot(context, runtimeStateRoot);
+  const directory = await ensureChain(context, LOCK_SEGMENTS);
+  const target = path.join(directory, `issue-${number}.lock`);
+  const nonce = (deps.randomBytes ?? cryptoRandomBytes)(16).toString('hex');
+  const content = `${JSON.stringify({ ownerPid: process.pid, nonce })}\n`;
+  const written = await createNoClobber(context, target, content, { tempPrefix: LOCK_TEMP_PREFIX });
+  return { target, content: written.created ? content : null };
+}
+
+// The PID and modification time a held lock names, so a user can tell a live holder from a crashed
+// one. Read without following a link and bounded to 1024 bytes; anything unreadable stays null.
+function lockHolder(target) {
+  const holder = { ownerPid: null, mtime: null };
+  let descriptor;
+  try {
+    descriptor = nodeFs.openSync(
+      target,
+      nodeFs.constants.O_RDONLY |
+        (nodeFs.constants.O_NOFOLLOW ?? 0) |
+        (nodeFs.constants.O_NONBLOCK ?? 0),
+    );
+    const info = nodeFs.fstatSync(descriptor);
+    if (!info.isFile() || info.size > 1024) return holder;
+    holder.mtime = info.mtime.toISOString();
+    const buffer = Buffer.alloc(info.size);
+    const length = nodeFs.readSync(descriptor, buffer, 0, info.size, 0);
+    const ownerPid = JSON.parse(buffer.subarray(0, length).toString('utf8'))?.ownerPid;
+    if (Number.isSafeInteger(ownerPid) && ownerPid > 0) holder.ownerPid = ownerPid;
+  } catch {
+    /* a missing, linked or unparseable lock names no holder */
+  } finally {
+    try {
+      if (descriptor !== undefined) nodeFs.closeSync(descriptor);
+    } catch {
+      /* the holder read is advisory */
+    }
+  }
+  return holder;
+}
+
+// Removes the lock only while it still holds exactly what this apply wrote; an unreadable or
+// changed lock stays in place.
+async function releaseIssueLock(deps, runtimeStateRoot, { target, content }) {
+  const context = runtimeContext(deps);
+  await resolveRuntimeRoot(context, runtimeStateRoot);
+  const info = lstatOrNull(target);
+  if (!info?.isFile() || info.size > 1024 || nodeFs.readFileSync(target, 'utf8') !== content)
+    return;
+  await guardedUnlink(context, target);
+}
+
 // Refusals that precede any forge write; every other failure may follow an accepted write whose
 // response was lost, so it counts as a write.
 const REFUSED_BEFORE_WRITE = new Set([
@@ -2534,124 +2608,155 @@ async function writeSetApply(input, deps) {
   for (const [reference, group] of byIssue) {
     const record = perIssue.get(reference);
     const number = group[0].target.number;
-    let current;
+    // The issue lock serializes this issue's applies from the reread to the last intent change.
+    let lock;
     try {
-      current = await rereadIssue(session, number, permissionOf, runnerLogin);
+      lock = await acquireIssueLock(deps, inventory.runtimeStateRoot, number);
     } catch (error) {
       record.outcome = 'failed';
-      record.failed = { id: group[0].id, ...trackerFailure(error) };
+      record.failed = {
+        id: group[0].id,
+        code: 'UNSAFE_RUNTIME_STATE',
+        message: error?.message ?? 'cannot take the issue lock',
+      };
       continue;
     }
-    // A concurrent triage change (labels or managed comments) is as stale as a content change.
-    const item = items.get(reference);
-    if (
-      current.issue.state !== 'open' ||
-      current.fingerprint !== fingerprints.get(reference) ||
-      triageStateOf(
-        current.issue.labels,
-        current.managed.own,
-        current.managed.others,
-        current.managed.maxSeq,
-      ) !== triageStateOf(item.labels, item.triage.own, item.triage.others, item.triage.latestSeq)
-    ) {
-      record.outcome = 'stale';
-      for (const entry of group)
-        record.skipped.push({
-          id: entry.id,
-          reason: current.issue.state !== 'open' ? 'closed' : 'stale',
-        });
+    if (!lock.content) {
+      record.outcome = 'failed';
+      record.failed = {
+        id: group[0].id,
+        code: 'TRIAGE_LOCKED',
+        message:
+          'another triage apply holds the issue lock; remove a lock a crashed apply left by hand',
+        path: lock.target,
+        ...lockHolder(lock.target),
+      };
       continue;
     }
-    // The intent is kept before the first write and dropped only once nothing is left to repair.
-    const expected = intendedOutcome(group);
-    let intent = null;
-    let wrote = false;
-    // A decision with no label to repair records no intent; it may settle only the one found here.
-    const found = expected
-      ? undefined
-      : await snapshotIntent(deps, inventory.runtimeStateRoot, number);
-    if (expected) {
+    try {
+      let current;
       try {
-        intent = await recordIntent(deps, inventory.runtimeStateRoot, number, expected);
+        current = await rereadIssue(session, number, permissionOf, runnerLogin);
       } catch (error) {
         record.outcome = 'failed';
-        record.failed = {
-          id: group[0].id,
-          code: 'UNSAFE_RUNTIME_STATE',
-          message: error?.message ?? 'cannot record the write intent',
-        };
+        record.failed = { id: group[0].id, ...trackerFailure(error) };
         continue;
       }
-    }
-    const done = new Set();
-    const write = async (operation, input) => {
-      try {
-        await session.call(operation, input, { apply: true });
-      } catch (error) {
-        if (!REFUSED_BEFORE_WRITE.has(trackerFailure(error).code)) wrote = true;
-        throw error;
-      }
-      wrote = true;
-    };
-    for (const entry of group) {
-      if (entry.dependsOn && !done.has(entry.dependsOn)) {
-        record.skipped.push({ id: entry.id, reason: 'dependency-not-applied' });
+      // A concurrent triage change (labels or managed comments) is as stale as a content change.
+      const item = items.get(reference);
+      if (
+        current.issue.state !== 'open' ||
+        current.fingerprint !== fingerprints.get(reference) ||
+        triageStateOf(
+          current.issue.labels,
+          current.managed.own,
+          current.managed.others,
+          current.managed.maxSeq,
+        ) !== triageStateOf(item.labels, item.triage.own, item.triage.others, item.triage.latestSeq)
+      ) {
+        record.outcome = 'stale';
+        for (const entry of group)
+          record.skipped.push({
+            id: entry.id,
+            reason: current.issue.state !== 'open' ? 'closed' : 'stale',
+          });
         continue;
       }
-      try {
-        if (entry.action === 'issue-comment-upsert') {
-          // The upsert edits only the runner's own managed comment; another trusted managed
-          // comment stays untouched and is reported as superseded.
-          const own = current.managed.own;
-          const body = stampRecency(entry.payload.body, current.managed.maxSeq + 1);
-          if (own) {
-            const existing = current.comments.find((comment) => comment.id === own.commentId);
-            await write('issue-comment-update', {
-              number,
-              commentId: own.commentId,
-              expectedBodyHash: bodyHash(existing?.body ?? ''),
-              payload: { body },
-            });
-          } else await write('issue-comment', { number, payload: { body } });
-          record.superseded = current.managed.others
-            .filter((other) => !other.own)
-            .map(({ commentId }) => commentId);
-        } else {
-          // The new label comes first: a failure in between leaves two triage labels, never none.
-          const labels = current.issue.labels;
-          const add = entry.action === 'issue-label-swap' ? entry.payload.label : null;
-          if (add && !labels.includes(add))
-            await write('issue-label-add', { number, payload: { labels: [add] } });
-          const remove =
-            entry.action === 'issue-label-swap'
-              ? TRIAGE_LABELS.filter((name) => name !== add)
-              : entry.payload.labels;
-          for (const name of remove)
-            if (labels.includes(name))
-              await write('issue-label-remove', { number, payload: { label: name } });
+      // The intent is kept before the first write and dropped only once nothing is left to repair.
+      const expected = intendedOutcome(group);
+      let intent = null;
+      let wrote = false;
+      // A decision with no label to repair records no intent; it may settle only the one found here.
+      const found = expected
+        ? undefined
+        : await snapshotIntent(deps, inventory.runtimeStateRoot, number);
+      if (expected) {
+        try {
+          intent = await recordIntent(deps, inventory.runtimeStateRoot, number, expected);
+        } catch (error) {
+          record.outcome = 'failed';
+          record.failed = {
+            id: group[0].id,
+            code: 'UNSAFE_RUNTIME_STATE',
+            message: error?.message ?? 'cannot record the write intent',
+          };
+          continue;
         }
-        done.add(entry.id);
-        record.applied.push(entry.id);
-      } catch (error) {
-        record.failed = { id: entry.id, ...trackerFailure(error) };
-        break;
       }
-    }
-    if (record.failed) record.outcome = record.applied.length ? 'partial' : 'failed';
-    else if (record.applied.length === group.length) record.outcome = 'applied';
-    else record.outcome = record.applied.length ? 'partial' : 'skipped';
-    // An applied group settles its own intent and the earlier one it found, never a concurrent
-    // apply's newer one. A failed retry keeps an earlier intent; a new one is dropped only when
-    // no write was attempted, so an ambiguous failure stays a repair case.
-    const settled = record.outcome === 'applied';
-    const unwritten = intent && !intent.existed && !wrote;
-    if (settled || unwritten)
-      await removeIntent(deps, inventory.runtimeStateRoot, number, {
-        content: intent?.content ?? null,
-        before: settled ? (intent ? intent.before : found) : null,
-      }).catch(() => {
-        /* a leftover intent only repeats one repair */
+      const done = new Set();
+      const write = async (operation, input) => {
+        try {
+          await session.call(operation, input, { apply: true });
+        } catch (error) {
+          if (!REFUSED_BEFORE_WRITE.has(trackerFailure(error).code)) wrote = true;
+          throw error;
+        }
+        wrote = true;
+      };
+      for (const entry of group) {
+        if (entry.dependsOn && !done.has(entry.dependsOn)) {
+          record.skipped.push({ id: entry.id, reason: 'dependency-not-applied' });
+          continue;
+        }
+        try {
+          if (entry.action === 'issue-comment-upsert') {
+            // The upsert edits only the runner's own managed comment; another trusted managed
+            // comment stays untouched and is reported as superseded.
+            const own = current.managed.own;
+            const body = stampRecency(entry.payload.body, current.managed.maxSeq + 1);
+            if (own) {
+              const existing = current.comments.find((comment) => comment.id === own.commentId);
+              await write('issue-comment-update', {
+                number,
+                commentId: own.commentId,
+                expectedBodyHash: bodyHash(existing?.body ?? ''),
+                payload: { body },
+              });
+            } else await write('issue-comment', { number, payload: { body } });
+            record.superseded = current.managed.others
+              .filter((other) => !other.own)
+              .map(({ commentId }) => commentId);
+          } else {
+            // The new label comes first: a failure in between leaves two triage labels, never none.
+            const labels = current.issue.labels;
+            const add = entry.action === 'issue-label-swap' ? entry.payload.label : null;
+            if (add && !labels.includes(add))
+              await write('issue-label-add', { number, payload: { labels: [add] } });
+            const remove =
+              entry.action === 'issue-label-swap'
+                ? TRIAGE_LABELS.filter((name) => name !== add)
+                : entry.payload.labels;
+            for (const name of remove)
+              if (labels.includes(name))
+                await write('issue-label-remove', { number, payload: { label: name } });
+          }
+          done.add(entry.id);
+          record.applied.push(entry.id);
+        } catch (error) {
+          record.failed = { id: entry.id, ...trackerFailure(error) };
+          break;
+        }
+      }
+      if (record.failed) record.outcome = record.applied.length ? 'partial' : 'failed';
+      else if (record.applied.length === group.length) record.outcome = 'applied';
+      else record.outcome = record.applied.length ? 'partial' : 'skipped';
+      // An applied group settles its own intent and the earlier one it found, never a concurrent
+      // apply's newer one. A failed retry keeps an earlier intent; a new one is dropped only when
+      // no write was attempted, so an ambiguous failure stays a repair case.
+      const settled = record.outcome === 'applied';
+      const unwritten = intent && !intent.existed && !wrote;
+      if (settled || unwritten)
+        await removeIntent(deps, inventory.runtimeStateRoot, number, {
+          content: intent?.content ?? null,
+          before: settled ? (intent ? intent.before : found) : null,
+        }).catch(() => {
+          /* a leftover intent only repeats one repair */
+        });
+    } finally {
+      await releaseIssueLock(deps, inventory.runtimeStateRoot, lock).catch(() => {
+        /* a lock left behind names itself on the next apply */
       });
+    }
   }
   result.issues = [...perIssue.values()];
   return result;
