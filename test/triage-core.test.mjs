@@ -1810,7 +1810,7 @@ test('no intent remains for a comment-only decision, a write that never started 
   assert.deepEqual(await untriagedGroups(root, fake), [['#2', 'new']]);
   const failing = forge({
     issues: [issue(3)],
-    fail: { 'issue-comment': 'COMMAND_FAILED' },
+    fail: { 'issue-comment': 'STALE_WRITE' },
   });
   const result = await triageRun(root, failing, {
     selection: { references: ['#3'] },
@@ -1819,6 +1819,42 @@ test('no intent remains for a comment-only decision, a write that never started 
   });
   assert.equal(result.applied.issues[0].outcome, 'failed');
   assert.equal(existsSync(stateFile(root, 'pending', 'issue-3.json')), false);
+});
+
+test('an ambiguous first-write failure keeps the intent, since the forge may have accepted it', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)], fail: { 'issue-comment': 'COMMAND_FAILED' } });
+  const result = await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  });
+  assert.equal(result.applied.issues[0].outcome, 'failed');
+  assert.ok(existsSync(stateFile(root, 'pending', 'issue-1.json')));
+  assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']]);
+});
+
+test('an applied group never removes the newer intent of a concurrent apply', async (t) => {
+  const root = repository(t);
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  const concurrent = '{"version":1,"number":1,"expected":"implement","owner":"other-apply"}\n';
+  const fake = forge({
+    issues: [issue(1)],
+    // The other apply records its intent while this one is writing.
+    fail: {
+      'issue-label-add': () => {
+        writeFileSync(intentFile, concurrent);
+        return null;
+      },
+    },
+  });
+  const result = await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  });
+  assert.equal(result.applied.issues[0].outcome, 'applied');
+  assert.equal(readFileSync(intentFile, 'utf8'), concurrent);
 });
 
 test('a pending issue is repaired first, outside the scan window, and a closed one is ignored', async (t) => {

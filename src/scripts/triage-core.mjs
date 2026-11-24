@@ -2356,22 +2356,63 @@ function intendedOutcome(group) {
     : VERDICTS.find((verdict) => LABELS[verdict] === label.payload.label);
 }
 
+// The intent file as written, or null when absent. An unreadable file reads as `undefined`, which
+// matches no later content, so it is never removed on a guess.
+function readIntent(root, number) {
+  try {
+    const file = path.join(root, ...PENDING_SEGMENTS, `issue-${number}.json`);
+    const info = lstatOrNull(file);
+    if (!info) return null;
+    return info.isFile() && info.size <= 1024 ? nodeFs.readFileSync(file, 'utf8') : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Each apply stamps its intent with an owner, so a settling apply can tell its own intent, or the
+// earlier one it replaced, from one a concurrent apply wrote in between.
 async function recordIntent(deps, runtimeStateRoot, number, expected) {
   const context = runtimeContext(deps);
   await resolveRuntimeRoot(context, runtimeStateRoot);
   const directory = await ensureChain(context, PENDING_SEGMENTS);
   const file = path.join(directory, `issue-${number}.json`);
-  const existed = lstatOrNull(file) !== null;
-  await atomicWrite(context, file, `${JSON.stringify({ version: 1, number, expected })}\n`);
-  return { existed };
+  const before = readIntent(context.cwd, number);
+  const owner = (deps.randomBytes ?? cryptoRandomBytes)(8).toString('hex');
+  const content = `${JSON.stringify({ version: 1, number, expected, owner })}\n`;
+  await atomicWrite(context, file, content);
+  return { existed: before !== null, content, before };
 }
 
-async function removeIntent(deps, runtimeStateRoot, number) {
+// Removes the intent only while it is still the one this apply wrote or the one it found and
+// replaced; a newer intent belongs to a concurrent apply that has not settled yet.
+async function snapshotIntent(deps, runtimeStateRoot, number) {
+  try {
+    const context = runtimeContext(deps);
+    await resolveRuntimeRoot(context, runtimeStateRoot);
+    return readIntent(context.cwd, number);
+  } catch {
+    return undefined;
+  }
+}
+
+async function removeIntent(deps, runtimeStateRoot, number, { content = null, before = null }) {
   const context = runtimeContext(deps);
   await resolveRuntimeRoot(context, runtimeStateRoot);
-  const file = path.join(context.cwd, ...PENDING_SEGMENTS, `issue-${number}.json`);
-  if (lstatOrNull(file)) await guardedUnlink(context, file);
+  const current = readIntent(context.cwd, number);
+  if (typeof current !== 'string' || (current !== content && current !== before)) return;
+  await guardedUnlink(context, path.join(context.cwd, ...PENDING_SEGMENTS, `issue-${number}.json`));
 }
+
+// Refusals that precede any forge write; every other failure may follow an accepted write whose
+// response was lost, so it counts as a write.
+const REFUSED_BEFORE_WRITE = new Set([
+  'INVALID_PAYLOAD',
+  'STALE_WRITE',
+  'UNSUPPORTED_CAPABILITY',
+  'TARGET_NOT_FOUND',
+  'AUTH_FAILED',
+  'CLI_MISSING',
+]);
 
 // Re-reads one issue once, before its group of writes.
 async function rereadIssue(session, number, permissionOf, runnerLogin) {
@@ -2525,6 +2566,10 @@ async function writeSetApply(input, deps) {
     const expected = intendedOutcome(group);
     let intent = null;
     let wrote = false;
+    // A decision with no label to repair records no intent; it may settle only the one found here.
+    const found = expected
+      ? undefined
+      : await snapshotIntent(deps, inventory.runtimeStateRoot, number);
     if (expected) {
       try {
         intent = await recordIntent(deps, inventory.runtimeStateRoot, number, expected);
@@ -2540,7 +2585,12 @@ async function writeSetApply(input, deps) {
     }
     const done = new Set();
     const write = async (operation, input) => {
-      await session.call(operation, input, { apply: true });
+      try {
+        await session.call(operation, input, { apply: true });
+      } catch (error) {
+        if (!REFUSED_BEFORE_WRITE.has(trackerFailure(error).code)) wrote = true;
+        throw error;
+      }
       wrote = true;
     };
     for (const entry of group) {
@@ -2590,10 +2640,16 @@ async function writeSetApply(input, deps) {
     if (record.failed) record.outcome = record.applied.length ? 'partial' : 'failed';
     else if (record.applied.length === group.length) record.outcome = 'applied';
     else record.outcome = record.applied.length ? 'partial' : 'skipped';
-    // An applied group settles every earlier intent of the issue, even one it did not record. A
-    // failed retry keeps an earlier intent; a new one is dropped when no write happened.
-    if (record.outcome === 'applied' || (intent && !intent.existed && !wrote))
-      await removeIntent(deps, inventory.runtimeStateRoot, number).catch(() => {
+    // An applied group settles its own intent and the earlier one it found, never a concurrent
+    // apply's newer one. A failed retry keeps an earlier intent; a new one is dropped only when
+    // no write was attempted, so an ambiguous failure stays a repair case.
+    const settled = record.outcome === 'applied';
+    const unwritten = intent && !intent.existed && !wrote;
+    if (settled || unwritten)
+      await removeIntent(deps, inventory.runtimeStateRoot, number, {
+        content: intent?.content ?? null,
+        before: settled ? (intent ? intent.before : found) : null,
+      }).catch(() => {
         /* a leftover intent only repeats one repair */
       });
   }
