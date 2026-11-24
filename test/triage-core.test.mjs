@@ -120,7 +120,18 @@ function forge({
   };
   const calls = [];
   const ok = (data) => ({ ok: true, data });
-  const error = (code) => ({ ok: false, error: { code, message: code } });
+  // A command that exited carries its exit status; `COMMAND_KILLED` is one that ended without any.
+  const error = (code) =>
+    code === 'COMMAND_KILLED'
+      ? { ok: false, error: { code: 'COMMAND_FAILED', message: code, details: { status: null } } }
+      : {
+          ok: false,
+          error: {
+            code,
+            message: code,
+            ...(code === 'COMMAND_FAILED' ? { details: { status: 1 } } : {}),
+          },
+        };
   const tracker = async (operation, input, options = {}) => {
     calls.push({ operation, input, options });
     const failure = await (typeof failures[operation] === 'function'
@@ -1834,6 +1845,66 @@ test('an ambiguous first-write failure keeps the intent, since the forge may hav
   assert.equal(result.applied.issues[0].outcome, 'failed');
   assert.ok(existsSync(stateFile(root, 'pending', 'issue-1.json')));
   assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']]);
+});
+
+test('a response that fails to parse after an accepted write keeps the intent', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)], fail: { 'issue-comment': 'INVALID_PAYLOAD' } });
+  const result = await triageRun(root, fake, {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  });
+  assert.equal(result.applied.issues[0].outcome, 'failed');
+  assert.ok(existsSync(stateFile(root, 'pending', 'issue-1.json')));
+  assert.deepEqual(await untriagedGroups(root, fake), [['#1', 'repair']]);
+});
+
+test('a write that may still be in flight blocks a retry until its window has passed', async (t) => {
+  const root = repository(t);
+  let kill = true;
+  const fake = forge({
+    issues: [issue(1)],
+    fail: { 'issue-label-add': () => (kill ? 'COMMAND_KILLED' : null) },
+  });
+  const options = {
+    selection: { references: ['#1'] },
+    assess: (item) => assessment(item),
+    drafts: implementDrafts('#1'),
+  };
+  const first = await triageRun(root, fake, options);
+  assert.equal(first.applied.issues[0].outcome, 'partial');
+  const intentFile = stateFile(root, 'pending', 'issue-1.json');
+  const kept = readFileSync(intentFile, 'utf8');
+  assert.equal(JSON.parse(kept).unsettledAt, NOW().getTime());
+  kill = false;
+  const issueWrites = () => fake.mutations().filter(({ input }) => input.number === 1).length;
+  const mutations = issueWrites();
+  // Inside the window a retry writes nothing and leaves the intent as the first apply stamped it.
+  const early = await triageRun(root, fake, options);
+  assert.equal(early.applied.issues[0].outcome, 'failed');
+  assert.equal(early.applied.issues[0].failed.code, 'TRIAGE_WRITE_UNSETTLED');
+  assert.equal(early.applied.issues[0].failed.retryAfter, '2026-11-23T12:10:00.000Z');
+  assert.equal(issueWrites(), mutations);
+  assert.equal(readFileSync(intentFile, 'utf8'), kept);
+  assert.equal(existsSync(lockFile(root, 1)), false);
+  // Past the window the retry proceeds, restores the verdict and settles the intent.
+  const later = () => new Date(NOW().getTime() + 11 * 60 * 1000);
+  const { permission, inventory: data } = await inventory(root, fake, { references: ['#1'] });
+  const checked = await validated(root, data, [assessment('#1')]);
+  const writeSet = await ok('write-set-build', {
+    inventory: data,
+    validated: checked,
+    permission,
+    drafts: implementDrafts('#1')(),
+  });
+  const retried = await ok(
+    'write-set-apply',
+    { cwd: root, target: FORGE, permission, inventory: data, writeSet, selected: select(writeSet) },
+    { tracker: fake.tracker, now: later },
+  );
+  assert.equal(retried.issues[0].outcome, 'applied');
+  assert.equal(existsSync(intentFile), false);
 });
 
 test('an applied group never removes the newer intent of a concurrent apply', async (t) => {

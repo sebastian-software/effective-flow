@@ -1,7 +1,7 @@
 ---
 description: "Assesses single tracker issues from any author against the project's architecture, risk, feasibility, overlap, value and evidence, and returns one cited verdict per issue: reject, implement or needs-work, with the open questions. After an exact preview confirmed per issue, it may post or update one managed comment and swap one triage label. Closes, deletes and reassigns nothing."
 catalogHint: "Decides whether single issues should be rejected, implemented or need work, with cited reasons."
-contextBudget: 321
+contextBudget: 331
 ---
 
 # Effective Flow Triage
@@ -256,7 +256,9 @@ only the labels a selected entry needs, re-reads each issue once before its grou
 reports per issue `applied`, `partial`, `stale` (content, triage labels or managed comments
 changed, or closed, since the assessment; nothing written), `failed` or `skipped`. For a `failed`
 code `TRIAGE_LOCKED`, relay its lock `path`, `ownerPid` and `mtime`, and tell the user to remove
-that file by hand only when no other triage apply is running. A run-level `failed` at `labels-ensure` stops every further write;
+that file by hand only when no other triage apply is running. For a `failed` code
+`TRIAGE_WRITE_UNSETTLED`, relay its `retryAfter` and apply again then; the earlier write's request
+may still be in flight, and its intent stays until the window has passed. A run-level `failed` at `labels-ensure` stops every further write;
 report it. Then call `report-write` again with `applied` set to that result.
 
 ## Phase 10: Completion

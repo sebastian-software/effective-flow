@@ -146,6 +146,9 @@ const PENDING_FILE = /^issue-([1-9]\d{0,9})\.json$/;
 // `atomicWrite` temporaries: a leftover of an interrupted write, never state.
 const STATE_TEMP = /^\.(?:issue-[1-9]\d{0,9}|scan-cursor)\.json\.[0-9a-f]{16}\.tmp$/;
 const MAX_PENDING = 100;
+// How long an intent stays unsettled after a write whose request may still be in flight: a later
+// apply could otherwise clear the intent and restore a verdict that the late request then undoes.
+const UNSETTLED_WRITE_GRACE_MS = 10 * 60 * 1000;
 const INPUT_SEGMENTS = Object.freeze([...TRIAGE_SEGMENTS, 'inputs']);
 const SNAPSHOT_FILE = /^issue-[1-9]\d{0,9}\.md$/;
 const SNAPSHOT_TEMP_PREFIX = '.triage-';
@@ -2413,6 +2416,34 @@ async function snapshotIntent(deps, runtimeStateRoot, number) {
   }
 }
 
+// Milliseconds left of the unsettled window an earlier apply stamped into its intent, else 0. A
+// stamp from the future beyond the window is clock skew, never a reason to block.
+function unsettledRemaining(raw, nowMs) {
+  if (typeof raw !== 'string') return 0;
+  let stamp;
+  try {
+    stamp = JSON.parse(raw)?.unsettledAt;
+  } catch {
+    return 0;
+  }
+  if (!Number.isSafeInteger(stamp)) return 0;
+  const remaining = stamp + UNSETTLED_WRITE_GRACE_MS - nowMs;
+  return remaining > 0 && remaining <= UNSETTLED_WRITE_GRACE_MS ? remaining : 0;
+}
+
+// Stamps this apply's own intent as unsettled; a changed or missing intent is left alone.
+async function markIntentUnsettled(deps, runtimeStateRoot, number, content, nowMs) {
+  const context = runtimeContext(deps);
+  await resolveRuntimeRoot(context, runtimeStateRoot);
+  if (readIntent(context.cwd, number) !== content) return;
+  const file = path.join(context.cwd, ...PENDING_SEGMENTS, `issue-${number}.json`);
+  await atomicWrite(
+    context,
+    file,
+    `${JSON.stringify({ ...JSON.parse(content), unsettledAt: nowMs })}\n`,
+  );
+}
+
 async function removeIntent(deps, runtimeStateRoot, number, { content = null, before = null }) {
   const context = runtimeContext(deps);
   await resolveRuntimeRoot(context, runtimeStateRoot);
@@ -2478,9 +2509,9 @@ async function releaseIssueLock(deps, runtimeStateRoot, { target, content }) {
 }
 
 // Refusals that precede any forge write; every other failure may follow an accepted write whose
-// response was lost, so it counts as a write.
+// response was lost, so it counts as a write. `INVALID_PAYLOAD` is not among them: it is also what
+// parsing the response of an accepted comment create or update raises.
 const REFUSED_BEFORE_WRITE = new Set([
-  'INVALID_PAYLOAD',
   'STALE_WRITE',
   'UNSUPPORTED_CAPABILITY',
   'TARGET_NOT_FOUND',
@@ -2634,6 +2665,22 @@ async function writeSetApply(input, deps) {
       continue;
     }
     try {
+      // An earlier apply whose request may still be in flight keeps its intent and blocks a retry
+      // until the window has passed; clearing it sooner could be undone by that late request.
+      const unsettled = unsettledRemaining(
+        await snapshotIntent(deps, inventory.runtimeStateRoot, number),
+        nowOf(deps).getTime(),
+      );
+      if (unsettled > 0) {
+        record.outcome = 'failed';
+        record.failed = {
+          id: group[0].id,
+          code: 'TRIAGE_WRITE_UNSETTLED',
+          message: 'an earlier write to this issue may still be in flight; apply again later',
+          retryAfter: new Date(nowOf(deps).getTime() + unsettled).toISOString(),
+        };
+        continue;
+      }
       let current;
       try {
         current = await rereadIssue(session, number, permissionOf, runnerLogin);
@@ -2666,6 +2713,7 @@ async function writeSetApply(input, deps) {
       const expected = intendedOutcome(group);
       let intent = null;
       let wrote = false;
+      let inFlight = false;
       // A decision with no label to repair records no intent; it may settle only the one found here.
       const found = expected
         ? undefined
@@ -2688,7 +2736,11 @@ async function writeSetApply(input, deps) {
         try {
           await session.call(operation, input, { apply: true });
         } catch (error) {
-          if (!REFUSED_BEFORE_WRITE.has(trackerFailure(error).code)) wrote = true;
+          const { code } = trackerFailure(error);
+          if (!REFUSED_BEFORE_WRITE.has(code)) wrote = true;
+          // A command that ended without an exit status (a timeout or a kill) may not have reached
+          // the forge yet; one that exited, or answered unparseably, has finished.
+          if (code === 'COMMAND_FAILED' && !Number.isInteger(error?.trackerStatus)) inFlight = true;
           throw error;
         }
         wrote = true;
@@ -2740,6 +2792,16 @@ async function writeSetApply(input, deps) {
       if (record.failed) record.outcome = record.applied.length ? 'partial' : 'failed';
       else if (record.applied.length === group.length) record.outcome = 'applied';
       else record.outcome = record.applied.length ? 'partial' : 'skipped';
+      if (inFlight && intent)
+        await markIntentUnsettled(
+          deps,
+          inventory.runtimeStateRoot,
+          number,
+          intent.content,
+          nowOf(deps).getTime(),
+        ).catch(() => {
+          /* without the stamp the intent still repeats one repair */
+        });
       // An applied group settles its own intent and the earlier one it found, never a concurrent
       // apply's newer one. A failed retry keeps an earlier intent; a new one is dropped only when
       // no write was attempted, so an ambiguous failure stays a repair case.
