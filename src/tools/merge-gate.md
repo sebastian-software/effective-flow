@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 945
+contextBudget: 946
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -18,9 +18,10 @@ merge. This workflow owns exactly that gap.
 Resolve a pull request from an argument or the current branch and drive an ordered gate:
 
 1. every check green – otherwise repair the pull request first;
-2. once green, hand the notes of the configured automatic reviewers (Greptile and comparable bots)
-   to `{{SKILL:iterate}}`, which fixes the valid ones and answers and resolves their threads, and
-   re-trigger the reviewer where needed;
+2. once green – or earlier, while checks are pending, on a settled changes-requested verdict at the
+   current integrable head – hand the notes of the configured automatic reviewers (Greptile and
+   comparable bots) to `{{SKILL:iterate}}`, which fixes the valid ones and answers and resolves their
+   threads, and re-trigger the reviewer where needed;
 3. if an open pull-request comment, an unresolved review thread, or a **changes-requested review**
    exists from an account that is **neither a bot nor the one this
    run is authenticated as**, implement no review note and merge nothing – the CI repair and the

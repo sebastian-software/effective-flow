@@ -855,6 +855,30 @@ responses.
   recorded as status-0 `{exit, stdout, stderr}` records, which the fidelity replay has to deliver
   with their stderr.
 
+## The early bot-round scenarios
+
+`early-bot-round-on-pending-checks` and its control `early-bot-round-control-waits-for-green` cover
+"Early entry" of the configured-reviewer fragment: a settled changes-requested verdict at the
+current integrable head starts the bot round while checks are still pending, and the merge stays
+bound to a green head. Both run against the configured-reviewer `origin` and echo, with the round cap
+raised to 8, and both sequence `pr-status-read`: the required `ci` check is pending for the first five
+reads and every check is completed from the sixth on (`repeatLast`). In the scenario the reviewer's
+own check is green from the first read on; in the control it is still running until the green
+element, so the verdict settles only there.
+
+The echo stamps each delegation with its wall-clock `at`, and the evaluator orders it against the call
+log by the same host clock, as the repair pair's ordering does. The scenario passes when its one
+delegation precedes the first `pr-checks-wait` start and the status read served the green element;
+the control passes when its one delegation follows that read. Both also assert no `pr-merge`, a
+second read of every guard surface, and exactly one delegation, so a green path that re-delegates
+the early outcomes at the same head fails. **The validity rule:** a run is valid only if it was
+served the green element and that read started after its first `pr-checks-wait` start; a run that
+read the status so often before waiting that the green element came first is redone. A run that
+reaches the green element without ever starting `pr-checks-wait` polled instead of waiting, against
+Phase 2 step 2, and is a finding rather than invalid. Neither
+evidence file shows which condition of "Early entry" decided, so the conditions themselves are pinned
+by the contract tests.
+
 ## What this deliberately does not cover
 
 - **The six `no-ci-policy-*` scenarios carry two recorded deviations.** First,

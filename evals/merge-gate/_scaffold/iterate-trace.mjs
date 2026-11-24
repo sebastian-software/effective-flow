@@ -11,6 +11,8 @@
 //     one review-body item, both returned `deferred`, under schema
 //     `effective-flow/merge-gate-iterate-echo/v1`, with the empty `Returned commits: []` and
 //     `Scope expansion: []` lines of `shared/delegated-scope-return.md` above the outcome record.
+//     Each delegation record carries its wall-clock `at`, so an evaluator can order it against the
+//     stub's call log, which takes its own `at` from the same host clock.
 //     The configured-reviewer scenario runs this mode against the local `origin` of
 //     `configured-reviewer-origin.mjs`. A fixture that states `iterateEchoReturn:
 //     "lines-on-request"` (the line-request scenario) omits both lines from that first return, so
@@ -639,6 +641,7 @@ function configuredReviewerDispatch(fixture, pullRequest, message) {
   try {
     appendTrace({
       schema: SCHEMA,
+      at: new Date().toISOString(),
       cwd: canonical(process.cwd()),
       pullRequest: Number(pullRequest),
       itemFilter: handoff.itemFilter,

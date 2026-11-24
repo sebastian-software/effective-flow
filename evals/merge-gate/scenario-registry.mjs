@@ -28,6 +28,8 @@ export const SCENARIOS = Object.freeze([
   'draft-ready-plan-only-asks-nothing',
   'draft-ready-redispatch-marks-ready',
   'draft-ready-relayed-returns-question',
+  'early-bot-round-control-waits-for-green',
+  'early-bot-round-on-pending-checks',
   'forgejo-wip-draft-conflict-asks-nothing',
   'forgejo-wip-draft-marks-ready',
   'guard-blocks-merge',

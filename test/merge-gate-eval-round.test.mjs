@@ -356,6 +356,27 @@ function copyRestampedResults(resultsDir) {
 // log its evaluator passes: a comment read, a requested merge, then the one applied merge. These runs exist only in a test's temporary
 // copy and are never evidence. A scenario that lands without a recorded round and without an entry
 // here fails loudly, naming the two ways out.
+const EARLY_ROUND_OPERATIONS = Object.freeze([
+  'pr-status-read',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-status-read',
+  'pr-status-read',
+  'pr-status-read',
+  'review-threads-read',
+  'pr-comments-read',
+  'pr-reviews-read',
+  'review-threads-read',
+  'pr-comments-read',
+  'pr-reviews-read',
+]);
+
+// The time of the n-th synthetic lifecycle call, a second apart.
+function syntheticCallAt(index) {
+  return `2026-10-16T00:01:${String(index).padStart(2, '0')}.000Z`;
+}
+
 const UNRECORDED_SCENARIO_LOGS = Object.freeze({
   'bot-login-excluded': ['pr-comments-read', 'pr-merge', { operation: 'pr-merge', apply: true }],
   // The four no-CI policy refusals pass on the one status read that carries their deciding fact.
@@ -434,6 +455,18 @@ const UNRECORDED_SCENARIO_LOGS = Object.freeze({
       'pr-reviews-read',
     ],
     lineRequestTrace: true,
+  },
+  // The early-round pair runs a sequenced status read, so its logs are lifecycle logs: the green
+  // element is the sixth status read, served after the first wait, and Phase 4 reads every guard
+  // surface. Each run pairs an echo trace with one stamped delegation, after the call at
+  // `dispatchAfter`: before the wait in the scenario, after the green read in the control.
+  'early-bot-round-on-pending-checks': {
+    operations: EARLY_ROUND_OPERATIONS,
+    dispatchAfter: 1,
+  },
+  'early-bot-round-control-waits-for-green': {
+    operations: EARLY_ROUND_OPERATIONS,
+    dispatchAfter: 6,
   },
 });
 
@@ -523,6 +556,13 @@ function syntheticLineRequestTrace(scenario, projectRoot) {
   ];
 }
 
+// The early-round echo trace: the line-request trace's delegation, stamped half a second after the
+// synthetic call at `dispatchAfter`, and no line request.
+function syntheticEarlyRoundTrace(scenario, projectRoot, dispatchAfter) {
+  const [delegation] = syntheticLineRequestTrace(scenario, projectRoot);
+  return [{ ...delegation, at: syntheticCallAt(dispatchAfter).replace('.000Z', '.500Z') }];
+}
+
 // One synthetic repair trace line per `kind:before>after` step, in the shape the echo writes.
 function syntheticRepairTrace(steps, projectRoot) {
   let dispatch = 0;
@@ -582,7 +622,7 @@ function syntheticCallLog(operations, projectRoot, lifecycle) {
   operations.forEach((entry, index) => {
     const operation = typeof entry === 'string' ? entry : entry.operation;
     const apply = typeof entry === 'string' ? false : entry.apply;
-    const at = lifecycle ? `2026-10-16T00:01:0${index}.000Z` : '2026-10-16T00:00:00.000Z';
+    const at = lifecycle ? syntheticCallAt(index) : '2026-10-16T00:00:00.000Z';
     if (!lifecycle) {
       records.push({ seq: records.length + 1, operation, apply, at, cwd: projectRoot });
       return;
@@ -615,17 +655,20 @@ function synthesizeUnrecordedScenario(directory, scenario, identity) {
     const projectRoot = `/tmp/effective-flow-merge-gate-eval/rounds/synthetic/slots/${scenario}/slot-${slot}/attempt-1/project`;
     const target = resolve(directory, `run-${slot}`);
     const repair = !Array.isArray(entry) && entry.trace !== undefined;
+    const early = !Array.isArray(entry) && entry.dispatchAfter !== undefined;
     const log = syntheticCallLog(
       Array.isArray(entry) ? entry : entry.operations,
       projectRoot,
-      repair,
+      repair || early,
     );
     writeFileSync(`${target}.jsonl`, `${log}\n`);
     const trace = repair
       ? syntheticRepairTrace(entry.trace, projectRoot)
-      : entry.lineRequestTrace
-        ? syntheticLineRequestTrace(scenario, projectRoot)
-        : null;
+      : early
+        ? syntheticEarlyRoundTrace(scenario, projectRoot, entry.dispatchAfter)
+        : entry.lineRequestTrace
+          ? syntheticLineRequestTrace(scenario, projectRoot)
+          : null;
     if (trace !== null) {
       writeFileSync(
         `${target}.iterate.jsonl`,
@@ -1477,10 +1520,11 @@ test('supported-operation derivation includes composite operations and detects c
 // passes. There is no fixed hold to cut: every pause ends on a marker, recovery refuses a live lock
 // without waiting, and the lock-wait values set below are ceilings rather than sleeps. Alone in a
 // two-CPU container the run takes 110–120 s, 79 s of it in the builds; shared CI runners took
-// 64–113 s at 15 scenarios, one of them overlaid, and timed out at 120 s at 17, three overlaid.
+// 64–113 s at 15 scenarios, one of them overlaid, and timed out at 120 s at 17, three overlaid. At
+// 30 scenarios, six overlaid, it took 146 s alone and passed 240 s beside the rest of `pnpm test`.
 test(
   'one immutable round provisions, seals, retries, and publishes isolated slots',
-  { timeout: 240_000 },
+  { timeout: 360_000 },
   async () => {
     const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-test-'));
     // Release sentinels live beside `temporary`, never inside it: the `finally` removes `temporary`

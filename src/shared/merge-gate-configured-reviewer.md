@@ -94,7 +94,7 @@ outcome stated for a thread ID names no recorded identifier and is therefore ine
 rule: a quoted review body reproducing its own publicly visible thread ID beside a valid outcome
 states nothing at all. This run reaches the thread the other way round, through the
 identifier→thread-ID mapping it recorded before delegating, and that mapping is what keeps
-conditions 6 and 7 reading the thread half of the record.
+Phase 4 conditions 6 and 7 reading the thread half of the record.
 
 **The receiver rule.** For every item identifier this run **recorded** before the delegation:
 
@@ -178,10 +178,10 @@ because neither has a delegated return at all:
   the two timestamps, or the value that was missing), which trigger was posted, which threads went to
   `{{SKILL:iterate}}` **with the per-message identifier minted for each recorded against its thread
   ID and that thread's comment URL before that delegation went out** – that identifier→thread-ID
-  mapping is what conditions 6 and 7 resolve a returned outcome back to its thread through, and the
+  mapping is what Phase 4 conditions 6 and 7 resolve a returned outcome back to its thread through, and the
   URL recorded beside it is what "The set-aside confirmation" names for a thread item – and which
   findings were deferred and reported in chat instead
-- per configured reviewer, its **latest review for `VERIFIED_HEAD_SHA`** with that review's id,
+- per configured reviewer, its **latest review for `REVIEW_HEAD_SHA`** with that review's id,
   state, submission time and URL, or the reason the verdict could not be established; and, where that
   state is changes-requested, one entry per finding of that review with its outcome from the closed
   vocabulary of "Returned outcome record" – `implemented`, `deferred`, `rejected`, or `unassessed` –
@@ -191,10 +191,90 @@ because neither has a delegated return at all:
   a binary "assessed" is not enough to write here
 - every changes-requested review whose author matched **no** configured login, with its author,
   review id and URL – the review-surface counterpart of the unmatched-thread report
+- the early-entry guard and the early-round report entries of "Early entry"
+
+## Early entry
+
+Phase 2 applies this section after step 1, before step 2's wait, in every round of a run whose
+`mergeGate.bots` list is non-empty. It decides whether this round runs Phase 3 now, while checks
+are still pending, on a **settled** changes-requested verdict at the current head. The merge stays
+bound to `VERIFIED_HEAD_SHA`; nothing here touches Phase 4 or Phase 5.
+
+**Conditions.** Evaluate them in this order and stop at the first unmet one; an unprovable
+condition is unmet. Two need no read:
+
+1. the human-comment guard is inactive, and no caller limit withholds delegation (`no-branch-writes`);
+2. Phase 2 step 1 has run in this round.
+
+Then take one `pr-status-read` – on the T3 path of `host-pr-watch` its pending read, never a second
+status read – and evaluate on it:
+
+3. the early-entry guard is not set at the read's `headSha`;
+4. no check fails as Phase 2 step 4 defines it, and at least one check is pending within the set
+   step 2's wait would wait for – under `mergeGate.requireAllChecks: false`, required or of unstated
+   requiredness;
+5. the read states the branch integrable by the loop exit's merge-state or mergeability test, except
+   that a merge state of `UNKNOWN` is unprovable; the Forgejo WIP-draft exit's local proof does not
+   count;
+6. every configured bot has a configured `mergeGate.bots.<login>.check`, is **has run**, and its own
+   check is completed and not failing as Phase 2 step 4 defines it.
+
+Only then take the review-thread and submitted-review reads, with "Unconfigured automatic-reviewer
+advisory" applied as on every fresh read, and evaluate:
+
+7. for at least one bot, the latest review at the read's `headSha`, resolved through the
+   supersession rule of the loaded "Automatic reviewer state", is changes-requested with a
+   `submittedAt` later than `headCommittedAt`.
+
+A failing check takes Phase 2 step 3's CI repair; early entry never shares a delegation with it.
+
+**Entering.** Record the read's `headSha` as `REVIEW_HEAD_SHA`, drop that head's non-entry record,
+and run Phase 3 in this round, step 5's
+stop check included, with this batch as its fresh read. Post no trigger and no stale-verdict
+re-trigger: every bot has run, so steps 2 to 4 have nothing to do, and green-path Phase 3 at the same
+head still applies the stale-verdict rule before it hands over a further item.
+
+**Head movement decides a successful early round.** An unsuccessful one, as the receiver rule and
+the loaded `merge-gate-delegation-contract` define it, ends the round as that contract states,
+whatever its heads. Otherwise compare the `before` and `after` heads "Repair
+checkpoints" records around each early dispatch. Equal heads continue with step 2's wait in this
+round. Any difference – an implementation, a correction commit, a foreign push – ends the round as
+Phase 3 step 6 does. An early bot round therefore consumes exactly one round, as a green-path bot
+round does.
+
+**Not entered.** Step 2's wait applies unchanged. Where the first unmet condition is one of 3 to 6,
+the status read shows a pending check in that set and the early-entry guard records no early path at
+its head, record that condition's number, keeping only the last such record per head. Condition 1
+reaches the report through the human-comment guard state and the caller limit; condition 2 is never
+recorded, because step 1 always precedes this section, nor is condition 7: its reads follow only
+once 1 to 6 hold, and a missing verdict leaves nothing to explain.
+
+**Records**, in the wisdom file:
+
+- the **early-entry guard**: set at `REVIEW_HEAD_SHA`, with the path, early or green, that set it
+  first. Phase 3 step 5 sets it on every path into Phase 3, and every early-dispatch return but a
+  valid `BLOCKED-USER iterate-approval` sets it for that head; it lives and is discarded with
+  `REVIEW_HEAD_SHA`;
+- per early round, append-only, without a head SHA and kept until Phase 6: the round, the bot, the
+  review id, the verdict's `submittedAt`, the dispatch time, the outcome per finding, and the
+  correction-bucket commits the repair helper attributes to the `correction` identifier.
+
+**Re-dispatch.** The dispatch consuming an `iterate-approval` answer of an early round re-evaluates
+the conditions on fresh reads; where they no longer hold, it consumes the answer in green-path
+Phase 3 under the digest rule of "Answers and returns".
+
+**On the T3 path of `host-pr-watch`,** evaluate before every checks suspend of Phase 2 step 2 and on
+every checks resume at an unchanged head. A resume that meets the conditions enters Phase 3 in the recorded round, ahead of
+every wake class at that head – progress, unchanged, or changed only by a new pending check – and of
+the "Bounds" stop for an all-optional pending set, which then decides the following suspend. It
+resets the unchanged count to zero, and the re-suspension after an early Phase 3 without head
+movement stays in that round.
 
 ## Phase 3: Automatic reviewer round
 
-Otherwise, for each login in `mergeGate.bots`, after "Matching a configured login" has de-duplicated
+Phase 3 assesses the head recorded as `REVIEW_HEAD_SHA`: `VERIFIED_HEAD_SHA` when the Phase 2 loop
+exit enters it, the early-entry head when "Early entry" does. For each login in a non-empty
+`mergeGate.bots`, after "Matching a configured login" has de-duplicated
 entries that denote the same reviewer – two spellings of one account are one round here, not two
 (on the T3 path of `host-pr-watch`, in that fragment's bot order):
 
@@ -257,8 +337,9 @@ entries that denote the same reviewer – two spellings of one account are one r
      merge – and that holds for **running** exactly as it does for **not started**: a reviewer this
      run watched working is still a reviewer whose notes nobody has answered.
 5. **When the bot has run:** first apply the stop check of "Repair checkpoints" in
-   `merge-gate-delegated-run`, then the stale-verdict re-trigger below, then "Repair evaluation per
-   configured reviewer" – a stop from either ends the run before any delegation – and only then hand
+   `merge-gate-delegated-run`, then the stale-verdict re-trigger below, never on the path of "Early
+   entry", then "Repair evaluation per configured reviewer" – a stop from either ends the run
+   before any delegation – and only then hand
    its unresolved threads to `{{SKILL:iterate}} <PR>` with the item filter set to **exactly those
    thread IDs**. `{{SKILL:iterate}}` classifies them, implements the valid ones as new commits, replies, and
    resolves them.
@@ -268,7 +349,7 @@ entries that denote the same reviewer – two spellings of one account are one r
      a configured `.check` – after the de-duplication of "Matching a configured login", the one
      effective, non-conflicting value its entries agree on – and only when all three hold on the
      fresh read:
-     - the reviewer's latest review at `VERIFIED_HEAD_SHA`, resolved through the supersession rule of
+     - the reviewer's latest review at `REVIEW_HEAD_SHA`, resolved through the supersession rule of
        the loaded "Automatic reviewer state", is changes-requested and has a provable `submittedAt`;
      - at least one **other** check's latest run – an entry of the `pr-status-read` list, which
        reports the latest run per check identity – has a `startedAt` strictly later than that
@@ -296,7 +377,7 @@ entries that denote the same reviewer – two spellings of one account are one r
      Post only the literal trigger text, through the same PR-comment mutation step 3 uses, then apply
      the single wait of step 4 and re-read once; on the T3 path of `host-pr-watch` that wait
      suspends per that fragment too. **The reviewer has answered** only when that re-read
-     shows a new submitted review at `VERIFIED_HEAD_SHA` whose `submittedAt` is later than the
+     shows a new submitted review at `REVIEW_HEAD_SHA` whose `submittedAt` is later than the
      re-trigger comment's `createdAt`; a reviewer check that was already `COMPLETED` is not an answer.
      A re-read that observes the reviewer as **running** ends the run with step 4's report, carrying
      the stale-verdict item and the re-trigger's `createdAt`, and hands nothing to `{{SKILL:iterate}}`.
@@ -324,7 +405,7 @@ entries that denote the same reviewer – two spellings of one account are one r
      run after submitting its review would qualify its own signal as a re-run and be re-triggered at
      every changes-requested verdict, across every gate run at an unmoved head. Post nothing then;
      this rule is evaluated before the other reasons and replaces them. When the verdict is
-     changes-requested at `VERIFIED_HEAD_SHA` and a check re-run after it concluded `SUCCESS` –
+     changes-requested at `REVIEW_HEAD_SHA` and a check re-run after it concluded `SUCCESS` –
      which may be the reviewer's own – record the stale-verdict state with the reason "no `.check`
      configured to exclude the reviewer's own signal", together with a recommendation to configure
      `.check` or to re-trigger the reviewer by hand. This is report wording only: a bot without
@@ -348,8 +429,14 @@ entries that denote the same reviewer – two spellings of one account are one r
      record is keyed by, and an item that came back `unassessed` that time would be cleared and
      unclearable at once.
    - **Exclude every provider-settled thread, and on every forge every thread this run recorded
-     `implemented`**: a second delegation would record a second outcome for it, and condition 6
+     `implemented`**: a second delegation would record a second outcome for it, and Phase 4 condition 6
      already reports one that stayed unresolved.
+   - **Reuse an early round's outcomes at the same head.** Where the early-entry guard of "Early
+     entry" records the early path at a `REVIEW_HEAD_SHA` equal to the current `VERIFIED_HEAD_SHA`,
+     exclude the early round's `deferred` and `rejected` items: no second outcome is written under a durable key at the same
+     head. Hand over as today every `unassessed` item, every `implemented` finding without head
+     movement, and every item that appeared after that round; at a later head a still-open
+     `deferred` thread is re-delegated as today.
    - **Build, validate and dispatch that one delegation** per "Building and dispatching a
      delegation" in the loaded `merge-gate-delegation-contract`: the threads as `threadItems`, the body findings below as `bodyItems`. `build`
      mints one per-message identifier per thread and carries it on that thread's `Thread item:`
@@ -357,7 +444,7 @@ entries that denote the same reviewer – two spellings of one account are one r
      requires. The thread IDs travel in the item filter because the delegated run addresses the
      threads through them; the **return** keys on the minted identifiers and never on the thread
      IDs.
-   - **Its latest changes-requested review for the verified head travels in the same delegation.**
+   - **Its latest changes-requested review for `REVIEW_HEAD_SHA` travels in the same delegation.**
      Resolve which review that is through the supersession rule of the loaded "Automatic reviewer
      state", and hand each finding its body carries as free text with the provenance and the stable
      identifier the "Delegation contract" requires. A review with an **empty** body still has to be
@@ -372,9 +459,10 @@ entries that denote the same reviewer – two spellings of one account are one r
    - **Record the outcome per finding, keyed by review id and finding ordinal** – `implemented`,
      `deferred`, `rejected`, or `unassessed` from the closed vocabulary of "Returned outcome record"
      – in the wisdom file, as it happens rather than at the end of the round, with the per-message
-     stable identifier the finding was delegated under recorded against that key. **A thread item's
+     stable identifier the finding was delegated under recorded against that key. The first one
+     recorded sets the early-entry guard for `REVIEW_HEAD_SHA`, on the green path as on the early. **A thread item's
      durable key is its forge thread ID**, and its per-message identifier is recorded against that
-     key the same way; that identifier→thread-ID mapping is how conditions 6 and 7 get from a
+     key the same way; that identifier→thread-ID mapping is how Phase 4 conditions 6 and 7 get from a
      returned outcome back to the thread it concerns. Record that thread's **comment URL** on the
      same mapping – the `url` of the same fresh read the thread IDs came from: it is the inspection
      link "The set-aside confirmation" names for a thread item, and no later read of that record
@@ -385,8 +473,8 @@ entries that denote the same reviewer – two spellings of one account are one r
      That record is what condition 10 is evaluated against and what Phase 6 reports; a round that
      wrote only "assessed" leaves both unsatisfiable.
 6. **Any implementation restarts Phase 2** – new commits invalidate both the check result and every
-   bot's state. Discard `VERIFIED_HEAD_SHA`; the new head is unverified until a Phase-2 round
-   sets it again. The restart consumes a round per "Round accounting".
+   bot's state. Discard `VERIFIED_HEAD_SHA` and `REVIEW_HEAD_SHA`; the new head is unverified until
+   a Phase-2 round sets it again. The restart consumes a round per "Round accounting".
 
 ## Repair evaluation per configured reviewer
 
@@ -821,6 +909,11 @@ the residual is accepted and made visible rather than closed.
   own signal, staleness unprovable, already posted for this verdict, or already triggered this
   round – together with a recommendation to re-trigger the reviewer by hand, and to configure
   `mergeGate.bots.<login>.check` where none is configured;
+- **every early bot round** of "Early entry", from its report entry, also after a head movement
+  and in a run that ended before a green head was verified: the bot, the review id, the verdict's
+  `submittedAt`, the dispatch time, one line per finding with its outcome, and its
+  correction-bucket commits; and every remaining non-entry record of "Not entered", with its head
+  and first unmet condition;
 - **every bot finding this run assessed but did not implement**, named here rather than answered
   in its thread;
 - **every `uncertain` repair classification** with its reviewer, durable key and reason, so a

@@ -570,6 +570,8 @@ re-triggered, and keeps blocking like any changes-requested verdict. A reviewer 
 stale verdict the gate cannot re-trigger – no trigger configured, no `.check` configured, a
 timestamp or author it cannot prove, or the re-trigger already posted – is reported as a stale
 verdict with a recommendation to re-trigger by hand; the verdict still blocks as before.
+A configured `.check` for every listed reviewer is also what lets the gate handle a changes-requested verdict while other checks are still pending; see
+[A reviewer round while checks are pending](./tools-deliver.md#a-reviewer-round-while-checks-are-pending).
 Leave it unset only for a reviewer that publishes no such check; Greptile publishes the `Greptile
 Review` check and should use that exact context. Without `.check`, the gate keeps its previous
 two-state behavior for that reviewer and never re-triggers a stale verdict, because the reviewer's

@@ -133,6 +133,22 @@ test('quick applies only with complete evidence on both sides', () => {
   );
 });
 
+// Invariant: the review-fix candidate checks the CI definition of the tree the bot round assesses,
+// `REVIEW_HEAD_SHA`, which is the verified head on the green path and the early-entry head on the
+// early path; Phase 4's own integrity check stays on `VERIFIED_HEAD_SHA`, so an early round's
+// quick candidate never stands in for the CI evidence a merge needs.
+test('the review-fix ci-integrity runs against REVIEW_HEAD_SHA and Phase 4 keeps VERIFIED_HEAD_SHA', () => {
+  assert.match(
+    candidate,
+    /ci-integrity <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<base>","commit":"<baseCommit>","tree":"<REVIEW_HEAD_SHA>"\}'/,
+  );
+  assert.doesNotMatch(candidate, /VERIFIED_HEAD_SHA/);
+  assert.match(
+    prose(delegatedRun),
+    /ci-integrity <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","commit":"<commit>","tree":"<VERIFIED_HEAD_SHA>"\}'/,
+  );
+});
+
 // Invariant: every missing piece of evidence ends in `full` with a reason, not in a guess. Non-
 // required jobs and `requireAllChecks: true` alone are no eligibility (nothing outside the gate
 // run enforces it); a base that moved during the round changes nothing because detection and

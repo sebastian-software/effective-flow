@@ -1,4 +1,5 @@
-// Scenario-local setup for the configured-reviewer scenario and its line-request twin, the two
+// Scenario-local setup for the configured-reviewer scenario, its line-request twin, the early bot
+// round scenario and its control, the two
 // repair-accounting scenarios, the one configuration row the non-interactive dispatch scenario changes, the one row
 // the bot-account scenario appends, and the rows of the six declared no-CI policy scenarios.
 // Every other scenario keeps the shared no-reviewer project configuration and the production
@@ -17,10 +18,25 @@ export const CONFIGURED_REVIEWER_SCENARIO = 'configured-reviewer-set-aside-block
 // and `Scope expansion:` lines, so the gate has to request them once before it records the round.
 export const ITERATE_SCOPE_LINE_REQUEST_SCENARIO = 'iterate-scope-line-request';
 
+// The early bot round ("Early entry" in `shared/merge-gate-configured-reviewer.md`) and its control:
+// the same reviewer, echo, thread and review-body finding, with a sequenced status read whose required
+// `ci` check stays pending for the first reads and then turns green. In the scenario the reviewer's
+// own check is completed from the first read on, so its changes-requested verdict is settled while
+// `ci` is pending; in the control that check is still running until the green element, so the
+// verdict settles only there. The echo stamps each delegation with its wall-clock time, which is how
+// the evaluator orders the dispatch against the call log.
+export const EARLY_ROUND_SCENARIO = 'early-bot-round-on-pending-checks';
+export const EARLY_ROUND_CONTROL_SCENARIO = 'early-bot-round-control-waits-for-green';
+export const EARLY_ROUND_SCENARIOS = Object.freeze([
+  EARLY_ROUND_SCENARIO,
+  EARLY_ROUND_CONTROL_SCENARIO,
+]);
+
 // The scenarios that run against the configured-reviewer `origin` and echo mode.
 export const CONFIGURED_REVIEWER_SCENARIOS = Object.freeze([
   CONFIGURED_REVIEWER_SCENARIO,
   ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
+  ...EARLY_ROUND_SCENARIOS,
 ]);
 
 export const CONFIGURED_REVIEWER_ROWS = [
@@ -88,6 +104,10 @@ export const REPAIR_SCENARIOS = Object.freeze([
 
 export const REPAIR_ROWS = [...CONFIGURED_REVIEWER_ROWS, ['mergeGate.maxRounds', '8']];
 
+// The early-round pair raises the round cap for the same reason: every pending status read can end
+// a round, and the cap must never be what keeps a run from reaching the green element.
+export const EARLY_ROUND_ROWS = REPAIR_ROWS;
+
 export function noCiPolicyRows(scenario) {
   const extra = NO_CI_POLICY_ROWS[scenario];
   if (!extra) return null;
@@ -123,7 +143,10 @@ export function scenarioSetup(scenario) {
   if (!CONFIGURED_REVIEWER_SCENARIOS.includes(scenario)) {
     return { projectSetupRows: [], iterateEcho: false };
   }
-  const projectSetupRows = CONFIGURED_REVIEWER_ROWS.map(([key, value]) => [key, value]);
+  const rows = EARLY_ROUND_SCENARIOS.includes(scenario)
+    ? EARLY_ROUND_ROWS
+    : CONFIGURED_REVIEWER_ROWS;
+  const projectSetupRows = rows.map(([key, value]) => [key, value]);
   if (!projectSetupRows.some(([key]) => key === 'mergeGate.bots')) {
     throw new Error(`${scenario}: configured-reviewer setup has no resolved mergeGate.bots row`);
   }

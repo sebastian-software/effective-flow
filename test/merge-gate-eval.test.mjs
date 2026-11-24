@@ -64,7 +64,11 @@ import {
   PHASE_ZERO_REFUSALS,
 } from '../evals/iterate/_scaffold/evaluate.mjs';
 import { reportRecord } from '../evals/iterate/_scaffold/report-channel.mjs';
-import { LINE_REQUEST_SENTENCE } from '../evals/merge-gate/_scaffold/evaluate.mjs';
+import {
+  decisiveFindings,
+  greenStatusPosition,
+  LINE_REQUEST_SENTENCE,
+} from '../evals/merge-gate/_scaffold/evaluate.mjs';
 import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 
@@ -3556,3 +3560,266 @@ test('the sealed observation records the last message and the origin refs, and r
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// The early bot-round pair ("Early entry" in `shared/merge-gate-configured-reviewer.md`), asked of
+// synthetic evidence before any round exists. Invariant: the scenario passes only when its one
+// delegation precedes the first `pr-checks-wait` start and the status read served the green element,
+// the control only when its one delegation follows that read, and a run served the green element
+// before it ever waited is invalid rather than a pass or a failure.
+const EARLY_ROUND_SCENARIO = 'early-bot-round-on-pending-checks';
+const EARLY_ROUND_CONTROL = 'early-bot-round-control-waits-for-green';
+const EARLY_ROUND_T0 = Date.parse('2026-11-24T08:00:00.000Z');
+
+// One lifecycle record pair per call, a second apart, and the echo's delegation stamped at the
+// position of the `DISPATCH` marker.
+function earlyRoundEvidence(scenario, steps) {
+  const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+  const records = [];
+  const dispatches = [];
+  let seq = 0;
+  steps.forEach((step, index) => {
+    const at = new Date(EARLY_ROUND_T0 + index * 1000).toISOString();
+    if (step === 'DISPATCH') {
+      dispatches.push({ ...echoDispatchRecord(fixture, dispatches.length + 1), at });
+      return;
+    }
+    const callId = `call-${index}`;
+    const operation = typeof step === 'string' ? step : step.operation;
+    const apply = typeof step === 'string' ? false : step.apply;
+    records.push({
+      seq: ++seq,
+      event: 'start',
+      callId,
+      operation,
+      apply,
+      at,
+      cwd: SYNTHETIC_PROJECT,
+    });
+    records.push({ seq: ++seq, event: 'complete', callId, at });
+  });
+  return {
+    fixture,
+    records,
+    logText: records.map((record) => `${JSON.stringify(record)}\n`).join(''),
+    auxiliaryText: dispatches.map((record) => `${JSON.stringify(record)}\n`).join(''),
+  };
+}
+
+function evaluateEarlyRound(scenario, steps) {
+  const { fixture, logText, auxiliaryText } = earlyRoundEvidence(scenario, steps);
+  return evaluateEvidence(suite, {
+    scenario,
+    logText,
+    fixture,
+    projectRoot: SYNTHETIC_PROJECT,
+    answerableOperations: new Set(Object.keys(fixture.operations)),
+    auxiliaryText,
+  });
+}
+
+const EARLY_ROUND_OPENING = [
+  ...CALLER_PHASE_ZERO,
+  ...ENTRY_REREAD,
+  ...GUARD_SURFACES,
+  'viewer-read',
+  'pr-status-read',
+];
+// Phase 4 of both runs: a fresh status read, then the three guard surfaces.
+const EARLY_ROUND_PHASE_FOUR = ['pr-status-read', ...GUARD_SURFACES];
+// Early entry on read 2, the dispatch between the before and after reads 3 and 4, a pending read 5
+// that ends the round, then the green read 6 after the second wait and the loop exit on read 7.
+const EARLY_ROUND_PASS = [
+  ...EARLY_ROUND_OPENING,
+  'pr-status-read',
+  'review-threads-read',
+  'pr-reviews-read',
+  'pr-status-read',
+  'DISPATCH',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-status-read',
+  ...EARLY_ROUND_PHASE_FOUR,
+];
+// The green path: it waits at once and delegates only after the loop exit.
+const GREEN_PATH = [
+  ...EARLY_ROUND_OPENING,
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-status-read',
+  'pr-status-read',
+  'review-threads-read',
+  'pr-reviews-read',
+  'pr-status-read',
+  'DISPATCH',
+  'pr-status-read',
+  ...EARLY_ROUND_PHASE_FOUR,
+];
+
+test('both early-round fixtures serve the green element at the sixth status read', () => {
+  for (const scenario of [EARLY_ROUND_SCENARIO, EARLY_ROUND_CONTROL]) {
+    const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+    assert.equal(greenStatusPosition(fixture), 6, scenario);
+    assert.equal(fixture.operations['pr-status-read'].repeatLast, true, scenario);
+    assert.equal(Object.hasOwn(fixture, 'servesMerge'), false, scenario);
+  }
+});
+
+test('the early-round scenario passes an early delegation and fails a wait-first one', () => {
+  const passed = evaluateEarlyRound(EARLY_ROUND_SCENARIO, EARLY_ROUND_PASS);
+  assert.deepEqual(passed.validityProblems, []);
+  assert.deepEqual(passed.findings, []);
+
+  const waited = evaluateEarlyRound(EARLY_ROUND_SCENARIO, GREEN_PATH);
+  assert.deepEqual(waited.validityProblems, []);
+  assert.ok(waited.findings.some((finding) => /only after it started waiting/.test(finding)));
+  assert.ok(
+    waited.findings.some((finding) => /only after a status read served green/.test(finding)),
+  );
+
+  // The green path reusing nothing hands the same assessed text over a second time.
+  const twice = evaluateEarlyRound(EARLY_ROUND_SCENARIO, [
+    ...EARLY_ROUND_PASS.slice(0, -EARLY_ROUND_PHASE_FOUR.length),
+    'DISPATCH',
+    ...EARLY_ROUND_PHASE_FOUR,
+  ]);
+  assert.ok(twice.findings.some((finding) => /invoked the iterate echo 2 time/.test(finding)));
+
+  const merged = evaluateEarlyRound(EARLY_ROUND_SCENARIO, [
+    ...EARLY_ROUND_PASS,
+    { operation: 'pr-merge', apply: true },
+  ]);
+  assert.ok(merged.findings.some((finding) => /requested pr-merge/.test(finding)));
+});
+
+test('the early-round control passes a delegation after green and fails an early one', () => {
+  const passed = evaluateEarlyRound(EARLY_ROUND_CONTROL, GREEN_PATH);
+  assert.deepEqual(passed.validityProblems, []);
+  assert.deepEqual(passed.findings, []);
+
+  const early = evaluateEarlyRound(EARLY_ROUND_CONTROL, EARLY_ROUND_PASS);
+  assert.deepEqual(early.validityProblems, []);
+  assert.equal(early.findings.length, 1, JSON.stringify(early.findings));
+  assert.match(early.findings[0], /before any status read served green checks/);
+  // An early delegation is irreversible, so a stopped run that already made one is judged.
+  const { fixture, records, auxiliaryText } = earlyRoundEvidence(
+    EARLY_ROUND_CONTROL,
+    EARLY_ROUND_PASS,
+  );
+  const auxiliaryRecords = auxiliaryText
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.ok(
+    decisiveFindings({
+      scenario: EARLY_ROUND_CONTROL,
+      records,
+      fixture,
+      auxiliaryRecords,
+      requiresAuxiliary: true,
+    }).some((finding) => /before any status read served green checks/.test(finding)),
+  );
+});
+
+test('an early-round run served the green element before any wait is invalid', () => {
+  // Six status reads before the first wait: the sixth already serves green checks.
+  const steps = [
+    ...EARLY_ROUND_OPENING,
+    'pr-status-read',
+    'pr-status-read',
+    'pr-status-read',
+    'pr-status-read',
+    'pr-status-read',
+    'DISPATCH',
+    'pr-checks-wait',
+    ...EARLY_ROUND_PHASE_FOUR,
+  ];
+  for (const scenario of [EARLY_ROUND_SCENARIO, EARLY_ROUND_CONTROL]) {
+    const result = evaluateEarlyRound(scenario, steps);
+    assert.ok(
+      result.validityProblems.some((problem) =>
+        /precedes every pr-checks-wait start/.test(problem),
+      ),
+      scenario,
+    );
+  }
+  const short = evaluateEarlyRound(EARLY_ROUND_SCENARIO, [...EARLY_ROUND_OPENING, 'DISPATCH']);
+  assert.ok(
+    short.validityProblems.some((problem) => /no read was served the green element/.test(problem)),
+  );
+});
+
+// Invariant: Phase 2 step 2 forbids a prompt-driven poll loop, so a gate that reaches the green
+// element through `pr-status-read` alone and never starts `pr-checks-wait` is a finding of both
+// scenarios, never an invalid run that would be redone until it happens to wait.
+test('an early-round run that polls to green without any wait is a finding, not invalid', () => {
+  const polled = [
+    ...EARLY_ROUND_OPENING,
+    'pr-status-read',
+    'review-threads-read',
+    'pr-reviews-read',
+    'pr-status-read',
+    'DISPATCH',
+    'pr-status-read',
+    'pr-status-read',
+    'pr-status-read',
+    ...EARLY_ROUND_PHASE_FOUR,
+  ];
+  for (const scenario of [EARLY_ROUND_SCENARIO, EARLY_ROUND_CONTROL]) {
+    const result = evaluateEarlyRound(scenario, polled);
+    assert.deepEqual(result.validityProblems, [], scenario);
+    assert.ok(
+      result.findings.some((finding) =>
+        /never called pr-checks-wait and reached the green status element/.test(finding),
+      ),
+      `${scenario}: ${JSON.stringify(result.findings)}`,
+    );
+  }
+  // The passing run waits, so the finding stays silent for it.
+  assert.deepEqual(evaluateEarlyRound(EARLY_ROUND_SCENARIO, EARLY_ROUND_PASS).findings, []);
+});
+
+test('an early-round delegation without a wall-clock stamp cannot be ordered', () => {
+  const { fixture, logText } = earlyRoundEvidence(EARLY_ROUND_SCENARIO, EARLY_ROUND_PASS);
+  const result = evaluateEvidence(suite, {
+    scenario: EARLY_ROUND_SCENARIO,
+    logText,
+    fixture,
+    projectRoot: SYNTHETIC_PROJECT,
+    answerableOperations: new Set(Object.keys(fixture.operations)),
+    auxiliaryText: `${JSON.stringify(echoDispatchRecord(fixture))}\n`,
+  });
+  assert.deepEqual(result.validityProblems, []);
+  assert.ok(result.findings.some((finding) => /no wall-clock time/.test(finding)));
+});
+
+for (const scenario of [EARLY_ROUND_SCENARIO, EARLY_ROUND_CONTROL]) {
+  const runs = archivedRuns(scenario);
+  test(
+    `${scenario}: every archived run is valid, delegates once in the expected order and blocks without merging`,
+    { skip: skipWithoutRuns(scenario, runs) },
+    () => {
+      const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+      for (const run of runs) {
+        const result = evaluateEvidence(suite, {
+          scenario,
+          logText: readFileSync(run.path, 'utf8'),
+          fixture,
+          projectRoot: JSON.parse(readFileSync(run.metadataPath, 'utf8')).projectRoot,
+          answerableOperations: new Set(Object.keys(fixture.operations)),
+          auxiliaryText: readFileSync(run.iteratePath, 'utf8'),
+        });
+        assert.deepEqual(result.validityProblems, [], run.name);
+        assert.deepEqual(result.findings, [], run.name);
+      }
+    },
+  );
+}

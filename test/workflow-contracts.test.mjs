@@ -3499,6 +3499,7 @@ test('the configured-reviewer route stays reachable through exact retained workf
     '## The set-aside confirmation',
     '## Unmatched configured-reviewer reports',
     '## Phase 6 configured-reviewer report items',
+    '## Early entry',
   ];
 
   const gateIncludes = collectIncludeNames(gate);
@@ -11131,12 +11132,14 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
     'a reviewer running after the re-trigger must hand nothing to iterate',
   );
 
-  // The answer: a completed reviewer check is already there and proves nothing.
+  // The answer: a completed reviewer check is already there and proves nothing. Phase 3 reads the
+  // answer at the head it assesses, `REVIEW_HEAD_SHA`, which equals the verified head on the green
+  // path where the re-trigger is posted.
   assert.match(
     retrigger,
     near(
       'The reviewer has answered',
-      "new submitted review at `VERIFIED_HEAD_SHA` whose `submittedAt` is later than the re-trigger comment's `createdAt`",
+      "new submitted review at `REVIEW_HEAD_SHA` whose `submittedAt` is later than the re-trigger comment's `createdAt`",
       80,
     ),
     'only a new review after the re-trigger counts as an answer',
@@ -11296,7 +11299,7 @@ test('a reviewer without a configured .check is never re-triggered on a stale ve
   assert.match(
     noCheck,
     near(
-      'changes-requested at `VERIFIED_HEAD_SHA`',
+      'changes-requested at `REVIEW_HEAD_SHA`',
       'a check re-run after it concluded `SUCCESS`',
       20,
     ),
@@ -16413,11 +16416,14 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
     near('either side is unprovable', 'discard rather than consume', 120),
     'an unprovable head must discard the record rather than consume it',
   );
-  // Phase 2's claim that it records the only head SHA has to stay true.
+  // Phase 2's claim that it records the only head SHA has to stay true, and its exceptions are
+  // exactly the Phase-3 review anchor with its early-entry guard, the T3 wait record and the
+  // early-entry non-entry record: the set-aside record binds to `VERIFIED_HEAD_SHA` and never to
+  // the review anchor.
   assert.match(
     prose(section(gate, '### Phase 2')),
-    /nothing else[\s\S]{0,30}records a head SHA/i,
-    'Phase 2 must still state that it records the only head SHA kept for later use',
+    /nothing else[\s\S]{0,30}records a head SHA for later use, except `REVIEW_HEAD_SHA` with that guard, the wait record of `host-pr-watch`[\s\S]{0,80}, and the non-entry record of `## Early entry`, which serves only its per-head replacement and the report\./i,
+    'Phase 2 must still state that it records the only head SHA kept for later use, naming its three exceptions',
   );
 
   // The residual the head binding does not catch, named rather than left to be discovered.
@@ -29005,5 +29011,435 @@ test('plan-issue normalizes its base like Issue Buddy and spells both issue form
       'the forge form `"issue":<number>` (a bare JSON number) or the external form `"issue":"<key>"` (a JSON string)',
     ],
     'the plan-issue base and claim forms',
+  );
+});
+
+// The early bot round (plan 2026-11-24): a settled changes-requested verdict at the current
+// integrable head starts the bot round while checks are still pending, and the merge stays bound to
+// a green `VERIFIED_HEAD_SHA`. The contract lives once, in the configured-reviewer fragment's
+// "Early entry" section, which only a run with a `mergeGate.bots` row loads.
+function earlyEntrySection() {
+  return prose(configuredReviewerSection('## Early entry'));
+}
+
+// The numbered condition `n` of "Early entry", up to the `;` or `.` that ends it.
+function earlyCondition(early, n) {
+  const match = early.match(new RegExp(`(?:^|[:;.] )${n}\\. (.*?)[;.](?= \\d\\. | [A-Z])`));
+  assert.ok(match, `Early entry must carry condition ${n}`);
+  return match[1];
+}
+
+// Invariant: early entry fires only on its seven conditions, evaluated in an order that takes no
+// read for the state conditions, one status read before the review reads, and the review reads
+// last, and the delegated run and the T3 watch fragment carry pointers to that one home and no copy
+// of it, so a run without a configured reviewer and every T3 `iterate` or `pr` run pay nothing.
+test('early entry holds its seven conditions in read order in one home', () => {
+  const early = earlyEntrySection();
+  assert.match(early, near('stop at the first unmet one', 'an unprovable condition is unmet', 80));
+  ordered(
+    early,
+    'Two need no read',
+    '1. the human-comment guard is inactive',
+    '2. Phase 2 step 1 has run in this round',
+    'Then take one `pr-status-read`',
+    '3. the early-entry guard is not set',
+    '4. no check fails',
+    '5. the read states the branch integrable',
+    '6. every configured bot',
+    'Only then take the review-thread and submitted-review reads',
+    '7. for at least one bot',
+  );
+  assert.match(earlyCondition(early, 1), /no-branch-writes/);
+  assert.match(earlyCondition(early, 3), near('is not set', '`headSha`', 40));
+  assert.match(
+    earlyCondition(early, 4),
+    near('no check fails', 'at least one check is pending', 80),
+  );
+  assert.match(earlyCondition(early, 4), /`mergeGate\.requireAllChecks: false`/);
+  assert.match(earlyCondition(early, 5), near('merge state of `UNKNOWN`', 'unprovable', 20));
+  assert.match(earlyCondition(early, 5), near('Forgejo WIP-draft', 'does not count', 60));
+  assert.match(earlyCondition(early, 6), /`mergeGate\.bots\.<login>\.check`/);
+  assert.match(earlyCondition(early, 6), near('has run', 'completed and not failing', 60));
+  assert.match(
+    earlyCondition(early, 7),
+    near('changes-requested', 'later than `headCommittedAt`', 60),
+  );
+  assert.match(earlyCondition(early, 7), /supersession rule/);
+  assert.match(
+    early,
+    near(
+      'Unconfigured automatic-reviewer advisory',
+      'review-thread and submitted-review reads',
+      80,
+    ),
+  );
+  assert.match(early, near("step 3's CI repair", 'never shares a delegation', 60));
+
+  // One home: the condition wording appears in no other shipped source.
+  const markers = [
+    'a merge state of `UNKNOWN` is unprovable',
+    'Head movement decides a successful early round',
+    'the early-entry guard is not set',
+  ];
+  for (const directory of ['src/tools', 'src/shared', 'src/agents']) {
+    for (const file of readdirSync(new URL(`${directory}/`, repositoryRoot))) {
+      if (
+        !file.endsWith('.md') ||
+        `${directory}/${file}` === 'src/shared/merge-gate-configured-reviewer.md'
+      )
+        continue;
+      const text = prose(source(`${directory}/${file}`));
+      for (const marker of markers) {
+        assert.ok(
+          !text.includes(marker),
+          `${directory}/${file} must point to "Early entry", not copy "${marker}"`,
+        );
+      }
+    }
+  }
+  const run = prose(source('src/shared/merge-gate-delegated-run.md'));
+  assert.match(
+    run,
+    near('2. Pending checks.', 'first apply `## Early entry`', 80),
+    'Phase 2 must reach early entry between step 1 and step 2 wait',
+  );
+  const watch = prose(hostPrWatchSource());
+  assert.match(watch, near('A non-empty set suspends', '`## Early entry`', 40));
+  assert.match(watch, near('at an unchanged head', '`## Early entry`', 80));
+});
+
+// Invariant: on the T3 path the early-entry status read is the pending read, so a bot-configured T3
+// round takes one status read, not two; the single-read rule lives in the fragment alone.
+test('on the T3 path the early-entry status read is the pending read, taken once', () => {
+  const early = earlyEntrySection();
+  assert.match(early, near('its pending read', 'never a second status read', 20));
+});
+
+// Invariant: a non-entry costs no extra review read. The record covers only conditions 3 to 6,
+// which the status read decides, for a pending head whose early-entry guard records no early path,
+// one per head; condition 1 reaches the report through its own records, and conditions 2 and 7 are
+// never recorded.
+test('a non-entry records the first unmet condition only for a pending head without an early round', () => {
+  const notEntered = prose(
+    boundedSlice(configuredReviewerSection('## Early entry'), '**Not entered.**', '**Records**'),
+  );
+  assert.match(notEntered, near('first unmet condition is one of 3 to 6', 'status read', 60));
+  assert.match(
+    notEntered,
+    near('status read shows a pending check', 'guard records no early path at its head', 80),
+  );
+  assert.match(notEntered, near('record that', 'last such record per head', 80));
+  assert.match(notEntered, near('Condition 1 reaches the report', 'human-comment guard state', 20));
+  assert.match(notEntered, near('the caller limit', 'condition 2 is never recorded', 20));
+  assert.match(notEntered, near('never recorded', 'step 1 always precedes this section', 20));
+  assert.match(notEntered, near('nor is condition 7', 'once 1 to 6 hold', 60));
+  assert.doesNotMatch(notEntered, /changes-requested verdict/);
+});
+
+// Invariant: Phase 6 never reports a non-entry beside an early round at the same head. Entering
+// drops that head's non-entry record, so Phase 6 reports the remaining records unfiltered, without
+// a head filter the head-less early-round records could not decide.
+test('an early round drops its head non-entry record and Phase 6 reports the rest unfiltered', () => {
+  const entering = prose(
+    boundedSlice(configuredReviewerSection('## Early entry'), '**Entering.**', '**Head movement'),
+  );
+  assert.match(entering, near('as `REVIEW_HEAD_SHA`', "drop that head's non-entry record", 20));
+  const report = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
+  assert.match(report, near('every remaining non-entry record', 'first unmet condition', 80));
+  assert.doesNotMatch(report, /where no early round ran/);
+});
+
+// Invariant: head movement alone decides whether an early round continues, so an early bot
+// iteration costs exactly one round and there is never more than one head-moving writer at a time.
+test('early entry continues on equal heads and ends the round on any head movement', () => {
+  const early = earlyEntrySection();
+  assert.match(early, near('`before` and `after` heads', 'Equal heads continue', 120));
+  assert.match(early, near('Any difference', 'ends the round as Phase 3 step 6 does', 80));
+  assert.match(early, near('consumes exactly one round', 'as a green-path bot round does', 20));
+  assert.match(
+    prose(section(mergeGateSource(), '#### Round accounting')),
+    near('the one after an early Phase 3', 'without head movement', 20),
+    'Round accounting must name the early re-suspension as its third same-round exception',
+  );
+  assert.match(
+    prose(configuredReviewerSection('## Phase 3: Automatic reviewer round')),
+    /Discard `VERIFIED_HEAD_SHA` and `REVIEW_HEAD_SHA`/,
+    'a Phase-3 restart must discard the review anchor with the verified head',
+  );
+});
+
+// Invariant: an early dispatch that returns without outcomes never leaves its head re-enterable
+// with the same reviewer text. Every early-dispatch return but a valid `BLOCKED-USER
+// iterate-approval` sets the guard for its head, and an unsuccessful early round ends the round as
+// the delegation contract states, so equal heads never continue it into another early entry.
+test('an early dispatch sets the guard unless it relays iterate-approval, and an unsuccessful one ends the round', () => {
+  const early = earlyEntrySection();
+  assert.match(
+    early,
+    near(
+      'every early-dispatch return but a',
+      'valid `BLOCKED-USER iterate-approval` sets it for that head',
+      20,
+    ),
+  );
+  const movement = prose(
+    boundedSlice(
+      configuredReviewerSection('## Early entry'),
+      '**Head movement decides a successful early round.**',
+      '**Not entered.**',
+    ),
+  );
+  assert.match(
+    movement,
+    near(
+      'An unsuccessful one, as the receiver rule and the loaded `merge-gate-delegation-contract` define it',
+      'ends the round as that contract states, whatever its heads',
+      20,
+    ),
+  );
+  ordered(movement, 'whatever its heads', 'Otherwise compare', 'Equal heads continue');
+  assert.match(
+    prose(source('src/shared/merge-gate-delegation-contract.md')),
+    near('a whole-run `ABORT` ends the round', 'unsuccessfully', 20),
+    'the delegation contract must keep the unsuccessful-round rule early entry defers to',
+  );
+});
+
+// Invariant: every Phase-3 round, green or early, marks its head assessed, and the loop exit
+// re-recording an equal head keeps that mark, so a green Phase 3 at head H followed by a return to
+// Phase 2 at H with a pending check never re-delegates the same reviewer text early.
+test('every Phase-3 round sets the early-entry guard, and an equal loop-exit head keeps it', () => {
+  const record = prose(
+    boundedSlice(
+      configuredReviewerSection('## Phase 3: Automatic reviewer round'),
+      '**Record the outcome per finding, keyed by review id and finding ordinal**',
+      '6. **Any implementation restarts Phase 2**',
+    ),
+  );
+  assert.match(record, near('sets the early-entry guard', '`REVIEW_HEAD_SHA`', 20));
+  assert.match(record, near('on the green path', 'as on the early', 20));
+  const early = earlyEntrySection();
+  assert.match(early, near('Phase 3 step 5 sets', 'every path into Phase 3', 20));
+  assert.match(early, near('early-entry guard', 'the path, early or green, that set it', 40));
+  assert.match(
+    prose(section(mergeGateSource(), '### Phase 2')),
+    near('recording an equal SHA', 'keeps its early-entry guard', 20),
+  );
+});
+
+// Invariant: Phase 3 reads every verdict and thread at `REVIEW_HEAD_SHA`, while every merge-binding
+// value of Phase 4 and Phase 5 stays on `VERIFIED_HEAD_SHA`; loosening the latter would weaken the
+// merge binding.
+test('Phase 3 reads at REVIEW_HEAD_SHA and the merge binding stays on VERIFIED_HEAD_SHA', () => {
+  const phase3 = prose(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
+  assert.match(
+    phase3,
+    /Phase 3 assesses the head recorded as `REVIEW_HEAD_SHA`: `VERIFIED_HEAD_SHA` when the Phase 2 loop exit enters it, the early-entry head when "Early entry" does\./,
+  );
+  // Outside the anchor sentence, the same-head reuse rule and the step-6 discard, Phase 3 names
+  // the verified head nowhere: every verdict and thread read binds to the review anchor.
+  const residual = phase3
+    .replace(
+      /Phase 3 assesses the head recorded as `REVIEW_HEAD_SHA`: `VERIFIED_HEAD_SHA` when/,
+      '',
+    )
+    .replace(/equal to the current `VERIFIED_HEAD_SHA`/, '')
+    .replace(/Discard `VERIFIED_HEAD_SHA` and `REVIEW_HEAD_SHA`/, '');
+  assert.doesNotMatch(residual, /VERIFIED_HEAD_SHA|the verified head/);
+  for (const read of [
+    "the reviewer's latest review at `REVIEW_HEAD_SHA`",
+    'shows a new submitted review at `REVIEW_HEAD_SHA`',
+    'Its latest changes-requested review for `REVIEW_HEAD_SHA` travels in the same delegation.',
+  ]) {
+    assert.ok(phase3.includes(read), `Phase 3 must read ${read}`);
+  }
+  assert.match(
+    prose(configuredReviewerSection('## Configured reviewer wisdom records')),
+    /its latest review for `REVIEW_HEAD_SHA`/,
+  );
+  assert.match(
+    prose(providerSettledFragment()),
+    near('`REVIEW_HEAD_SHA` on the Phase 3 batch', '`VERIFIED_HEAD_SHA` on the Phase 4 batch', 20),
+    'predicate 3 must split its head between the Phase 3 and Phase 4 batches',
+  );
+
+  const gate = mergeGateSource();
+  const conditions = mergeConditions(gate);
+  assert.match(
+    mergeCondition(conditions, 8),
+    /`VERIFIED_HEAD_SHA` is set and the freshly read head SHA equals it/,
+  );
+  assert.match(
+    prose(
+      configuredReviewerSection(
+        '## Phase 4 condition 10: Configured reviewer verdicts are assessed',
+      ),
+    ),
+    /every changes-requested review of a configured reviewer at `VERIFIED_HEAD_SHA`/,
+  );
+  const phase4 = prose(section(gate, '### Phase 4'));
+  assert.match(
+    phase4,
+    /ci-integrity <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","commit":"<commit>","tree":"<VERIFIED_HEAD_SHA>"\}'/,
+  );
+  assert.match(
+    phase4,
+    /ci-evidence-match <<< '\{"detection":<detection>,"headSha":"<VERIFIED_HEAD_SHA>"/,
+  );
+  assert.doesNotMatch(phase4, /REVIEW_HEAD_SHA/, 'Phase 4 must not read the review anchor');
+  assert.match(
+    prose(section(gate, '### Phase 5')),
+    /call `pr-merge` with `delivery\.mergeMethod` and `VERIFIED_HEAD_SHA` as the expected head/,
+  );
+  assert.match(
+    prose(configuredReviewerSection('## The set-aside confirmation')),
+    /The record is bound to `VERIFIED_HEAD_SHA` and to nothing else/,
+    'set-aside confirmations must stay on the verified head',
+  );
+  assert.doesNotMatch(
+    prose(configuredReviewerSection('## The set-aside confirmation')),
+    /REVIEW_HEAD_SHA/,
+  );
+});
+
+// Invariant: green-path Phase 3 at a head an early round already assessed never hands the same
+// assessed reviewer text to iterate twice, and strands no item Phase 4 would return.
+test('green-path Phase 3 reuses only deferred and rejected early outcomes at the same head', () => {
+  const reuse = prose(
+    boundedSlice(
+      configuredReviewerSection('## Phase 3: Automatic reviewer round'),
+      "**Reuse an early round's outcomes at the same head.**",
+      '**Build, validate and dispatch that one delegation**',
+    ),
+  );
+  assert.match(
+    reuse,
+    near(
+      'equal to the current `VERIFIED_HEAD_SHA`',
+      "exclude the early round's `deferred` and `rejected` items",
+      20,
+    ),
+  );
+  assert.match(reuse, near('no second outcome', 'durable key at the same head', 40));
+  assert.match(reuse, near('the early-entry guard', 'records the early path', 40));
+  assert.match(reuse, near('every `unassessed` item', 'every `implemented` finding', 20));
+  assert.match(reuse, near('every item that appeared after that round', 'Hand over', 120));
+  assert.match(reuse, near('at a later head', 'still-open `deferred` thread is re-delegated', 20));
+});
+
+// Invariant: early entry fails closed. It posts nothing to a reviewer, refuses an unprovable merge
+// state, requires every bot's own check to be finished and green so no reviewer text re-enters as
+// a CI repair, takes its batch as Phase 3's fresh read, and yields to `no-branch-writes`.
+test('early entry posts nothing, refuses UNKNOWN and red or running bot checks, and yields to no-branch-writes', () => {
+  const early = earlyEntrySection();
+  assert.match(early, near('Post no trigger', 'no stale-verdict re-trigger', 20));
+  assert.match(early, near('every bot has run', 'steps 2 to 4 have nothing to do', 20));
+  assert.match(
+    early,
+    near('green-path Phase 3 at the same head', 'still applies the stale-verdict rule', 20),
+  );
+  assert.match(
+    prose(configuredReviewerSection('## Phase 3: Automatic reviewer round')),
+    near('stale-verdict re-trigger below', 'never on the path of "Early entry"', 20),
+    'Phase 3 step 5 must skip the re-trigger on the early path where the executor reads it',
+  );
+  assert.match(early, near("step 5's stop check included", 'this batch as its fresh read', 20));
+});
+
+// Invariant: the review anchor and its guard survive a relayed question and a T3 suspension at an
+// unchanged head, with the lifecycle stated once at the loop exit, and the dispatch consuming an
+// early round's answer re-decides from fresh reads, so a check that failed during the question
+// sends the answer to green-path Phase 3.
+test('REVIEW_HEAD_SHA and its guard survive re-dispatch and resume, and the consuming dispatch re-evaluates', () => {
+  const answers = prose(section(mergeGateSource(), '### Answers and returns'));
+  assert.match(
+    answers,
+    near('`VERIFIED_HEAD_SHA` and `REVIEW_HEAD_SHA`', 'every read stays fresh', 20),
+  );
+  const phase2 = prose(section(mergeGateSource(), '### Phase 2'));
+  const lifecycle = near(
+    'Record the same SHA as `REVIEW_HEAD_SHA`',
+    'carried across a `BLOCKED-USER` re-dispatch',
+    400,
+  );
+  assert.match(phase2, lifecycle);
+  assert.match(phase2, near('discarded on head movement', 'a resume with a changed head', 80));
+  assert.match(phase2, near('`BLOCKED-USER` re-dispatch', 'a resume at an unchanged head', 20));
+  assert.match(phase2, near('read only by Phase 3', '`ci-integrity` and early entry', 40));
+  // The lifecycle has one home: neither the early-entry records nor the re-dispatch list restate it.
+  const early = earlyEntrySection();
+  assert.match(
+    early,
+    near('early-entry guard', 'lives and is discarded with `REVIEW_HEAD_SHA`', 300),
+  );
+  assert.doesNotMatch(early, /survives a `BLOCKED-USER` re-dispatch/);
+  assert.doesNotMatch(answers, /with its early-entry guard/);
+  assert.match(
+    early,
+    near(
+      'consuming an `iterate-approval` answer of an early round',
+      're-evaluates the conditions on fresh reads',
+      20,
+    ),
+  );
+  assert.match(early, near('no longer hold', 'green-path Phase 3', 40));
+});
+
+// Invariant: Phase 6 reports every early round from its own append-only entry, so its timing and
+// outcomes survive a head movement and a run that never verified a green head.
+test('Phase 6 reports every early round from its append-only entry', () => {
+  const early = earlyEntrySection();
+  assert.match(
+    early,
+    near('per early round, append-only', 'without a head SHA and kept until Phase 6', 20),
+  );
+  for (const field of [
+    "the verdict's `submittedAt`",
+    'the dispatch time',
+    'the outcome per finding',
+    'correction-bucket commits',
+  ]) {
+    assert.match(early, near('per early round, append-only', field, 300), field);
+  }
+  const report = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
+  assert.match(report, near('every early bot round', 'also after a head movement', 60));
+  assert.match(
+    report,
+    near('a run that ended before a green head was verified', 'correction-bucket commits', 200),
+  );
+});
+
+// Invariant: on T3 a verdict wake enters early in the recorded round, ahead of every wake class at
+// an unchanged head and of the all-optional stop, so an early round costs no extra round there.
+test('a T3 checks resume enters early in the recorded round ahead of every wake class', () => {
+  const early = earlyEntrySection();
+  assert.match(
+    early,
+    near(
+      'evaluate before every checks suspend of Phase 2 step 2',
+      'every checks resume at an unchanged head',
+      20,
+    ),
+  );
+  assert.match(
+    early,
+    near('enters Phase 3 in the recorded round', 'ahead of every wake class', 20),
+  );
+  assert.match(early, near('progress, unchanged', 'changed only by a new pending check', 20));
+  assert.match(early, near('"Bounds" stop', 'all-optional pending set', 20));
+  assert.match(early, near('resets the unchanged count to zero', 'stays in that round', 120));
+});
+
+// Invariant: the wisdom file records `REVIEW_HEAD_SHA` beside `VERIFIED_HEAD_SHA`, and the
+// early-entry guard and per-round report entries are listed as wisdom records; without the record
+// the anchor could not survive a re-dispatch or a T3 resume.
+test('the wisdom file records REVIEW_HEAD_SHA and the early-entry records', () => {
+  assert.match(
+    prose(mergeGateDelegatedRun(repositoryRoot)),
+    near('`REVIEW_HEAD_SHA` as', "Phase 2's loop exit defines it", 20),
+  );
+  assert.match(
+    prose(configuredReviewerSection('## Configured reviewer wisdom records')),
+    near('the early-entry guard', 'early-round report entries of "Early entry"', 40),
   );
 });
