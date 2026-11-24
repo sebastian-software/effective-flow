@@ -1,6 +1,6 @@
 ## Triage reports in cleanup
 
-Finished triage reports (`.effective-flow/triage/reports/<runId>.md`) are a sixth class. They are
+Finished triage reports (`.effective-flow/triage/reports/<runId>.md`) are a seventh class. They are
 private runtime data holding third-party logins and permission flags. A report is finished once
 its run has removed its snapshot directory (`.effective-flow/triage/snapshots/<runId>/`); a present
 snapshot means a run in progress and keeps its report. Age never decides. Snapshots, overlap

@@ -291,9 +291,9 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    worktree counts (removal candidate, retained, recordless or not reliably checkable), stale
    diff baselines by run ID, presence markers by session ID and PR, autopilot ledgers by run
    ID, outcome and pull request, planning claims and pass records by issue, holder, age, `stale`
-   and `liveness`, unclaimed trusted text by issue, and pilot reservations by workflow, age,
-   `liveness` and `stale`. Never end for lack of migration remnants; worktree preview and the
-   final report still run.
+   and `liveness`, unclaimed trusted text by issue, pilot reservations by workflow, age,
+   `liveness` and `stale`, and triage reports by run ID, finished or `run-in-progress`. Never end
+   for lack of migration remnants; worktree preview and the final report still run.
 
 ### Phase 2: Carry-over check
 
