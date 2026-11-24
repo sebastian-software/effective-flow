@@ -21,7 +21,8 @@ holds on one read batch:
 2. The parent review's author is the **same reviewer** as the thread's author under "Matching a
    configured login", including spellings that collapse to one reviewer. One bot's approval never
    settles another bot's thread.
-3. That reviewer's **latest submitted** review for `VERIFIED_HEAD_SHA` is `APPROVED`. "Latest"
+3. That reviewer's **latest submitted** review is `APPROVED` – for `REVIEW_HEAD_SHA` on the Phase 3
+   batch, for `VERIFIED_HEAD_SHA` on the Phase 4 batch. "Latest"
    follows the supersession rule of "Automatic reviewer state", with one addition for this use: only
    **submitted** reviews compete, so `PENDING` and `REVIEW_REQUESTED` rows are ignored.
 4. That approval is a **different review** from the parent. A note inside the approving review

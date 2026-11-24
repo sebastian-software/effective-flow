@@ -1,6 +1,6 @@
 # Start the merge-gate bot round while checks are still pending
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -347,3 +347,71 @@ first user decisions changed, and the deep interactive plan review. Counts cover
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-24
+
+**Requirement:** as above. A settled changes-requested verdict from configured reviewers on the
+current integrable head now starts the merge-gate bot round while checks are still pending. The
+merge stays bound to a green `VERIFIED_HEAD_SHA`.
+
+**Architecture decisions as built:**
+
+- The whole early-entry contract lives once in `## Early entry` of
+  `src/shared/merge-gate-configured-reviewer.md`. `merge-gate-delegated-run.md` and `host-pr-watch.md`
+  carry pointers only. `REVIEW_HEAD_SHA` and its lifecycle are defined once at the Phase 2 loop exit.
+- Deviation from decision 3: the conditions are evaluated in read order. State-only conditions come
+  first, then one status read (on T3 the pending read, never a second), then the review reads.
+  Evaluation stops at the first unmet condition, so a run that cannot enter early pays no extra
+  review read.
+- Deviation from decision 3's non-entry report: the non-entry record covers only conditions 3–6
+  (decided on the status read), keeps the last record per head, and is dropped when an early round
+  enters at that head. Condition 1 reaches the report through the human-comment guard state and
+  the caller limit; conditions 2 and 7 are never recorded.
+- The early-entry guard is set by every Phase-3 round (early or green, recording which path set
+  it) and by every early-dispatch return except a valid `BLOCKED-USER iterate-approval`. An
+  unsuccessful early round ends the round, as the delegation contract states.
+- Eval control: the control discriminates through the reviewer's own check still running (the
+  verdict is unsettled until the green read), not through a verdict that appears later, because the
+  forge listing cannot show a review only from a later status read on.
+
+**Affected files:** `src/shared/merge-gate-configured-reviewer.md`, `merge-gate-delegated-run.md`,
+`host-pr-watch.md`, `merge-gate-provider-settled-threads.md`, `merge-gate-review-fix-validation.md`,
+`src/tools/merge-gate.md` (goal, `contextBudget` 946); `docs/user-guide/tools-deliver.md`,
+`docs/user-guide/configuration.md`; the eval pair `early-bot-round-on-pending-checks` and
+`early-bot-round-control-waits-for-green` (fixtures, scenarios, registry, `_scaffold`
+configured-reviewer registration, evaluator branch, validity rule, polling finding, echo `at`
+stamp); tests in `test/workflow-contracts.test.mjs`, `test/merge-gate-eval*.test.mjs`,
+`test/eval-fixture-fidelity.test.mjs`, `test/iterate-quick-validation-contract.test.mjs`,
+`test/repair-attempt-contract.test.mjs`; the frozen-corpus exclusion in
+`evals/host-driver/tests/test_first_stage.py`. The round test's limit rose from 240 s to 360 s.
+
+**Test results:** Phase 5 full CI order passed (`pnpm test`: 6481 tests, 0 failures, 85 skipped;
+`pnpm agent:check`, `node build.mjs`, `pnpm test:distribution` green; host-driver
+`test_first_stage.py` 36/36). Later review corrections were verified targeted: 1338 affected
+tests, 0 failures, 61 skipped (archived-run tests without recorded runs), plus `pnpm agent:check`,
+`node build.mjs` and `pnpm test:distribution`. `pnpm eval <suite> verify` reports no integrity
+error, only freshness debt.
+
+**Open follow-up (slice reduced by the user):** behavioural eval evidence for
+`early-bot-round-on-pending-checks` and its control is not recorded; it is recorded by hand in fresh
+sessions per `evals/merge-gate/README.md`, together with the merge-gate, iterate and build-context
+freshness debt. The manual T3 field check from the validation plan is still to run.
+
+## Review findings
+
+**Date:** 2026-11-24
+**Reviewer:** effective-flow-nodejs-reviewer (review, scoped re-check, floor full pass),
+effective-flow-generic-product-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    17 |
+| Open / Not implemented |     4 |
+
+The four not implemented are notes: a lazy-include split that would not shorten the fragment, the
+control deviation (documented above), a round-test runtime follow-up, and the eval evidence
+follow-up above.

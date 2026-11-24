@@ -37,7 +37,8 @@ SUITES = ('merge-gate', 'iterate', 'next-steps')
 # frozen corpus: its absence here is the pinned protocol, not an omission. Only the names registered
 # later (merge-gate `no-ci-policy-*`, `presence-notice-names-other-run`,
 # `quick-conflict-commit-without-ci-evidence-blocks`, the two repair scenarios, the eight
-# `draft-ready-*`/`forgejo-wip-draft-*` scenarios and `iterate-scope-line-request`; iterate
+# `draft-ready-*`/`forgejo-wip-draft-*` scenarios, `iterate-scope-line-request` and the two
+# `early-bot-round-*` scenarios; iterate
 # `unparseable-authorized-scope-aborts`, `duplicated-review-fix-validation-aborts` and
 # `unparseable-review-fix-validation-aborts`; next-steps `turbulent-merge-offers-retro`,
 # `routine-merge-no-retro`, `post-dispatch-abort-offers-retro`, `both-slots-full-drops-retro`,
@@ -53,7 +54,8 @@ FROZEN_EXCLUDED = {'merge-gate': {name for name in (
     'draft-ready-non-interactive-never-marks', 'draft-ready-plan-only-asks-nothing',
     'draft-ready-redispatch-marks-ready', 'draft-ready-relayed-returns-question',
     'forgejo-wip-draft-conflict-asks-nothing', 'forgejo-wip-draft-marks-ready',
-    'iterate-scope-line-request')},
+    'iterate-scope-line-request', 'early-bot-round-on-pending-checks',
+    'early-bot-round-control-waits-for-green')},
     'iterate': {'duplicated-review-fix-validation-aborts', 'unparseable-authorized-scope-aborts',
                 'unparseable-review-fix-validation-aborts'},
     'next-steps': {'both-slots-full-drops-retro', 'merged-delivery-findings-report',
@@ -65,7 +67,7 @@ FROZEN_COUNTS = {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}
 FROZEN_BRANCH_TABLES = {
     'merge-gate': ('export const BRANCHED_SCENARIOS = Object.freeze([', ']);',
                    r'\s*(NO_CI_[A-Z_]+|PRESENCE_NOTICE|QUICK_COMMIT|REPAIR_AFTER_BASE_MERGE|REPEATED_INEFFECTIVE_REPAIR'
-                   r'|DRAFT_READY_[A-Z_]+|FORGEJO_WIP_[A-Z_]+|ITERATE_SCOPE_LINE_REQUEST)'
+                   r'|DRAFT_READY_[A-Z_]+|FORGEJO_WIP_[A-Z_]+|ITERATE_SCOPE_LINE_REQUEST|EARLY_ROUND(?:_CONTROL)?)'
                    r'_SCENARIO,\s*$'),
     'iterate': ('export const PHASE_ZERO_REFUSALS = Object.freeze({', '});', None),
     'next-steps': ('export const EXPECTATIONS = Object.freeze({', '});', None)}

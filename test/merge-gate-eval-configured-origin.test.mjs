@@ -15,6 +15,7 @@ import {
 import {
   CONFIGURED_REVIEWER_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIOS,
+  EARLY_ROUND_SCENARIOS,
   ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
 } from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
@@ -186,6 +187,30 @@ test('the line-request twin provisions the configured-reviewer origin at its own
     );
   } finally {
     rmSync(slot.attempt, { recursive: true, force: true });
+  }
+});
+
+// The early-round pair runs against the same origin; each setup document names its scenario and
+// raises the round cap, so each fixture states the head that seeding produces for it, and the
+// provisioning check holds the stub's head to the checkout's.
+test('the early-round pair provisions the configured-reviewer origin at its own fixture heads', () => {
+  for (const scenario of EARLY_ROUND_SCENARIOS) {
+    const fixture = loadFixture(scenario);
+    const slot = provision(
+      fixture,
+      mkdtempSync(join(tmpdir(), 'effective-flow-configured-origin-')),
+      scenario,
+    );
+    try {
+      const pr = fixture.operations['pr-read'].envelope.data.result;
+      assert.equal(git(slot.remote, ['rev-parse', `refs/heads/${pr.head}`]), fixture.headSha);
+      assert.equal(
+        git(slot.remote, ['rev-parse', `refs/pull/${fixture.pullRequest}/head`]),
+        fixture.headSha,
+      );
+    } finally {
+      rmSync(slot.attempt, { recursive: true, force: true });
+    }
   }
 });
 

@@ -18,6 +18,9 @@ import {
 import {
   BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
+  EARLY_ROUND_CONTROL_SCENARIO,
+  EARLY_ROUND_SCENARIO,
+  EARLY_ROUND_SCENARIOS,
   ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
   NO_CI_FLAG_ABSENT_SCENARIO,
   NO_CI_MERGE_FAILURE_SCENARIO,
@@ -64,6 +67,9 @@ const ITERATE_TRACE_KEYS = [
   'schema',
   'seq',
 ];
+// The same record with the wall-clock `at` the echo now stamps; archived traces recorded before the
+// stamp carry the keys above and stay readable.
+const TIMED_ITERATE_TRACE_KEYS = [...ITERATE_TRACE_KEYS, 'at'].sort();
 // The echo's record of the gate's continuation of a delegation, by size and digest only.
 const LINE_REQUEST_KEYS = ['bytes', 'cwd', 'digest', 'kind', 'pullRequest', 'schema', 'seq'];
 // The one sentence a line request carries, exactly as `shared/merge-gate-delegation-contract.md`
@@ -143,6 +149,92 @@ export function phaseFourInvalidity(records, flippedPosition) {
     : `the flipped status completion at seq ${completions[0].seq} does not precede the earliest second guard read at seq ${earliest}`;
 }
 
+// The early bot round and its control ("Early entry" in `shared/merge-gate-configured-reviewer.md`).
+// Both fixtures sequence `pr-status-read`: the required `ci` check is pending for the first reads
+// and every check is completed from the green element on. The scenario's reviewer has finished and
+// requested changes from the first read on; the control's reviewer is still running until the green
+// element. The position of that element is read from the fixture rather than transcribed.
+export function greenStatusPosition(fixture) {
+  const sequence = fixture?.operations?.['pr-status-read']?.sequence ?? [];
+  return (
+    sequence.findIndex((element) => {
+      const checks = element.envelope?.data?.result?.checks ?? [];
+      return checks.length > 0 && checks.every((check) => check.status === 'COMPLETED');
+    }) + 1
+  );
+}
+
+// **The validity rule** of both, from the call log alone: the run has to be served the green
+// element, and only after it started its first `pr-checks-wait`. A run that made so many status
+// reads before its first wait that the green element came first never decided at a pending head, so
+// it says nothing about early entry and is redone. The rule never absorbs the failure either
+// scenario exists to catch: a gate that waits before it delegates the settled verdict, and a gate
+// that delegates the control's unsettled verdict early, both start a wait before the green read. Nor
+// does it absorb a gate that never waits at all and reaches the green element by polling
+// `pr-status-read`, against Phase 2 step 2: that is `earlyRoundWaitFindings`' finding.
+export function earlyRoundInvalidity(records, greenPosition) {
+  if (greenPosition < 1) return 'the fixture has no green status element';
+  const statusReads = operationStarts(records, 'pr-status-read');
+  const green = statusReads[greenPosition - 1];
+  if (!green) {
+    return `it holds ${statusReads.length} pr-status-read record(s), so no read was served the green element at position ${greenPosition}`;
+  }
+  const wait = operationStarts(records, 'pr-checks-wait')[0];
+  if (!wait) return null;
+  return wait.seq < green.seq
+    ? null
+    : `the green status read at seq ${green.seq} precedes every pr-checks-wait start, so the run never waited at a pending head`;
+}
+
+// A run served the green element without ever starting `pr-checks-wait` polled the status instead of
+// waiting. Only the final evidence decides it: a stopped run could still have waited later, which
+// would make it invalid instead, so `decisiveFindings` never reports it.
+function earlyRoundWaitFindings(records, greenPosition) {
+  const statusReads = operationStarts(records, 'pr-status-read');
+  if (greenPosition < 1 || statusReads.length < greenPosition) return [];
+  return operationStarts(records, 'pr-checks-wait').length > 0
+    ? []
+    : [
+        `the gate never called pr-checks-wait and reached the green status element through ${statusReads.length} pr-status-read call(s), polling instead of waiting`,
+      ];
+}
+
+// The order of the one delegation against the call log, by the wall clock the echo and the stub
+// take from the same host. The scenario's dispatch must precede the first `pr-checks-wait` start and
+// the green status read; the control's must follow the green status read. A trace without a
+// delegation is `iterateTraceFindings`' finding, so this adds nothing for it, and every finding here
+// is one no continuation of the run could undo.
+function earlyRoundOrderingFindings(scenario, records, auxiliaryRecords, fixture) {
+  const dispatch = auxiliaryRecords.find((record) => record.kind === undefined);
+  if (!dispatch) return [];
+  const at = Date.parse(dispatch.at);
+  if (typeof dispatch.at !== 'string' || Number.isNaN(at)) {
+    return ['the echo record carries no wall-clock time, so the delegation cannot be ordered'];
+  }
+  const green = operationStarts(records, 'pr-status-read')[greenStatusPosition(fixture) - 1];
+  const wait = operationStarts(records, 'pr-checks-wait')[0];
+  const before = (record) => record !== undefined && Date.parse(record.at) <= at;
+  if (scenario === EARLY_ROUND_SCENARIO) {
+    const findings = [];
+    if (before(wait)) {
+      findings.push(
+        'the gate delegated the settled changes-requested verdict only after it started waiting on the pending checks',
+      );
+    }
+    if (before(green)) {
+      findings.push(
+        'the gate delegated the settled changes-requested verdict only after a status read served green checks',
+      );
+    }
+    return findings;
+  }
+  return before(green)
+    ? []
+    : [
+        "the gate delegated the reviewer findings before any status read served green checks, while the reviewer's own check was still running",
+      ];
+}
+
 // The configured-reviewer echo trace, split the same way as the call log: what makes it unreadable
 // or unattributable to this slot is a validity problem, and what the gate did at the Phase-3
 // boundary is a finding. The echo writes only records it has already validated, so a structurally
@@ -173,7 +265,9 @@ export function parseIterateTrace(raw, projectRoot) {
       ? REPAIR_TRACE_KEYS[record.kind]
       : record.kind === 'line-request'
         ? LINE_REQUEST_KEYS
-        : ITERATE_TRACE_KEYS;
+        : Object.hasOwn(record, 'at')
+          ? TIMED_ITERATE_TRACE_KEYS
+          : ITERATE_TRACE_KEYS;
     if (!keys || !isDeepStrictEqual(Object.keys(record).sort(), keys)) {
       problems.push(`${label} does not carry exactly the echo record keys`);
     }
@@ -543,6 +637,10 @@ const MERGE_REFUSALS = Object.freeze({
   'linked-issue-open-points': 'the observer-only run requested pr-merge',
   'unreported-checks-block-merge': 'the gate merged with no reported check list',
   [LIFECYCLE_SCENARIO]: 'the gate requested pr-merge after checks became unreported',
+  [EARLY_ROUND_SCENARIO]:
+    'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
+  [EARLY_ROUND_CONTROL_SCENARIO]:
+    'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
   [NON_INTERACTIVE_DISPATCH_SCENARIO]:
     'the gate requested pr-merge although mergeGate.completion is ask and a non-interactive delegation behaves as report',
   [NO_CI_FLAG_ABSENT_SCENARIO]:
@@ -785,6 +883,12 @@ function outcomeFindings(scenario, records, fixture, sealedEvidence = null) {
   if (scenario === CONFIGURED_REVIEWER_SCENARIO) {
     findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
+  } else if (EARLY_ROUND_SCENARIOS.includes(scenario)) {
+    // The set-aside block ends both runs at Phase 4, exactly as in the configured-reviewer scenario;
+    // the order of the delegation against the checks is the trace's half.
+    findings.push(...mergeRefusalFindings(scenario, records));
+    findings.push(...earlyRoundWaitFindings(records, greenStatusPosition(fixture)));
+    guardReadFindings();
   } else if (scenario === ITERATE_SCOPE_LINE_REQUEST_SCENARIO) {
     // The answered line request lets the gate record the round and go on to Phase 4, whose second
     // guard reads a `scope-line-missing` stop never reaches; the set-aside gate then blocks the
@@ -968,6 +1072,8 @@ export const BRANCHED_SCENARIOS = Object.freeze([
   NO_CI_UNLISTED_BASE_SCENARIO,
   'unreported-checks-block-merge',
   LIFECYCLE_SCENARIO,
+  EARLY_ROUND_SCENARIO,
+  EARLY_ROUND_CONTROL_SCENARIO,
   DRAFT_READY_RELAYED_SCENARIO,
   DRAFT_READY_MARKS_READY_SCENARIO,
   DRAFT_READY_KEEP_DRAFT_SCENARIO,
@@ -980,11 +1086,15 @@ export const BRANCHED_SCENARIOS = Object.freeze([
 
 // The evaluator contract the generic half calls, in the order it calls it.
 
-// The sequenced Phase-4 scenario and the two repair scenarios, whose head-indexed fixtures are
-// sequenced too, need correlated start/complete records; every other scenario's stub writes the
-// legacy single-record form.
+// The sequenced Phase-4 scenario, the sequenced early-round pair and the two repair scenarios, whose
+// head-indexed fixtures are sequenced too, need correlated start/complete records; every other
+// scenario's stub writes the legacy single-record form.
 export function usesLifecycleSchema(scenario) {
-  return scenario === LIFECYCLE_SCENARIO || REPAIR_SCENARIOS.includes(scenario);
+  return (
+    scenario === LIFECYCLE_SCENARIO ||
+    EARLY_ROUND_SCENARIOS.includes(scenario) ||
+    REPAIR_SCENARIOS.includes(scenario)
+  );
 }
 
 // Never, for any gate scenario. Every one of them reads the forge before it can decide anything, so
@@ -999,6 +1109,10 @@ export function permitsEmptyCallLog() {
 // sequenced Phase-4 run actually observed the flipped status element in the order the scenario is
 // about.
 export function validityProblems({ scenario, records, fixture }) {
+  if (EARLY_ROUND_SCENARIOS.includes(scenario)) {
+    const problem = earlyRoundInvalidity(records, greenStatusPosition(fixture));
+    return problem ? [problem] : [];
+  }
   if (scenario !== LIFECYCLE_SCENARIO) return [];
   const sequence = fixture.operations?.['pr-status-read']?.sequence ?? [];
   const flipped =
@@ -1018,6 +1132,12 @@ export function parseSealedEvidence(text) {
 }
 
 function traceFindings(scenario, records, auxiliaryRecords, fixture) {
+  if (EARLY_ROUND_SCENARIOS.includes(scenario)) {
+    return [
+      ...iterateTraceFindings(auxiliaryRecords, fixture),
+      ...earlyRoundOrderingFindings(scenario, records, auxiliaryRecords, fixture),
+    ];
+  }
   if (!REPAIR_SCENARIOS.includes(scenario)) {
     return iterateTraceFindings(auxiliaryRecords, fixture, {
       expected: scenario === ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
@@ -1109,6 +1229,9 @@ export function decisiveFindings({
             decisive: true,
           })),
     );
+    if (EARLY_ROUND_SCENARIOS.includes(scenario)) {
+      findings.push(...earlyRoundOrderingFindings(scenario, records, auxiliaryRecords, fixture));
+    }
   }
   return findings;
 }

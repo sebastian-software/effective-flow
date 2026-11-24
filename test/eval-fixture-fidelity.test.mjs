@@ -23,6 +23,9 @@ import {
   BOT_ACCOUNT_ROWS,
   BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
+  EARLY_ROUND_CONTROL_SCENARIO,
+  EARLY_ROUND_SCENARIO,
+  EARLY_ROUND_SCENARIOS,
   ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
   NO_CI_POLICY_SCENARIOS,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
@@ -178,6 +181,11 @@ test('only the configured-reviewer, line-request and repair scenarios opt into r
       iterateEcho: true,
     });
   }
+  // The early-round pair sees the repair scenarios' setup: the same reviewer and echo, and the round
+  // cap raised so it is never what keeps a run from the green status element.
+  for (const scenario of EARLY_ROUND_SCENARIOS) {
+    assert.deepEqual(scenarioSetup(scenario), scenarioSetup(REPAIR_SCENARIOS[0]), scenario);
+  }
   for (const file of fixtureFiles()) {
     const scenario = file.slice(0, -'.json'.length);
     if (
@@ -188,6 +196,7 @@ test('only the configured-reviewer, line-request and repair scenarios opt into r
         BOT_LOGIN_SCENARIO,
         ...NO_CI_POLICY_SCENARIOS,
         ...REPAIR_SCENARIOS,
+        ...EARLY_ROUND_SCENARIOS,
       ].includes(scenario)
     )
       continue;
@@ -327,7 +336,10 @@ test('the iterate echo records one bounded attributed handoff and returns deferr
     assert.ok(!raw.includes(REVIEW_BODY), 'the trace retained attacker-influenceable review text');
     const records = readCallLog(trace);
     assert.equal(records.length, 1);
+    // The wall-clock stamp is what orders a delegation against the stub's call log, which the early
+    // bot-round scenarios assert on.
     assert.deepEqual(Object.keys(records[0]).sort(), [
+      'at',
       'body',
       'controls',
       'cwd',
@@ -340,6 +352,7 @@ test('the iterate echo records one bounded attributed handoff and returns deferr
     ]);
     assert.equal(records[0].schema, 'effective-flow/merge-gate-iterate-echo/v1');
     assert.equal(records[0].seq, 1);
+    assert.equal(new Date(records[0].at).toISOString(), records[0].at);
     assert.equal(records[0].cwd, realpathSync(join(root, 'project')));
     assert.equal(records[0].pullRequest, 42);
     assert.equal(records[0].itemFilter, 'threads=PRRT_kwDOconfiguredReviewer');
@@ -401,6 +414,71 @@ test('the line-request fixture differs from the configured-reviewer fixture only
     JSON.parse(JSON.stringify(rest).replaceAll(twin.headSha, configured.headSha)),
     configuredRest,
   );
+});
+
+// The early-round pair is the configured-reviewer fixture with its status read sequenced: every
+// element names the one seeded head, the first five report the required `ci` check pending and the
+// sixth reports every check completed, declared to repeat. The scenario's reviewer check is green in
+// every element; the control's is pending wherever `ci` is and its review is submitted after `ci`
+// turned green. Beside that the two differ from the configured-reviewer fixture only in their name,
+// description and head, so a difference in outcome is the sequence's alone.
+test('the early-round fixtures are the configured-reviewer fixture with a sequenced status read', () => {
+  const configured = loadFixture(`${CONFIGURED_REVIEWER_SCENARIO}.json`);
+  for (const scenario of EARLY_ROUND_SCENARIOS) {
+    const fixture = loadFixture(`${scenario}.json`);
+    const control = scenario === EARLY_ROUND_CONTROL_SCENARIO;
+    const status = fixture.operations['pr-status-read'];
+    assert.equal(status.repeatLast, true, scenario);
+    assert.equal(status.sequence.length, 6, scenario);
+    status.sequence.forEach((element, index) => {
+      const result = element.envelope.data.result;
+      assert.equal(result.headSha, fixture.headSha, `${scenario} element ${index + 1}`);
+      assert.equal(
+        element.provider.data.repository.pullRequest.headRefOid,
+        fixture.headSha,
+        `${scenario} element ${index + 1}`,
+      );
+      const byName = Object.fromEntries(result.checks.map((check) => [check.name, check]));
+      const pending = index < 5;
+      assert.equal(
+        byName.ci.status,
+        pending ? 'PENDING' : 'COMPLETED',
+        `${scenario} ci ${index + 1}`,
+      );
+      assert.equal(byName.ci.required, true);
+      assert.equal(
+        byName.recensor.status,
+        pending && control ? 'PENDING' : 'COMPLETED',
+        `${scenario} recensor ${index + 1}`,
+      );
+    });
+    const [review] = fixture.operations['pr-reviews-read'].envelope.data.result;
+    assert.equal(review.commitSha, fixture.headSha);
+    const green = status.sequence[5].envelope.data.result.checks.find(
+      (check) => check.name === 'ci',
+    );
+    assert.equal(Date.parse(review.submittedAt) > Date.parse(green.completedAt), control, scenario);
+    const { name: _n, description: _d, operations, ...rest } = fixture;
+    const {
+      name: _cn,
+      description: _cd,
+      operations: configuredOperations,
+      ...configuredRest
+    } = configured;
+    const { 'pr-status-read': _s, 'pr-reviews-read': _r, ...others } = operations;
+    const {
+      'pr-status-read': _cs,
+      'pr-reviews-read': configuredReviews,
+      ...configuredOthers
+    } = configuredOperations;
+    const normalize = (value) =>
+      JSON.parse(JSON.stringify(value).replaceAll(fixture.headSha, configured.headSha));
+    assert.deepEqual(normalize({ ...rest, others }), {
+      ...configuredRest,
+      others: configuredOthers,
+    });
+    if (!control) assert.deepEqual(normalize(operations['pr-reviews-read']), configuredReviews);
+  }
 });
 
 function assertOneHeadCommit(fixture) {

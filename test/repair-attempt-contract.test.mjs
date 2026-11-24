@@ -318,6 +318,12 @@ test('merge-gate places the stop check before step 1 triggers, step 3 and Phase 
     '"Repair evaluation per configured reviewer"',
     'only then hand its unresolved threads',
   );
+  // The early bot round runs the same Phase 3 step 5, so its delegation is behind the same check.
+  assert.match(
+    flat(section(reviewer, '## Early entry')),
+    /run Phase 3 in this round, step 5's stop check included/,
+    'the early-entry delegation must run behind the Phase 3 step 5 stop check',
+  );
 });
 
 // Invariant: iterate's scope parse and scope checks live in its eager source, never behind a lazy
