@@ -161,7 +161,16 @@ These cases produce **no** pull request:
 - a record whose content check blocks it (for example a secret in a reason): the record is never
   published, and the blocker is reported locally;
 - a failed publication step (plan-only draft or `pr`), for example a leftover plan branch without
-  its draft pull request.
+  its draft pull request;
+- a base branch that moved during planning and cannot be followed: its history was rewritten, it
+  already holds or may hold a plan for the same issue, the plan or tip changed, or it moved a
+  second time. The plan and its planning worktree are kept and named in the report.
+
+A base branch that moves during planning does not stop a run by itself: Issue Buddy publishes the
+plan once on the new tip. When the move overlaps the plan or cannot be decided, the plan pull
+request carries an "Unresolved base move" paragraph, autopilot continues to its draft pull
+request, and that pull request's appendix "Base move" section says so. Reconciling the plan with
+the new base is left to review.
 
 On a private repository a security blocker is listed in the pull request with neutral wording that
 does not mention security.

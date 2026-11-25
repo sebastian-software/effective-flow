@@ -10,11 +10,15 @@
 // - `assess-base-move` (read-only apart from the base fetch): whether a plan still fits after its
 //   base moved from `fromBaseOid` to the freshly fetched tip. It compares the changed paths of that
 //   range with the paths the plan cites and looks for a plan of the same issue in the range. Its
-//   verdict `fits` only lets a caller call `publish` once more with the new tip as
-//   `expectedBaseOid`; `publish` keeps its exact base binding.
+//   envelope's `republish` is false only for a reason in `BASE_MOVE_STOPPING_REASONS` (a rewritten
+//   base or a possible plan of the same issue); otherwise a caller may call `publish` once more with
+//   the new tip as `expectedBaseOid`, passing the assessment as `baseMove` unless it `fits`.
+//   `publish` keeps its exact base binding.
 // - `publish` and `complete-branch` (mutations, dry run unless `apply`): an unattended pass commits
 //   the plan with plumbing in a temporary index, pushes it without force so the remote branch is
 //   the lock, and opens a draft pull request carrying the shipped plan marker and `Refs #<N>`.
+//   `publish` alone takes an optional `baseMove` and renders it as one fixed English paragraph
+//   ("Unresolved base move") between the caller's prose and the marker.
 //
 // Model judgment stays outside: callers pass the plan file, the title, body and commit message,
 // and the run state. This module spawns nothing itself; every process goes through the injected
@@ -130,7 +134,7 @@ const SCHEMAS = Object.freeze({
       'body',
       'commitMessage',
     ],
-    optional: ['expectedBaseOid', 'expectedBlobOid'],
+    optional: ['expectedBaseOid', 'expectedBlobOid', 'baseMove'],
   },
   'complete-branch': {
     required: [
@@ -1206,6 +1210,87 @@ function reportablePath(value) {
   );
 }
 
+// The reasons after which a moved base never re-publishes: a rewritten base (or a vanished
+// `fromBaseOid`) is an integrity failure, and a plan of the same issue in the range, or one that may
+// be, is a duplicate rather than a conflict review could reconcile. Every other assessed move
+// re-publishes once; the pass report, autopilot and `publish` all derive the split from this list.
+export const BASE_MOVE_STOPPING_REASONS = Object.freeze([
+  'not-ancestor',
+  'same-issue-plan',
+  'plan-identity',
+]);
+
+export function baseMoveRepublishes(reason) {
+  return !BASE_MOVE_STOPPING_REASONS.includes(reason);
+}
+
+const BASE_MOVE_FLAG_FIELDS = Object.freeze([
+  'fromBaseOid',
+  'toBaseOid',
+  'verdict',
+  'reason',
+  'commitCount',
+  'overlappingPaths',
+]);
+
+// `publish`'s optional `baseMove`: an unresolved, publishable move onto exactly the bound base.
+// A fitting move carries no flag, and a stopping reason never publishes.
+function requireBaseMove(value, expectedBaseOid) {
+  const refuse = (message, details = {}) =>
+    fail('INVALID_INPUT', `baseMove ${message}`, { field: 'baseMove', ...details });
+  if (!value || typeof value !== 'object' || Array.isArray(value)) refuse('must be an object');
+  const unknown = Object.keys(value).filter((key) => !BASE_MOVE_FLAG_FIELDS.includes(key));
+  if (unknown.length > 0) refuse(`has an unknown key: ${unknown.join(', ')}`, { keys: unknown });
+  const missing = BASE_MOVE_FLAG_FIELDS.filter((key) => value[key] === undefined);
+  if (missing.length > 0) refuse(`misses a key: ${missing.join(', ')}`, { keys: missing });
+  const { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths } = value;
+  requireOid(fromBaseOid, 'baseMove.fromBaseOid');
+  requireOid(toBaseOid, 'baseMove.toBaseOid');
+  if (fromBaseOid === toBaseOid) refuse('must name two different bases');
+  if (toBaseOid !== expectedBaseOid) refuse('must move to expectedBaseOid');
+  if (!BASE_MOVE_VERDICTS.includes(verdict) || verdict === 'fits') {
+    refuse('verdict must be overlap or undecidable; a fitting move carries no flag');
+  }
+  if (!BASE_MOVE_REASONS[verdict].includes(reason)) refuse(`reason is not a ${verdict} reason`);
+  if (!baseMoveRepublishes(reason)) refuse(`reason ${reason} stops the publication`);
+  if (!Number.isSafeInteger(commitCount) || commitCount < 1) {
+    refuse('commitCount must be a positive integer');
+  }
+  if (
+    !Array.isArray(overlappingPaths) ||
+    overlappingPaths.length > MAX_BASE_MOVE_PATHS ||
+    !overlappingPaths.every((entry) => reportablePath(entry) && entry !== '')
+  ) {
+    refuse(`overlappingPaths must hold at most ${MAX_BASE_MOVE_PATHS} reportable paths`);
+  }
+  return { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths };
+}
+
+// The fixed English flag a flagged re-publish carries, so reviewers and agents can search for it.
+// A list of exactly the bound may have been cut by the assessment, so it says so.
+export function buildBaseMoveFlag({
+  fromBaseOid,
+  toBaseOid,
+  reason,
+  commitCount,
+  overlappingPaths,
+}) {
+  const from = fromBaseOid.slice(0, 7);
+  const to = toBaseOid.slice(0, 7);
+  const commits = `${commitCount} commit${commitCount === 1 ? '' : 's'}`;
+  const truncated = overlappingPaths.length === MAX_BASE_MOVE_PATHS ? ' (list truncated)' : '';
+  const paths =
+    overlappingPaths.length === 0
+      ? ''
+      : ` Overlapping paths: ${overlappingPaths.map((entry) => `\`${entry}\``).join(', ')}${truncated}.`;
+  return (
+    `**Unresolved base move.** The base moved from \`${from}\` to \`${to}\` while this plan was ` +
+    `written (${commits}). The plan was published on \`${to}\` without reconciling it. ` +
+    `Reason: \`${reason}\`.${paths} Review must reconcile the plan with the new base before it is ` +
+    'implemented.'
+  );
+}
+
 // The most literal alternatives one pattern segment may expand to; a segment whose `{a,b}`
 // alternations multiply past this bound makes the token unusable.
 const MAX_SEGMENT_ALTERNATIVES = 64;
@@ -1580,11 +1665,13 @@ function uniquePaths(values) {
 // `fromBaseOid` is an ancestor of the new tip), `changes` (`{path, oldMode, newMode}` per changed
 // path of the range), `cited` (`extractCitedTokens`), `tracked` (the table literals present in the
 // old or new tree), `planFiles` (`{path, identity}` per added or modified plan file of the range),
-// `planDir` and the Git `folding` flags. The checks run in the order undecidable, same-issue plan,
-// cited path, fits. A changed Markdown file directly under the plan directory or its archive is
-// matched only by an exact-file citation, so archive commits for other issues keep fitting. A table
-// pattern is compiled from its folded body, since it matches folded paths; one that the fold makes
-// uncompilable (such as `<` and a combining U+0338 composing to `≮`) is an unusable entry.
+// `planDir` and the Git `folding` flags. The checks run in the order not-ancestor, plan identity,
+// same-issue plan (the stopping reasons, which win over every republishing one), gitlink, no
+// affected files, unusable entry, cited path, fits. A changed Markdown file directly under the
+// plan directory or its archive is matched only by an exact-file citation, so archive commits for
+// other issues keep fitting. A table pattern is compiled from its folded body, since it matches
+// folded paths; one that the fold makes uncompilable (such as `<` and a combining U+0338 composing
+// to `≮`) is an unusable entry.
 export function assessBaseMove({
   ancestor,
   changes = [],
@@ -1611,14 +1698,14 @@ export function assessBaseMove({
     planFiles.filter((file) => file.identity === identity).map((file) => file.path);
   const decide = () => {
     if (!ancestor) return ['undecidable', 'not-ancestor', []];
+    if (plansOf('invalid').length > 0) return ['undecidable', 'plan-identity', plansOf('invalid')];
+    if (plansOf('same-issue').length > 0) {
+      return ['overlap', 'same-issue-plan', plansOf('same-issue')];
+    }
     if (gitlinks.length > 0) return ['undecidable', 'gitlink', gitlinks];
     if (usable.length === 0) return ['undecidable', 'no-affected-files', []];
     if (usable.length !== cited.table.length || patterns.includes(null)) {
       return ['undecidable', 'unusable-entry', []];
-    }
-    if (plansOf('invalid').length > 0) return ['undecidable', 'plan-identity', plansOf('invalid')];
-    if (plansOf('same-issue').length > 0) {
-      return ['overlap', 'same-issue-plan', plansOf('same-issue')];
     }
     const overlapping = changedPaths.filter(
       citedMatcher(usable, patterns, proseFiles, tracked, planDir, folding),
@@ -2080,9 +2167,13 @@ async function pushBranch(git, { remote, branch, commitOid }, network, state) {
 async function publishOperation(input, context) {
   const base = mutatingInput('publish', input);
   const commitMessage = validateCommitMessage(input.commitMessage);
+  const baseMove =
+    input.baseMove === undefined ? null : requireBaseMove(input.baseMove, input.expectedBaseOid);
   const cwdReal = resolveCwd(input.cwd, context.fs);
   const planPath = requirePlanFilePath(input.planFile);
-  const body = buildPullRequestBody(base.body, planPath, base.issue);
+  // The flag joins the caller's prose before the body checks, so it passes them like any prose.
+  const prose = baseMove ? `${base.body.trimEnd()}\n\n${buildBaseMoveFlag(baseMove)}` : base.body;
+  const body = buildPullRequestBody(prose, planPath, base.issue);
   const branch = planBranchName({ branchPrefix: input.branchPrefix, issue: base.issue });
 
   const git = createGit({ ...context, cwd: cwdReal });
@@ -2502,6 +2593,7 @@ async function assessBaseMoveOperation(input, context) {
     toBaseOid,
     verdict: assessed.verdict,
     reason: assessed.reason,
+    republish: baseMoveRepublishes(assessed.reason),
     commitCount,
     changedPathCount: assessed.changedPathCount,
     citedPathCount: assessed.citedPathCount,

@@ -4,11 +4,12 @@
 //   node plan-publication.mjs <operation> [--apply]   (one JSON object on stdin)
 // Operations: scan, branch-name, assert-changeset, publish, complete-branch, inspect-branch,
 // assess-base-move. `inspect-branch` is read-only and may bind its result to `expectedBaseOid`;
-// `publish` accepts `expectedBaseOid` and `expectedBlobOid`, while `complete-branch` accepts
+// `publish` accepts `expectedBaseOid`, `expectedBlobOid` and an optional `baseMove` (an unresolved
+// assessed move, rendered as a fixed flag paragraph in the body), while `complete-branch` accepts
 // `expectedBaseOid` and `expectedTipOid`. `assess-base-move` is read-only apart from its base fetch:
 // `{cwd, issue, planDir, planFile, remote, baseBranch, fromBaseOid, expectedBlobOid}` in,
 // `{state: "assessed", fromBaseOid, toBaseOid, verdict: fits|overlap|undecidable, reason,
-// commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths}` out, both path
+// republish, commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths}` out, both path
 // lists bounded to 20 entries.
 // `publish` and `complete-branch` stay a dry run unless `--apply` is passed. Writes exactly one JSON envelope
 // line to stdout and exits non-zero on failure. Input never travels as command-line arguments;

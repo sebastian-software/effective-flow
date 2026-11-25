@@ -237,3 +237,24 @@ test('countAppendixBlockers ignores the base-move section in either language', (
   );
   assert.equal(countAppendixBlockers([block(...move('### Base move'))]), 0);
 });
+
+// Invariant (issue #734 follow-up): a flagged, unresolved base move is the PR's flag, not a
+// blocker: an appendix whose only section after the decisions is that move counts no blocker in
+// either language, so the draft PR is not gated by it.
+test('countAppendixBlockers counts no blocker for an appendix with only a flagged base move', () => {
+  const flagged = {
+    '### Base move': [
+      'The base moved from `aaaaaaa` to `bbbbbbb` during planning: 1 commit, 1 changed path. The plan was published on the new base.',
+      'The move is unresolved (`cited-path`): reconciling the plan with the new base is left to review.',
+      'Overlapping paths: `src/a.mjs`',
+    ],
+    '### Basis-Verschiebung': [
+      'Die Basis hat sich während der Planung von `aaaaaaa` auf `bbbbbbb` verschoben: 1 Commit, 1 geänderter Pfad. Der Plan wurde auf der neuen Basis veröffentlicht.',
+      'Die Verschiebung ist ungelöst (`cited-path`): den Plan mit der neuen Basis abzugleichen bleibt dem Review überlassen.',
+      'Überschneidende Pfade: `src/a.mjs`',
+    ],
+  };
+  for (const [heading, lines] of Object.entries(flagged)) {
+    assert.equal(countAppendixBlockers([block(heading, '', ...lines, '')]), 0, heading);
+  }
+});

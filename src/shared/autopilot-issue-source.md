@@ -67,15 +67,16 @@ report, the successful `pass-report` envelope of this same-session pass, never b
   `NESTED_SPAWN_UNAVAILABLE`, `BRANCH_EXISTS`, `PR_EXISTS`, a partial publication state, a forge
   error, `ISSUE_NOT_OPEN` (closed or missing issue) or `CONSENT_REFUSED`: stop with the code and
   the retained state Issue Buddy reports. No pull request.
-- **A `baseMoves` entry for `#<N>`**, mapped before its pull request: only verdict `fits` beside
-  a confirmed pull request for `#<N>` is recorded, with the literal
-  `autopilot.mjs base-move-record` call
-  `{cwd, runId, fromBaseOid, toBaseOid, commitCount, changedPathCount, citedPathCount, citedPaths}`
-  copied from the entry; that pull request then continues below. Any other entry, an `overlap` or
-  `undecidable` verdict or a `fits` verdict without that pull request, records nothing; the run
-  stops without a pull request under `outcome: failed` or verdict `failed`, and Phase 6 reports
-  the entry's range `<fromBaseOid>..<toBaseOid>`, `reason`, `overlappingPaths` and Issue Buddy's
-  way out.
+- **A `baseMoves` entry for `#<N>`**, mapped before its pull request: any entry beside a
+  confirmed pull request for `#<N>` is recorded, with the literal `autopilot.mjs base-move-record`
+  call
+  `{cwd, runId, fromBaseOid, toBaseOid, verdict, reason, commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths}`
+  copied from the entry; that pull request then continues below. An `overlap` or `undecidable`
+  entry is an unresolved move the plan pull request already flags: the run continues to build and
+  its draft pull request, whose appendix leaves the reconciliation to review. An entry without that
+  pull request records nothing; the run stops without a pull request under `outcome: failed` or
+  verdict `failed`, and Phase 6 reports the entry's range `<fromBaseOid>..<toBaseOid>`, `reason`,
+  `overlappingPaths` and Issue Buddy's way out.
 - **A confirmed pull request for `#<N>`** in `pullRequestsOpened`: continue under "Restore the
   plan" with its number and head branch. Under `Autopilot run:` the pass grants no recovery, so
   `pullRequestsRecovered` stays empty; a recovered pull request for `#<N>`, should one appear, is

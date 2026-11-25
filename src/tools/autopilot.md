@@ -320,8 +320,10 @@ Report in the chat language, with project paths relative to the project root:
 - every local change in the invocation checkout that row S-LOC of `scored-decisions` left untouched;
 - the architecture-fit score with its sources, or the not-assessed line (no sources, scoring
   unavailable, or not recorded);
-- the base move: `run-close`'s `baseMove` with its old and new base, counts and cited paths, or a
-  stopping `baseMoves` entry's range, reason, overlapping paths and way out from the pass report.
+- the base move: `run-close`'s `baseMove` with its old and new base, counts and cited paths, and
+  for an `overlap` or `undecidable` verdict its reason and overlapping paths as an unresolved move
+  left to review; or a stopping `baseMoves` entry's range, reason, overlapping paths and way out
+  from the pass report.
 
 Then emit the next-step block per `next-steps` as the last element of the report. A preflight stop
 or an issue-buddy stop emits none and names its cause instead.

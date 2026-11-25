@@ -16,7 +16,11 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import nodeFs from 'node:fs';
 
-import { buildPlanPrMarkerLine, executeOperation } from '../src/scripts/plan-publication-core.mjs';
+import {
+  BASE_MOVE_STOPPING_REASONS,
+  buildPlanPrMarkerLine,
+  executeOperation,
+} from '../src/scripts/plan-publication-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 import { UPSTREAM_FETCH_TIMEOUT_MS } from '../src/scripts/delivery-selection-core.mjs';
 import {
@@ -2790,6 +2794,8 @@ async function assessMove(t, { text = PLAN_TABLE_TEXT, move }) {
   assert.equal(envelope.data.state, 'assessed');
   assert.equal(envelope.data.fromBaseOid, fromBaseOid);
   assert.equal(envelope.data.toBaseOid, toBaseOid);
+  // The envelope's publish/stop split is the exported stopping-reason list, for every verdict.
+  assert.equal(envelope.data.republish, !BASE_MOVE_STOPPING_REASONS.includes(envelope.data.reason));
   assertAssessedNothing(world);
   return { world, data: envelope.data };
 }
@@ -2856,6 +2862,43 @@ test('assess-base-move: a changed table path overlaps and names the path', async
   assert.equal(data.verdict, 'overlap');
   assert.equal(data.reason, 'cited-path');
   assert.deepEqual(data.overlappingPaths, ['README.md']);
+});
+
+// Invariant (issue #734 follow-up): an overlapping move re-publishes on the assessed tip with the
+// helper-rendered flag between the caller's prose and the marker tail; a dry run returns exactly that
+// body, the same input without `baseMove` keeps today's body byte for byte, and the stored draft PR
+// body carries the flag with a marker the shipped parser still reads as valid.
+test('assess-base-move: an overlapping move publishes flagged on the new tip', async (t) => {
+  const { world, data } = await assessMove(t, { move: { files: { 'README.md': 'changed\n' } } });
+  assert.equal(data.verdict, 'overlap');
+  assert.equal(data.republish, true);
+  const { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths } = data;
+  const baseMove = { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths };
+  const prose = publishInput(world).body;
+  const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
+  const flag =
+    `**Unresolved base move.** The base moved from \`${fromBaseOid.slice(0, 7)}\` to ` +
+    `\`${toBaseOid.slice(0, 7)}\` while this plan was written (1 commit). The plan was published ` +
+    `on \`${toBaseOid.slice(0, 7)}\` without reconciling it. Reason: \`cited-path\`. Overlapping ` +
+    'paths: `README.md`. Review must reconcile the plan with the new base before it is implemented.';
+
+  const plain = await publish(world, { expectedBaseOid: toBaseOid }, { apply: false });
+  assert.equal(plain.ok, true, JSON.stringify(plain.error));
+  assert.equal(plain.data.body, `${prose}\n\n${tail}`, 'no flag without baseMove');
+  const dry = await publish(world, { expectedBaseOid: toBaseOid, baseMove }, { apply: false });
+  assert.equal(dry.ok, true, JSON.stringify(dry.error));
+  assert.equal(dry.data.body, `${prose}\n\n${flag}\n\n${tail}`);
+  assert.equal(remoteRef(world, BRANCH), null);
+
+  const envelope = await publish(world, { expectedBaseOid: toBaseOid, baseMove });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.state, 'pull-request-opened');
+  assert.equal(world.gitIn(world.remote, 'rev-parse', `${BRANCH}^`), toBaseOid);
+  assert.equal(world.forge.creates.length, 1);
+  assert.equal(world.forge.creates[0].payload.draft, true);
+  const stored = world.forge.pulls.at(-1).body;
+  assert.ok(stored.includes('**Unresolved base move.**'), stored);
+  assert.deepEqual(inspectPlanPrMarker(stored), { status: 'valid', plan: PLAN_FILE });
 });
 
 // Protects the folding rule end to end: the assessing clone's `core.ignorecase`, read from Git and

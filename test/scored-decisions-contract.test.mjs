@@ -289,30 +289,42 @@ test('autopilot blockers update a rerun draft and record an unchanged plan pull 
 });
 
 // Invariant: the autopilot Phase 6 report names the base move, from `run-close`'s `baseMove` or a
-// stopping `baseMoves` pass-report entry, so a base that moved during planning is never silent.
+// stopping `baseMoves` pass-report entry, so a base that moved during planning is never silent; an
+// unresolved recorded move is reported as left to review.
 test('autopilot Phase 6 reports the base move', () => {
   const phase6 = read('tools/autopilot.md').split('## Phase 6: Report')[1].replace(/\s+/g, ' ');
   assert.match(phase6, /the base move: `run-close`'s `baseMove` with its old and new base/);
   assert.match(phase6, /counts and cited paths/);
   assert.match(
     phase6,
+    /for an `overlap` or `undecidable` verdict its reason and overlapping paths as an unresolved move left to review/,
+  );
+  assert.match(
+    phase6,
     /a stopping `baseMoves` entry's range, reason, overlapping paths and way out/,
   );
 });
 
-// Invariant: the autopilot issue source records a base move only through the literal
-// `base-move-record` call with its exact key list, only for a `fits` entry beside a confirmed pull
-// request for `#<N>`, before that pull request continues, and records nothing for any other entry.
-test('autopilot issue source records only a fitting base move beside its pull request', () => {
+// Invariant (issue #734 follow-up): the autopilot issue source records every base move beside a
+// confirmed pull request for `#<N>` through the literal `base-move-record` call with its exact key
+// list, `verdict`, `reason` and `overlappingPaths` included, before that pull request continues; an
+// unresolved move continues the run, and an entry without that pull request records nothing and
+// stops.
+test('autopilot issue source records a base move beside its pull request and continues', () => {
   const mapping = read('shared/autopilot-issue-source.md').replace(/\s+/g, ' ');
   assert.match(
     mapping,
-    /only verdict `fits` beside a confirmed pull request for `#<N>` is recorded, with the literal `autopilot\.mjs base-move-record` call `\{cwd, runId, fromBaseOid, toBaseOid, commitCount, changedPathCount, citedPathCount, citedPaths\}` copied from the entry/,
+    /any entry beside a confirmed pull request for `#<N>` is recorded, with the literal `autopilot\.mjs base-move-record` call `\{cwd, runId, fromBaseOid, toBaseOid, verdict, reason, commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths\}` copied from the entry; that pull request then continues below/,
   );
   assert.match(
     mapping,
-    /Any other entry, an `overlap` or `undecidable` verdict or a `fits` verdict without that pull request, records nothing/,
+    /An `overlap` or `undecidable` entry is an unresolved move the plan pull request already flags: the run continues to build and its draft pull request/,
   );
+  assert.match(
+    mapping,
+    /An entry without that pull request records nothing; the run stops without a pull request/,
+  );
+  assert.doesNotMatch(mapping, /only verdict `fits` beside/);
   const record = mapping.indexOf('`autopilot.mjs base-move-record`');
   const continuation = mapping.indexOf(
     'in `pullRequestsOpened`: continue under "Restore the plan"',

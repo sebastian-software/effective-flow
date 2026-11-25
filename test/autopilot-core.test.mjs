@@ -3224,12 +3224,16 @@ const baseMoveInput = (root, runId, extra = {}) => ({
   runId,
   fromBaseOid: FROM_OID,
   toBaseOid: TO_OID,
+  verdict: 'fits',
+  reason: null,
   commitCount: 3,
   changedPathCount: 5,
   citedPathCount: 4,
   citedPaths: ['src/a.mjs', 'docs/b.md'],
+  overlappingPaths: [],
   ...extra,
 });
+const flaggedMove = { verdict: 'overlap', reason: 'cited-path', overlappingPaths: ['src/a.mjs'] };
 
 // Invariant: a recorded base move is stored once per run, returned verbatim, and withdraws a
 // rendered appendix digest, so a stale render that misses the move can never be merged.
@@ -3285,7 +3289,9 @@ test('base-move-record takes no plan-source ledger', async (t) => {
 });
 
 // Invariant: the base-move record schema is closed: object ids are full lowercase hashes, counts
-// are non-negative integers, and the cited paths are bounded, safe, repository-relative paths.
+// are non-negative integers, the cited and overlapping paths are bounded, safe, repository-relative
+// paths, and verdict and reason come from `plan-publication`'s enums. A stopping reason
+// (`BASE_MOVE_STOPPING_REASONS`) never sits beside a PR, and a fitting move has no reason or path.
 test('base-move-record keeps its schema closed', async (t) => {
   const root = repository(t);
   const runId = await init(root);
@@ -3307,6 +3313,20 @@ test('base-move-record keeps its schema closed', async (t) => {
     'absolute path': { citedPaths: ['/etc/passwd'] },
     'parent path': { citedPaths: ['../a.mjs'] },
     'backslash path': { citedPaths: ['src\\a.mjs'] },
+    'unknown verdict': { verdict: 'maybe' },
+    'missing verdict': { verdict: undefined },
+    'reason of another verdict': { verdict: 'overlap', reason: 'gitlink' },
+    'fits with a reason': { reason: 'cited-path' },
+    'fits with an overlapping path': { overlappingPaths: ['src/a.mjs'] },
+    'not-ancestor': { verdict: 'undecidable', reason: 'not-ancestor' },
+    'same-issue-plan': { ...flaggedMove, reason: 'same-issue-plan' },
+    'plan-identity': { verdict: 'undecidable', reason: 'plan-identity' },
+    'overlappingPaths not an array': { ...flaggedMove, overlappingPaths: 'src/a.mjs' },
+    'over-long overlappingPaths': {
+      ...flaggedMove,
+      overlappingPaths: Array.from({ length: 21 }, (_, i) => `src/f${i}.mjs`),
+    },
+    'backtick overlapping path': { ...flaggedMove, overlappingPaths: ['src/a`b.mjs'] },
   };
   for (const [label, extra] of Object.entries(cases)) {
     const refused = await op('base-move-record', baseMoveInput(root, runId, extra));
@@ -3350,6 +3370,58 @@ test('pr-appendix renders the base move before the blockers in English and Germa
     assert.ok(blockerAt > 0, copy.language);
     assert.ok(appendix.indexOf(copy.heading) < blockerAt, copy.language);
   }
+});
+
+// Invariant (issue #734 follow-up): an unresolved move beside a confirmed PR is stored with its
+// verdict, reason and overlapping paths, and the appendix flags it in place of the "no overlap"
+// line: the move is left to review, with its overlapping paths, in the run language.
+test('base-move-record stores an unresolved move and pr-appendix flags it in English and German', async (t) => {
+  const cases = [
+    {
+      language: 'en',
+      unresolved:
+        'The move is unresolved (`cited-path`): reconciling the plan with the new base is left to review.',
+      overlapping: 'Overlapping paths: `src/a.mjs`, `docs/b.md`',
+      range: 'from `aaaaaaa` to `bbbbbbb` during planning: 3 commits, 5 changed paths.',
+      fitLine: 'No changed path overlaps',
+    },
+    {
+      language: 'de',
+      unresolved:
+        'Die Verschiebung ist ungelöst (`cited-path`): den Plan mit der neuen Basis abzugleichen bleibt dem Review überlassen.',
+      overlapping: 'Überschneidende Pfade: `src/a.mjs`, `docs/b.md`',
+      range: 'von `aaaaaaa` auf `bbbbbbb` verschoben: 3 Commits, 5 geänderte Pfade.',
+      fitLine: 'Kein geänderter Pfad',
+    },
+  ];
+  for (const copy of cases) {
+    const root = repository(t);
+    const runId = await init(root, { language: copy.language });
+    const input = baseMoveInput(root, runId, {
+      ...flaggedMove,
+      overlappingPaths: ['src/a.mjs', 'docs/b.md'],
+    });
+    const recorded = await op('base-move-record', input);
+    assert.equal(recorded.ok, true, JSON.stringify(recorded));
+    const { cwd: _cwd, runId: _runId, ...record } = input;
+    assert.deepEqual(recorded.data.baseMove, record);
+    assert.equal(ledger(root, runId).baseMove.verdict, 'overlap');
+    assert.equal(ledger(root, runId).baseMove.reason, 'cited-path');
+    assert.deepEqual(ledger(root, runId).baseMove.overlappingPaths, ['src/a.mjs', 'docs/b.md']);
+    const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+    assert.ok(appendix.includes(copy.range), copy.language);
+    assert.ok(appendix.includes(`${copy.unresolved}\n${copy.overlapping}\n`), appendix);
+    assert.ok(!appendix.includes(copy.fitLine), copy.language);
+  }
+  const root = repository(t);
+  const runId = await init(root);
+  await op(
+    'base-move-record',
+    baseMoveInput(root, runId, { verdict: 'undecidable', reason: 'no-affected-files' }),
+  );
+  const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+  assert.ok(appendix.includes('(`no-affected-files`): reconciling the plan'), appendix);
+  assert.ok(!appendix.includes('Overlapping paths'), 'no path line without a path');
 });
 
 test('run-close returns the base move, or null without one', async (t) => {

@@ -59,9 +59,11 @@ delivery worktree, set up per `worktree.setup`, that `plan-pr-continuation` adop
 
 A planning run may meet a base branch that moved while it planned. It plans at `collect.baseOid` and
 publishes on that OID, or on one later tip that passed the read-only `plan-publication
-assess-base-move` fit check (fetch only, verdict `fits`, `overlap` or `undecidable`). The pass
-makes at most one assessed re-publish per issue, on the assessed tip. Orphan recovery keeps the
-strict binding to the collected base.
+assess-base-move` check (fetch only, verdict `fits`, `overlap` or `undecidable`). The pass makes
+at most one assessed re-publish per issue, on the assessed tip; an overlapping or undecidable move
+publishes too, with a fixed "Unresolved base move" flag in the plan pull request for review to
+reconcile. A rewritten base and a plan of the same issue in the range still stop. Orphan recovery
+keeps the strict binding to the collected base.
 
 ## Consequences
 
@@ -72,8 +74,9 @@ orphanhood itself and never calls `pass-close`), removes trusted text no pass re
 `trusted-prune`, and removes a kept `issue-planning` worktree once the operator has moved or
 discarded its preserved plan.
 
-A moved base no longer stops a run whose plan still fits; an overlapping or undecidable move still
-does, as before.
+A moved base no longer stops a run: a fitting move publishes as is, an overlapping or undecidable
+one publishes flagged and leaves the reconciliation to review. A rewritten base and a same-issue
+plan in the range still stop.
 
 Claims are machine-local. Across machines the existing remote guards still prevent duplicates:
 `BRANCH_EXISTS`, `PR_EXISTS`, `plan-branch-exists`, the create-only push and the canonical planning

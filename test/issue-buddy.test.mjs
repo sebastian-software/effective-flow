@@ -3889,23 +3889,53 @@ test('baseMoves stays optional: a stored v2 report without it validates, and an 
   assert.deepEqual(empty.data.baseMoves, []);
 });
 
-// Invariant: a stopping move is always reported with the pass-level BASE_CHANGED stop, never
-// as a completed pass.
-test('baseMoves accepts an overlap or undecidable entry only with the null publish/BASE_CHANGED failure', async (t) => {
+// A completed v2 report beside the issue's confirmed draft PR, in a fresh fixture.
+async function publishedMoveReport(t, entry) {
   const f = await fixture(t);
   const c = await collected(f);
-  const overlap = await moveReport(f, c, [overlapMove()], stopped);
-  assert.equal(overlap.ok, true, JSON.stringify(overlap));
-  assert.equal(overlap.data.baseMoves[0].verdict, 'overlap');
-  await f.next();
-  const c2 = await collected(f);
-  const undecidable = await moveReport(
-    f,
-    c2,
-    [baseMove({ verdict: 'undecidable', reason: 'no-affected-files', citedPaths: [] })],
-    stopped,
+  const url = 'https://github.com/example/flow/pull/30';
+  const { headRef } = c.eligible[0];
+  assert.equal(
+    (await f.record(c, 'published', { pullRequest: { number: 30, url }, headRef })).ok,
+    true,
   );
-  assert.equal(undecidable.ok, true, JSON.stringify(undecidable));
+  return moveReport(f, c, [entry], {
+    verdicts: [{ issue: 1, verdict: 'published', reason: 'Bounded reason' }],
+    pullRequestsOpened: [{ issue: 1, number: 30, headRef, url }],
+  });
+}
+
+// Invariant (issue #734 follow-up): an unresolved move that re-publishes, `overlap`/`cited-path` or
+// an `undecidable` reason outside the stopping list, is a normal success beside its confirmed PR.
+test('baseMoves accepts an overlap or a non-stopping undecidable entry beside a confirmed PR', async (t) => {
+  for (const entry of [
+    overlapMove(),
+    baseMove({ verdict: 'undecidable', reason: 'gitlink', overlappingPaths: ['vendor/lib'] }),
+  ]) {
+    const accepted = await publishedMoveReport(t, entry);
+    assert.equal(accepted.ok, true, JSON.stringify(accepted));
+    assert.equal(accepted.data.outcome, 'completed');
+    assert.deepEqual(accepted.data.baseMoves, [entry]);
+  }
+});
+
+// Invariant (issue #734 follow-up): a move with a stopping reason (`BASE_MOVE_STOPPING_REASONS`)
+// never published, so a completed report beside a PR contradicts it; it is reported only with the
+// pass-level null publish/BASE_CHANGED stop.
+test('baseMoves binds a stopping reason only to the null publish/BASE_CHANGED failure', async (t) => {
+  const stopping = [
+    baseMove({ verdict: 'undecidable', reason: 'not-ancestor', citedPaths: [] }),
+    overlapMove({ reason: 'same-issue-plan', overlappingPaths: ['docs/plan/x.md'] }),
+  ];
+  for (const entry of stopping) {
+    const refused = await publishedMoveReport(t, entry);
+    assert.equal(refused.ok, false, entry.reason);
+    assert.match(refused.error.message, /base move does not match the pass outcome/);
+  }
+  const f = await fixture(t);
+  const c = await collected(f);
+  const kept = await moveReport(f, c, [stopping[1]], stopped);
+  assert.equal(kept.ok, true, JSON.stringify(kept));
   for (const [name, extra] of [
     ['a completed outcome', {}],
     ['a failed outcome without the stop record', { outcome: 'failed', failures: [] }],
@@ -3924,7 +3954,7 @@ test('baseMoves accepts an overlap or undecidable entry only with the null publi
   ]) {
     await f.next();
     const c3 = await collected(f);
-    const refused = await moveReport(f, c3, [overlapMove()], extra);
+    const refused = await moveReport(f, c3, [stopping[0]], extra);
     assert.equal(refused.ok, false, name);
     assert.equal(refused.error.code, 'INVALID_PAYLOAD', name);
   }

@@ -20,6 +20,7 @@ import { test } from 'node:test';
 
 import {
   BASE_MOVE_REASONS,
+  BASE_MOVE_STOPPING_REASONS,
   BASE_MOVE_VERDICTS,
   MAX_BASE_MOVE_PATHS,
   MAX_BODY_CHARS,
@@ -30,6 +31,8 @@ import {
   PlanPublicationError,
   SCAN_CLASSES,
   assessBaseMove,
+  baseMoveRepublishes,
+  buildBaseMoveFlag,
   buildPlanPrMarkerLine,
   buildPullRequestBody,
   decodePlanBytes,
@@ -2130,6 +2133,134 @@ test('the base-move verdict enum and reason mapping are closed', () => {
   assert.equal(MAX_BASE_MOVE_PATHS, 20);
 });
 
+// Protects the one deterministic publish/stop split (issue #734 follow-up): only a rewritten base
+// and a possible same-issue plan stop; every other assessed move, overlapping or undecidable
+// included, re-publishes once. The assess envelope's `republish` is derived from this list.
+test('only not-ancestor, same-issue-plan and plan-identity stop a base move from re-publishing', () => {
+  assert.deepEqual(
+    [...BASE_MOVE_STOPPING_REASONS],
+    ['not-ancestor', 'same-issue-plan', 'plan-identity'],
+  );
+  assert.ok(Object.isFrozen(BASE_MOVE_STOPPING_REASONS));
+  const republishing = [null, 'cited-path', 'gitlink', 'no-affected-files', 'unusable-entry'];
+  for (const reason of republishing) assert.equal(baseMoveRepublishes(reason), true, reason);
+  for (const reason of BASE_MOVE_STOPPING_REASONS) {
+    assert.equal(baseMoveRepublishes(reason), false, reason);
+  }
+  const every = Object.values(BASE_MOVE_REASONS).flat();
+  assert.deepEqual(
+    [...republishing, ...BASE_MOVE_STOPPING_REASONS].sort(),
+    [...every].sort(),
+    'the split covers every reason exactly once',
+  );
+});
+
+const FROM_OID = '1'.repeat(40);
+const TO_OID = '2'.repeat(40);
+
+function baseMoveInput(overrides = {}) {
+  return {
+    fromBaseOid: FROM_OID,
+    toBaseOid: TO_OID,
+    verdict: 'overlap',
+    reason: 'cited-path',
+    commitCount: 3,
+    overlappingPaths: ['README.md', 'src/a.mjs'],
+    ...overrides,
+  };
+}
+
+// Protects the fixed English flag text reviewers and agents search for: short object IDs, the
+// commit count with its plural, the reason, the overlapping paths only when there are any, and the
+// truncation note only at the path bound.
+test('buildBaseMoveFlag renders the fixed unresolved-base-move paragraph', () => {
+  assert.equal(
+    buildBaseMoveFlag(baseMoveInput()),
+    '**Unresolved base move.** The base moved from `1111111` to `2222222` while this plan was written (3 commits). The plan was published on `2222222` without reconciling it. Reason: `cited-path`. Overlapping paths: `README.md`, `src/a.mjs`. Review must reconcile the plan with the new base before it is implemented.',
+  );
+  assert.equal(
+    buildBaseMoveFlag(
+      baseMoveInput({
+        verdict: 'undecidable',
+        reason: 'no-affected-files',
+        commitCount: 1,
+        overlappingPaths: [],
+      }),
+    ),
+    '**Unresolved base move.** The base moved from `1111111` to `2222222` while this plan was written (1 commit). The plan was published on `2222222` without reconciling it. Reason: `no-affected-files`. Review must reconcile the plan with the new base before it is implemented.',
+  );
+  const bound = Array.from({ length: MAX_BASE_MOVE_PATHS }, (_, index) => `p${index}.md`);
+  const truncated = buildBaseMoveFlag(baseMoveInput({ overlappingPaths: bound }));
+  assert.ok(truncated.includes('`p18.md`, `p19.md` (list truncated). Review must'), truncated);
+  const below = buildBaseMoveFlag(baseMoveInput({ overlappingPaths: bound.slice(1) }));
+  assert.ok(!below.includes('(list truncated)'));
+});
+
+// Protects the `baseMove` input contract of `publish`: only an unresolved, publishable move onto
+// exactly the bound base is flagged, and every refusal happens before any process starts.
+test('publish refuses an invalid baseMove as INVALID_INPUT with zero runner calls', async () => {
+  const refusals = [
+    [
+      'a fitting move',
+      { baseMove: baseMoveInput({ verdict: 'fits', reason: null, overlappingPaths: [] }) },
+    ],
+    [
+      'not-ancestor',
+      { baseMove: baseMoveInput({ verdict: 'undecidable', reason: 'not-ancestor' }) },
+    ],
+    ['same-issue-plan', { baseMove: baseMoveInput({ reason: 'same-issue-plan' }) }],
+    [
+      'plan-identity',
+      { baseMove: baseMoveInput({ verdict: 'undecidable', reason: 'plan-identity' }) },
+    ],
+    ['a reason of another verdict', { baseMove: baseMoveInput({ reason: 'gitlink' }) }],
+    ['another base', { expectedBaseOid: '3'.repeat(40) }],
+    ['no expected base', { expectedBaseOid: undefined }],
+    ['the same base twice', { baseMove: baseMoveInput({ fromBaseOid: TO_OID }) }],
+    ['a short object id', { baseMove: baseMoveInput({ fromBaseOid: '1234567' }) }],
+    ['zero commits', { baseMove: baseMoveInput({ commitCount: 0 }) }],
+    [
+      '21 paths',
+      {
+        baseMove: baseMoveInput({
+          overlappingPaths: Array.from({ length: MAX_BASE_MOVE_PATHS + 1 }, (_, i) => `p${i}`),
+        }),
+      },
+    ],
+    ['a path with a backtick', { baseMove: baseMoveInput({ overlappingPaths: ['a`b.md'] }) }],
+    ['an empty path', { baseMove: baseMoveInput({ overlappingPaths: [''] }) }],
+    ['paths that are no array', { baseMove: baseMoveInput({ overlappingPaths: 'README.md' }) }],
+    ['a fractional commit count', { baseMove: baseMoveInput({ commitCount: 1.5 }) }],
+    ['an unknown key', { baseMove: { ...baseMoveInput(), citedPaths: [] } }],
+    ['a missing key', { baseMove: { ...baseMoveInput(), commitCount: undefined } }],
+    ['an array', { baseMove: [] }],
+  ];
+  for (const [label, overrides] of refusals) {
+    const runner = recordingRunner();
+    const input = publishInput({
+      expectedBaseOid: TO_OID,
+      baseMove: baseMoveInput(),
+      ...overrides,
+    });
+    if (overrides.expectedBaseOid === undefined && 'expectedBaseOid' in overrides) {
+      delete input.expectedBaseOid;
+    }
+    const envelope = await run('publish', input, { runner, apply: true });
+    assert.equal(envelope.ok, false, label);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', `${label}: ${envelope.error.message}`);
+    assert.equal(runner.calls.length, 0, label);
+  }
+  const runner = recordingRunner();
+  const refused = await run(
+    'complete-branch',
+    completeBranchInput({ expectedBaseOid: TO_OID, baseMove: baseMoveInput() }),
+    { runner },
+  );
+  assert.equal(refused.error.code, 'INVALID_INPUT');
+  assert.deepEqual(refused.error.details.keys, ['baseMove'], 'complete-branch takes no flag');
+  assert.equal(runner.calls.length, 0);
+});
+
 // Protects the normalization order: suffix strip, then candidate detection, then reduction.
 test('normalizeCitedToken strips a line or anchor suffix before it judges the token', () => {
   const literal = (path, directory = false) => ({ kind: 'literal', path, directory });
@@ -2460,8 +2591,11 @@ test('assessBaseMove: an empty range or unrelated paths fit with reason null', (
   assert.deepEqual(unrelated.citedPaths, ['src/a.mjs']);
 });
 
-// Protects the order of the checks: undecidable, then same-issue plan, then cited path.
-test('assessBaseMove applies undecidable, same-issue-plan and cited-path in that order', () => {
+// Protects the order of the checks: not-ancestor, then the stopping plan reasons (plan identity,
+// same-issue plan), then the republishing undecidable reasons, then cited path. A stopping reason
+// must win over every republishing one, or a range that adds a plan of the same issue would
+// re-publish a duplicate.
+test('assessBaseMove applies not-ancestor, stopping plan reasons, undecidable and cited-path in that order', () => {
   const same = [{ path: 'docs/plan/archive/x-issue-12-y.md', identity: 'same-issue' }];
   const invalid = [{ path: 'docs/plan/archive/x-issue-9-y.md', identity: 'invalid' }];
   const everything = {
@@ -2475,11 +2609,24 @@ test('assessBaseMove applies undecidable, same-issue-plan and cited-path in that
     ],
     ['undecidable', 'not-ancestor'],
   );
-  const gitlink = {
-    ...everything,
-    cited: cite([]),
-    changes: [{ path: 'vendor/sub', oldMode: '000000', newMode: '160000' }],
-  };
+  const gitlinkChange = [{ path: 'vendor/sub', oldMode: '000000', newMode: '160000' }];
+  const identity = assess({ ...everything, cited: cite([]), changes: gitlinkChange });
+  assert.deepEqual([identity.verdict, identity.reason], ['undecidable', 'plan-identity']);
+  assert.deepEqual(identity.overlappingPaths, ['docs/plan/archive/x-issue-9-y.md']);
+  // A same-issue plan stops beside every republishing reason.
+  for (const overrides of [
+    { cited: cite([]) },
+    { cited: cite([]), changes: gitlinkChange },
+    { cited: cite(['src/a.mjs', '../outside.md']) },
+    {},
+  ]) {
+    const sameIssue = assess({ ...everything, ...overrides, planFiles: same });
+    assert.deepEqual([sameIssue.verdict, sameIssue.reason], ['overlap', 'same-issue-plan']);
+    assert.deepEqual(sameIssue.overlappingPaths, ['docs/plan/archive/x-issue-12-y.md']);
+    assert.equal(baseMoveRepublishes(sameIssue.reason), false);
+  }
+  const plain = { changes: changed('src/a.mjs') };
+  const gitlink = { ...plain, cited: cite([]), changes: gitlinkChange };
   assert.equal(assess(gitlink).reason, 'gitlink');
   assert.deepEqual(assess(gitlink).overlappingPaths, ['vendor/sub']);
   assert.equal(
@@ -2487,18 +2634,13 @@ test('assessBaseMove applies undecidable, same-issue-plan and cited-path in that
       .reason,
     'gitlink',
   );
-  assert.equal(assess({ ...everything, cited: cite([]) }).reason, 'no-affected-files');
+  assert.equal(assess({ ...plain, cited: cite([]) }).reason, 'no-affected-files');
   assert.equal(
-    assess({ ...everything, cited: cite(['src/a.mjs', '../outside.md']) }).reason,
+    assess({ ...plain, cited: cite(['src/a.mjs', '../outside.md']) }).reason,
     'unusable-entry',
   );
-  const identity = assess(everything);
-  assert.deepEqual([identity.verdict, identity.reason], ['undecidable', 'plan-identity']);
-  assert.deepEqual(identity.overlappingPaths, ['docs/plan/archive/x-issue-9-y.md']);
-  const sameIssue = assess({ ...everything, planFiles: same });
-  assert.deepEqual([sameIssue.verdict, sameIssue.reason], ['overlap', 'same-issue-plan']);
-  assert.deepEqual(sameIssue.overlappingPaths, ['docs/plan/archive/x-issue-12-y.md']);
-  const cited = assess({ changes: changed('src/a.mjs') });
+  const sameIssue = assess({ ...plain, planFiles: same });
+  const cited = assess(plain);
   assert.deepEqual([cited.verdict, cited.reason], ['overlap', 'cited-path']);
   assert.deepEqual(cited.overlappingPaths, ['src/a.mjs']);
   // Every returned verdict and reason pair belongs to the closed enum.

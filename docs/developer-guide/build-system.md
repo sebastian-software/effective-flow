@@ -1187,12 +1187,14 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   the single-file commit in a temporary index, pushes it without force to
   `<branchPrefix>/plan/issue-<N>` so the remote branch is the lock, and opens a draft pull request
   whose body ends with the shipped plan marker line and the non-closing `Refs #<N>`; it then
-  reads the pull request back to confirm draft and marker. `complete-branch` instead adopts an
-  existing pushed plan branch: it asserts its changeset, scans the plan blob read back from Git, and
-  opens the draft pull request. `scan` is read-only and also serves the
-  interactive content check in `src/shared/plan-publication.md`: it reports findings by class,
-  field and line, never by value, in two confidence levels. A high-confidence finding is always
-  `blocking`; a lower one is `blocking` on an unattended run and `acknowledgeable` on an
+  reads the pull request back to confirm draft and marker. An optional `baseMove` (an unresolved
+  `assess-base-move` result whose `republish` is true, moving to exactly `expectedBaseOid`) adds
+  one fixed English "Unresolved base move" paragraph between the caller's prose and the marker.
+  `complete-branch` instead adopts an existing pushed plan branch: it asserts its changeset, scans
+  the plan blob read back from Git, and opens the draft pull request. `scan` is read-only and also
+  serves the interactive content check in `src/shared/plan-publication.md`: it reports findings by
+  class, field and line, never by value, in two confidence levels. A high-confidence finding is
+  always `blocking`; a lower one is `blocking` on an unattended run and `acknowledgeable` on an
   interactive one. The core also exports the pure `planBranchName` and `parsePlanBranch`.
   `process-runner.mjs` supplies the injected runner; the core spawns nothing itself. The runner
   has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`

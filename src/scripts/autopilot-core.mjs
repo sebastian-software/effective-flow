@@ -14,7 +14,8 @@
 //   `runtime-state-guard.mjs` primitives; `cwd` must be the primary checkout (RUNTIME_STATE_ROOT).
 //   `plan-reviewed` hashes the reviewed plan itself; `delivery-record` stores the archive path (or
 //   an unarchived delivery) and `delivery-confirm` the verified pushed head. `base-move-record`
-//   keeps at most one fitting base move of an issue source's plan publication.
+//   keeps at most one base move of an issue source's plan publication: a fitting one, or an
+//   unresolved one published with its flag (never a reason in `BASE_MOVE_STOPPING_REASONS`).
 // - Planning claim: `run-init` on an issue source first takes the issue's shared planning claim
 //   (`effective-flow-state-planning-claim-core.mjs`, workflow `autopilot`, holder the minted run id)
 //   and only then creates the run directory and ledger; a held claim is ISSUE_CLAIMED with the
@@ -75,7 +76,14 @@ import {
   APPENDIX_END,
   MAX_APPENDIX_BYTES,
 } from './autopilot-appendix-core.mjs';
-import { hasClosingKeyword, scanEntries } from './plan-publication-core.mjs';
+import {
+  BASE_MOVE_REASONS,
+  BASE_MOVE_VERDICTS,
+  MAX_BASE_MOVE_PATHS,
+  baseMoveRepublishes,
+  hasClosingKeyword,
+  scanEntries,
+} from './plan-publication-core.mjs';
 import { archivePathFor } from './pr-delivery-git-core.mjs';
 import {
   O_NOFOLLOW,
@@ -1081,21 +1089,35 @@ function objectId(value, label) {
 const BASE_MOVE_FIELDS = Object.freeze([
   'fromBaseOid',
   'toBaseOid',
+  'verdict',
+  'reason',
   'commitCount',
   'changedPathCount',
   'citedPathCount',
   'citedPaths',
+  'overlappingPaths',
 ]);
 
 // After a confirmed plan pull request on an issue source: the base move Issue Buddy's
-// `assess-base-move` found fitting, from the pass report's `baseMoves` entry. A run keeps at most
-// one: an identical repeat returns `recorded: true` without a write, a different one is
-// INVALID_STATE. `citedPaths` holds at most `LIMITS.sources` of the `citedPathCount` cited paths.
+// `assess-base-move` reported, from the pass report's `baseMoves` entry. Only a re-publishing move
+// sits beside a confirmed PR, so a stopping reason is INVALID_INPUT; a `fits` move has `reason:
+// null` and no overlapping path. A run keeps at most one: an identical repeat returns `recorded:
+// true` without a write, a different one is INVALID_STATE. `citedPaths` holds at most
+// `LIMITS.sources` of the `citedPathCount` cited paths, `overlappingPaths` the assessment's bound.
 async function baseMoveRecordOperation(input, deps) {
   closed(input, ['cwd', 'runId', ...BASE_MOVE_FIELDS], [], 'input');
   requireRunId(input.runId);
   objectId(input.fromBaseOid, 'fromBaseOid');
   objectId(input.toBaseOid, 'toBaseOid');
+  if (!BASE_MOVE_VERDICTS.includes(input.verdict)) {
+    invalid(`verdict must be one of ${BASE_MOVE_VERDICTS.join(', ')}`);
+  }
+  if (!BASE_MOVE_REASONS[input.verdict].includes(input.reason)) {
+    invalid(`reason does not belong to the ${input.verdict} verdict`);
+  }
+  if (!baseMoveRepublishes(input.reason)) {
+    invalid(`reason ${input.reason} stops the publication, so no pull request carries the move`);
+  }
   nonNegativeInteger(input.commitCount, 'commitCount');
   nonNegativeInteger(input.changedPathCount, 'changedPathCount');
   nonNegativeInteger(input.citedPathCount, 'citedPathCount');
@@ -1106,6 +1128,16 @@ async function baseMoveRecordOperation(input, deps) {
   input.citedPaths.forEach((entry, index) => relativePath(entry, `citedPaths[${index}]`));
   if (input.citedPaths.length > input.citedPathCount) {
     invalid('citedPaths lists more paths than citedPathCount');
+  }
+  if (!Array.isArray(input.overlappingPaths)) invalid('overlappingPaths must be an array');
+  if (input.overlappingPaths.length > MAX_BASE_MOVE_PATHS) {
+    invalid(`overlappingPaths exceeds ${MAX_BASE_MOVE_PATHS} entries`);
+  }
+  input.overlappingPaths.forEach((entry, index) =>
+    relativePath(entry, `overlappingPaths[${index}]`),
+  );
+  if (input.verdict === 'fits' && input.overlappingPaths.length > 0) {
+    invalid('a fitting base move lists no overlapping path');
   }
   const record = Object.fromEntries(BASE_MOVE_FIELDS.map((key) => [key, input[key]]));
   const ctx = await rootContext(input, deps);
@@ -1584,6 +1616,9 @@ const COPY = Object.freeze({
       `The base moved from \`${from}\` to \`${to}\` during planning: ${commits} ${commits === 1 ? 'commit' : 'commits'}, ${changed} changed ${changed === 1 ? 'path' : 'paths'}. The plan was published on the new base.`,
     baseMoveCited: (cited) =>
       `No changed path overlaps the ${cited === 1 ? 'path' : `${cited} paths`} the plan cites`,
+    baseMoveUnresolved: (reason) =>
+      `The move is unresolved (\`${reason}\`): reconciling the plan with the new base is left to review.`,
+    baseMoveOverlapping: 'Overlapping paths',
     more: (count) => `(+${count} more)`,
   }),
   de: Object.freeze({
@@ -1613,6 +1648,9 @@ const COPY = Object.freeze({
       `Die Basis hat sich während der Planung von \`${from}\` auf \`${to}\` verschoben: ${commits} ${commits === 1 ? 'Commit' : 'Commits'}, ${changed} ${changed === 1 ? 'geänderter Pfad' : 'geänderte Pfade'}. Der Plan wurde auf der neuen Basis veröffentlicht.`,
     baseMoveCited: (cited) =>
       `Kein geänderter Pfad überschneidet sich mit ${cited === 1 ? 'dem Pfad' : `den ${cited} Pfaden`}, die der Plan nennt`,
+    baseMoveUnresolved: (reason) =>
+      `Die Verschiebung ist ungelöst (\`${reason}\`): den Plan mit der neuen Basis abzugleichen bleibt dem Review überlassen.`,
+    baseMoveOverlapping: 'Überschneidende Pfade',
     more: (count) => `(+${count} weitere)`,
   }),
 });
@@ -1686,25 +1724,34 @@ export function renderAppendix(ledger, { planPullRequest } = {}) {
     '',
   );
 
-  // The base move sits before the blocker section, so blocker counting never reads its lines.
+  // The base move sits before the blocker section, so blocker counting never reads its lines. An
+  // unresolved move is the PR's flag: its line replaces the "no overlap" line of a fitting one.
   if (isObject(ledger.baseMove)) {
     const move = ledger.baseMove;
-    const cited = move.citedPaths
-      .map((entry) => `\`${field(entry, 'baseMove.citedPaths')}\``)
-      .join(', ');
-    const hidden = move.citedPathCount - move.citedPaths.length;
-    lines.push(
-      copy.baseMove,
-      '',
+    const paths = (list, label) => list.map((entry) => `\`${field(entry, label)}\``).join(', ');
+    const moveLines = [
       copy.baseMoveRange(
         move.fromBaseOid.slice(0, SHORT_OID_LENGTH),
         move.toBaseOid.slice(0, SHORT_OID_LENGTH),
         move.commitCount,
         move.changedPathCount,
       ),
-      `${copy.baseMoveCited(move.citedPathCount)}${cited === '' ? '.' : `: ${cited}`}${hidden > 0 ? ` ${copy.more(hidden)}` : ''}`,
-      '',
-    );
+    ];
+    if (move.verdict === 'fits') {
+      const cited = paths(move.citedPaths, 'baseMove.citedPaths');
+      const hidden = move.citedPathCount - move.citedPaths.length;
+      moveLines.push(
+        `${copy.baseMoveCited(move.citedPathCount)}${cited === '' ? '.' : `: ${cited}`}${hidden > 0 ? ` ${copy.more(hidden)}` : ''}`,
+      );
+    } else {
+      moveLines.push(copy.baseMoveUnresolved(move.reason));
+      if (move.overlappingPaths.length > 0) {
+        moveLines.push(
+          `${copy.baseMoveOverlapping}: ${paths(move.overlappingPaths, 'baseMove.overlappingPaths')}`,
+        );
+      }
+    }
+    lines.push(copy.baseMove, '', ...moveLines, '');
   }
 
   if (ledger.blockers.length > 0) {

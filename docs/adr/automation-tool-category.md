@@ -107,13 +107,16 @@ the group is absent, no source may emit.
   plan-only draft instead of opening a second one; when that update fails after the draft is
   verified, the run records the unchanged draft. The only runs without a pull request are a
   security blocker on a public repository, an Issue Buddy stop or pass failure (including a base
-  move that overlaps the plan or cannot be decided, or a fitting move whose re-publish stopped), a preflight
-  failure, an appendix that its scan blocks, which is never published, and a failed publication
-  step (plan-only draft or `pr`).
-- **Base move.** When the base branch moved during planning and the plan still fits, the run
-  continues. Issue Buddy reports the move, `base-move-record` stores it in the ledger (one per run,
-  issue source only, an identical repeat is a no-op) and withdraws the recorded appendix digest,
-  and `pr-appendix` renders it as a "Base move" section before the blockers.
+  move with a stopping reason (a rewritten base, or a plan of the same issue in the range that is
+  there or may be), or a re-publish that stopped), a preflight failure, an appendix that its scan
+  blocks, which is never published, and a failed publication step (plan-only draft or `pr`).
+- **Base move.** When the base branch moved during planning and Issue Buddy re-published the plan,
+  the run continues, also when the move overlaps the plan or its fit cannot be decided. Issue
+  Buddy reports the move, `base-move-record` stores it with its verdict, reason and overlapping
+  paths in the ledger (one per run, issue source only, an identical repeat is a no-op) and
+  withdraws the recorded appendix digest, and `pr-appendix` renders it as a "Base move" section
+  before the blockers. For an unresolved move that section is the flag: it leaves reconciling the
+  plan with the new base to review, and the draft pull request is not blocked.
 - **Architecture fit.** A read-only `deep` leaf scores the committed diff against the repository's
   ADRs, architecture guide, concepts and open plans. With no source, or when the leaf still fails
   after one retry, the appendix states that the fit was not assessed and why; it is never a

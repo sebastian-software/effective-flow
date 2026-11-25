@@ -34,6 +34,7 @@ import {
   BASE_MOVE_REASONS,
   BASE_MOVE_VERDICTS,
   MAX_BASE_MOVE_PATHS,
+  baseMoveRepublishes,
   planBranchName,
   parsePlanBranch,
   parseIssueHeader,
@@ -2634,9 +2635,11 @@ export function validatePassReport(report) {
   if (report.baseMoves !== undefined) baseMoveOutcomes(report);
   return report;
 }
-// Each base move is bound to the pass outcome: a fitting move to its issue's confirmed PR, its
-// `failed` verdict or a failed pass; a stopping move to a failed pass with the null
-// `publish`/`BASE_CHANGED` failure. A dry run publishes nothing, so it carries no base move.
+// Each base move is bound to the pass outcome by its reason, through `plan-publication`'s
+// `BASE_MOVE_STOPPING_REASONS`: a re-publishing move (`fits`, or an unresolved one published with
+// its flag) to its issue's confirmed PR, its `failed` verdict or a failed pass; a stopping move to a
+// failed pass with the null `publish`/`BASE_CHANGED` failure. A dry run publishes nothing, so it
+// carries no base move.
 function baseMoveOutcomes(report) {
   baseMoves(report.baseMoves);
   if (report.mode !== 'publish') invalid('dry-run base move');
@@ -2646,12 +2649,11 @@ function baseMoveOutcomes(report) {
       (entry) => entry.issue === null && entry.stage === 'publish' && entry.code === 'BASE_CHANGED',
     );
   for (const entry of report.baseMoves) {
-    const bound =
-      entry.verdict === 'fits'
-        ? report.outcome === 'failed' ||
-          report.pullRequestsOpened.some((pr) => pr.issue === entry.issue) ||
-          report.verdicts.some((item) => item.issue === entry.issue && item.verdict === 'failed')
-        : stopped;
+    const bound = baseMoveRepublishes(entry.reason)
+      ? report.outcome === 'failed' ||
+        report.pullRequestsOpened.some((pr) => pr.issue === entry.issue) ||
+        report.verdicts.some((item) => item.issue === entry.issue && item.verdict === 'failed')
+      : stopped;
     if (!bound) invalid('base move does not match the pass outcome');
   }
 }

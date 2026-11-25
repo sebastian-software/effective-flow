@@ -406,12 +406,13 @@ test('Issue Buddy reaches the base-move fragment through one lazy pointer at Pha
 });
 
 // Invariant (issue #734): item 5 still stops on base drift, with exactly one exception: the first
-// pre-mutation `BASE_CHANGED`, which the fragment assesses for its single assessed re-publish. A
-// `BASE_CHANGED` from that re-publish is not exempt, and tip and blob drift keep stopping.
+// pre-mutation `BASE_CHANGED`, which the fragment assesses for its single assessed re-publish,
+// flagged when unresolved. A `BASE_CHANGED` from that re-publish is not exempt, and tip and blob
+// drift keep stopping.
 test('Issue Buddy item 5 keeps base drift a stop except the single assessed re-publish', () => {
   assert.match(
     prose,
-    /base\/tip\/blob drift \(`BASE_CHANGED`, except the first pre-mutation one, which `issue-buddy-base-move` assesses for its single assessed re-publish; `TIP_CHANGED`; `BLOB_CHANGED`\)/,
+    /base\/tip\/blob drift \(`BASE_CHANGED`, except the first pre-mutation one, which `issue-buddy-base-move` assesses for its single assessed re-publish, flagged when unresolved; `TIP_CHANGED`; `BLOB_CHANGED`\)/,
   );
   assert.doesNotMatch(prose, /`BASE_CHANGED` except the single assessed re-publish/);
   assert.match(
@@ -427,7 +428,10 @@ test('Issue Buddy Phase 6 lists baseMoves in the pass-report keys and reports ea
     prose,
     /pass-report` with `\{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts, pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles\}`, plus `baseMoves` when `issue-buddy-base-move` added an entry/,
   );
-  assert.match(prose, /each base move as `issue-buddy-base-move` states/);
+  assert.match(
+    prose,
+    /each base move as `issue-buddy-base-move` states \(a flagged PR as an unresolved base move left to review\)/,
+  );
 });
 
 // Invariant (issue #734): at most one assessed re-publish per issue and pass; a second
@@ -476,17 +480,33 @@ test('the base-move fragment records one baseMoves entry per successful assessme
   );
 });
 
-// Invariant (issue #734): an overlapping or undecidable move, and a fitting move whose re-publish
-// stopped, stop the pass with the null BASE_CHANGED record, preserve the plan, and tell the operator
-// the range, the overlapping paths, the reason and the way out.
-test('the base-move fragment stops on overlap, undecidable or a stopped re-publish with range, paths and way out', () => {
+// Invariant (issue #734 follow-up): the envelope's `republish` decides. A re-publishing envelope
+// re-publishes once, passing `baseMove` for an unresolved verdict so `publish` renders the flag;
+// only `republish: false` (the stopping reasons) or a stopped re-publish stops the pass with the
+// null BASE_CHANGED record, preserves the plan, and tells the operator range, paths, reason and way
+// out.
+test('the base-move fragment re-publishes on republish: true, flags an unresolved move, and stops only on republish: false', () => {
   assert.match(
     baseMoveProse,
-    /`overlap` or `undecidable`\.\*\* Stop as item 5 does: preserve the plan and its planning worktree \(Phase 2\) and record the pass failure `\{issue: null, stage: "publish", code: "BASE_CHANGED"\}`/,
+    /3\. \*\*`republish: true`\.\*\* Re-run `plan-lint\.mjs publication-metadata`/,
   );
   assert.match(
     baseMoveProse,
-    /A stopping move, which is an `overlap` or `undecidable` verdict or a `fits` verdict whose re-publish then stopped, names the range, the commit count, the bounded `overlappingPaths` with the `reason`, the preserved plan and planning worktree paths, and the way out/,
+    /for an `overlap` or `undecidable` verdict also pass `baseMove: \{fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths\}` copied from the envelope, and `publish` renders the fixed "Unresolved base move" flag into the body/,
+  );
+  assert.match(baseMoveProse, /A flagged PR is a normal `published` outcome; review reconciles it/);
+  assert.match(
+    baseMoveProse,
+    /4\. \*\*`republish: false`\*\* \(`not-ancestor`, `same-issue-plan` or `plan-identity`\)\. Stop as item 5 does: preserve the plan and its planning worktree \(Phase 2\) and record the pass failure `\{issue: null, stage: "publish", code: "BASE_CHANGED"\}`/,
+  );
+  assert.doesNotMatch(baseMoveProse, /`overlap` or `undecidable`\.\*\* Stop/);
+  assert.match(
+    baseMoveProse,
+    /A stopping move, which is a `republish: false` envelope or a re-publish that then stopped, names the range, the commit count, the bounded `overlappingPaths` with the `reason`, the preserved plan and planning worktree paths, and the way out/,
+  );
+  assert.match(
+    baseMoveProse,
+    /A flagged move that published adds the `reason` and the bounded `overlappingPaths`, and says the PR carries the unresolved base move for review/,
   );
   assert.match(
     baseMoveProse,
