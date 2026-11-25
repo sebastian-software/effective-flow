@@ -2200,8 +2200,16 @@ async function requireFurtherBaseMove(
       actualOid: tipOid,
       reason,
     });
-  const present = (await git.run(['cat-file', '-e', `${expectedBaseOid}^{commit}`]))?.status === 0;
-  if (!present) stop('not-ancestor');
+  // A spawn error or timeout is a failed command; only a numeric non-zero exit means a missing object.
+  const presence = await git.run(['cat-file', '-e', `${expectedBaseOid}^{commit}`]);
+  if (presence?.error || typeof presence?.status !== 'number') {
+    fail('COMMAND_FAILED', 'git cat-file failed', {
+      command: 'git cat-file',
+      status: presence?.status ?? null,
+      stderr: diagnosticText(presence?.stderr ?? presence?.error?.code ?? ''),
+    });
+  }
+  if (presence.status !== 0) stop('not-ancestor');
   const ancestry = await git.run(['merge-base', '--is-ancestor', expectedBaseOid, tipOid]);
   if (ancestry?.error || ![0, 1].includes(ancestry?.status)) {
     fail('COMMAND_FAILED', 'git merge-base failed', {

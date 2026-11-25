@@ -3040,6 +3040,27 @@ test('allowNewerBase stops on a non-ancestor, a same-issue plan or a plan-identi
   assert.equal(plain.error.details.reason, undefined);
 });
 
+// Invariant (issue #734): a failed object probe is no base verdict. When `git cat-file` for the
+// assessed base fails to run (spawn error or timeout), the further-move check reports
+// COMMAND_FAILED, never BASE_CHANGED, and writes nothing.
+test('allowNewerBase reports COMMAND_FAILED when the assessed-base probe fails to run', async (t) => {
+  const world = createWorld(t);
+  const assessed = trackingTip(world);
+  moveBase(world, { files: { 'docs/a.md': 'a\n' } });
+  world.intercept = (call) =>
+    call.executable === 'git' &&
+    call.args.includes('cat-file') &&
+    call.args.includes(`${assessed}^{commit}`)
+      ? { status: null, stdout: '', stderr: '', error: { code: 'ETIMEDOUT' } }
+      : undefined;
+  const envelope = await publish(world, { expectedBaseOid: assessed, allowNewerBase: true });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED', JSON.stringify(envelope.error));
+  assert.equal(envelope.error.details.command, 'git cat-file');
+  assertNothingWritten(world, { allowFetch: true });
+  assert.equal(remoteRef(world, BRANCH), null);
+});
+
 // Invariant (issue #734): the flag changes nothing on a tip that did not move; the envelope reports
 // `furtherBaseMove: null`, the body is the plain one, and a publish without the flag has no key.
 test('allowNewerBase on an unmoved tip publishes exactly as before', async (t) => {
