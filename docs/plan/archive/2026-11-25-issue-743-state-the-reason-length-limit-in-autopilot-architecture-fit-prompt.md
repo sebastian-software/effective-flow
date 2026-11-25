@@ -1,6 +1,6 @@
 # State the reason length limit in autopilot architecture-fit prompt
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #743
@@ -71,8 +71,8 @@ new capability and without changing the helper.
 1. In `src/tools/autopilot.md`, edit only the JSON-shape line of step 2 so the `reason` placeholder
    reads `"<one sentence, at most 300 characters>"`. Keep the surrounding wording byte-identical,
    in particular the phrase `listing at most 20 sources it used`, the `{cwd, runId, unavailable:
-   true}` call and the line `"Architecture fit: not assessed — scoring unavailable". It is never a
-   blocker.` directly above the spawn-site marker: `test/scored-decisions-contract.test.mjs`
+true}` call and the line `"Architecture fit: not assessed — scoring unavailable". It is never a
+blocker.` directly above the spawn-site marker: `test/scored-decisions-contract.test.mjs`
    (around lines 809-880) asserts these exact substrings, including
    `never a blocker.\n {3}<!-- spawn-site:autopilot/architecture-fit -->\n`.
 2. Confirm the file's line count is unchanged, so `contextBudget: 502` needs no update and the
@@ -113,23 +113,23 @@ new capability and without changing the helper.
 ## Acceptance criteria
 
 - [ ] `src/tools/autopilot.md` step 2 "Architecture fit" contains exactly one `reason` placeholder
-  that states `at most 300 characters`, and the file's line count and `contextBudget: 502` are
-  unchanged.
+      that states `at most 300 characters`, and the file's line count and `contextBudget: 502` are
+      unchanged.
 - [ ] `test/scored-decisions-contract.test.mjs` contains a test, preceded by an `// Invariant:` comment
-  naming the prompt-to-`LIMITS.reason` agreement, that passes on the changed tree and fails when
-  either the prompt's number or `LIMITS.reason` is changed to a different value, or when the
-  limit phrase is removed from the prompt (checked once locally by temporary edits that are
-  reverted before committing).
+      naming the prompt-to-`LIMITS.reason` agreement, that passes on the changed tree and fails when
+      either the prompt's number or `LIMITS.reason` is changed to a different value, or when the
+      limit phrase is removed from the prompt (checked once locally by temporary edits that are
+      reverted before committing).
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass, in that
-  order. The one tolerated exception (decided by score): a failure whose error message is
-  identical to one reproduced by the same command on the unchanged base `ea0c5b94` before the
-  change — such as the reported `iterate` context-budget error — counts as pre-existing, is not
-  repaired here and is recorded in the pull request body; any new or changed failure fails this
-  criterion. The compared unit is the failing check's error message (for the build, the guard's
-  context-budget line; for a test, its name and assertion message), never the whole output, so
-  durations, test counts, timings and absolute paths are ignored. The same pre-existing failure
-  may appear in more than one of the four commands (`test/context-budget.test.mjs` and the
-  distribution suite's build also check budgets); each occurrence is recorded.
+      order. The one tolerated exception (decided by score): a failure whose error message is
+      identical to one reproduced by the same command on the unchanged base `ea0c5b94` before the
+      change — such as the reported `iterate` context-budget error — counts as pre-existing, is not
+      repaired here and is recorded in the pull request body; any new or changed failure fails this
+      criterion. The compared unit is the failing check's error message (for the build, the guard's
+      context-budget line; for a test, its name and assertion message), never the whole output, so
+      durations, test counts, timings and absolute paths are ignored. The same pre-existing failure
+      may appear in more than one of the four commands (`test/context-budget.test.mjs` and the
+      distribution suite's build also check budgets); each occurrence is recorded.
 
 ## Validation plan
 
@@ -177,9 +177,11 @@ new capability and without changing the helper.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site": "S-BAT", "question": "How should the acceptance criterion \"`node build.mjs` passes\" treat a possible pre-existing `iterate` context-budget failure (1872 lines, budget 1871) on the unchanged base?", "options": ["Keep the criterion strict; a red base blocks delivery until a separate fix lands", "Allow the one-line iterate contextBudget correction as a scoped prerequisite", "Accept only the identical reproduced pre-existing failure, recorded in the PR", "Decide later"], "escape": ["Decide later"], "scores": [{"label": "Keep the criterion strict; a red base blocks delivery until a separate fix lands", "score": 5, "reason": "Keeps the gate honest, but an unattended fix run would stop on a failure in iterate that this change cannot cause. The failure is also unverified: #741 changed iterate.md and passed CI on its own head."}, {"label": "Allow the one-line iterate contextBudget correction as a scoped prerequisite", "score": 4, "reason": "The edit is trivial, but it widens scope into iterate.md, which the iterate and merge-gate eval suites load, so it adds evidence debt in both. It could also clash with a separate fix of the same base problem."}, {"label": "Accept only the identical reproduced pre-existing failure, recorded in the PR", "score": 8, "reason": "Matches the plan's assumption to report the failure rather than repair it, and keeps autopilot moving. Tolerance is limited to the exact message reproduced on ea0c5b94, so any new or changed build failure still blocks."}]}, {"site": "S-BAT", "question": "Which test file should hold the new prompt-to-`LIMITS.reason` test?", "options": ["workflow-contracts.test.mjs as the issue names, cross-referencing the step 2 pins", "scored-decisions-contract.test.mjs beside the existing step 2 pins", "Decide later"], "escape": ["Decide later"], "scores": [{"label": "workflow-contracts.test.mjs as the issue names, cross-referencing the step 2 pins", "score": 5, "reason": "This matches the issue's suggestion and the file's source()/prose() helpers would work. But it splits the step 2 pins across two files, needs a new autopilot-core import in a 28.9k-line file, and its autopilot tests cover issue-source claims, not architecture fit."}, {"label": "scored-decisions-contract.test.mjs beside the existing step 2 pins", "score": 8, "reason": "All architecture-fit step 2 pins are already here (20-source cap, unavailable fallback, spawn marker), and the file already imports from autopilot-core.mjs, so LIMITS is a one-name addition. The acceptance criterion does not name a file. The catch: the file header scopes it to scored-decisions.md."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
