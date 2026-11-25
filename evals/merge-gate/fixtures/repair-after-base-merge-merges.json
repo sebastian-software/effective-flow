@@ -1220,10 +1220,12 @@
                                 "login": "recensor"
                               }
                             }
-                          ]
+                          ],
+                          "pageInfo": { "hasNextPage": false }
                         }
                       }
-                    ]
+                    ],
+                    "pageInfo": { "hasNextPage": false }
                   }
                 }
               }
@@ -1266,8 +1268,18 @@
               "command": {
                 "executable": "gh",
                 "args": ["api", "graphql", "--input", "-"],
-                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
               },
+              "steps": [
+                {
+                  "step": "threads-page",
+                  "command": {
+                    "executable": "gh",
+                    "args": ["api", "graphql", "--input", "-"],
+                    "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                  }
+                }
+              ],
               "conditionalWriteAvailable": false
             },
             "dryRun": false
@@ -1305,7 +1317,8 @@
                                 "login": "recensor"
                               }
                             }
-                          ]
+                          ],
+                          "pageInfo": { "hasNextPage": false }
                         }
                       },
                       {
@@ -1333,10 +1346,12 @@
                                 "login": "recensor"
                               }
                             }
-                          ]
+                          ],
+                          "pageInfo": { "hasNextPage": false }
                         }
                       }
-                    ]
+                    ],
+                    "pageInfo": { "hasNextPage": false }
                   }
                 }
               }
@@ -1406,8 +1421,18 @@
               "command": {
                 "executable": "gh",
                 "args": ["api", "graphql", "--input", "-"],
-                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
               },
+              "steps": [
+                {
+                  "step": "threads-page",
+                  "command": {
+                    "executable": "gh",
+                    "args": ["api", "graphql", "--input", "-"],
+                    "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                  }
+                }
+              ],
               "conditionalWriteAvailable": false
             },
             "dryRun": false
@@ -1445,7 +1470,8 @@
                                 "login": "recensor"
                               }
                             }
-                          ]
+                          ],
+                          "pageInfo": { "hasNextPage": false }
                         }
                       },
                       {
@@ -1473,10 +1499,12 @@
                                 "login": "recensor"
                               }
                             }
-                          ]
+                          ],
+                          "pageInfo": { "hasNextPage": false }
                         }
                       }
-                    ]
+                    ],
+                    "pageInfo": { "hasNextPage": false }
                   }
                 }
               }
@@ -1546,8 +1574,18 @@
               "command": {
                 "executable": "gh",
                 "args": ["api", "graphql", "--input", "-"],
-                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
               },
+              "steps": [
+                {
+                  "step": "threads-page",
+                  "command": {
+                    "executable": "gh",
+                    "args": ["api", "graphql", "--input", "-"],
+                    "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                  }
+                }
+              ],
               "conditionalWriteAvailable": false
             },
             "dryRun": false
@@ -1585,7 +1623,8 @@
                                 "login": "recensor"
                               }
                             }
-                          ]
+                          ],
+                          "pageInfo": { "hasNextPage": false }
                         }
                       },
                       {
@@ -1613,10 +1652,12 @@
                                 "login": "recensor"
                               }
                             }
-                          ]
+                          ],
+                          "pageInfo": { "hasNextPage": false }
                         }
                       }
-                    ]
+                    ],
+                    "pageInfo": { "hasNextPage": false }
                   }
                 }
               }
@@ -1686,8 +1727,18 @@
               "command": {
                 "executable": "gh",
                 "args": ["api", "graphql", "--input", "-"],
-                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
               },
+              "steps": [
+                {
+                  "step": "threads-page",
+                  "command": {
+                    "executable": "gh",
+                    "args": ["api", "graphql", "--input", "-"],
+                    "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}pageInfo{hasNextPage endCursor}}}pageInfo{hasNextPage endCursor}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+                  }
+                }
+              ],
               "conditionalWriteAvailable": false
             },
             "dryRun": false

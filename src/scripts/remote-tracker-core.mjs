@@ -73,7 +73,12 @@ import {
   WORK_IN_PROGRESS_PREFIX,
   buildForgejoCommandPlan,
 } from './remote-tracker-forgejo-core.mjs';
-import { buildGithubCommandPlan, buildReviewPayload } from './remote-tracker-github-core.mjs';
+import {
+  buildGithubCommandPlan,
+  buildGithubReviewThreadCommentsPlan,
+  buildGithubReviewThreadsPagePlan,
+  buildReviewPayload,
+} from './remote-tracker-github-core.mjs';
 import { lookupThreadLedgerFile, recordThreadLedgerFile } from './remote-tracker-ledger-core.mjs';
 import {
   appendixDigest,
@@ -3455,6 +3460,22 @@ function headCommitTimestamp(item, headSha) {
   return normalizeTimestamp(head.committedDate, head.committed_date, head.authoredDate);
 }
 
+// One guard for every GitHub GraphQL read that must not be decided on a partial answer: a
+// non-empty `errors` array fails the read with the provider's messages, redacted. An empty array
+// states no error.
+function failOnGraphqlErrors(raw, subject) {
+  const errors = Array.isArray(raw?.errors) ? raw.errors : [];
+  if (errors.length > 0) {
+    fail('INVALID_PAYLOAD', `provider reported GraphQL errors for ${subject}`, {
+      messages: redact(
+        errors.map((entry) =>
+          typeof entry?.message === 'string' ? entry.message : 'provider stated no message',
+        ),
+      ),
+    });
+  }
+}
+
 // The GraphQL envelope, restated as the flat provider record the status normalizer already reads.
 // The query nests the head commit's timestamp and its check rollup under `commits(last:1)` because
 // that is where the schema keeps them, not because the gate wants two levels of nesting; unfolding
@@ -3485,16 +3506,7 @@ function flattenPullRequestStatus(raw) {
   // `gh` also exits non-zero for it is the CLI's business and nothing here pins it, so the one read
   // that gates a merge states the failure on its own evidence instead. The provider's wording
   // travels along redacted, like every other piece of provider text this file reports.
-  const errors = Array.isArray(raw?.errors) ? raw.errors : [];
-  if (errors.length > 0) {
-    fail('INVALID_PAYLOAD', 'provider reported GraphQL errors for the status read', {
-      messages: redact(
-        errors.map((entry) =>
-          typeof entry?.message === 'string' ? entry.message : 'provider stated no message',
-        ),
-      ),
-    });
-  }
+  failOnGraphqlErrors(raw, 'the status read');
   const pullRequest = raw?.data?.repository?.pullRequest;
   if (!pullRequest || typeof pullRequest !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned no pull request for the status read');
@@ -4707,6 +4719,149 @@ async function readForgejoReviewThreads(input, repository, runner) {
   return {
     result: normalizeRemoteData('review-threads-read', comments, repository, input),
     commands,
+  };
+}
+
+// Every GraphQL request one GitHub review-thread read may send: thread pages and comment
+// follow-ups together. A pull request past it fails closed rather than returning a prefix.
+const GITHUB_REVIEW_THREAD_MAX_REQUESTS = 100;
+
+// One page of a GraphQL connection, read strictly: a missing node list or missing page information
+// proves nothing about completeness, so neither is ever taken for the last page, and a further page
+// has to state the cursor it can be asked from.
+function githubConnectionPage(connection, label) {
+  if (!connection || typeof connection !== 'object' || !Array.isArray(connection.nodes)) {
+    fail('INVALID_PAYLOAD', `provider returned no node list for ${label}`);
+  }
+  const pageInfo = connection.pageInfo;
+  if (!pageInfo || typeof pageInfo !== 'object' || typeof pageInfo.hasNextPage !== 'boolean') {
+    fail('INVALID_PAYLOAD', `provider stated no page information for ${label}`);
+  }
+  if (!pageInfo.hasNextPage) return { nodes: connection.nodes };
+  if (typeof pageInfo.endCursor !== 'string' || pageInfo.endCursor === '') {
+    fail('INVALID_PAYLOAD', `provider stated a further page of ${label} without a cursor`);
+  }
+  return { nodes: connection.nodes, next: pageInfo.endCursor };
+}
+
+// Appends what `seen` does not hold yet, so a comment a shifting connection returns twice keeps its
+// first occurrence; threads are kept the same way. An item without a string ID has nothing to
+// compare and is kept.
+function appendUnseen(target, items, seen) {
+  for (const item of items) {
+    if (typeof item?.id === 'string') {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+    }
+    target.push(item);
+  }
+}
+
+// The GitHub thread walk: every page of `reviewThreads`, then, thread by thread in thread order,
+// every further page of a thread's `comments`. Each page is read as it stood when requested; the
+// merged threads go back into the provider's own envelope shape, each keeping `comments.nodes`, so
+// the normalizer reads one complete response exactly as it read a single page.
+async function readGithubReviewThreads(input, repository, runner, maxRequests) {
+  const steps = [];
+  const request = async (step, plan) => {
+    if (steps.length >= maxRequests) {
+      fail('INVALID_PAYLOAD', 'review-threads-read reached its request bound', {
+        maxRequests,
+        requestCount: steps.length,
+      });
+    }
+    steps.push({ step, command: redact(plan) });
+    const raw = parseCommandOutput(
+      await runChecked(runner, plan, 'review-threads-read'),
+      plan,
+      'review-threads-read',
+    ).raw;
+    failOnGraphqlErrors(raw, 'the review-thread read');
+    return raw;
+  };
+  const threads = [];
+  const seenThreads = new Set();
+  const threadCursors = new Set();
+  let cursor;
+  for (;;) {
+    const raw = await request(
+      'threads-page',
+      buildGithubReviewThreadsPagePlan(input, repository, cursor),
+    );
+    const page = githubConnectionPage(
+      raw?.data?.repository?.pullRequest?.reviewThreads,
+      'the review threads',
+    );
+    for (const thread of page.nodes) {
+      if (!thread || typeof thread !== 'object') {
+        fail('INVALID_PAYLOAD', 'provider returned a review thread that is not an object');
+      }
+      // Every connection on the page is read strictly, a repeated thread's included.
+      const commentPage = githubConnectionPage(thread.comments, 'the comments of a review thread');
+      if (typeof thread.id === 'string') {
+        if (seenThreads.has(thread.id)) continue;
+        seenThreads.add(thread.id);
+      }
+      const comments = [];
+      const seenComments = new Set();
+      appendUnseen(comments, commentPage.nodes, seenComments);
+      threads.push({ thread, comments, seenComments, next: commentPage.next });
+    }
+    if (page.next === undefined) break;
+    if (threadCursors.has(page.next)) {
+      fail('INVALID_PAYLOAD', 'provider repeated a review-thread page cursor');
+    }
+    threadCursors.add(page.next);
+    cursor = page.next;
+  }
+  for (const entry of threads) {
+    if (entry.next === undefined) continue;
+    const threadId = entry.thread.id;
+    if (typeof threadId !== 'string' || threadId === '') {
+      fail('INVALID_PAYLOAD', 'provider returned a review thread with more comments but no id');
+    }
+    const commentCursors = new Set([entry.next]);
+    let commentCursor = entry.next;
+    for (;;) {
+      const raw = await request(
+        'comments-page',
+        buildGithubReviewThreadCommentsPlan(repository, threadId, commentCursor),
+      );
+      const node = raw?.data?.node;
+      // A thread deleted between two requests answers `node: null`. Its comment list is then
+      // partial, and a partial thread is never returned as a complete one.
+      if (!node || typeof node !== 'object') {
+        fail('INVALID_PAYLOAD', 'provider returned no review thread for a comment follow-up', {
+          threadId,
+        });
+      }
+      const page = githubConnectionPage(node.comments, 'the comments of a review thread');
+      appendUnseen(entry.comments, page.nodes, entry.seenComments);
+      if (page.next === undefined) break;
+      if (commentCursors.has(page.next)) {
+        fail('INVALID_PAYLOAD', 'provider repeated a review-thread comment cursor', { threadId });
+      }
+      commentCursors.add(page.next);
+      commentCursor = page.next;
+    }
+  }
+  const merged = {
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            nodes: threads.map(({ thread, comments }) => ({
+              ...thread,
+              comments: { nodes: comments },
+            })),
+          },
+        },
+      },
+    },
+  };
+  return {
+    result: normalizeRemoteData('review-threads-read', merged, repository, input),
+    steps,
   };
 }
 
@@ -7314,6 +7469,29 @@ export async function executeOperation(operation, input = {}, options = {}) {
           result: threads.result,
           commands: threads.commands,
           conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // The GitHub walk pages threads and comments by cursor (`readGithubReviewThreads`). `command`
+    // keeps naming the first request, which is the preview above, and `steps` lists every request
+    // in order, as `pr-merge` does for its read-back. The request bound is an internal option only.
+    if (operation === 'review-threads-read' && activeRepository.provider === 'github') {
+      const threads = await readGithubReviewThreads(
+        input,
+        activeRepository,
+        runner,
+        options.maxReviewThreadRequests ?? GITHUB_REVIEW_THREAD_MAX_REQUESTS,
+      );
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: threads.result,
+          command: preview,
+          steps: threads.steps,
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
         },
         dryRun: false,
       };
