@@ -35,6 +35,14 @@ export const planText = (number = 1) => `# Fixture plan
 
 Ship the fixture.
 
+## Affected files
+
+| File | Description |
+|---|---|
+| \`README.md\` | A tracked file |
+| \`src/widgets/*.js\` | A glob entry |
+| \`widget-core.mjs\` | A shorthand entry |
+
 ## Acceptance criteria
 
 - [ ] The fixture works.
@@ -59,6 +67,39 @@ The plan is bounded.
 
 - No open points.
 `;
+
+// Advances the remote base branch by one commit that adds or rewrites the given files
+// (`{relativePath: content}`), as another contributor would while a pass plans. Works in a
+// throwaway clone so the primary checkout, its index and its remote-tracking refs stay untouched.
+// Returns the new tip.
+export function advanceRemoteBase(world, files, { branch = 'main', message = 'move base' } = {}) {
+  const clone = path.join(world.container, `mover-${fs.readdirSync(world.container).length}`);
+  world.git(world.container, 'clone', '--quiet', world.bare, clone);
+  world.git(clone, 'config', 'user.name', 'Other Contributor');
+  world.git(clone, 'config', 'user.email', 'other@example.invalid');
+  for (const [relative, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(clone, relative)), { recursive: true });
+    fs.writeFileSync(path.join(clone, relative), content);
+  }
+  world.git(clone, 'add', '-A');
+  world.git(clone, 'commit', '--quiet', '-m', message);
+  world.git(clone, 'push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`);
+  const tip = world.git(clone, 'rev-parse', 'HEAD');
+  fs.rmSync(clone, { recursive: true, force: true });
+  return tip;
+}
+export function assessInput(baseOid, blobOid, extra = {}) {
+  return {
+    issue: 1,
+    planDir: 'docs/plan',
+    planFile: PLAN,
+    remote: 'origin',
+    baseBranch: 'main',
+    fromBaseOid: baseOid,
+    expectedBlobOid: blobOid,
+    ...extra,
+  };
+}
 
 export function checked(envelope) {
   assert.equal(envelope.ok, true, JSON.stringify(envelope));

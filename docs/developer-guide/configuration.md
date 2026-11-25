@@ -469,6 +469,12 @@ merge gate lowers that ceiling to `full` without CI evidence; setup only propose
 from the local `origin/<delivery.baseBranch>` without a fetch. The decision is in the
 [ADR](../adr/merge-gate-conflict-validation.md).
 
+Autopilot's single delivery-conflict attempt (`src/shared/autopilot-delivery-conflict.md`) is the
+second reader of this row and of `mergeGate.conflictResolution`. It makes the same
+`conflict-validation` call with `tool: "merge-gate"` and resolves `conflictResolution` with the same
+rules (missing is `auto`, unreadable or invalid is `off`), except that `ask` counts as its one
+automatic attempt instead of degrading to `off`. The record keeps `ask`, and the appendix discloses it.
+
 ### Review-fix validation (`iterate.reviewFixValidation`)
 
 `iterate.reviewFixValidation` (`full` or `quick`, default `full`) is the one `iterate.*` key the

@@ -19,6 +19,10 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import {
+  BASE_MOVE_REASONS,
+  BASE_MOVE_STOPPING_REASONS,
+  BASE_MOVE_VERDICTS,
+  MAX_BASE_MOVE_PATHS,
   MAX_BODY_CHARS,
   MAX_COMMIT_MESSAGE_BYTES,
   MAX_PLAN_BYTES,
@@ -26,16 +30,23 @@ import {
   PLAN_PR_MARKER_OPENER,
   PlanPublicationError,
   SCAN_CLASSES,
+  assessBaseMove,
+  baseMoveRepublishes,
+  buildBaseMoveFlag,
+  buildFurtherBaseMoveFlag,
   buildPlanPrMarkerLine,
   buildPullRequestBody,
   decodePlanBytes,
   errorEnvelope,
   executeOperation,
   exitCodeFor,
+  extractCitedTokens,
   hasClosingKeyword,
+  normalizeCitedToken,
   parseIssueHeader,
   parsePlanBranch,
   planBranchName,
+  planFileIdentity,
   scanEntries,
   scanText,
   validateCommitMessage,
@@ -2054,4 +2065,1015 @@ test('plan-publication-core re-exports the plan-lint-core name and ref rules by 
   const publication = await import('../src/scripts/plan-publication-core.mjs');
   assert.equal(publication.UNATTENDED_PLAN_NAME, lint.UNATTENDED_PLAN_NAME);
   assert.equal(publication.refPathProblem, lint.refPathProblem);
+});
+
+// ---------------------------------------------------------------------------------------------
+// assess-base-move: schema, cited-token extraction and the pure verdict
+
+const ASSESS_INPUT = Object.freeze({
+  cwd: '/nonexistent',
+  issue: 12,
+  planDir: 'docs/plan',
+  planFile: 'docs/plan/2026-10-17-issue-12-demo.md',
+  remote: 'origin',
+  baseBranch: 'main',
+  fromBaseOid: 'a'.repeat(40),
+  expectedBlobOid: 'b'.repeat(40),
+});
+
+// Protects the closed-schema contract of the new operation: an unknown or missing key (the plan blob
+// binding `expectedBlobOid` included) is refused as INVALID_INPUT before any process starts.
+test('assess-base-move has a closed schema: unknown and missing keys are INVALID_INPUT before any process', async () => {
+  const unknown = recordingRunner();
+  const refusedUnknown = await run(
+    'assess-base-move',
+    { ...ASSESS_INPUT, surprise: true },
+    { runner: unknown },
+  );
+  assert.equal(refusedUnknown.ok, false);
+  assert.equal(refusedUnknown.error.code, 'INVALID_INPUT');
+  assert.deepEqual(refusedUnknown.error.details.keys, ['surprise']);
+  assert.equal(unknown.calls.length, 0);
+
+  for (const key of Object.keys(ASSESS_INPUT)) {
+    const { [key]: _omitted, ...rest } = ASSESS_INPUT;
+    const runner = recordingRunner();
+    const refused = await run('assess-base-move', rest, { runner });
+    assert.equal(refused.ok, false, key);
+    assert.equal(refused.error.code, 'INVALID_INPUT', key);
+    assert.deepEqual(refused.error.details.keys, [key], key);
+    assert.equal(runner.calls.length, 0, key);
+  }
+  const everything = await run('assess-base-move', {});
+  assert.deepEqual(everything.error.details.keys, Object.keys(ASSESS_INPUT));
+  assert.equal((await run('assess-base-move', null)).error.code, 'INVALID_INPUT');
+
+  for (const [field, value] of [
+    ['fromBaseOid', 'not-an-oid'],
+    ['expectedBlobOid', 'ABCDEF'],
+    ['issue', 0],
+  ]) {
+    const runner = recordingRunner();
+    const refused = await run('assess-base-move', { ...ASSESS_INPUT, [field]: value }, { runner });
+    assert.equal(refused.error.code, 'INVALID_INPUT', field);
+    assert.equal(runner.calls.length, 0, field);
+  }
+});
+
+// Protects the closed verdict and reason enum that every consumer (Issue Buddy, the pass report,
+// autopilot) states once and reuses.
+test('the base-move verdict enum and reason mapping are closed', () => {
+  assert.deepEqual([...BASE_MOVE_VERDICTS], ['fits', 'overlap', 'undecidable']);
+  assert.deepEqual(Object.keys(BASE_MOVE_REASONS), ['fits', 'overlap', 'undecidable']);
+  assert.deepEqual([...BASE_MOVE_REASONS.fits], [null]);
+  assert.deepEqual([...BASE_MOVE_REASONS.overlap], ['same-issue-plan', 'cited-path']);
+  assert.deepEqual(
+    [...BASE_MOVE_REASONS.undecidable],
+    ['not-ancestor', 'gitlink', 'no-affected-files', 'unusable-entry', 'plan-identity'],
+  );
+  assert.equal(MAX_BASE_MOVE_PATHS, 20);
+});
+
+// Protects the one deterministic publish/stop split (issue #734 follow-up): only a rewritten base
+// and a possible same-issue plan stop; every other assessed move, overlapping or undecidable
+// included, re-publishes once. The assess envelope's `republish` is derived from this list.
+test('only not-ancestor, same-issue-plan and plan-identity stop a base move from re-publishing', () => {
+  assert.deepEqual(
+    [...BASE_MOVE_STOPPING_REASONS],
+    ['not-ancestor', 'same-issue-plan', 'plan-identity'],
+  );
+  assert.ok(Object.isFrozen(BASE_MOVE_STOPPING_REASONS));
+  const republishing = [null, 'cited-path', 'gitlink', 'no-affected-files', 'unusable-entry'];
+  for (const reason of republishing) assert.equal(baseMoveRepublishes(reason), true, reason);
+  for (const reason of BASE_MOVE_STOPPING_REASONS) {
+    assert.equal(baseMoveRepublishes(reason), false, reason);
+  }
+  const every = Object.values(BASE_MOVE_REASONS).flat();
+  assert.deepEqual(
+    [...republishing, ...BASE_MOVE_STOPPING_REASONS].sort(),
+    [...every].sort(),
+    'the split covers every reason exactly once',
+  );
+});
+
+const FROM_OID = '1'.repeat(40);
+const TO_OID = '2'.repeat(40);
+
+function baseMoveInput(overrides = {}) {
+  return {
+    fromBaseOid: FROM_OID,
+    toBaseOid: TO_OID,
+    verdict: 'overlap',
+    reason: 'cited-path',
+    commitCount: 3,
+    overlappingPaths: ['README.md', 'src/a.mjs'],
+    ...overrides,
+  };
+}
+
+// Protects the fixed English flag text reviewers and agents search for: short object IDs, the
+// commit count with its plural, the reason, the overlapping paths only when there are any, and the
+// truncation note only at the path bound.
+test('buildBaseMoveFlag renders the fixed unresolved-base-move paragraph', () => {
+  assert.equal(
+    buildBaseMoveFlag(baseMoveInput()),
+    '**Unresolved base move.** The base moved from `1111111` to `2222222` while this plan was written (3 commits). The plan was published on `2222222` without reconciling it. Reason: `cited-path`. Overlapping paths: `README.md`, `src/a.mjs`. Review must reconcile the plan with the new base before it is implemented.',
+  );
+  assert.equal(
+    buildBaseMoveFlag(
+      baseMoveInput({
+        verdict: 'undecidable',
+        reason: 'no-affected-files',
+        commitCount: 1,
+        overlappingPaths: [],
+      }),
+    ),
+    '**Unresolved base move.** The base moved from `1111111` to `2222222` while this plan was written (1 commit). The plan was published on `2222222` without reconciling it. Reason: `no-affected-files`. Review must reconcile the plan with the new base before it is implemented.',
+  );
+  const bound = Array.from({ length: MAX_BASE_MOVE_PATHS }, (_, index) => `p${index}.md`);
+  const truncated = buildBaseMoveFlag(baseMoveInput({ overlappingPaths: bound }));
+  assert.ok(truncated.includes('`p18.md`, `p19.md` (list truncated). Review must'), truncated);
+  const below = buildBaseMoveFlag(baseMoveInput({ overlappingPaths: bound.slice(1) }));
+  assert.ok(!below.includes('(list truncated)'));
+});
+
+// Protects the `baseMove` input contract of `publish`: only an unresolved, publishable move onto
+// exactly the bound base is flagged, and every refusal happens before any process starts.
+test('publish refuses an invalid baseMove as INVALID_INPUT with zero runner calls', async () => {
+  const refusals = [
+    [
+      'a fitting move',
+      { baseMove: baseMoveInput({ verdict: 'fits', reason: null, overlappingPaths: [] }) },
+    ],
+    [
+      'not-ancestor',
+      { baseMove: baseMoveInput({ verdict: 'undecidable', reason: 'not-ancestor' }) },
+    ],
+    ['same-issue-plan', { baseMove: baseMoveInput({ reason: 'same-issue-plan' }) }],
+    [
+      'plan-identity',
+      { baseMove: baseMoveInput({ verdict: 'undecidable', reason: 'plan-identity' }) },
+    ],
+    ['a reason of another verdict', { baseMove: baseMoveInput({ reason: 'gitlink' }) }],
+    ['another base', { expectedBaseOid: '3'.repeat(40) }],
+    ['no expected base', { expectedBaseOid: undefined }],
+    ['the same base twice', { baseMove: baseMoveInput({ fromBaseOid: TO_OID }) }],
+    ['a short object id', { baseMove: baseMoveInput({ fromBaseOid: '1234567' }) }],
+    ['zero commits', { baseMove: baseMoveInput({ commitCount: 0 }) }],
+    [
+      '21 paths',
+      {
+        baseMove: baseMoveInput({
+          overlappingPaths: Array.from({ length: MAX_BASE_MOVE_PATHS + 1 }, (_, i) => `p${i}`),
+        }),
+      },
+    ],
+    ['a path with a backtick', { baseMove: baseMoveInput({ overlappingPaths: ['a`b.md'] }) }],
+    ['an empty path', { baseMove: baseMoveInput({ overlappingPaths: [''] }) }],
+    ['paths that are no array', { baseMove: baseMoveInput({ overlappingPaths: 'README.md' }) }],
+    ['a fractional commit count', { baseMove: baseMoveInput({ commitCount: 1.5 }) }],
+    ['an unknown key', { baseMove: { ...baseMoveInput(), citedPaths: [] } }],
+    ['a missing key', { baseMove: { ...baseMoveInput(), commitCount: undefined } }],
+    ['an array', { baseMove: [] }],
+  ];
+  for (const [label, overrides] of refusals) {
+    const runner = recordingRunner();
+    const input = publishInput({
+      expectedBaseOid: TO_OID,
+      baseMove: baseMoveInput(),
+      ...overrides,
+    });
+    if (overrides.expectedBaseOid === undefined && 'expectedBaseOid' in overrides) {
+      delete input.expectedBaseOid;
+    }
+    const envelope = await run('publish', input, { runner, apply: true });
+    assert.equal(envelope.ok, false, label);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', `${label}: ${envelope.error.message}`);
+    assert.equal(runner.calls.length, 0, label);
+  }
+  const runner = recordingRunner();
+  const refused = await run(
+    'complete-branch',
+    completeBranchInput({ expectedBaseOid: TO_OID, baseMove: baseMoveInput() }),
+    { runner },
+  );
+  assert.equal(refused.error.code, 'INVALID_INPUT');
+  assert.deepEqual(refused.error.details.keys, ['baseMove'], 'complete-branch takes no flag');
+  assert.equal(runner.calls.length, 0);
+});
+
+// Protects the `allowNewerBase` input contract of `publish`: a boolean that needs the assessed
+// `expectedBaseOid` to bind to, refused before any process starts.
+test('allowNewerBase is a boolean that needs expectedBaseOid, refused with zero runner calls', async () => {
+  const cases = [
+    ['no expected base', { allowNewerBase: true }, true],
+    ['a string', { expectedBaseOid: TO_OID, allowNewerBase: 'true' }, false],
+    ['a number', { expectedBaseOid: TO_OID, allowNewerBase: 1 }, false],
+    ['null', { expectedBaseOid: TO_OID, allowNewerBase: null }, false],
+  ];
+  for (const [label, overrides, dropBase] of cases) {
+    const runner = recordingRunner();
+    const input = publishInput(overrides);
+    if (dropBase) delete input.expectedBaseOid;
+    const envelope = await run('publish', input, { runner, apply: true });
+    assert.equal(envelope.ok, false, label);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', label);
+    assert.equal(envelope.error.details.field, 'allowNewerBase', label);
+    assert.equal(runner.calls.length, 0, label);
+  }
+  const runner = recordingRunner();
+  const refused = await run(
+    'complete-branch',
+    completeBranchInput({ expectedBaseOid: TO_OID, allowNewerBase: true }),
+    { runner },
+  );
+  assert.equal(refused.error.code, 'INVALID_INPUT');
+  assert.deepEqual(refused.error.details.keys, ['allowNewerBase'], 'complete-branch takes no flag');
+  assert.equal(runner.calls.length, 0);
+});
+
+// Protects the flag text of a further move: one sentence appended to the assessed flag, and a
+// standalone paragraph for a fitting assessment; no further move leaves the flag unchanged.
+test('buildBaseMoveFlag appends the further-move sentence and buildFurtherBaseMoveFlag stands alone', () => {
+  const further = { fromBaseOid: TO_OID, toBaseOid: '3'.repeat(40), commitCount: 2 };
+  assert.equal(buildBaseMoveFlag(baseMoveInput(), null), buildBaseMoveFlag(baseMoveInput()));
+  assert.equal(
+    buildBaseMoveFlag(baseMoveInput(), further),
+    `${buildBaseMoveFlag(baseMoveInput())} The base moved again to \`3333333\` (2 commits) after this assessment; that move was not assessed.`,
+  );
+  assert.equal(
+    buildFurtherBaseMoveFlag(further),
+    '**Unresolved base move.** The base moved again from `2222222` to `3333333` (2 commits) after the plan was assessed against it. The plan was published on `2222222` without assessing that move. Review must reconcile the plan with the new base before it is implemented.',
+  );
+});
+
+// Protects the normalization order: suffix strip, then candidate detection, then reduction.
+test('normalizeCitedToken strips a line or anchor suffix before it judges the token', () => {
+  const literal = (path, directory = false) => ({ kind: 'literal', path, directory });
+  assert.deepEqual(normalizeCitedToken('src/scripts/a.mjs:42'), literal('src/scripts/a.mjs'));
+  assert.deepEqual(normalizeCitedToken('src/scripts/a.mjs:10-20'), literal('src/scripts/a.mjs'));
+  assert.deepEqual(normalizeCitedToken('docs/x.md#some-anchor'), literal('docs/x.md'));
+  assert.deepEqual(normalizeCitedToken('docs/x.md#a:3'), literal('docs/x.md'));
+  assert.deepEqual(normalizeCitedToken('src/tools/*.md:7'), literal('src/tools', true));
+  assert.deepEqual(normalizeCitedToken('README.md'), literal('README.md'));
+});
+
+test('normalizeCitedToken ignores tokens that are no path candidate', () => {
+  for (const raw of [
+    'contextBudget:',
+    'RUNTIME_SCRIPT_FILES',
+    'node build.mjs',
+    'two words.md',
+    '',
+    'a:12',
+    'pnpm',
+    7,
+    null,
+  ]) {
+    assert.deepEqual(normalizeCitedToken(raw), { kind: 'ignored' }, String(raw));
+  }
+});
+
+// Protects the wildcard reduction: a wildcard or placeholder after the first segment never widens
+// to the repository root but to the directory before it.
+test('normalizeCitedToken reduces a wildcard or placeholder after the first segment to its directory', () => {
+  assert.deepEqual(normalizeCitedToken('src/tools/*.md'), {
+    kind: 'literal',
+    path: 'src/tools',
+    directory: true,
+  });
+  assert.deepEqual(normalizeCitedToken('src/tools/{plan,review}.md'), {
+    kind: 'literal',
+    path: 'src/tools',
+    directory: true,
+  });
+  assert.deepEqual(normalizeCitedToken('evals/merge-gate/scenarios/<name>.md'), {
+    kind: 'literal',
+    path: 'evals/merge-gate/scenarios',
+    directory: true,
+  });
+  assert.deepEqual(normalizeCitedToken('src/*/deep/file.md'), {
+    kind: 'literal',
+    path: 'src',
+    directory: true,
+  });
+  assert.deepEqual(normalizeCitedToken('src/tools/'), {
+    kind: 'literal',
+    path: 'src/tools',
+    directory: true,
+  });
+});
+
+test('normalizeCitedToken turns a first-segment wildcard into a pattern, never the repository root', () => {
+  assert.deepEqual(normalizeCitedToken('*.md'), {
+    kind: 'pattern',
+    path: '*.md',
+    directory: false,
+  });
+  assert.deepEqual(normalizeCitedToken('remote-tracker-{shared,decomposition}-core.mjs'), {
+    kind: 'pattern',
+    path: 'remote-tracker-{shared,decomposition}-core.mjs',
+    directory: false,
+  });
+  assert.deepEqual(normalizeCitedToken('<RUNTIME_STATE_ROOT>/x.json'), {
+    kind: 'pattern',
+    path: '<RUNTIME_STATE_ROOT>/x.json',
+    directory: false,
+  });
+  // A pattern that cannot be built is unusable instead.
+  assert.deepEqual(normalizeCitedToken('[ab].md'), { kind: 'unusable' });
+  assert.deepEqual(normalizeCitedToken('{open.md'), { kind: 'unusable' });
+});
+
+test('normalizeCitedToken keeps dot-paths and marks unusable literals', () => {
+  assert.deepEqual(normalizeCitedToken('.github/workflows/ci.yml'), {
+    kind: 'literal',
+    path: '.github/workflows/ci.yml',
+    directory: false,
+  });
+  assert.deepEqual(normalizeCitedToken('.github/'), {
+    kind: 'literal',
+    path: '.github',
+    directory: true,
+  });
+  for (const raw of ['../outside.md', 'docs/../x.md', '/abs/path.md', 'a\\b.md', 'a\u0001b.md']) {
+    assert.deepEqual(normalizeCitedToken(raw), { kind: 'unusable' }, raw);
+  }
+});
+
+const AFFECTED_PLAN = [
+  '# Plan',
+  '',
+  '## Requirement',
+  '',
+  'Context only: `AGENTS.md` and the directory `docs/`.',
+  '',
+  '## Affected files',
+  '',
+  '| File | Description |',
+  '|---|---|',
+  '| `src/a.mjs` `src/b.mjs:12` | uses `docs/x.md` as input |',
+  '| `*.md` | any markdown |',
+  '| `docs/plan/2026-10-17-issue-12-demo.md` | the plan itself |',
+  '',
+  '## Implementation details',
+  '',
+  'Prose cites `src/c.mjs#anchor` and `contextBudget:`.',
+  '',
+  '```',
+  '`fenced.md`',
+  '```',
+  '',
+].join('\n');
+
+test('extractCitedTokens splits table and prose tokens, counts every token in a cell and drops the plan itself', () => {
+  const cited = extractCitedTokens(AFFECTED_PLAN, {
+    planPath: 'docs/plan/2026-10-17-issue-12-demo.md',
+  });
+  assert.equal(cited.tableFound, true);
+  assert.deepEqual(
+    cited.table.map((entry) => entry.raw),
+    ['src/a.mjs', 'src/b.mjs:12', '*.md'],
+  );
+  assert.deepEqual(
+    cited.prose.map((entry) => entry.raw),
+    ['AGENTS.md', 'docs/', 'docs/x.md', 'src/c.mjs#anchor'],
+  );
+  assert.equal(cited.table[1].path, 'src/b.mjs');
+  assert.equal(cited.table[2].kind, 'pattern');
+});
+
+test('extractCitedTokens reads the German heading, a named File column and ignores tables elsewhere', () => {
+  const german = extractCitedTokens(
+    [
+      '## Betroffene Dateien',
+      '',
+      '| Beschreibung | Datei |',
+      '|---|---|',
+      '| nutzt `docs/ignored.md` | `src/neu.mjs` |',
+      '',
+    ].join('\n'),
+  );
+  assert.equal(german.tableFound, true);
+  assert.deepEqual(
+    german.table.map((entry) => entry.raw),
+    ['src/neu.mjs'],
+  );
+  assert.deepEqual(
+    german.prose.map((entry) => entry.raw),
+    ['docs/ignored.md'],
+  );
+
+  const elsewhere = extractCitedTokens(
+    ['## Other', '', '| File | Note |', '|---|---|', '| `src/a.mjs` | x |', ''].join('\n'),
+  );
+  assert.equal(elsewhere.tableFound, false);
+  assert.deepEqual(elsewhere.table, []);
+  assert.deepEqual(
+    elsewhere.prose.map((entry) => entry.raw),
+    ['src/a.mjs'],
+  );
+});
+
+// Protects the fail-closed File cell: a word outside the code spans that is itself a path candidate
+// (or a leftover backtick) makes the cell unusable, so a file named without a code span is never
+// silently dropped, while notes, arrows and separators that name no file keep the cell usable.
+test('extractCitedTokens marks a File cell that names a file outside its code spans unusable', () => {
+  const tableOf = (...cells) =>
+    extractCitedTokens(
+      [
+        '## Affected files',
+        '',
+        '| File | Description |',
+        '|---|---|',
+        ...cells.map((cell) => `| ${cell} | x |`),
+        '',
+      ].join('\n'),
+    ).table;
+  for (const cell of [
+    '`src/a.mjs` and src/b.mjs',
+    'src/b.mjs, `src/a.mjs`',
+    '`src/a.mjs` \\`src/b.mjs`',
+    '`src/a.mjs` (and src/b.mjs)',
+    '`src/a.mjs` README.md',
+    '`src/a.mjs`, .gitignore',
+    '`src/a.mjs` .env.',
+    '`src/a.mjs` <README.md>',
+    '`src/a.mjs` [README.md](#readme)',
+    '`src/a.mjs` README.md!',
+    '`src/a.mjs` README.md?',
+    '`src/a.mjs` README.md…',
+    '`src/a.mjs` README.md—',
+    '`src/a.mjs` README.md➜',
+  ]) {
+    const table = tableOf(cell);
+    assert.ok(
+      table.some((entry) => entry.kind === 'unusable'),
+      cell,
+    );
+    assert.equal(
+      assessBaseMove({
+        ancestor: true,
+        cited: { tableFound: true, table, prose: [] },
+        planDir: 'docs/plan',
+      }).reason,
+      'unusable-entry',
+      cell,
+    );
+  }
+  for (const cell of [
+    '`src/a.mjs`, `src/b.mjs`',
+    '`src/a.mjs` and `src/b.mjs`',
+    '`src/a.mjs` und `src/b.mjs`',
+    '`src/a.mjs` <br> `src/b.mjs`',
+    '(`src/a.mjs` / `src/b.mjs`); `src/a.mjs` + `src/b.mjs` & `src/a.mjs`',
+    '`src/a.mjs` → `src/b.mjs`',
+    '`src/a.mjs` ➜ `src/b.mjs` – `src/a.mjs` — `src/b.mjs`',
+    '`src/a.mjs` (new), `src/b.mjs` (neu)',
+    '`src/a.mjs` (optional); 16 × `src/b.mjs`',
+  ]) {
+    const table = tableOf(cell);
+    assert.ok(
+      table.every((entry) => entry.kind === 'literal'),
+      cell,
+    );
+    assert.deepEqual([...new Set(table.map((entry) => entry.path))], ['src/a.mjs', 'src/b.mjs']);
+  }
+  // An overlong word outside the spans fails closed without a backtracking trim.
+  const long = assertFast('40k punctuation-run word', () =>
+    tableOf(`\`src/a.mjs\` ${'.'.repeat(40_000)}a`),
+  );
+  assert.ok(long.some((entry) => entry.kind === 'unusable'));
+});
+
+test('extractCitedTokens reports a plan without an Affected files table', () => {
+  const cited = extractCitedTokens('# Plan\n\nOnly `src/a.mjs` here.\n');
+  assert.equal(cited.tableFound, false);
+  assert.deepEqual(cited.table, []);
+});
+
+test('extractCitedTokens folds the plan path as Git folds paths', () => {
+  const text = '# P\n\nSee `DOCS/Plan/P.md` and `src/a.mjs`.\n';
+  const exact = extractCitedTokens(text, { planPath: 'docs/plan/p.md' });
+  assert.deepEqual(
+    exact.prose.map((entry) => entry.raw),
+    ['DOCS/Plan/P.md', 'src/a.mjs'],
+  );
+  const folded = extractCitedTokens(text, {
+    planPath: 'docs/plan/p.md',
+    folding: { ignoreCase: true },
+  });
+  assert.deepEqual(
+    folded.prose.map((entry) => entry.raw),
+    ['src/a.mjs'],
+  );
+});
+
+// Protects the same-issue rule: header and file name together decide, a conflict is not decidable.
+test('planFileIdentity identifies a plan by header and file name as collection does', () => {
+  const planPath = 'docs/plan/demo-plan.md';
+  const identity = (text, filePath) =>
+    planFileIdentity(Buffer.from(text), filePath, { issue: 12, planPath });
+  assert.equal(identity('# X\n\n**Issue:** #12\n', 'docs/plan/2026-11-01-foo.md'), 'same-issue');
+  assert.equal(identity('# X\n\n**Issue:** #9\n', 'docs/plan/2026-11-01-foo.md'), 'other');
+  assert.equal(identity('# X\n', 'docs/plan/2026-11-01-issue-12-foo.md'), 'same-issue');
+  assert.equal(identity('# X\n', 'docs/plan/archive/2026-11-01-issue-9-foo.md'), 'other');
+  assert.equal(identity('# X\n', 'docs/plan/archive/demo-plan.md'), 'same-issue');
+  assert.equal(identity('# X\n', 'docs/plan/unrelated.md'), 'other');
+  assert.equal(
+    identity('# X\n\n**Issue:** #12\n', 'docs/plan/2026-11-01-issue-9-foo.md'),
+    'invalid',
+  );
+  assert.equal(
+    identity('# X\n\n**Issue:** #9\n', 'docs/plan/2026-11-01-issue-12-foo.md'),
+    'invalid',
+  );
+  assert.equal(
+    identity('**Issue:** #12\n**Issue:** #13\n', 'docs/plan/2026-11-01-foo.md'),
+    'invalid',
+  );
+  assert.equal(
+    planFileIdentity(Buffer.from([0xff, 0xfe, 0x00]), 'docs/plan/a.md', { issue: 12 }),
+    'invalid',
+  );
+});
+
+function cite(table, prose = []) {
+  const normalize = (raw) => ({ raw, ...normalizeCitedToken(raw) });
+  return {
+    tableFound: table.length > 0,
+    table: table.map(normalize).filter((entry) => entry.kind !== 'ignored'),
+    prose: prose.map(normalize).filter((entry) => entry.kind !== 'ignored'),
+  };
+}
+
+function changed(...paths) {
+  return paths.map((path) => ({ path, oldMode: '100644', newMode: '100644' }));
+}
+
+function assess(overrides) {
+  return assessBaseMove({
+    ancestor: true,
+    changes: [],
+    cited: cite(['src/a.mjs']),
+    tracked: new Set(['src/a.mjs']),
+    planFiles: [],
+    planDir: 'docs/plan',
+    folding: {},
+    ...overrides,
+  });
+}
+
+test('assessBaseMove: an empty range or unrelated paths fit with reason null', () => {
+  const empty = assess({});
+  assert.equal(empty.verdict, 'fits');
+  assert.equal(empty.reason, null);
+  assert.equal(empty.changedPathCount, 0);
+  assert.deepEqual(empty.overlappingPaths, []);
+  const unrelated = assess({ changes: changed('docs/guide.md', 'AGENTS.md') });
+  assert.equal(unrelated.verdict, 'fits');
+  assert.equal(unrelated.changedPathCount, 2);
+  assert.equal(unrelated.citedPathCount, 1);
+  assert.deepEqual(unrelated.citedPaths, ['src/a.mjs']);
+});
+
+// Protects the order of the checks: not-ancestor, then the stopping plan reasons (plan identity,
+// same-issue plan), then the republishing undecidable reasons, then cited path. A stopping reason
+// must win over every republishing one, or a range that adds a plan of the same issue would
+// re-publish a duplicate.
+test('assessBaseMove applies not-ancestor, stopping plan reasons, undecidable and cited-path in that order', () => {
+  const same = [{ path: 'docs/plan/archive/x-issue-12-y.md', identity: 'same-issue' }];
+  const invalid = [{ path: 'docs/plan/archive/x-issue-9-y.md', identity: 'invalid' }];
+  const everything = {
+    changes: changed('src/a.mjs'),
+    planFiles: [...same, ...invalid],
+  };
+  assert.deepEqual(
+    [
+      assess({ ...everything, ancestor: false }).verdict,
+      assess({ ...everything, ancestor: false }).reason,
+    ],
+    ['undecidable', 'not-ancestor'],
+  );
+  const gitlinkChange = [{ path: 'vendor/sub', oldMode: '000000', newMode: '160000' }];
+  const identity = assess({ ...everything, cited: cite([]), changes: gitlinkChange });
+  assert.deepEqual([identity.verdict, identity.reason], ['undecidable', 'plan-identity']);
+  assert.deepEqual(identity.overlappingPaths, ['docs/plan/archive/x-issue-9-y.md']);
+  // A same-issue plan stops beside every republishing reason.
+  for (const overrides of [
+    { cited: cite([]) },
+    { cited: cite([]), changes: gitlinkChange },
+    { cited: cite(['src/a.mjs', '../outside.md']) },
+    {},
+  ]) {
+    const sameIssue = assess({ ...everything, ...overrides, planFiles: same });
+    assert.deepEqual([sameIssue.verdict, sameIssue.reason], ['overlap', 'same-issue-plan']);
+    assert.deepEqual(sameIssue.overlappingPaths, ['docs/plan/archive/x-issue-12-y.md']);
+    assert.equal(baseMoveRepublishes(sameIssue.reason), false);
+  }
+  const plain = { changes: changed('src/a.mjs') };
+  const gitlink = { ...plain, cited: cite([]), changes: gitlinkChange };
+  assert.equal(assess(gitlink).reason, 'gitlink');
+  assert.deepEqual(assess(gitlink).overlappingPaths, ['vendor/sub']);
+  assert.equal(
+    assess({ ...gitlink, changes: [{ path: 'vendor/sub', oldMode: '160000', newMode: '000000' }] })
+      .reason,
+    'gitlink',
+  );
+  assert.equal(assess({ ...plain, cited: cite([]) }).reason, 'no-affected-files');
+  assert.equal(
+    assess({ ...plain, cited: cite(['src/a.mjs', '../outside.md']) }).reason,
+    'unusable-entry',
+  );
+  const sameIssue = assess({ ...plain, planFiles: same });
+  const cited = assess(plain);
+  assert.deepEqual([cited.verdict, cited.reason], ['overlap', 'cited-path']);
+  assert.deepEqual(cited.overlappingPaths, ['src/a.mjs']);
+  // Every returned verdict and reason pair belongs to the closed enum.
+  for (const result of [empty(), identity, sameIssue, cited]) {
+    assert.ok(BASE_MOVE_REASONS[result.verdict].includes(result.reason), result.reason);
+  }
+  function empty() {
+    return assess({});
+  }
+});
+
+test('assessBaseMove: an unrelated plan file of another issue neither overlaps nor blocks', () => {
+  const result = assess({
+    changes: changed('docs/plan/archive/2026-11-20-issue-731-x.md'),
+    planFiles: [{ path: 'docs/plan/archive/2026-11-20-issue-731-x.md', identity: 'other' }],
+  });
+  assert.equal(result.verdict, 'fits');
+});
+
+// Protects the S-DEC decision: a table directory entry overlaps below it, a tracked file only
+// exactly, and the plan directory is matched by exact files alone.
+test('assessBaseMove: a changed path below a cited table directory overlaps', () => {
+  const dir = assess({
+    cited: cite(['src/shared/']),
+    tracked: new Set(['src/shared']),
+    changes: changed('src/shared/deep/x.md', 'src/other/y.md'),
+  });
+  assert.equal(dir.verdict, 'overlap');
+  assert.deepEqual(dir.overlappingPaths, ['src/shared/deep/x.md']);
+  const file = assess({
+    cited: cite(['src/shared/x.md']),
+    tracked: new Set(['src/shared/x.md']),
+    changes: changed('src/shared/y.md'),
+  });
+  assert.equal(file.verdict, 'fits');
+});
+
+test('assessBaseMove: a glob entry overlaps its directory only', () => {
+  for (const tracked of [new Set(), new Set(['src/tools'])]) {
+    const base = { cited: cite(['src/tools/*.md']), tracked };
+    const hit = assess({ ...base, changes: changed('src/tools/new.md') });
+    assert.equal(hit.verdict, 'overlap');
+    assert.deepEqual(hit.overlappingPaths, ['src/tools/new.md']);
+    assert.equal(assess({ ...base, changes: changed('src/other/new.md') }).verdict, 'fits');
+    assert.equal(assess({ ...base, changes: changed('src/toolsmith/new.md') }).verdict, 'fits');
+  }
+  const placeholder = cite(['evals/merge-gate/scenarios/<name>.md']);
+  assert.equal(
+    assess({ cited: placeholder, changes: changed('evals/merge-gate/scenarios/a.md') }).verdict,
+    'overlap',
+  );
+  assert.equal(
+    assess({ cited: placeholder, changes: changed('evals/other/a.md') }).verdict,
+    'fits',
+  );
+});
+
+test('assessBaseMove: first-segment patterns match the trailing segments of a changed path', () => {
+  const markdown = cite(['*.md']);
+  const hit = assess({
+    cited: markdown,
+    changes: changed('AGENTS.md', 'docs/x/y.md', 'src/a.mjs'),
+  });
+  assert.equal(hit.verdict, 'overlap');
+  assert.deepEqual(hit.overlappingPaths, ['AGENTS.md', 'docs/x/y.md']);
+  assert.equal(assess({ cited: markdown, changes: changed('src/a.mjs', 'md') }).verdict, 'fits');
+
+  const alternation = cite(['remote-tracker-{shared,decomposition}-core.mjs']);
+  assert.deepEqual(
+    assess({
+      cited: alternation,
+      changes: changed(
+        'src/scripts/remote-tracker-shared-core.mjs',
+        'src/scripts/remote-tracker-decomposition-core.mjs',
+        'src/scripts/remote-tracker-ledger-core.mjs',
+        'remote-tracker-shared-core.mjs.bak',
+      ),
+    }).overlappingPaths,
+    [
+      'src/scripts/remote-tracker-decomposition-core.mjs',
+      'src/scripts/remote-tracker-shared-core.mjs',
+    ],
+  );
+});
+
+test('assessBaseMove: a file shorthand matches an equal path, a path suffix and a basename', () => {
+  const cited = cite(['remote-tracker-github-core.mjs'], []);
+  const result = assess({
+    cited,
+    tracked: new Set(),
+    changes: changed(
+      'src/scripts/remote-tracker-github-core.mjs',
+      'remote-tracker-github-core.mjs',
+      'src/scripts/remote-tracker-github-core.mjs.bak',
+      'src/scripts/remote-tracker-forgejo-core.mjs',
+      'src/scripts/my-remote-tracker-github-core.mjs',
+    ),
+  });
+  assert.equal(result.verdict, 'overlap');
+  assert.deepEqual(result.overlappingPaths, [
+    'remote-tracker-github-core.mjs',
+    'src/scripts/remote-tracker-github-core.mjs',
+    'src/scripts/remote-tracker-github-core.mjs.bak',
+  ]);
+  const withSlash = assess({
+    cited: cite(['scripts/a.mjs']),
+    tracked: new Set(),
+    changes: changed('src/scripts/a.mjs', 'src/scripts/a.mjs.bak', 'src/xscripts/a.mjs'),
+  });
+  assert.deepEqual(withSlash.overlappingPaths, ['src/scripts/a.mjs']);
+});
+
+test('assessBaseMove: a directory shorthand matches as a segment infix or prefix', () => {
+  const result = assess({
+    cited: cite(['scripts/']),
+    tracked: new Set(),
+    changes: changed(
+      'scripts/a.mjs',
+      'src/scripts/b.mjs',
+      'src/scriptsx/c.mjs',
+      'src/xscripts/d.mjs',
+    ),
+  });
+  assert.equal(result.verdict, 'overlap');
+  assert.deepEqual(result.overlappingPaths, ['scripts/a.mjs', 'src/scripts/b.mjs']);
+});
+
+test('assessBaseMove: a dot-path is a valid tracked path matched normally', () => {
+  const base = {
+    cited: cite(['.github/workflows/ci.yml']),
+    tracked: new Set(['.github/workflows/ci.yml']),
+  };
+  const hit = assess({ ...base, changes: changed('.github/workflows/ci.yml') });
+  assert.deepEqual([hit.verdict, hit.overlappingPaths], ['overlap', ['.github/workflows/ci.yml']]);
+  assert.equal(
+    assess({ ...base, changes: changed('.github/workflows/release.yml') }).verdict,
+    'fits',
+  );
+});
+
+// Protects the S-DEC decision: prose citations count only as exact files.
+test('assessBaseMove: prose citations count only as exact files', () => {
+  const prose = cite(
+    ['src/a.mjs'],
+    ['AGENTS.md', 'docs/', 'docs/plan/', 'src/*.md', '*.md', '../outside.md', 'guide.md', 'x/y.md'],
+  );
+  const result = assess({
+    cited: prose,
+    changes: changed(
+      'docs/developer-guide/build-system.md',
+      'docs/plan/archive/2026-11-20-issue-731-x.md',
+      'src/other.md',
+      'docs/guide.md',
+      'a/x/y.md',
+      'README.md',
+    ),
+  });
+  assert.equal(
+    result.verdict,
+    'fits',
+    'directories, patterns, shorthand and unusable prose never match',
+  );
+  assert.deepEqual(result.citedPaths, ['src/a.mjs', 'AGENTS.md', 'guide.md', 'x/y.md']);
+  const exact = assess({ cited: prose, changes: changed('AGENTS.md', 'x/y.md') });
+  assert.deepEqual([exact.verdict, exact.reason], ['overlap', 'cited-path']);
+  assert.deepEqual(exact.overlappingPaths, ['AGENTS.md', 'x/y.md']);
+});
+
+// Protects the plan-directory exclusion: archive commits for other issues keep fitting.
+test('assessBaseMove: a changed plan-directory Markdown file is matched only by an exact-file citation', () => {
+  const archived = changed(
+    'docs/plan/2026-11-20-issue-731-x.md',
+    'docs/plan/archive/2026-11-20-issue-731-y.md',
+  );
+  for (const table of [
+    ['docs/plan/'],
+    ['docs/*.md'],
+    ['docs/'],
+    ['*.md'],
+    ['plan/'],
+    ['2026-11-20-issue-731-x.md'],
+  ]) {
+    const result = assess({ cited: cite(table), tracked: new Set(), changes: archived });
+    assert.equal(result.verdict, 'fits', table.join());
+  }
+  const exact = assess({
+    cited: cite(['docs/plan/archive/2026-11-20-issue-731-y.md']),
+    tracked: new Set(['docs/plan/archive/2026-11-20-issue-731-y.md']),
+    changes: archived,
+  });
+  assert.deepEqual(exact.overlappingPaths, ['docs/plan/archive/2026-11-20-issue-731-y.md']);
+  const prose = assess({
+    cited: cite(['src/a.mjs'], ['docs/plan/2026-11-20-issue-731-x.md']),
+    changes: archived,
+  });
+  assert.deepEqual(prose.overlappingPaths, ['docs/plan/2026-11-20-issue-731-x.md']);
+  // Deeper below the plan directory is an ordinary path again.
+  assert.equal(
+    assess({
+      cited: cite(['docs/plan/']),
+      tracked: new Set(['docs/plan']),
+      changes: changed('docs/plan/sub/x.md', 'docs/plan/archive/sub/x.md', 'docs/plan/x.txt'),
+    }).overlappingPaths.length,
+    3,
+  );
+});
+
+test('assessBaseMove folds paths only as Git is configured to', () => {
+  const base = {
+    cited: cite(['README.md']),
+    tracked: new Set(['README.md']),
+    changes: changed('readme.md'),
+  };
+  assert.equal(assess(base).verdict, 'fits');
+  assert.equal(assess({ ...base, folding: { ignoreCase: true } }).verdict, 'overlap');
+  const proseBase = { cited: cite(['src/a.mjs'], ['AGENTS.md']), changes: changed('agents.md') };
+  assert.equal(assess(proseBase).verdict, 'fits');
+  assert.equal(assess({ ...proseBase, folding: { ignoreCase: true } }).verdict, 'overlap');
+  const decomposed = 'café.md';
+  const composed = 'café.md';
+  const unicode = {
+    cited: cite([composed]),
+    tracked: new Set([composed]),
+    changes: changed(decomposed),
+  };
+  assert.equal(assess(unicode).verdict, 'fits');
+  assert.equal(assess({ ...unicode, folding: { precomposeUnicode: true } }).verdict, 'overlap');
+});
+
+// Protects the fail-closed fold: a table pattern that compiles unfolded but not folded (`<` and a
+// combining U+0338 compose to `≮`, leaving a stray `>`) is an unusable entry, never an error.
+test('assessBaseMove: a pattern the active fold makes uncompilable is an unusable entry', () => {
+  const token = '≮name>.md';
+  assert.equal(normalizeCitedToken(token).kind, 'pattern');
+  const base = { cited: cite([token]), tracked: new Set(), changes: changed('docs/x.md') };
+  const unfolded = assess(base);
+  assert.deepEqual([unfolded.verdict, unfolded.reason], ['overlap', 'cited-path']);
+  const folded = assess({ ...base, folding: { precomposeUnicode: true } });
+  assert.deepEqual(
+    [folded.verdict, folded.reason, folded.overlappingPaths],
+    ['undecidable', 'unusable-entry', []],
+  );
+});
+
+test('assessBaseMove bounds the returned lists and keeps the totals', () => {
+  const names = Array.from(
+    { length: 25 },
+    (_, index) => `src/f${String(index).padStart(2, '0')}.md`,
+  );
+  const result = assess({
+    cited: cite(names),
+    tracked: new Set(names),
+    changes: changed(...[...names].reverse(), 'docs/other.md'),
+  });
+  assert.equal(result.verdict, 'overlap');
+  assert.equal(result.changedPathCount, 26);
+  assert.equal(result.citedPathCount, 25);
+  assert.equal(result.citedPaths.length, MAX_BASE_MOVE_PATHS);
+  assert.equal(result.overlappingPaths.length, MAX_BASE_MOVE_PATHS);
+  assert.equal(result.overlappingPaths[0], 'src/f00.md');
+  const repeated = assess({ cited: cite(['src/a.mjs', 'src/a.mjs:3'], ['src/a.mjs']) });
+  assert.equal(repeated.citedPathCount, 1);
+});
+
+// Protects the linear matcher: a first-segment token from untrusted plan text with many wildcards
+// is matched within a bound instead of backtracking exponentially, and still matches what it names.
+test('assessBaseMove matches a many-wildcard pattern against long segments within a time bound', () => {
+  const token = `${'*a'.repeat(15)}*.md`;
+  assert.equal(normalizeCitedToken(token).kind, 'pattern');
+  const segment = 'a'.repeat(60);
+  const missed = assertFast('a 15-wildcard pattern', () =>
+    assess({
+      cited: cite([token]),
+      tracked: new Set(),
+      changes: changed(`src/${segment}`, `${segment}/${segment}.mdx`, segment, `${segment}b`),
+    }),
+  );
+  assert.equal(missed.verdict, 'fits');
+  const hit = assess({
+    cited: cite([token]),
+    tracked: new Set(),
+    changes: changed(`docs/${'a'.repeat(15)}.md`, `docs/${'a'.repeat(14)}.md`),
+  });
+  assert.deepEqual(hit.overlappingPaths, [`docs/${'a'.repeat(15)}.md`]);
+});
+
+// Protects the alternation bound: a segment whose `{a,b}` alternatives multiply past 64 is
+// unusable, which makes the verdict undecidable instead of expanding without limit.
+test('normalizeCitedToken bounds the alternatives a pattern segment expands to', () => {
+  const pattern = (count) => `${'{a,b}'.repeat(count)}.md`;
+  assert.equal(normalizeCitedToken(pattern(6)).kind, 'pattern');
+  assert.deepEqual(normalizeCitedToken(pattern(7)), { kind: 'unusable' });
+  const result = assess({ cited: cite(['src/a.mjs', pattern(7)]), tracked: new Set() });
+  assert.deepEqual([result.verdict, result.reason], ['undecidable', 'unusable-entry']);
+  assert.equal(
+    assess({ cited: cite([pattern(6)]), tracked: new Set(), changes: changed('x/abbaba.md') })
+      .verdict,
+    'overlap',
+  );
+});
+
+// Protects fail-closed globstar handling: a whole-segment `**` spans zero or more segments, so
+// `**/*.md` also names a Markdown file at the repository root.
+test('assessBaseMove: a whole-segment ** matches zero or more segments', () => {
+  assert.equal(normalizeCitedToken('**/*.md').kind, 'pattern');
+  const markdown = assess({
+    cited: cite(['**/*.md']),
+    tracked: new Set(),
+    changes: changed('AGENTS.md', 'docs/a/b.md', 'src/a.mjs'),
+  });
+  assert.deepEqual(
+    [markdown.verdict, markdown.reason, markdown.overlappingPaths],
+    ['overlap', 'cited-path', ['AGENTS.md', 'docs/a/b.md']],
+  );
+  const fixtures = assess({
+    cited: cite(['**/fixtures/**/']),
+    tracked: new Set(),
+    changes: changed(
+      'fixtures/x.json',
+      'test/fixtures/a/b.json',
+      'test/fixtures',
+      'test/fixturesx/a.json',
+    ),
+  });
+  assert.deepEqual(fixtures.overlappingPaths, ['fixtures/x.json', 'test/fixtures/a/b.json']);
+});
+
+// Protects the shorthand widening: an untracked table token without a trailing `/` may name a
+// directory, and a spelling that differs from the tracked one is shorthand compared folded, so
+// neither turns an overlap into a fit; the plan-directory exclusion still applies.
+test('assessBaseMove: an untracked shorthand without a trailing slash also matches as a directory', () => {
+  const directory = assess({
+    cited: cite(['scripts/lib']),
+    tracked: new Set(),
+    changes: changed(
+      'src/scripts/lib/x.mjs',
+      'scripts/lib/y.mjs',
+      'src/scripts/library/z.mjs',
+      'src/scripts/lib.mjs',
+    ),
+  });
+  assert.deepEqual(directory.overlappingPaths, ['scripts/lib/y.mjs', 'src/scripts/lib/x.mjs']);
+  // Tracked lookup is exact, so a differently cased citation is shorthand and folds as Git does.
+  const cased = {
+    cited: cite(['Src/Scripts/Lib']),
+    tracked: new Set(),
+    changes: changed('src/scripts/lib/x.mjs'),
+  };
+  assert.equal(assess(cased).verdict, 'fits');
+  assert.equal(assess({ ...cased, folding: { ignoreCase: true } }).verdict, 'overlap');
+  const planDirectory = { cited: cite(['docs/plan']), tracked: new Set() };
+  assert.equal(
+    assess({ ...planDirectory, changes: changed('docs/plan/2026-11-20-issue-731-x.md') }).verdict,
+    'fits',
+  );
+  assert.equal(
+    assess({ ...planDirectory, changes: changed('docs/plan/sub/x.md') }).verdict,
+    'overlap',
+  );
+});
+
+// Protects the File-column rule: a file named without a usable code span is never skipped
+// silently, it is an unusable table entry and the verdict is undecidable.
+test('extractCitedTokens marks a non-empty File cell without a usable code span unusable', () => {
+  const cited = extractCitedTokens(
+    [
+      '## Affected files',
+      '',
+      '| File | Description |',
+      '|---|---|',
+      '| `src/a.mjs` | listed |',
+      '| src/b.mjs | no code span |',
+      '| `RUNTIME_SCRIPT_FILES` | no path candidate |',
+      '| `docs/plan/self.md` | the plan itself |',
+      '|  | empty file cell |',
+      '',
+    ].join('\n'),
+    { planPath: 'docs/plan/self.md' },
+  );
+  assert.deepEqual(
+    cited.table.map((entry) => [entry.raw, entry.kind]),
+    [
+      ['src/a.mjs', 'literal'],
+      ['src/b.mjs', 'unusable'],
+      ['`RUNTIME_SCRIPT_FILES`', 'unusable'],
+    ],
+  );
+  const result = assess({ cited, tracked: new Set(['src/a.mjs']) });
+  assert.deepEqual([result.verdict, result.reason], ['undecidable', 'unusable-entry']);
 });

@@ -57,6 +57,17 @@ per run) and without recovery authority; the token never leaves the helper. Auto
 `open-pull-request` skip is a stop with no pull request. The restored plan lives in a run-owned
 delivery worktree, set up per `worktree.setup`, that `plan-pr-continuation` adopts.
 
+A planning run may meet a base branch that moved while it planned. It plans at `collect.baseOid` and
+publishes on that OID, or on one later tip that passed the read-only `plan-publication
+assess-base-move` check (fetch only, verdict `fits`, `overlap` or `undecidable`). The pass makes
+at most one assessed re-publish per issue, on the assessed tip; an overlapping or undecidable move
+publishes too, with a fixed "Unresolved base move" flag in the plan pull request for review to
+reconcile. When the base moves again during that re-publish, `publish` (with `allowNewerBase`)
+still builds the plan commit on the assessed tip behind the newer one, assesses nothing more, and
+the flag states that the further move was not assessed. The owner chose this on PR #735 over
+issue #734's criterion that a second move stops. A rewritten base and a plan of the same issue in
+either range still stop. Orphan recovery keeps the strict binding to the collected base.
+
 ## Consequences
 
 Runs for different issues proceed in parallel from any checkout of the repository, and a stuck or
@@ -65,6 +76,10 @@ pass records as confirmed-per-item classes (`planning-claim prune`, `pass-prune`
 orphanhood itself and never calls `pass-close`), removes trusted text no pass record lists through
 `trusted-prune`, and removes a kept `issue-planning` worktree once the operator has moved or
 discarded its preserved plan.
+
+A moved base no longer stops a run: a fitting move publishes as is, an overlapping or undecidable
+one, or a base that moved again after the assessment, publishes flagged and leaves the
+reconciliation to review. A rewritten base and a same-issue plan in the range still stop.
 
 Claims are machine-local. Across machines the existing remote guards still prevent duplicates:
 `BRANCH_EXISTS`, `PR_EXISTS`, `plan-branch-exists`, the create-only push and the canonical planning

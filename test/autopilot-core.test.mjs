@@ -35,6 +35,10 @@ import {
   APPENDIX_END,
   AUTOPILOT_DIR,
   DECISION_CAP,
+  DELIVERY_BASE_RESULTS,
+  DELIVERY_BASE_UNRESOLVED_REASONS,
+  DELIVERY_CONFLICT_RESOLUTION_MODES,
+  DELIVERY_VALIDATION_MODES,
   MACHINE_BLOCK_BEGIN,
   MACHINE_BLOCK_END,
   classifyDecision,
@@ -2918,7 +2922,14 @@ test('a legacy pass lock stops an issue-source run-init and a plan source takes 
   assert.equal(existsSync(join(root, '.effective-flow/planning-claims')), false);
   const closedPlan = await closeRun(root, planRunId);
   assert.equal(closedPlan.ok, true, JSON.stringify(closedPlan));
-  assert.deepEqual(Object.keys(closedPlan.data).sort(), ['counts', 'fit', 'outcome', 'runId']);
+  assert.deepEqual(Object.keys(closedPlan.data).sort(), [
+    'baseMove',
+    'counts',
+    'deliveryBase',
+    'fit',
+    'outcome',
+    'runId',
+  ]);
 });
 
 // Invariant: when the ledger cannot be created after the claim was taken, `run-init` gives the
@@ -3082,7 +3093,14 @@ test('run-close reports a missing, foreign or failed release and still closes', 
   rmSync(claimPath(root, 64));
   const closedLegacy = await closeRun(root, legacy, 'pull-request', { pullRequest: 8 });
   assert.equal(closedLegacy.ok, true, JSON.stringify(closedLegacy));
-  assert.deepEqual(Object.keys(closedLegacy.data).sort(), ['counts', 'fit', 'outcome', 'runId']);
+  assert.deepEqual(Object.keys(closedLegacy.data).sort(), [
+    'baseMove',
+    'counts',
+    'deliveryBase',
+    'fit',
+    'outcome',
+    'runId',
+  ]);
 });
 
 // Invariant: `run-close` writes the closed ledger before it releases the claim, so a failed ledger
@@ -3203,4 +3221,664 @@ test('the restored plan lives in a delivery worktree while cwd stays primary', a
   assert.equal(existsSync(join(delivery, '.effective-flow')), false);
   const closed = await closeRun(root, runId);
   assert.equal(closed.data.planningClaim.released, true);
+});
+
+const FROM_OID = 'a'.repeat(40);
+const TO_OID = `${'b'.repeat(7)}${'c'.repeat(33)}`;
+const baseMoveInput = (root, runId, extra = {}) => ({
+  cwd: root,
+  runId,
+  fromBaseOid: FROM_OID,
+  toBaseOid: TO_OID,
+  verdict: 'fits',
+  reason: null,
+  commitCount: 3,
+  changedPathCount: 5,
+  citedPathCount: 4,
+  citedPaths: ['src/a.mjs', 'docs/b.md'],
+  overlappingPaths: [],
+  ...extra,
+});
+const flaggedMove = { verdict: 'overlap', reason: 'cited-path', overlappingPaths: ['src/a.mjs'] };
+
+// Invariant: a recorded base move is stored once per run, returned verbatim, and withdraws a
+// rendered appendix digest, so a stale render that misses the move can never be merged.
+test('base-move-record stores one record and withdraws the appendix digest', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const rendered = await op('pr-appendix', { cwd: root, runId });
+  assert.equal(rendered.data.status, 'rendered');
+  assert.notEqual(ledger(root, runId).appendixSha256, undefined);
+  const input = baseMoveInput(root, runId);
+  const recorded = await op('base-move-record', input);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  const { cwd: _cwd, runId: _runId, ...record } = input;
+  assert.deepEqual(recorded.data, { recorded: true, baseMove: record });
+  assert.equal(ledger(root, runId).appendixSha256, undefined);
+  assert.deepEqual((({ recordedAt: _t, ...rest }) => rest)(ledger(root, runId).baseMove), record);
+  const refused = await op('appendix-merge', {
+    cwd: root,
+    runId,
+    appendixSha256: rendered.data.sha256,
+    body: '',
+  });
+  assert.equal(refused.error.code, 'APPENDIX_MISMATCH');
+});
+
+// Invariant: an identical repeat is idempotent and leaves the ledger and any new digest alone;
+// a different second record is refused, so a run never carries two base moves.
+test('base-move-record accepts an identical repeat and rejects a different second record', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const input = baseMoveInput(root, runId);
+  await op('base-move-record', input);
+  await op('pr-appendix', { cwd: root, runId });
+  const digest = ledger(root, runId).appendixSha256;
+  assert.notEqual(digest, undefined);
+  const repeat = await op('base-move-record', input);
+  assert.equal(repeat.ok, true);
+  assert.equal(repeat.data.recorded, true);
+  assert.equal(ledger(root, runId).appendixSha256, digest);
+  const different = await op('base-move-record', baseMoveInput(root, runId, { commitCount: 4 }));
+  assert.equal(different.error.code, 'INVALID_STATE');
+  assert.equal(ledger(root, runId).baseMove.commitCount, 3);
+});
+
+test('base-move-record takes no plan-source ledger', async (t) => {
+  const root = repository(t);
+  const runId = await init(root, {
+    source: { kind: 'plan', planPath: 'docs/plan/x.md', planSha256: SHA },
+  });
+  const refused = await op('base-move-record', baseMoveInput(root, runId));
+  assert.equal(refused.error.code, 'INVALID_INPUT');
+  assert.equal(Object.hasOwn(ledger(root, runId), 'baseMove'), false);
+});
+
+// Invariant: the base-move record schema is closed: object ids are full lowercase hashes, counts
+// are non-negative integers, the cited and overlapping paths are bounded, safe, repository-relative
+// paths, and verdict and reason come from `plan-publication`'s enums. A stopping reason
+// (`BASE_MOVE_STOPPING_REASONS`) never sits beside a PR, and a fitting move has no reason or path.
+test('base-move-record keeps its schema closed', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const cases = {
+    'unknown key': { extra: true },
+    'short oid': { fromBaseOid: 'abc1234' },
+    'uppercase oid': { toBaseOid: 'A'.repeat(40) },
+    'non-hex oid': { fromBaseOid: 'z'.repeat(40) },
+    'negative count': { commitCount: -1 },
+    'fractional count': { changedPathCount: 1.5 },
+    'citedPaths not an array': { citedPaths: 'src/a.mjs' },
+    'over-long citedPaths': {
+      citedPathCount: 30,
+      citedPaths: Array.from({ length: 21 }, (_, i) => `src/f${i}.mjs`),
+    },
+    'more listed than counted': { citedPathCount: 1 },
+    'backtick path': { citedPaths: ['src/a`b.mjs'] },
+    'control character path': { citedPaths: ['src/a\nb.mjs'] },
+    'absolute path': { citedPaths: ['/etc/passwd'] },
+    'parent path': { citedPaths: ['../a.mjs'] },
+    'backslash path': { citedPaths: ['src\\a.mjs'] },
+    'unknown verdict': { verdict: 'maybe' },
+    'missing verdict': { verdict: undefined },
+    'reason of another verdict': { verdict: 'overlap', reason: 'gitlink' },
+    'fits with a reason': { reason: 'cited-path' },
+    'fits with an overlapping path': { overlappingPaths: ['src/a.mjs'] },
+    'not-ancestor': { verdict: 'undecidable', reason: 'not-ancestor' },
+    'same-issue-plan': { ...flaggedMove, reason: 'same-issue-plan' },
+    'plan-identity': { verdict: 'undecidable', reason: 'plan-identity' },
+    'overlappingPaths not an array': { ...flaggedMove, overlappingPaths: 'src/a.mjs' },
+    'over-long overlappingPaths': {
+      ...flaggedMove,
+      overlappingPaths: Array.from({ length: 21 }, (_, i) => `src/f${i}.mjs`),
+    },
+    'backtick overlapping path': { ...flaggedMove, overlappingPaths: ['src/a`b.mjs'] },
+  };
+  for (const [label, extra] of Object.entries(cases)) {
+    const refused = await op('base-move-record', baseMoveInput(root, runId, extra));
+    assert.equal(refused.error.code, 'INVALID_INPUT', label);
+  }
+  assert.equal(Object.hasOwn(ledger(root, runId), 'baseMove'), false);
+});
+
+// Invariant: the appendix carries the base move as its own section, before the blockers, with
+// short object ids, the counts and the cited paths in the run language.
+test('pr-appendix renders the base move before the blockers in English and German', async (t) => {
+  const cases = [
+    {
+      language: 'en',
+      heading: '### Base move',
+      blockers: '### Blockers',
+      range: 'from `aaaaaaa` to `bbbbbbb` during planning: 3 commits, 5 changed paths.',
+      cited:
+        'No changed path overlaps the 4 paths the plan cites: `src/a.mjs`, `docs/b.md` (+2 more)',
+    },
+    {
+      language: 'de',
+      heading: '### Basis-Verschiebung',
+      blockers: '### Blocker',
+      range: 'von `aaaaaaa` auf `bbbbbbb` verschoben: 3 Commits, 5 geänderte Pfade.',
+      cited:
+        'Kein geänderter Pfad überschneidet sich mit den 4 Pfaden, die der Plan nennt: `src/a.mjs`, `docs/b.md` (+2 weitere)',
+    },
+  ];
+  for (const copy of cases) {
+    const root = repository(t);
+    const runId = await init(root, { language: copy.language });
+    await op('blocker-record', { cwd: root, runId, kind: 'validation-red', summary: 'Red.' });
+    await op('base-move-record', baseMoveInput(root, runId));
+    const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+    assert.ok(appendix.includes(`${copy.heading}\n`), copy.language);
+    assert.ok(appendix.includes(copy.range), copy.language);
+    assert.ok(appendix.includes(copy.cited), copy.language);
+    assert.ok(!appendix.includes(FROM_OID), 'only the short object id is shown');
+    const blockerAt = appendix.indexOf(`${copy.blockers}\n`);
+    assert.ok(blockerAt > 0, copy.language);
+    assert.ok(appendix.indexOf(copy.heading) < blockerAt, copy.language);
+  }
+});
+
+// Invariant (issue #734 follow-up): an unresolved move beside a confirmed PR is stored with its
+// verdict, reason and overlapping paths, and the appendix flags it in place of the "no overlap"
+// line: the move is left to review, with its overlapping paths, in the run language.
+test('base-move-record stores an unresolved move and pr-appendix flags it in English and German', async (t) => {
+  const cases = [
+    {
+      language: 'en',
+      unresolved:
+        'The move is unresolved (`cited-path`): reconciling the plan with the new base is left to review.',
+      overlapping: 'Overlapping paths: `src/a.mjs`, `docs/b.md`',
+      range: 'from `aaaaaaa` to `bbbbbbb` during planning: 3 commits, 5 changed paths.',
+      fitLine: 'No changed path overlaps',
+    },
+    {
+      language: 'de',
+      unresolved:
+        'Die Verschiebung ist ungelöst (`cited-path`): den Plan mit der neuen Basis abzugleichen bleibt dem Review überlassen.',
+      overlapping: 'Überschneidende Pfade: `src/a.mjs`, `docs/b.md`',
+      range: 'von `aaaaaaa` auf `bbbbbbb` verschoben: 3 Commits, 5 geänderte Pfade.',
+      fitLine: 'Kein geänderter Pfad',
+    },
+  ];
+  for (const copy of cases) {
+    const root = repository(t);
+    const runId = await init(root, { language: copy.language });
+    const input = baseMoveInput(root, runId, {
+      ...flaggedMove,
+      overlappingPaths: ['src/a.mjs', 'docs/b.md'],
+    });
+    const recorded = await op('base-move-record', input);
+    assert.equal(recorded.ok, true, JSON.stringify(recorded));
+    const { cwd: _cwd, runId: _runId, ...record } = input;
+    assert.deepEqual(recorded.data.baseMove, record);
+    assert.equal(ledger(root, runId).baseMove.verdict, 'overlap');
+    assert.equal(ledger(root, runId).baseMove.reason, 'cited-path');
+    assert.deepEqual(ledger(root, runId).baseMove.overlappingPaths, ['src/a.mjs', 'docs/b.md']);
+    const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+    assert.ok(appendix.includes(copy.range), copy.language);
+    assert.ok(appendix.includes(`${copy.unresolved}\n${copy.overlapping}\n`), appendix);
+    assert.ok(!appendix.includes(copy.fitLine), copy.language);
+  }
+  const root = repository(t);
+  const runId = await init(root);
+  await op(
+    'base-move-record',
+    baseMoveInput(root, runId, { verdict: 'undecidable', reason: 'no-affected-files' }),
+  );
+  const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+  assert.ok(appendix.includes('(`no-affected-files`): reconciling the plan'), appendix);
+  assert.ok(!appendix.includes('Overlapping paths'), 'no path line without a path');
+});
+
+test('run-close returns the base move, or null without one', async (t) => {
+  const withoutRoot = repository(t);
+  const withoutId = await init(withoutRoot);
+  const without = await op('run-close', {
+    cwd: withoutRoot,
+    runId: withoutId,
+    outcome: 'no-pull-request',
+  });
+  assert.equal(without.data.baseMove, null);
+
+  const root = repository(t);
+  const runId = await init(root);
+  const input = baseMoveInput(root, runId);
+  await op('base-move-record', input);
+  const closed = await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  const { cwd: _cwd, runId: _runId, ...record } = input;
+  assert.deepEqual(closed.data.baseMove, record);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Delivery base
+
+const HEAD_OID = 'd'.repeat(40);
+const deliveryInput = (root, runId, extra = {}) => ({
+  cwd: root,
+  runId,
+  mergeBaseOid: FROM_OID,
+  baseOid: TO_OID,
+  commitCount: 2,
+  result: 'none',
+  reason: null,
+  conflictResolution: null,
+  validationMode: null,
+  conflictCount: 0,
+  conflictedPaths: [],
+  headOid: HEAD_OID,
+  mergeOid: null,
+  checkout: null,
+  branch: null,
+  ...extra,
+});
+const resolvedFields = {
+  result: 'resolved',
+  conflictResolution: 'auto',
+  validationMode: 'full',
+  conflictCount: 2,
+  conflictedPaths: ['src/a.mjs', 'docs/b.md'],
+  mergeOid: 'e'.repeat(40),
+  checkout: '/work/delivery',
+  branch: 'feature',
+};
+const withoutInputKeys = ({ cwd: _cwd, runId: _runId, ...record }) => record;
+const withoutTime = ({ recordedAt: _t, ...rest }) => rest;
+
+// A real checkout for the records that name one: `root` carries branch `feature` at `head` merged
+// with `base` into one merge commit, or (before the merge) just at `head`.
+function mergedCheckout(root) {
+  const mergeBase = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', '-b', 'other');
+  writeFileSync(join(root, 'other.txt'), 'o\n');
+  git(root, 'add', 'other.txt');
+  git(root, 'commit', '-q', '-m', 'base change');
+  const base = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', '-b', 'feature', mergeBase);
+  writeFileSync(join(root, 'feature.txt'), 'f\n');
+  git(root, 'add', 'feature.txt');
+  git(root, 'commit', '-q', '-m', 'head change');
+  const head = git(root, 'rev-parse', 'HEAD');
+  return {
+    mergeBase,
+    base,
+    head,
+    merge() {
+      git(root, 'merge', '-q', '--no-ff', '-m', 'merge', 'other');
+      return git(root, 'rev-parse', 'HEAD');
+    },
+  };
+}
+
+test('the delivery-base vocabularies are the recorded enums', () => {
+  assert.deepEqual([...DELIVERY_BASE_RESULTS], ['none', 'resolved', 'unresolved', 'unchecked']);
+  assert.deepEqual(
+    [...DELIVERY_BASE_UNRESOLVED_REASONS],
+    [
+      'conflict-resolution-off',
+      'checkout-unavailable',
+      'resolver-abort',
+      'verification-failed',
+      'review-failed',
+      'merge-failed',
+    ],
+  );
+  assert.deepEqual([...DELIVERY_CONFLICT_RESOLUTION_MODES], ['off', 'ask', 'auto']);
+  assert.deepEqual([...DELIVERY_VALIDATION_MODES], ['full', 'quick']);
+});
+
+// Invariant: a delivery-base record is stored once per run and returned verbatim, and it withdraws
+// a rendered appendix digest, so a stale render that misses the delivery base can never be merged.
+test('delivery-base-record stores one record and withdraws the appendix digest', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const rendered = await op('pr-appendix', { cwd: root, runId });
+  assert.notEqual(ledger(root, runId).appendixSha256, undefined);
+  const input = deliveryInput(root, runId);
+  const result = await op('delivery-base-record', input);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.data, { recorded: true, deliveryBase: withoutInputKeys(input) });
+  assert.deepEqual(withoutTime(ledger(root, runId).deliveryBase), withoutInputKeys(input));
+  assert.equal(ledger(root, runId).appendixSha256, undefined);
+  const refused = await op('appendix-merge', {
+    cwd: root,
+    runId,
+    appendixSha256: rendered.data.sha256,
+    body: '',
+  });
+  assert.equal(refused.error.code, 'APPENDIX_MISMATCH');
+});
+
+// Invariant: the record is closed: every one of the thirteen fields is required, object ids are
+// full lowercase hashes of a moved base, `branch` is a safe branch name set exactly when `checkout`
+// is, and the result decides which fields are null and which values they may take, so a record can
+// never state a result its fields contradict.
+test('delivery-base-record keeps its schema closed', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const unresolved = {
+    result: 'unresolved',
+    reason: 'resolver-abort',
+    conflictResolution: 'auto',
+    conflictCount: 2,
+    conflictedPaths: ['src/a.mjs'],
+    checkout: '/work/delivery',
+    branch: 'feature',
+  };
+  const cases = {
+    'unknown key': { extra: true },
+    'missing field': { checkout: undefined },
+    'short oid': { mergeBaseOid: 'abc1234' },
+    'uppercase oid': { baseOid: 'B'.repeat(40) },
+    'unmoved base': { baseOid: FROM_OID },
+    'zero commit count': { commitCount: 0 },
+    'fractional commit count': { commitCount: 1.5 },
+    'unknown result': { result: 'maybe' },
+    'none with a reason': { reason: 'merge-failed' },
+    'none with a conflict count': { conflictCount: 1 },
+    'none with a path': { conflictedPaths: ['a.mjs'] },
+    'none with a checkout': { checkout: '/work/delivery' },
+    'none with a mode': { conflictResolution: 'auto' },
+    'none with a merge commit': { mergeOid: 'e'.repeat(40) },
+    'none with a branch': { branch: 'feature' },
+    'unchecked with a branch': {
+      result: 'unchecked',
+      reason: 'timeout',
+      conflictCount: null,
+      conflictedPaths: null,
+      branch: 'feature',
+    },
+    'unchecked without a reason': {
+      result: 'unchecked',
+      conflictCount: null,
+      conflictedPaths: null,
+    },
+    'unchecked with a foreign reason': {
+      result: 'unchecked',
+      reason: 'merge-failed',
+      conflictCount: null,
+      conflictedPaths: null,
+    },
+    'unchecked with a count': { result: 'unchecked', reason: 'timeout', conflictedPaths: null },
+    'resolved with mode off': { ...resolvedFields, conflictResolution: 'off' },
+    'resolved without a validation mode': { ...resolvedFields, validationMode: null },
+    'resolved with an unknown validation mode': { ...resolvedFields, validationMode: 'fast' },
+    'resolved without a merge commit': { ...resolvedFields, mergeOid: null },
+    'resolved without a checkout': { ...resolvedFields, checkout: null },
+    'resolved with a relative checkout': { ...resolvedFields, checkout: 'delivery' },
+    'resolved without a branch': { ...resolvedFields, branch: null },
+    'resolved with a range as branch': { ...resolvedFields, branch: 'main..feature' },
+    'resolved with an option as branch': { ...resolvedFields, branch: '-feature' },
+    'resolved with a spaced branch': { ...resolvedFields, branch: 'my feature' },
+    'resolved with a non-string branch': { ...resolvedFields, branch: 7 },
+    'resolved with a reason': { ...resolvedFields, reason: 'merge-failed' },
+    'resolved without a conflict': { ...resolvedFields, conflictCount: 0, conflictedPaths: [] },
+    'over-long paths': {
+      ...resolvedFields,
+      conflictCount: 30,
+      conflictedPaths: Array.from({ length: 21 }, (_, i) => `src/f${i}.mjs`),
+    },
+    'more paths than conflicts': { ...resolvedFields, conflictCount: 1 },
+    'repeated path': { ...resolvedFields, conflictedPaths: ['src/a.mjs', 'src/a.mjs'] },
+    'parent path': { ...resolvedFields, conflictedPaths: ['../a.mjs', 'b.mjs'] },
+    'backtick path': { ...resolvedFields, conflictedPaths: ['a`b.mjs', 'b.mjs'] },
+    'paths not an array': { ...resolvedFields, conflictedPaths: 'src/a.mjs' },
+    'unresolved without a reason': { ...unresolved, reason: null },
+    'unresolved with a foreign reason': { ...unresolved, reason: 'timeout' },
+    'unresolved with a merge commit': { ...unresolved, mergeOid: 'e'.repeat(40) },
+    'unresolved off reason beside auto': { ...unresolved, reason: 'conflict-resolution-off' },
+    'unresolved mode off beside another reason': { ...unresolved, conflictResolution: 'off' },
+    'unresolved off with a checkout': {
+      ...unresolved,
+      reason: 'conflict-resolution-off',
+      conflictResolution: 'off',
+    },
+    'unresolved attempt without a checkout': { ...unresolved, checkout: null },
+    'unresolved with a relative checkout': { ...unresolved, checkout: 'delivery' },
+    'unresolved attempt without a branch': { ...unresolved, branch: null },
+    'unresolved without a checkout but a branch': {
+      ...unresolved,
+      reason: 'checkout-unavailable',
+      checkout: null,
+    },
+  };
+  for (const [label, extra] of Object.entries(cases)) {
+    const refused = await op('delivery-base-record', deliveryInput(root, runId, extra));
+    assert.equal(refused.error?.code, 'INVALID_INPUT', label);
+  }
+  assert.equal(Object.hasOwn(ledger(root, runId), 'deliveryBase'), false);
+});
+
+// Invariant: each result stores the shapes its rule allows: `unchecked` with a proof reason,
+// `unresolved` without a checkout for `conflict-resolution-off` and for a checkout that was never
+// created, and `none`.
+test('delivery-base-record accepts the per-result shapes that need no checkout', async (t) => {
+  const shapes = {
+    unchecked: {
+      result: 'unchecked',
+      reason: 'git-version',
+      conflictCount: null,
+      conflictedPaths: null,
+    },
+    'unresolved off': {
+      result: 'unresolved',
+      reason: 'conflict-resolution-off',
+      conflictResolution: 'off',
+      conflictCount: 3,
+      conflictedPaths: ['src/a.mjs'],
+    },
+    'unresolved checkout-unavailable': {
+      result: 'unresolved',
+      reason: 'checkout-unavailable',
+      conflictResolution: 'ask',
+      conflictCount: 1,
+      conflictedPaths: ['src/a.mjs'],
+    },
+  };
+  for (const [label, extra] of Object.entries(shapes)) {
+    const root = repository(t);
+    const runId = await init(root);
+    const input = deliveryInput(root, runId, extra);
+    const result = await op('delivery-base-record', input);
+    assert.equal(result.ok, true, `${label}: ${JSON.stringify(result)}`);
+    assert.deepEqual(withoutTime(ledger(root, runId).deliveryBase), withoutInputKeys(input), label);
+  }
+});
+
+// Invariant: both sources keep a delivery base, since the step runs on an issue and a plan source
+// alike.
+test('delivery-base-record accepts both an issue and a plan source', async (t) => {
+  for (const source of [undefined, { kind: 'plan', planPath: 'docs/plan/x.md', planSha256: SHA }]) {
+    const root = repository(t);
+    const runId = await init(root, source === undefined ? {} : { source });
+    const result = await op('delivery-base-record', deliveryInput(root, runId));
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(ledger(root, runId).deliveryBase.result, 'none');
+  }
+});
+
+// Invariant: an identical repeat is idempotent and leaves a new digest alone; a different second
+// record is INVALID_STATE, so a run never carries two delivery bases.
+test('delivery-base-record accepts an identical repeat and rejects a different second record', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const input = deliveryInput(root, runId);
+  await op('delivery-base-record', input);
+  await op('pr-appendix', { cwd: root, runId });
+  const digest = ledger(root, runId).appendixSha256;
+  assert.notEqual(digest, undefined);
+  const repeat = await op('delivery-base-record', input);
+  assert.equal(repeat.ok, true);
+  assert.equal(repeat.data.recorded, true);
+  assert.equal(ledger(root, runId).appendixSha256, digest);
+  const different = await op(
+    'delivery-base-record',
+    deliveryInput(root, runId, { commitCount: 3 }),
+  );
+  assert.equal(different.error.code, 'INVALID_STATE');
+  assert.equal(ledger(root, runId).deliveryBase.commitCount, 2);
+});
+
+// Invariant: the delivery-base record needs an open run and names no checkout outside the
+// repository: a closed run is refused, and a checkout of another repository is UNSAFE_TARGET.
+test('delivery-base-record refuses a closed run and a foreign checkout', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const foreign = repository(t);
+  const refused = await op(
+    'delivery-base-record',
+    deliveryInput(root, runId, { ...resolvedFields, checkout: foreign }),
+  );
+  assert.equal(refused.error.code, 'UNSAFE_TARGET');
+  await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  const closedRun = await op('delivery-base-record', deliveryInput(root, runId));
+  assert.equal(closedRun.ok, false);
+});
+
+// Invariant: the appendix carries the delivery base as its own section after the base move and
+// before the blockers, with short object ids and the result in the run language: no conflict, a
+// resolved merge commit with its validation mode, an unresolved conflict with its reason, its
+// bounded paths and the flag sentence, and an unchecked merge with its reason; `ask` is disclosed.
+test('pr-appendix renders the delivery base for every result in English and German', async (t) => {
+  const copy = {
+    en: {
+      heading: '### Delivery base',
+      blockers: '### Blockers',
+      range:
+        'The base moved from the merge base `aaaaaaa` to `bbbbbbb` before delivery: 2 commits.',
+      none: 'The head merges into the new base without a conflict; the branch carries no merge commit.',
+      resolved:
+        'The conflict in 2 paths was resolved by merge commit `eeeeeee` (validation mode `quick`).',
+      unresolved:
+        'The conflict in 25 paths is unresolved (`merge-failed`); the branch is unchanged.',
+      paths: 'Conflicted paths: `src/a.mjs`, `docs/b.md` (+23 more)',
+      flag: 'Unresolved delivery conflict: resolving it is left to a later session such as `merge-gate`.',
+      unchecked: 'The merge was not checked (`timeout`); the branch is unchanged.',
+      ask: '`mergeGate.conflictResolution` is `ask`; this unattended run counted it as its one automatic resolution attempt.',
+    },
+    de: {
+      heading: '### Basis bei Auslieferung',
+      blockers: '### Blocker',
+      range:
+        'Die Basis hat sich vor der Auslieferung von der Merge-Basis `aaaaaaa` auf `bbbbbbb` verschoben: 2 Commits.',
+      none: 'Der Head lässt sich ohne Konflikt in die neue Basis mergen; der Branch trägt keinen Merge-Commit.',
+      resolved:
+        'Der Konflikt in 2 Pfaden wurde durch den Merge-Commit `eeeeeee` gelöst (Validierungsmodus `quick`).',
+      unresolved:
+        'Der Konflikt in 25 Pfaden ist ungelöst (`merge-failed`); der Branch ist unverändert.',
+      paths: 'Konfliktpfade: `src/a.mjs`, `docs/b.md` (+23 weitere)',
+      flag: 'Ungelöster Auslieferungskonflikt: ihn zu lösen bleibt einer späteren Sitzung wie `merge-gate` überlassen.',
+      unchecked: 'Der Merge wurde nicht geprüft (`timeout`); der Branch ist unverändert.',
+      ask: '`mergeGate.conflictResolution` steht auf `ask`; dieser unbeaufsichtigte Lauf hat das als seinen einen automatischen Lösungsversuch gezählt.',
+    },
+  };
+  for (const [language, c] of Object.entries(copy)) {
+    const render = async (extra, { ask = false } = {}) => {
+      const root = repository(t);
+      const runId = await init(root, { language });
+      await op('blocker-record', { cwd: root, runId, kind: 'validation-red', summary: 'Red.' });
+      const input = deliveryInput(root, runId, extra);
+      const recorded = await op('delivery-base-record', input);
+      assert.equal(recorded.ok, true, `${language}: ${JSON.stringify(recorded)}`);
+      const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+      assert.ok(appendix.includes(`${c.heading}\n\n${c.range}\n`), appendix);
+      assert.ok(!appendix.includes(FROM_OID), 'only the short object id is shown');
+      const blockerAt = appendix.indexOf(`${c.blockers}\n`);
+      assert.ok(appendix.indexOf(c.heading) < blockerAt, language);
+      assert.equal(appendix.includes(c.ask), ask, `${language} ask disclosure`);
+      return appendix;
+    };
+
+    const none = await render({});
+    assert.ok(none.includes(c.none), language);
+    assert.ok(!none.includes(c.flag), language);
+
+    const unchecked = await render({
+      result: 'unchecked',
+      reason: 'timeout',
+      conflictCount: null,
+      conflictedPaths: null,
+    });
+    assert.ok(unchecked.includes(c.unchecked), language);
+    assert.ok(!unchecked.includes(c.flag), language);
+
+    const off = await render({
+      result: 'unresolved',
+      reason: 'conflict-resolution-off',
+      conflictResolution: 'off',
+      conflictCount: 2,
+      conflictedPaths: ['src/a.mjs', 'docs/b.md'],
+    });
+    assert.ok(off.includes(c.flag), language);
+
+    const unresolved = await render(
+      {
+        result: 'unresolved',
+        reason: 'checkout-unavailable',
+        conflictResolution: 'ask',
+        conflictCount: 25,
+        conflictedPaths: ['src/a.mjs', 'docs/b.md'],
+      },
+      { ask: true },
+    );
+    assert.ok(
+      unresolved.includes(c.unresolved.replace('merge-failed', 'checkout-unavailable')),
+      unresolved,
+    );
+    assert.ok(unresolved.includes(`${c.paths}\n${c.flag}\n${c.ask}`), unresolved);
+
+    // A resolved conflict names a real checkout, so the helper's Git invariants hold.
+    const root = repository(t);
+    const runId = await init(root, { language });
+    const fixture = mergedCheckout(root);
+    const mergeOid = fixture.merge();
+    const recorded = await op('delivery-base-record', {
+      ...deliveryInput(root, runId, resolvedFields),
+      mergeBaseOid: fixture.mergeBase,
+      baseOid: fixture.base,
+      headOid: fixture.head,
+      validationMode: 'quick',
+      mergeOid,
+      checkout: root,
+    });
+    assert.equal(recorded.ok, true, JSON.stringify(recorded));
+    const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+    assert.ok(appendix.includes(c.heading), language);
+    assert.ok(appendix.includes(c.resolved.replace('eeeeeee', mergeOid.slice(0, 7))), appendix);
+    assert.ok(!appendix.includes(c.flag), language);
+    assert.ok(!appendix.includes(c.ask), language);
+  }
+});
+
+// Invariant: a record naming a real checkout is verified: an unresolved branch still at the head
+// is stored, and `run-close` returns the stored record without its timestamp.
+test('run-close returns the delivery base, or null without one', async (t) => {
+  const withoutRoot = repository(t);
+  const withoutId = await init(withoutRoot);
+  const without = await op('run-close', {
+    cwd: withoutRoot,
+    runId: withoutId,
+    outcome: 'no-pull-request',
+  });
+  assert.equal(without.data.deliveryBase, null);
+
+  const root = repository(t);
+  const runId = await init(root);
+  const fixture = mergedCheckout(root);
+  const input = deliveryInput(root, runId, {
+    mergeBaseOid: fixture.mergeBase,
+    baseOid: fixture.base,
+    headOid: fixture.head,
+    result: 'unresolved',
+    reason: 'verification-failed',
+    conflictResolution: 'auto',
+    validationMode: 'full',
+    conflictCount: 1,
+    conflictedPaths: ['src/a.mjs'],
+    checkout: root,
+    branch: 'feature',
+  });
+  const recordedResult = await op('delivery-base-record', input);
+  assert.equal(recordedResult.ok, true, JSON.stringify(recordedResult));
+  const closed = await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  assert.deepEqual(closed.data.deliveryBase, withoutInputKeys(input));
 });

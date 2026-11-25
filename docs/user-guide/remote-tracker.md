@@ -870,10 +870,12 @@ fails the whole operation.
 
 `merge-proof-local` exists for Forgejo, where the forge states no merge state and leaves
 mergeability unstated for a conflicting or WIP-titled pull request; the merge gate uses it for its
-WIP-draft exit and to find a conflict it then resolves. It
+WIP-draft exit and to find a conflict it then resolves; autopilot's delivery-base check reuses the
+same proof. It
 runs `git merge-tree --write-tree` in a private temporary object directory that it removes, so the
 repository's objects and refs stay unchanged. The result `status` is `clean`, `conflict` (with a
-`conflictCount`) or `unavailable`, and `reason` explains why. A Git older than 2.38, a missing ref,
+`conflictCount` and `conflictedPaths`, the sorted unique conflicted paths that are safe to report,
+at most 20) or `unavailable`, and `reason` explains why. A Git older than 2.38, a missing ref,
 a shallow repository, a Git failure or a merge that exceeds its time bound (`timeout`) gives
 `unavailable`; the caller then treats mergeability as unproven and never as clean.
 

@@ -11,7 +11,8 @@ consumer of this block also loads.
 ### Merge-gate keys (`mergeGate.*`) and their legacy namespace
 
 {{SKILL:merge-gate}} reads the keys below; {{SKILL:iterate}} reads the `bots` entries for its
-review-in-flight guard. A missing line means the default, per the encoding rule above.
+review-in-flight guard; {{SKILL:autopilot}} reads the conflict keys for its delivery attempt
+(`autopilot-delivery-conflict`). A missing line means the default, per the encoding rule above.
 
 | Key                               | Values                                | Default   |
 | --------------------------------- | ------------------------------------- | --------- |

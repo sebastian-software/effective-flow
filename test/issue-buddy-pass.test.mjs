@@ -23,6 +23,8 @@ import {
   prIdentity,
   issue,
   planText,
+  advanceRemoteBase,
+  assessInput,
   PLAN,
   BRANCH,
 } from './fixtures/issue-buddy/world.mjs';
@@ -585,6 +587,277 @@ test('metadata blob drift preserves the new plan and refuses publication before 
     leftoverPlanFiles: leftovers,
   });
   assert.deepEqual(stored.counts, {});
+  assert.equal(fs.existsSync(path.join(world.runtime, 'verdicts.json')), false);
+  await release(world, passId);
+});
+
+// Invariant (issue #734): a base that moves after collection, without touching anything the plan
+// cites, is assessed `fits`; the fragment's `publication-metadata` re-run yields the identical
+// projection, `blobOid` included, the one re-publish builds the plan commit on the new tip, and the
+// stored v2 report with its `fits` entry is accepted.
+test('an unrelated base move after collection fits: the pass publishes on the new tip and reports the move', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  await writePlan(world);
+  checked(await world.lint('lint'));
+  const metadata = checked(await world.lint('publication-metadata'));
+  const newTip = advanceRemoteBase(world, { 'unrelated/notes.txt': 'notes\n' });
+  assert.notEqual(newTip, collected.baseOid);
+
+  const refused = await world.publication(
+    'publish',
+    publicationInput(collected.baseOid, { expectedBlobOid: metadata.blobOid }),
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'BASE_CHANGED');
+  assert.equal(refused.error.details?.state, undefined, 'refused before any mutation');
+  assert.equal(branches(world), 'refs/heads/main');
+  assert.equal(mutations(world).length, 0);
+
+  const assessed = checked(
+    await world.publication('assess-base-move', assessInput(collected.baseOid, metadata.blobOid)),
+  );
+  assert.equal(assessed.verdict, 'fits');
+  assert.equal(assessed.fromBaseOid, collected.baseOid);
+  assert.equal(assessed.toBaseOid, newTip);
+  assert.equal(assessed.commitCount, 1);
+  assert.deepEqual(assessed.overlappingPaths, []);
+  assert.equal(branches(world), 'refs/heads/main', 'assessment pushes nothing');
+  assert.equal(mutations(world).length, 0, 'assessment writes no forge object');
+  // The integrity re-run before the single re-publish: the projection is unchanged.
+  const rerun = checked(await world.lint('publication-metadata'));
+  assert.deepEqual(rerun, metadata);
+  assert.equal(rerun.blobOid, metadata.blobOid);
+
+  const published = checked(
+    await world.publication(
+      'publish',
+      publicationInput(newTip, { expectedBlobOid: metadata.blobOid }),
+    ),
+  );
+  assert.equal(published.state, 'pull-request-opened');
+  assert.equal(world.git(world.bare, 'rev-parse', `${published.commitOid}^`), newTip);
+  assert.equal(world.git(world.bare, 'rev-parse', `refs/heads/${BRANCH}`), published.commitOid);
+  assert.equal(world.state().creates.length, 1);
+
+  const verdict = await record(world, passId, collected, { pullRequest: published.pullRequest });
+  const move = {
+    issue: 1,
+    fromBaseOid: assessed.fromBaseOid,
+    toBaseOid: assessed.toBaseOid,
+    verdict: assessed.verdict,
+    reason: assessed.reason,
+    commitCount: assessed.commitCount,
+    changedPathCount: assessed.changedPathCount,
+    citedPathCount: assessed.citedPathCount,
+    citedPaths: assessed.citedPaths,
+    overlappingPaths: assessed.overlappingPaths,
+  };
+  const stored = await report(world, passId, collected, {
+    verdicts: [verdict],
+    pullRequestsOpened: [prIdentity(published)],
+    leftoverPlanFiles: leftovers,
+    baseMoves: [move],
+  });
+  assert.equal(stored.schemaVersion, 2);
+  assert.equal(stored.outcome, 'completed');
+  assert.deepEqual(stored.baseMoves, [move]);
+  assert.equal(stored.baseMoves[0].verdict, 'fits');
+  await release(world, passId);
+});
+
+// A plan written in the pass's planning worktree, HEAD at the collected base, with its metadata.
+async function planInWorktree(world, collected) {
+  const tree = path.join(world.container, 'planning-1');
+  world.git(
+    world.root,
+    'worktree',
+    'add',
+    '-q',
+    '-b',
+    'issue-planning/s1',
+    tree,
+    collected.baseOid,
+  );
+  fs.mkdirSync(path.join(tree, 'docs/plan'), { recursive: true });
+  fs.writeFileSync(path.join(tree, PLAN), planText(), { flag: 'wx' });
+  checked(await world.lint('lint', { cwd: tree }));
+  const metadata = checked(await world.lint('publication-metadata', { cwd: tree }));
+  return { tree, planBytes: fs.readFileSync(path.join(tree, PLAN)), metadata };
+}
+
+function baseMoveEntry(assessed) {
+  return {
+    issue: 1,
+    fromBaseOid: assessed.fromBaseOid,
+    toBaseOid: assessed.toBaseOid,
+    verdict: assessed.verdict,
+    reason: assessed.reason,
+    commitCount: assessed.commitCount,
+    changedPathCount: assessed.changedPathCount,
+    citedPathCount: assessed.citedPathCount,
+    citedPaths: assessed.citedPaths,
+    overlappingPaths: assessed.overlappingPaths,
+  };
+}
+
+// Invariant (issue #734): a base move that changes a path the plan cites no longer stops the pass.
+// The assessment answers `republish: true`, the one re-publish on the new tip passes the move as
+// `baseMove`, the draft PR body carries the fixed unresolved-base-move flag, and the pass completes
+// with the PR and the `overlap` entry and without a null failure.
+test('an overlapping base move publishes on the new tip with the flag', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  const { tree, metadata } = await planInWorktree(world, collected);
+  const newTip = advanceRemoteBase(world, { 'README.md': '# Fixture, edited elsewhere\n' });
+
+  const refused = await world.publication(
+    'publish',
+    publicationInput(collected.baseOid, { cwd: tree, expectedBlobOid: metadata.blobOid }),
+  );
+  assert.equal(refused.error.code, 'BASE_CHANGED');
+  const assessed = checked(
+    await world.publication(
+      'assess-base-move',
+      assessInput(collected.baseOid, metadata.blobOid, { cwd: tree }),
+    ),
+  );
+  assert.equal(assessed.verdict, 'overlap');
+  assert.equal(assessed.reason, 'cited-path');
+  assert.equal(assessed.republish, true);
+  assert.deepEqual(assessed.overlappingPaths, ['README.md']);
+  assert.equal(assessed.toBaseOid, newTip);
+  assert.equal(world.state().creates.length, 0, 'the assessment creates nothing');
+
+  assert.deepEqual(checked(await world.lint('publication-metadata', { cwd: tree })), metadata);
+  const { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths } = assessed;
+  const published = checked(
+    await world.publication(
+      'publish',
+      publicationInput(newTip, {
+        cwd: tree,
+        expectedBlobOid: metadata.blobOid,
+        baseMove: { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths },
+      }),
+    ),
+  );
+  assert.equal(published.state, 'pull-request-opened');
+  assert.equal(world.git(world.bare, 'rev-parse', `${published.commitOid}^`), newTip);
+  assert.equal(world.state().creates.length, 1);
+  assert.match(world.state().pulls[0].body, /\*\*Unresolved base move\.\*\* .*`README\.md`/);
+
+  const recorded = await record(world, passId, collected, { pullRequest: published.pullRequest });
+  const move = baseMoveEntry(assessed);
+  const stored = await report(world, passId, collected, {
+    verdicts: [recorded],
+    pullRequestsOpened: [prIdentity(published)],
+    leftoverPlanFiles: [],
+    baseMoves: [move],
+  });
+  assert.equal(stored.outcome, 'completed');
+  assert.deepEqual(stored.failures, []);
+  assert.equal(stored.pullRequestsOpened.length, 1);
+  assert.deepEqual(stored.baseMoves, [move]);
+  await release(world, passId);
+});
+
+// Invariant (issue #734): a base that moves again after the assessment does not stop the pass. The
+// one re-publish with `allowNewerBase` builds the plan commit on the assessed tip, the PR carries the
+// further-move flag, and the pass reports `published` with the single assessed `baseMoves` entry.
+test('a further base move during the re-publish publishes flagged', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  const { tree, metadata } = await planInWorktree(world, collected);
+  const assessedTip = advanceRemoteBase(world, { 'unrelated/notes.txt': 'notes\n' });
+  const assessed = checked(
+    await world.publication(
+      'assess-base-move',
+      assessInput(collected.baseOid, metadata.blobOid, { cwd: tree }),
+    ),
+  );
+  assert.equal(assessed.verdict, 'fits');
+  assert.equal(assessed.toBaseOid, assessedTip);
+  const furtherTip = advanceRemoteBase(world, { 'unrelated/more.txt': 'more\n' });
+  assert.notEqual(furtherTip, assessedTip);
+
+  assert.deepEqual(checked(await world.lint('publication-metadata', { cwd: tree })), metadata);
+  const published = checked(
+    await world.publication(
+      'publish',
+      publicationInput(assessedTip, {
+        cwd: tree,
+        expectedBlobOid: metadata.blobOid,
+        allowNewerBase: true,
+      }),
+    ),
+  );
+  assert.equal(published.state, 'pull-request-opened');
+  assert.equal(world.git(world.bare, 'rev-parse', `${published.commitOid}^`), assessedTip);
+  assert.deepEqual(published.furtherBaseMove, {
+    fromBaseOid: assessedTip,
+    toBaseOid: furtherTip,
+    commitCount: 1,
+  });
+  assert.match(world.state().pulls[0].body, /\*\*Unresolved base move\.\*\* The base moved again/);
+
+  const recorded = await record(world, passId, collected, { pullRequest: published.pullRequest });
+  const move = baseMoveEntry(assessed);
+  const stored = await report(world, passId, collected, {
+    verdicts: [recorded],
+    pullRequestsOpened: [prIdentity(published)],
+    leftoverPlanFiles: [],
+    baseMoves: [move],
+  });
+  assert.equal(stored.outcome, 'completed');
+  assert.deepEqual(stored.failures, []);
+  assert.equal(stored.pullRequestsOpened.length, 1);
+  assert.deepEqual(stored.baseMoves, [move]);
+  await release(world, passId);
+});
+
+// Invariant (issue #734): a plan of the same issue in the moved range is a duplicate, not a conflict
+// review reconciles: the assessment answers `republish: false`, nothing is published, the pass stops
+// with the null BASE_CHANGED failure, and the plan and its planning worktree stay for the operator.
+test('a same-issue plan in the moved base still stops the pass and keeps the plan', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  const { tree, planBytes, metadata } = await planInWorktree(world, collected);
+  advanceRemoteBase(world, { 'docs/plan/2026-10-20-issue-1-elsewhere.md': planText() });
+
+  const refused = await world.publication(
+    'publish',
+    publicationInput(collected.baseOid, { cwd: tree, expectedBlobOid: metadata.blobOid }),
+  );
+  assert.equal(refused.error.code, 'BASE_CHANGED');
+  const assessed = checked(
+    await world.publication(
+      'assess-base-move',
+      assessInput(collected.baseOid, metadata.blobOid, { cwd: tree }),
+    ),
+  );
+  assert.equal(assessed.verdict, 'overlap');
+  assert.equal(assessed.reason, 'same-issue-plan');
+  assert.equal(assessed.republish, false);
+  assert.equal(branches(world), 'refs/heads/main');
+  assert.equal(mutations(world).length, 0);
+
+  const move = baseMoveEntry(assessed);
+  const stored = await report(world, passId, collected, {
+    outcome: 'failed',
+    failures: [{ issue: null, stage: 'publish', code: 'BASE_CHANGED' }],
+    leftoverPlanFiles: [],
+    baseMoves: [move],
+  });
+  assert.equal(stored.outcome, 'failed');
+  assert.deepEqual(stored.failures, [{ issue: null, stage: 'publish', code: 'BASE_CHANGED' }]);
+  assert.deepEqual(stored.baseMoves, [move]);
+  assert.deepEqual(stored.pullRequestsOpened, []);
+  assert.deepEqual(fs.readFileSync(path.join(tree, PLAN)), planBytes, 'the plan is preserved');
+  assert.equal(world.git(tree, 'rev-parse', 'HEAD'), collected.baseOid, 'the worktree is kept');
   assert.equal(fs.existsSync(path.join(world.runtime, 'verdicts.json')), false);
   await release(world, passId);
 });

@@ -2201,7 +2201,7 @@ function pathsOverlap(left, right) {
 // forms exactly, and a case-sensitive macOS volume decomposes path names without folding case. So
 // only the transform its flag enables may run — folding the other one too makes two genuinely
 // distinct paths compare equal and reports a valid fast-forward as `behind-overlap`.
-function pathFold({ ignoreCase = false, precomposeUnicode = false } = {}) {
+export function pathFold({ ignoreCase = false, precomposeUnicode = false } = {}) {
   const normalize = precomposeUnicode ? (value) => value.normalize('NFC') : (value) => value;
   return ignoreCase ? (value) => normalize(value).toLowerCase() : normalize;
 }
@@ -2232,8 +2232,10 @@ async function booleanConfig(root, key, runner) {
 
 // `core.ignorecase` marks a checkout whose filesystem folds the case of a path name;
 // `core.precomposeunicode` marks one that hands back decomposed names Git precomposes before it
-// compares them. Neither implies the other, so both are read and carried separately.
-async function pathFoldingConfig(root, runner) {
+// compares them. Neither implies the other, so both are read and carried separately. Exported so
+// that `plan-publication`'s base-move assessment folds its comparisons exactly as `computeOverlap`
+// is folded here.
+export async function pathFoldingConfig(root, runner) {
   return {
     ignoreCase: await booleanConfig(root, 'core.ignorecase', runner),
     precomposeUnicode: await booleanConfig(root, 'core.precomposeunicode', runner),
