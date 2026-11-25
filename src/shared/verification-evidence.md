@@ -19,8 +19,9 @@ through `iterate`) passes no such line. Never edit, re-encode, or persist a reco
 
 ### Producer mapping
 
-A producer maps only checks it observed in this run, each with `check` (what ran, such as
-`pnpm test`), `scope` (what it covered), and an optional `limitation`:
+A producer maps only checks it observed in this run, each with required `check` (what ran, such as
+`pnpm test`), `outcome` and `provenance` from the bullets below, `scope` (what it covered), optional
+`limitation` omitted, never left empty, `comparison` only with `baseline-failure`, no other key:
 
 - a check this run executed and whose outcome it observed: `passed` or `failed`, provenance
   `executed`;

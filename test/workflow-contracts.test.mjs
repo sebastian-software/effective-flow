@@ -27896,6 +27896,30 @@ test('the producer mapping never marks a plan, prose command, unrun CI or unobse
   }
 });
 
+test('the producer mapping names every required check key of the helper', () => {
+  // Invariant: the verification-evidence prompt names every required check key of the helper
+  // (`REQUIRED_CHECK_FIELDS` in `src/scripts/verification-evidence-core.mjs`), so a producer
+  // never has to guess a key the helper then rejects.
+  const mapping = verificationEvidenceSection('### Producer mapping', '### Worktree producers');
+  for (const key of ['check', 'outcome', 'provenance', 'scope', 'limitation', 'comparison']) {
+    assert.ok(
+      mapping.includes(`\`${key}\``),
+      `producer mapping must name the check key \`${key}\``,
+    );
+  }
+  ordered(
+    mapping,
+    'required `check`',
+    '`outcome`',
+    '`provenance`',
+    '`scope`',
+    'optional `limitation`',
+  );
+  for (const literal of ['`comparison` only with `baseline-failure`', 'no other key']) {
+    assert.ok(mapping.includes(literal), `producer mapping must state: ${literal}`);
+  }
+});
+
 test('worktree producers build before the discard from the named snapshot per producer', () => {
   // Invariant: the build reads the verified tree from the diff-baseline store before it is
   // discarded, and the snapshot is named for each producer.
