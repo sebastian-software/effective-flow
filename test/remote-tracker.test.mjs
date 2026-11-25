@@ -3837,6 +3837,7 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
           repository: {
             pullRequest: {
               reviewThreads: {
+                pageInfo: { hasNextPage: false },
                 nodes: [
                   {
                     id: 'thread-1',
@@ -3844,6 +3845,7 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
                     path: 'src/a.mjs',
                     line: 42,
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           id: 'comment-1',
@@ -3872,6 +3874,7 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
                     path: 'src/b.mjs',
                     line: 7,
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           id: 'comment-2',
@@ -4034,6 +4037,7 @@ test('a GitHub review thread states lineOutdated from its own line before the or
     path: 'src/a.mjs',
     ...fields,
     comments: {
+      pageInfo: { hasNextPage: false },
       nodes: [{ id: `${id}-c`, body: 'Finding', path: 'src/a.mjs', line: null, originalLine: 9 }],
     },
   });
@@ -4045,6 +4049,7 @@ test('a GitHub review thread states lineOutdated from its own line before the or
           repository: {
             pullRequest: {
               reviewThreads: {
+                pageInfo: { hasNextPage: false },
                 nodes: [
                   node('current', { line: 12, diffSide: 'RIGHT' }),
                   node('outdated', { line: null, diffSide: 'RIGHT' }),
@@ -4299,6 +4304,7 @@ test('a review thread carries the browser link its first comment sits at', async
           repository: {
             pullRequest: {
               reviewThreads: {
+                pageInfo: { hasNextPage: false },
                 nodes: [
                   {
                     id: 'thread-1',
@@ -4306,6 +4312,7 @@ test('a review thread carries the browser link its first comment sits at', async
                     path: 'src/a.mjs',
                     line: 42,
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           id: 'comment-1',
@@ -4334,6 +4341,7 @@ test('a review thread carries the browser link its first comment sits at', async
                     path: 'src/b.mjs',
                     line: 7,
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           id: 'comment-2',
@@ -11664,6 +11672,7 @@ test('a GraphQL actor class outside the allow-list leaves bot authorship undecid
           repository: {
             pullRequest: {
               reviewThreads: {
+                pageInfo: { hasNextPage: false },
                 nodes: [
                   {
                     id: 'thread-1',
@@ -11671,6 +11680,7 @@ test('a GraphQL actor class outside the allow-list leaves bot authorship undecid
                     path: 'src/a.mjs',
                     line: 42,
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           id: 'comment-1',
@@ -16729,4 +16739,359 @@ test('the appendix extraction reproduces the rendered digest and neutralizes dis
     ).error,
     'order',
   );
+});
+
+// Review-thread pagination (issue #694). The GitHub read walks `reviewThreads` and every thread's
+// `comments` connection by cursor and fails closed on anything it cannot prove complete. A `null`
+// pageInfo argument omits the key from the payload; `undefined` would take the complete-page default.
+const COMMENT_FIELDS =
+  'id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}';
+
+function pagedComment(id) {
+  return {
+    id,
+    databaseId: Number(id.replace(/\D/g, '')) || 1,
+    body: `Body ${id}`,
+    path: 'src/a.mjs',
+    line: 3,
+    author: { __typename: 'User', login: 'reviewer' },
+  };
+}
+
+function pagedThread(id, { comments, commentsPage = { hasNextPage: false } } = {}) {
+  return {
+    id,
+    isResolved: false,
+    path: 'src/a.mjs',
+    line: 3,
+    comments: {
+      nodes: comments ?? [pagedComment(`${id}-c1`)],
+      ...(commentsPage === null ? {} : { pageInfo: commentsPage }),
+    },
+  };
+}
+
+function threadsPage(nodes, pageInfo = { hasNextPage: false }, extra = {}) {
+  const connection = { ...(nodes === undefined ? {} : { nodes }) };
+  if (pageInfo !== null) connection.pageInfo = pageInfo;
+  return {
+    status: 0,
+    stdout: JSON.stringify({
+      data: { repository: { pullRequest: { reviewThreads: connection } } },
+      ...extra,
+    }),
+    stderr: '',
+  };
+}
+
+function followUpPage(nodes, pageInfo = { hasNextPage: false }, extra = {}) {
+  const connection = {};
+  if (nodes !== undefined) connection.nodes = nodes;
+  if (pageInfo !== null) connection.pageInfo = pageInfo;
+  return {
+    status: 0,
+    stdout: JSON.stringify({ data: { node: { comments: connection } }, ...extra }),
+    stderr: '',
+  };
+}
+
+function numberedThreads(prefix, count) {
+  return Array.from({ length: count }, (_, index) => pagedThread(`${prefix}-${index + 1}`));
+}
+
+function readPagedThreads(results, options = {}) {
+  const runner = fakeRunner(results);
+  return executeOperation(
+    'review-threads-read',
+    { repository: githubRepository, pullRequest: 2 },
+    { runner, skipProbe: true, ...options },
+  ).then((envelope) => ({ envelope, runner }));
+}
+
+const requestOf = (call) => JSON.parse(call.stdin);
+
+test('a GitHub review-thread read follows the thread cursor and returns every page exactly once', async () => {
+  // Invariant: a pull request with more than 100 review threads is read to its last page, in page
+  // order, so `merge-gate` never judges a truncated prefix as the complete thread list.
+  const first = numberedThreads('t', 100);
+  const last = { ...pagedThread('t-101'), id: 't-101' };
+  const { envelope, runner } = await readPagedThreads([
+    threadsPage(first, { hasNextPage: true, endCursor: 'cursor-1' }),
+    threadsPage([last]),
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.length, 101);
+  assert.deepEqual(
+    envelope.data.result.map((thread) => thread.id),
+    [...first.map((thread) => thread.id), 't-101'],
+  );
+  assert.equal(envelope.data.result.filter((thread) => thread.id === 't-101').length, 1);
+  assert.equal(envelope.data.result.at(-1).id, 't-101');
+  assert.equal(runner.calls.length, 2);
+  const firstRequest = requestOf(runner.calls[0]);
+  const secondRequest = requestOf(runner.calls[1]);
+  assert.equal(firstRequest.variables.cursor ?? null, null);
+  assert.equal(secondRequest.variables.cursor, 'cursor-1');
+  assert.match(firstRequest.query, /\$cursor:String/);
+  assert.match(firstRequest.query, /reviewThreads\(first:100,after:\$cursor\)/);
+  assert.deepEqual(
+    envelope.data.steps.map((entry) => entry.step),
+    ['threads-page', 'threads-page'],
+  );
+});
+
+test('a GitHub review-thread query asks for pageInfo on the thread and the nested comment connection', async () => {
+  // Invariant: the query itself requests the paging state of both connections, the nested one
+  // after its `nodes`, because a response without `pageInfo` cannot prove completeness.
+  const { runner } = await readPagedThreads([threadsPage([pagedThread('t-1')])]);
+  const { query } = requestOf(runner.calls[0]);
+  assert.match(query, /reviewThreads\(first:100,after:\$cursor\)\{nodes\{/);
+  assert.match(
+    query,
+    /pageInfo\{hasNextPage endCursor\}\}\}\}\}$|pageInfo\{hasNextPage endCursor\}/,
+  );
+  assert.match(
+    query,
+    new RegExp(
+      `comments\\(first:100\\)\\{nodes\\{${COMMENT_FIELDS.replace(/[{}]/g, '\\$&')}\\}pageInfo\\{hasNextPage endCursor\\}\\}`,
+    ),
+  );
+  assert.equal((query.match(/pageInfo\{hasNextPage endCursor\}/g) ?? []).length, 2);
+});
+
+test('a GitHub thread with more than 100 comments is completed by a comment follow-up in order', async () => {
+  // Invariant: a long thread keeps every reply; the follow-up reads the thread's own comment
+  // connection from the previous page's cursor and appends in order, so the last reply (often the
+  // bot's answer that settles the thread) is neither lost nor duplicated.
+  const firstComments = Array.from({ length: 100 }, (_, index) => pagedComment(`c-${index + 1}`));
+  const { envelope, runner } = await readPagedThreads([
+    threadsPage([
+      pagedThread('thread-long', {
+        comments: firstComments,
+        commentsPage: { hasNextPage: true, endCursor: 'comments-cursor-1' },
+      }),
+    ]),
+    followUpPage([pagedComment('c-101')]),
+  ]);
+  assert.equal(envelope.ok, true);
+  const [thread] = envelope.data.result;
+  assert.equal(thread.comments.length, 101);
+  assert.deepEqual(
+    thread.comments.map((comment) => comment.id),
+    [...firstComments.map((comment) => comment.id), 'c-101'],
+  );
+  assert.equal(thread.comments.filter((comment) => comment.id === 'c-101').length, 1);
+  assert.equal(runner.calls.length, 2);
+  const followUp = requestOf(runner.calls[1]);
+  assert.deepEqual(followUp.variables, { id: 'thread-long', cursor: 'comments-cursor-1' });
+  assert.match(followUp.query, /node\(id:\$id\)/);
+  assert.match(followUp.query, /comments\(first:100,after:\$cursor\)/);
+  assert.match(followUp.query, /PullRequestReviewThread/);
+  assert.deepEqual(
+    envelope.data.steps.map((entry) => entry.step),
+    ['threads-page', 'comments-page'],
+  );
+});
+
+test('comment follow-ups run after all thread pages and thread by thread in thread order', async () => {
+  // Invariant: the walk is sequential and deterministic: every thread page first, then the
+  // follow-ups in the order their threads appeared.
+  const long = (id, cursor) =>
+    pagedThread(id, {
+      comments: [pagedComment(`${id}-c1`)],
+      commentsPage: { hasNextPage: true, endCursor: cursor },
+    });
+  const { envelope, runner } = await readPagedThreads([
+    threadsPage([long('ta', 'ca')], { hasNextPage: true, endCursor: 'tp-1' }),
+    threadsPage([long('tb', 'cb')]),
+    followUpPage([pagedComment('ta-c2')]),
+    followUpPage([pagedComment('tb-c2')]),
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    runner.calls.map((call) => requestOf(call).variables.id ?? 'threads'),
+    ['threads', 'threads', 'ta', 'tb'],
+  );
+  assert.deepEqual(
+    envelope.data.steps.map((entry) => entry.step),
+    ['threads-page', 'threads-page', 'comments-page', 'comments-page'],
+  );
+  assert.deepEqual(
+    envelope.data.result.map((thread) => thread.comments.map((comment) => comment.id)),
+    [
+      ['ta-c1', 'ta-c2'],
+      ['tb-c1', 'tb-c2'],
+    ],
+  );
+});
+
+test('a single-page GitHub thread read is one request whose steps repeat the command', async () => {
+  // Invariant: exactly 100 threads with no further page cost one request, and `data.steps` names
+  // that same redacted command, so the envelope never contradicts itself.
+  const { envelope, runner } = await readPagedThreads([threadsPage(numberedThreads('t', 100))]);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.length, 100);
+  assert.equal(runner.calls.length, 1);
+  assert.equal(envelope.data.steps.length, 1);
+  assert.equal(envelope.data.steps[0].step, 'threads-page');
+  assert.deepEqual(envelope.data.steps[0].command, envelope.data.command);
+});
+
+test('a GitHub thread with zero comments needs no follow-up request', async () => {
+  const { envelope, runner } = await readPagedThreads([
+    threadsPage([pagedThread('t-1', { comments: [] })]),
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.equal(runner.calls.length, 1);
+  assert.deepEqual(envelope.data.result[0].comments, []);
+});
+
+test('a thread or comment id seen twice across pages keeps only its first occurrence', async () => {
+  // Invariant: a connection that shifts between requests cannot double-count a finding.
+  const first = pagedThread('t-1', {
+    comments: [pagedComment('c-1')],
+    commentsPage: { hasNextPage: true, endCursor: 'cc' },
+  });
+  const duplicateOfFirst = { ...pagedThread('t-1'), path: 'src/other.mjs' };
+  const { envelope } = await readPagedThreads([
+    threadsPage([first], { hasNextPage: true, endCursor: 'tc' }),
+    threadsPage([duplicateOfFirst, pagedThread('t-2')]),
+    followUpPage([{ ...pagedComment('c-1'), body: 'replayed' }, pagedComment('c-2')]),
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map((thread) => thread.id),
+    ['t-1', 't-2'],
+  );
+  assert.equal(envelope.data.result[0].path, 'src/a.mjs');
+  assert.deepEqual(
+    envelope.data.result[0].comments.map((comment) => [comment.id, comment.body]),
+    [
+      ['c-1', 'Body c-1'],
+      ['c-2', 'Body c-2'],
+    ],
+  );
+});
+
+test('GraphQL errors on any review-thread page or follow-up fail the read closed with the messages', async () => {
+  // Invariant: a partial GraphQL answer is never read as a complete thread list, whichever request
+  // of the walk carried the `errors`, exactly as the status read refuses it.
+  const errors = [
+    { message: 'API rate limit exceeded for installation ID 42' },
+    { type: 'FORBIDDEN', message: 'Resource not accessible by integration' },
+  ];
+  const messages = [
+    'API rate limit exceeded for installation ID 42',
+    'Resource not accessible by integration',
+  ];
+  const longThread = pagedThread('t-1', {
+    commentsPage: { hasNextPage: true, endCursor: 'cc' },
+  });
+  const cases = {
+    'first thread page': [threadsPage([pagedThread('t-1')], { hasNextPage: false }, { errors })],
+    'later thread page': [
+      threadsPage([pagedThread('t-1')], { hasNextPage: true, endCursor: 'tc' }),
+      threadsPage([pagedThread('t-2')], { hasNextPage: false }, { errors }),
+    ],
+    'comment follow-up': [
+      threadsPage([longThread]),
+      followUpPage([pagedComment('c-2')], { hasNextPage: false }, { errors }),
+    ],
+  };
+  for (const [label, results] of Object.entries(cases)) {
+    const { envelope } = await readPagedThreads(results);
+    assert.equal(envelope.ok, false, label);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD', label);
+    assert.equal(envelope.error.retryable, false, label);
+    assert.deepEqual(envelope.error.details.messages, messages, label);
+    assert.equal(envelope.data?.result, undefined, label);
+  }
+  // An empty `errors` array is not a failure.
+  const stated = await readPagedThreads([
+    threadsPage([pagedThread('t-1')], { hasNextPage: false }, { errors: [] }),
+  ]);
+  assert.equal(stated.envelope.ok, true);
+  assert.equal(stated.envelope.data.result.length, 1);
+});
+
+test('a GitHub thread read fails closed on every pagination shape it cannot prove complete', async () => {
+  // Invariant: missing paging state, a missing node list, a cursor the next page cannot be asked
+  // from, a cursor that does not advance and a vanished thread all stop the read with
+  // INVALID_PAYLOAD instead of returning a prefix as the whole list.
+  const withComments = (commentsPage) =>
+    pagedThread('t-1', { commentsPage, comments: [pagedComment('c-1')] });
+  const brokenThreadNodes = (comments) => ({
+    id: 't-1',
+    isResolved: false,
+    path: 'src/a.mjs',
+    line: 3,
+    comments,
+  });
+  const cases = {
+    'missing pageInfo on the thread connection': [threadsPage([pagedThread('t-1')], null)],
+    'missing pageInfo on a nested comments connection': [threadsPage([withComments(null)])],
+    'missing pageInfo on a follow-up connection': [
+      threadsPage([withComments({ hasNextPage: true, endCursor: 'cc' })]),
+      followUpPage([pagedComment('c-2')], null),
+    ],
+    'missing nodes on the thread connection': [threadsPage(undefined)],
+    'missing nodes on nested comments': [
+      threadsPage([brokenThreadNodes({ pageInfo: { hasNextPage: false } })]),
+    ],
+    'missing nodes on the follow-up': [
+      threadsPage([withComments({ hasNextPage: true, endCursor: 'cc' })]),
+      followUpPage(undefined),
+    ],
+    'hasNextPage without endCursor on threads': [
+      threadsPage([pagedThread('t-1')], { hasNextPage: true }),
+    ],
+    'hasNextPage with empty endCursor on threads': [
+      threadsPage([pagedThread('t-1')], { hasNextPage: true, endCursor: '' }),
+    ],
+    'hasNextPage without endCursor on comments': [
+      threadsPage([withComments({ hasNextPage: true })]),
+    ],
+    'hasNextPage with empty endCursor on comments': [
+      threadsPage([withComments({ hasNextPage: true, endCursor: '' })]),
+    ],
+    'thread cursor that does not advance': [
+      threadsPage([pagedThread('t-1')], { hasNextPage: true, endCursor: 'same' }),
+      threadsPage([pagedThread('t-2')], { hasNextPage: true, endCursor: 'same' }),
+    ],
+    'comment cursor that does not advance': [
+      threadsPage([withComments({ hasNextPage: true, endCursor: 'same' })]),
+      followUpPage([pagedComment('c-2')], { hasNextPage: true, endCursor: 'same' }),
+    ],
+    'follow-up answering node null': [
+      threadsPage([withComments({ hasNextPage: true, endCursor: 'cc' })]),
+      { status: 0, stdout: JSON.stringify({ data: { node: null } }), stderr: '' },
+    ],
+  };
+  for (const [label, results] of Object.entries(cases)) {
+    const { envelope } = await readPagedThreads(results);
+    assert.equal(envelope.ok, false, label);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD', label);
+    assert.equal(envelope.error.retryable, false, label);
+    assert.equal(envelope.data?.result, undefined, label);
+  }
+});
+
+test('the review-thread request bound stops the read before one more request is sent', async () => {
+  // Invariant: a provider that keeps reporting `hasNextPage` with fresh cursors cannot make the
+  // read loop; `maxReviewThreadRequests` counts every GraphQL request and the read fails at it.
+  const endless = (cursor) =>
+    threadsPage([pagedThread(`t-${cursor}`)], {
+      hasNextPage: true,
+      endCursor: cursor,
+    });
+  const { envelope, runner } = await readPagedThreads(
+    [endless('c1'), endless('c2'), endless('c3'), endless('c4')],
+    { maxReviewThreadRequests: 2 },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.retryable, false);
+  assert.equal(envelope.error.details.maxRequests, 2);
+  assert.equal(envelope.error.details.requestCount, 2);
+  assert.equal(runner.calls.length, 2);
 });

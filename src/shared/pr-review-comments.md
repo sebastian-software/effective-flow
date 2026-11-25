@@ -85,6 +85,9 @@ Read the review comments **directly before** classification fresh from the host 
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, the `resolved` status, and the thread's `url`.
 On a `tea`-backed forge only, a thread also carries an optional `reviewId`, the id of the review it was read under, and holds that review's later comments at its location as replies.
+The review-thread read returns every thread and reply or fails closed. A failed thread read is
+never an empty thread list: it blocks every decision that rests on threads, such as a merge or
+"all threads assessed".
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read

@@ -179,6 +179,45 @@ const PR_STATUS_IDENTITY_QUERY = PR_STATUS_QUERY.replace(
   'workflowRun{databaseId event file{path} workflow{databaseId}}',
 );
 
+// The review-thread read pages two connections: `reviewThreads` and each thread's nested
+// `comments`. It runs its own cursor loop rather than `gh api --paginate` like the REST reads,
+// because gh's GraphQL pagination follows the one connection that declares `$endCursor`, cannot page
+// a nested connection such as `comments`, and offers neither a page bound nor a check of each page's
+// `errors`. Both `pageInfo` selections follow their `nodes`, so the selection reads as before up to
+// each connection's end. A thread whose comments continue is completed by the follow-up query, which
+// addresses that thread's own comment connection by node ID.
+const REVIEW_COMMENT_FIELDS =
+  'id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}';
+const PAGE_INFO = 'pageInfo{hasNextPage endCursor}';
+const REVIEW_THREADS_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{${REVIEW_COMMENT_FIELDS}}${PAGE_INFO}}}${PAGE_INFO}}}}}`;
+const REVIEW_THREAD_COMMENTS_QUERY = `query($id:ID!,$cursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{${REVIEW_COMMENT_FIELDS}}${PAGE_INFO}}}}}`;
+
+// One page of review threads. The first page states no cursor at all.
+export function buildGithubReviewThreadsPagePlan(input, repository, cursor) {
+  return mutationPlan(
+    'gh',
+    ['api', ...ghHostArgs(repository), 'graphql', '--input', '-'],
+    jsonStdin({
+      query: REVIEW_THREADS_QUERY,
+      variables: {
+        owner: repository.owner,
+        repo: repository.repository,
+        number: prNumber(input),
+        ...(cursor === undefined ? {} : { cursor }),
+      },
+    }),
+  );
+}
+
+// The next page of one thread's comments, read from the cursor its previous page ended at.
+export function buildGithubReviewThreadCommentsPlan(repository, threadId, cursor) {
+  return mutationPlan(
+    'gh',
+    ['api', ...ghHostArgs(repository), 'graphql', '--input', '-'],
+    jsonStdin({ query: REVIEW_THREAD_COMMENTS_QUERY, variables: { id: threadId, cursor } }),
+  );
+}
+
 export function buildGithubCommandPlan(operation, input, repository) {
   const { owner, repository: repo } = repository;
   // Both provider CLIs address the same REST path shape, so this builder and the one in
@@ -582,14 +621,9 @@ export function buildGithubCommandPlan(operation, input, repository) {
         ],
         jsonStdin(buildReviewPayload(payload, { visibility: input.visibility })),
       );
-    case 'review-threads-read': {
-      const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}`;
-      return mutationPlan(
-        'gh',
-        ['api', ...hostArgs, 'graphql', '--input', '-'],
-        jsonStdin({ query, variables: { owner, repo, number: prNumber(input) } }),
-      );
-    }
+    // The first thread page; `readGithubReviewThreads` in `remote-tracker-core.mjs` walks the rest.
+    case 'review-threads-read':
+      return buildGithubReviewThreadsPagePlan(input, repository);
     case 'review-thread-reply':
       return mutationPlan(
         'gh',
