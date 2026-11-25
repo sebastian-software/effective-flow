@@ -266,7 +266,12 @@ If normal `git worktree remove <path>` fails, the lifecycle remains `cleanup-fai
 reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership, the receipt, Git
 registration, branch, status, lock, and lifecycle before retrying. If the worktree was removed but
 its lifecycle record or temporary component branch remains, the report calls this partial cleanup.
-Delivery branches are intentionally retained. A temporary `apply-review` branch is removed only
+A local delivery branch is deleted only when you confirm it as a `branch:` item and cleanup proves
+its content is in `origin/<base>`; the others are kept, and the dry run and report give each one's
+reason. For `not-proven` or `base-ref-missing`, run the `git fetch` shown in the entry's hint and
+rerun cleanup; for `recorded`, `checked-out` or `in-use`, let that run finish first. A deleted
+branch can be restored with the `git branch` line in the report until garbage collection. A
+temporary `apply-review` branch is removed only
 when integration is proven and `git branch -d` accepts it, or when `apply-review` proves every
 component commit by patch-id. Otherwise the branch stays and the report lists it as
 `BRANCH_RETAINED`: the worktree and its lifecycle record are already deleted, so delete or keep the

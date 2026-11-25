@@ -617,6 +617,33 @@ async function load(input, deps, mutation = false) {
   }
   return context;
 }
+// Read-only: the `execution.branch` of every non-terminal run below
+// `<runtimeStateRoot>/.effective-flow/build-runs/` (a run directory without `terminal.json`;
+// `execution.json`'s execution, once a transition wrote one, else the request's). Returns
+// `{state: 'ok', branches}` (sorted, distinct, no detached `null`) or `{state: 'unreadable',
+// reason}` for anything it cannot read safely: a foreign entry, a run without a readable request,
+// or a malformed execution. A missing namespace is `ok` with no branch. `cleanup` reads it to keep
+// a branch a run still binds; it writes nothing and verifies no digest.
+export async function nonTerminalBuildRunBranches(runtimeStateRoot) {
+  try {
+    const namespace = path.join(absolute(runtimeStateRoot), '.effective-flow', 'build-runs');
+    if ((await safeDirectory(namespace, true)) === null) return { state: 'ok', branches: [] };
+    const branches = new Set();
+    for (const runId of (await readdir(namespace)).sort()) {
+      if (!ID.test(runId)) return { state: 'unreadable', reason: 'foreign-entry' };
+      const run = await safeDirectory(path.join(namespace, runId));
+      const entries = await readdir(run);
+      if (entries.includes('terminal.json')) continue;
+      const file = entries.includes('execution.json') ? 'execution.json' : 'request.json';
+      const value = await jsonRead(path.join(run, file));
+      executionShape(value?.execution);
+      if (value.execution.branch !== null) branches.add(value.execution.branch);
+    }
+    return { state: 'ok', branches: [...branches].sort() };
+  } catch (error) {
+    return { state: 'unreadable', reason: error?.code ?? 'unreadable' };
+  }
+}
 function validateRequest(value) {
   exact(
     value,
