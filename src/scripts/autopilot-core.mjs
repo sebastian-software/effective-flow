@@ -1396,7 +1396,8 @@ function invariantFailed(invariant, message) {
 }
 
 // The Git invariants of a record that names a checkout: the checkout is on `refs/heads/<branch>`,
-// no merge is in progress there, and the branch tip is `mergeOid` with exactly the parents
+// no merge is in progress there, no tracked or untracked change survives the commit or abort, and
+// the branch tip is `mergeOid` with exactly the parents
 // `[headOid, baseOid]` (`resolved`) or still `headOid` (`unresolved`).
 async function verifyDeliveryCheckout(ctx, record) {
   let root;
@@ -1418,6 +1419,15 @@ async function verifyDeliveryCheckout(ctx, record) {
   });
   if (merging.status === 0) {
     invariantFailed('merge-in-progress', 'the checkout still has a merge in progress');
+  }
+  const status = await deliveryGit(ctx, root, [
+    'status',
+    '--porcelain',
+    '-z',
+    '--untracked-files=all',
+  ]);
+  if (status.stdout.length > 0) {
+    invariantFailed('dirty-checkout', 'the checkout has uncommitted or untracked changes');
   }
   const tip = await deliveryCommit(ctx, root, 'HEAD');
   if (record.result === 'unresolved') {

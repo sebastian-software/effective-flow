@@ -99,8 +99,9 @@ when: step 4 has created the attempt worktree and is about to run its setup
 
     The helper verifies a named checkout with Git: on `refs/heads/<branch>`, a `resolved` tip with
     exactly the parents `[headOid, baseOid]`, an `unresolved` branch still at `headOid` with no
-    merge in progress. Its error envelope, a failed `merge --abort` or an unverified quick marker
-    after the commit is a `post-branch-failure` blocker.
+    merge in progress, and in both a clean checkout after the commit or abort. Its error envelope,
+    a failed `merge --abort` or an unverified quick marker after the commit is a
+    `post-branch-failure` blocker.
 
 **Withdrawal.** Withdraw an attempt worktree that has a record after step 11 with one `worktree remove` call
 (`sessionId` `<run-id>-delivery-base`, its record id), whatever the attempt's result. Only when the

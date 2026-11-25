@@ -280,6 +280,34 @@ test('an unresolved conflict leaves the branch unchanged and records unresolved'
   assert.equal(ledger(s.root, s.runId).deliveryBase.reason, 'resolver-abort');
 });
 
+// Invariant: the checkout a record names must be clean after the commit or abort: an untracked
+// file a resolver or validator left behind fails `dirty-checkout` for `unresolved` and `resolved`
+// alike, and no record is stored.
+test('a record naming a checkout with untracked leftovers is refused as dirty', async (t) => {
+  if (!(await gitMeetsMinimum())) return t.skip('Git older than 2.38');
+  const s = await scenario(t);
+  const refused = async (input, label) => {
+    const result = await op('delivery-base-record', input);
+    assert.equal(result.error?.code, 'INVARIANT_FAILED', label);
+    assert.equal(result.error.details.invariant, 'dirty-checkout', label);
+    assert.equal(Object.hasOwn(ledger(s.root, s.runId), 'deliveryBase'), false, label);
+  };
+
+  startConflictingMerge(s);
+  git(s.checkout, 'merge', '--abort');
+  write(s.checkout, 'leftover/validator.log', 'x\n');
+  await refused(
+    recordInput(s, { result: 'unresolved', reason: 'resolver-abort', validationMode: null }),
+    'unresolved',
+  );
+  rmSync(join(s.checkout, 'leftover'), { recursive: true });
+
+  startConflictingMerge(s);
+  const mergeOid = completeMerge(s);
+  write(s.checkout, 'leftover.txt', 'x\n');
+  await refused(recordInput(s, { mergeOid }), 'resolved');
+});
+
 // Invariant: a `resolved` record is refused unless the branch tip is one merge commit of exactly
 // `[headOid, baseOid]`: a rebased head, a plain commit on the head, a merge of the wrong parents
 // and a tip other than `mergeOid` each fail, and no record is stored.
