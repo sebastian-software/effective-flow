@@ -2224,6 +2224,28 @@ test('cleanup branch: a signal before the deletion interrupts the item and keeps
   assert.equal(signalTarget.listenerCount('SIGTERM'), 0, 'the signal handlers are removed');
 });
 
+// Invariant: a termination signal recorded during the final checkout and in-use checks, after the
+// item's own signal check, still stops the item before the ref is deleted.
+test('cleanup branch: a signal during the final checks keeps the branch', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  const signalTarget = new EventEmitter();
+  const interrupted = wf.expectOk(
+    await applyBranches(root, [item], {
+      signalTarget,
+      onPhase: (name) => {
+        if (name === 'beforeBranchDelete') signalTarget.emit('SIGTERM');
+      },
+    }),
+  );
+  assert.deepEqual(
+    [interrupted.items[0].code, interrupted.items[0].signal, interrupted.items[0].branch],
+    ['INTERRUPTED', 'SIGTERM', branch],
+  );
+  assert.ok(branchExists(root, branch));
+  assert.equal(signalTarget.listenerCount('SIGTERM'), 0, 'the signal handlers are removed');
+});
+
 // Invariant: a record that becomes unreadable, or build-run state that does, between the pre-write
 // pass and the deletion keeps an orphan branch (`record-unreadable`); a foreign file in the records
 // directory does the same at plan time.

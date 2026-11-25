@@ -2646,7 +2646,7 @@ async function reachedElsewhere(context, oid, branch) {
 // symbolic ref, and no worktree checks it out or uses it (`branchesInUse`). Returns
 // `{refused: null}` once deleted, with the removed `branch.<branch>.*` configuration
 // (`configRemoved`, or `configRemaining` when its removal failed; neither fails the deletion), else
-// `{refused}`: `checked-out`, `in-use`, `ref-moved` (also a ref that became symbolic, or whose
+// `{refused}`: `interrupted` (a signal recorded before the delete, only with `signals`), `checked-out`, `in-use`, `ref-moved` (also a ref that became symbolic, or whose
 // symbolic state is unknown), or `ref-recreate-failed` with the `restore` command. Both
 // `update-ref` calls pass `--no-deref`, so a symbolic ref's target is never touched. A delete that
 // failed or timed out is re-read: a ref that is gone counts as deleted (a hook can be stopped after
@@ -2654,7 +2654,7 @@ async function reachedElsewhere(context, oid, branch) {
 // checks the branch out after the deletion, or a relist that fails, gets the ref recreated at
 // `branchOid` (`git update-ref --no-deref <ref> <oid> ''`, which creates it only while it is
 // absent) and is `checked-out`.
-async function compareAndDeleteBranch(context, branch, branchOid, deps) {
+async function compareAndDeleteBranch(context, branch, branchOid, deps, signals = null) {
   const ref = `refs/heads/${branch}`;
   const checkedOut = (await listWorktrees(context)).some((entry) => entry.branch === ref);
   if (checkedOut) return { refused: 'checked-out' };
@@ -2662,6 +2662,9 @@ async function compareAndDeleteBranch(context, branch, branchOid, deps) {
   if (inUse.unreadable || inUse.names.has(branch)) return { refused: 'in-use' };
   await phase(deps, 'beforeBranchDelete', { branch, branchOid });
   if ((await isSymbolicBranch(context, branch)) !== false) return { refused: 'ref-moved' };
+  // A signal recorded during the checks above stops the deletion; the delete itself is the last
+  // step a signal can still prevent.
+  if (signals?.signal) return { refused: 'interrupted', signal: signals.signal };
   const deleted = await runGit(context, context.cwd, [
     'update-ref',
     '--no-deref',
@@ -4288,7 +4291,17 @@ async function applyBranchItem(context, roots, entry, completed, deps, signals) 
         tip: item.tip,
       };
     }
-    const deletion = await compareAndDeleteBranch(git, item.branch, tip, deps);
+    const deletion = await compareAndDeleteBranch(git, item.branch, tip, deps, signals);
+    if (deletion.refused === 'interrupted') {
+      return {
+        itemId: entry.itemId,
+        ok: false,
+        code: 'INTERRUPTED',
+        signal: deletion.signal,
+        branch: item.branch,
+        tip: item.tip,
+      };
+    }
     if (deletion.refused) {
       const { refused, ...rest } = deletion;
       return retained(refused === 'ref-moved' && tracking.timedOut ? 'timeout' : refused, rest);
