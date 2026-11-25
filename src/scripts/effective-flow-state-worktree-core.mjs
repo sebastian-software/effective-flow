@@ -63,13 +63,28 @@
 // Branch policy `delete-after-integration`: after the removal, `git branch -d`. When Git refuses
 // and the call carries `integrationRoot` (`apply-review` only), the patch-id proof below runs
 // against the branch checked out at `integrationRoot`, and a proven branch is deleted with the
-// compare-and-delete `git update-ref -d refs/heads/<branch> <branchOid>` once no worktree checks it
-// out. Otherwise the branch stays, the record is still deleted, and the item is BRANCH_RETAINED
-// with the branch and its unproven commits. A `retain` branch is never touched. The one purpose
-// exception is the temporary branch of `base-validation` and `issue-planning`
-// (TEMPORARY_BRANCH_PURPOSES), which is never integrated: when `branch -d` refuses it, a tip still
-// at `creationOid` that another ref also reaches is compare-and-deleted at that OID (see
-// `deleteTemporaryBranch`).
+// compare-and-delete `git update-ref --no-deref -d refs/heads/<branch> <branchOid>` once no
+// worktree checks it out. Otherwise the branch stays, the record is still deleted, and the item is BRANCH_RETAINED
+// with the branch and its unproven commits. A `retain` branch is never touched by the worktree item
+// itself. The one purpose exception is the temporary branch of `base-validation` and
+// `issue-planning` (TEMPORARY_BRANCH_PURPOSES), which is never integrated: when `branch -d` refuses
+// it, a tip still at `creationOid` that another ref also reaches is compare-and-deleted at that OID
+// (see `deleteTemporaryBranch`). Every compare-and-delete (`compareAndDeleteBranch`) also refuses a
+// branch a rebase or bisect uses and a symbolic ref, recreates the ref when a worktree checks it
+// out right after the deletion, and removes the branch's `branch.<name>.*` configuration.
+//
+// The `branch:` class of `cleanup plan` and `cleanup apply` offers a local delivery branch whose
+// content provably landed in `origin/<delivery.baseBranch>` (`planBranches`): an orphan under
+// `refs/heads/<delivery.branchPrefix>/` that no record and no non-terminal build run names and no
+// worktree checks out or uses, or the branch of a `delivery`, `partial-diff` or `plan-publication`
+// record whose `worktree:` item is in the same plan (`dependsOn`). Its proof is one of the local
+// tree proofs of `pr-delivery-git-core.mjs` (`ancestor`, `tip-tree`, `squash-tree`); no fetch or
+// forge call runs. The apply value `{itemDigest, proof, proofCommit}` is only integrity: the
+// pre-write pass re-derives candidacy and the cheap facts (`recomputeBranchItem`), and the item's
+// own step re-runs the one proof and the record, checkout and in-use checks right before the
+// compare-and-delete (`applyBranchItem`). Every unproven or excluded branch is retained with one
+// reason of RETAINED_BRANCH_REASONS; nothing ever runs `git branch -D`, pushes or changes a remote
+// ref.
 //
 // `cleanup plan` and `cleanup apply` alone may also claim a `merge-gate` record that a stopped run
 // left `aborted` or `failed` (`mergeGateRelease` of `evaluateEligibility`): condition 6 is waived,
@@ -100,7 +115,8 @@
 // one item (UNSAFE_TARGET, LEGACY_CHANGED, …) is that item's result and the others continue. Only
 // a root or input error (INVALID_ROOT, INVALID_INPUT, RUNTIME_STATE_UNSAFE) or a PREVIEW_MISMATCH
 // before the first write ends the whole call. `cleanup apply` items are `worktree:`,
-// `invalid-record:` (together at most MAX_RECORD_IDS), `legacy:` and `config:`.
+// `invalid-record:` (together at most MAX_RECORD_IDS), `branch:` (at most MAX_BRANCH_ITEMS),
+// `legacy:` and `config:`.
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
@@ -109,7 +125,7 @@ import { hostname as osHostname } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { isDeepStrictEqual } from 'node:util';
-import { resolveConfiguration } from './config-resolve-core.mjs';
+import { isSafeBaseRef, resolveConfiguration } from './config-resolve-core.mjs';
 import {
   LEGACY_CONFIG_ENTRY,
   LEGACY_MEMORY_ENTRY,
@@ -165,6 +181,15 @@ import {
   readLedger,
 } from './effective-flow-state-ledger-core.mjs';
 import { VISIBILITY_VALUES } from './remote-tracker-shared-core.mjs';
+import {
+  BRANCH_PROOFS,
+  PrDeliveryGitError,
+  branchProofRepository,
+  branchSquashProof,
+  branchTipProof,
+  verifyBranchProof,
+} from './pr-delivery-git-core.mjs';
+import { nonTerminalBuildRunBranches } from './build-run-core.mjs';
 
 export const RECORDS_DIR = 'worktree-runs';
 export const RECORD_SCHEMA_VERSION = 1;
@@ -363,8 +388,78 @@ const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+
 // `~^:?*[\`, `..`, `//`, `@{`, leading `-` or `/`, trailing `/`, `.` or `.lock`.
 const BRANCH_PATTERN =
   /^(?!-)(?!\/)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)(?!.*\/\.)(?!\.)(?!.*\.lock$)(?!.*[/.]$)[^\x00-\x20~^:?*[\\\x7f]+$/;
+// The only branch names a `branch:` item may carry: no shell or pattern metacharacter can reach a
+// Git argument, a config key or the restore line. Any other name is retained as `unsafe-name`.
+export const SAFE_BRANCH_NAME_PATTERN = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 export const ITEM_ID_PATTERN =
-  /^(?:(?:worktree|invalid-record):[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}|legacy:\.(?:firmo|sf-plugin)|config:\.effective-flow\/config\.json)$/;
+  /^(?:(?:worktree|invalid-record):[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}|branch:[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*|legacy:\.(?:firmo|sf-plugin)|config:\.effective-flow\/config\.json)$/;
+
+// The `branch:` class of `cleanup plan` and `cleanup apply` (see the header). MAX_BRANCH_ITEMS
+// bounds both the proof candidates of one plan and the `branch:` items of one apply call;
+// BRANCH_PROOF_BUDGET_MS bounds the plan's branch discovery and proofs, never its other inventory.
+export const MAX_BRANCH_ITEMS = 32;
+export const BRANCH_PROOF_BUDGET_MS = 45_000;
+// The purposes whose `retain` record binds a branch cleanup may offer with its worktree item.
+export const BRANCH_ITEM_PURPOSES = Object.freeze(['delivery', 'partial-diff', 'plan-publication']);
+export const BRANCH_SOURCES = Object.freeze(['record', 'orphan']);
+// Every retained branch carries exactly one of these reasons: the first that applies, in this
+// order (repository-wide, exclusions, limits, then the proof result). `git-version` is never
+// decided repository-wide (never a `repositoryReason`): `ancestor` still runs below Git 2.38, so
+// `git-version` stays a branch's own pass-1 result, reported only for a branch that no exclusion
+// kept and `ancestor` did not prove.
+export const RETAINED_BRANCH_REASONS = Object.freeze([
+  'grafts',
+  'shallow-repository',
+  'git-version',
+  'base-ref-missing',
+  'record-unreadable',
+  'unsafe-name',
+  'recorded',
+  'checked-out',
+  'in-use',
+  'branch-limit',
+  'timeout',
+  'candidate-limit',
+  'no-merge-base',
+  'multiple-merge-bases',
+  'empty-diff',
+  'merge-attribute',
+  'not-proven',
+  'proof-unavailable',
+]);
+// The retained reasons a fetch of `origin/<base>` and a rerun may resolve.
+export const FETCH_HINT_REASONS = Object.freeze(['not-proven', 'base-ref-missing']);
+// The `reason` of a `branch:` item that `cleanup apply` kept (`BRANCH_RETAINED`); SANDBOX_DENIED,
+// DEADLINE_REACHED and INTERRUPTED keep their own codes.
+export const BRANCH_ITEM_REASONS = Object.freeze([
+  'worktree-not-removed',
+  'grafts',
+  'shallow-repository',
+  'not-proven',
+  'empty-diff',
+  'multiple-merge-bases',
+  'merge-attribute',
+  'proof-unavailable',
+  'timeout',
+  'recorded',
+  'record-unreadable',
+  'checked-out',
+  'in-use',
+  'ref-moved',
+  'ref-recreate-failed',
+]);
+// The files below `<common>/` and each `<common>/worktrees/<id>/` that name a branch a rebase
+// (`--update-refs` included) or a bisect still uses; read directly, never through Git.
+export const BRANCH_IN_USE_FILES = Object.freeze([
+  'rebase-merge/head-name',
+  'rebase-merge/update-refs',
+  'rebase-apply/head-name',
+  'BISECT_START',
+]);
+const DEFAULT_BRANCH_PREFIX = 'effective-flow';
+const DEFAULT_BASE_BRANCH = 'main';
+const MAX_IN_USE_FILE_BYTES = 1024 * 1024;
+const NO_REPLACE_ENV = Object.freeze({ GIT_NO_REPLACE_OBJECTS: '1' });
 
 const PROBE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW;
 const OWNER_FLAGS = PROBE_FLAGS;
@@ -650,6 +745,8 @@ export function prepare(operation, input, deps) {
 export async function openRoots(context, input) {
   await requireRootSyntax(input.cwd);
   const { cwd, common } = await resolveRoot(context, input.cwd);
+  // The common Git directory, read by the in-use check of `compareAndDeleteBranch`.
+  context.common = common;
   const worktrees = await listWorktrees(context);
   const execution = await requireRegistered(
     context,
@@ -1590,17 +1687,28 @@ export function requireDecisions(value) {
   return { discardAll, discard, config };
 }
 
+// The `items` of `cleanup apply`, checked by shape only: every value is the bare `itemDigest`,
+// except a `branch:` item's, which is exactly `{itemDigest, proof, proofCommit}`. What the values
+// claim is re-derived by the pre-write pass, never trusted.
 function requireItems(value) {
   const items = requireObject(value, 'items');
   const ids = Object.keys(items);
-  if (ids.length === 0 || ids.length > MAX_RECORD_IDS + 3) {
-    fail('INVALID_INPUT', `items must select 1 to ${MAX_RECORD_IDS + 3} items`);
+  const limit = MAX_RECORD_IDS + 3 + MAX_BRANCH_ITEMS;
+  if (ids.length === 0 || ids.length > limit) {
+    fail('INVALID_INPUT', `items must select 1 to ${limit} items`);
   }
   for (const id of ids) {
     if (!ITEM_ID_PATTERN.test(id)) fail('INVALID_INPUT', `items has an invalid itemId: ${id}`);
+    if (itemKind(id) === 'branch') {
+      requireBranchItemValue(id, items[id]);
+      continue;
+    }
     if (typeof items[id] !== 'string' || !SHA256_PATTERN.test(items[id])) {
       fail('INVALID_INPUT', `items.${id} must be a SHA-256 itemDigest`);
     }
+  }
+  if (ids.filter((id) => itemKind(id) === 'branch').length > MAX_BRANCH_ITEMS) {
+    fail('INVALID_INPUT', `items must select at most ${MAX_BRANCH_ITEMS} branch items`);
   }
   // Every record item takes a record lock and may run a removal; the three legacy items do not.
   const recordItems = ids.filter((id) => ['worktree', 'invalid-record'].includes(itemKind(id)));
@@ -1611,6 +1719,30 @@ function requireItems(value) {
     );
   }
   return items;
+}
+
+const BRANCH_ITEM_VALUE_KEYS = Object.freeze(['itemDigest', 'proof', 'proofCommit']);
+
+function requireBranchItemValue(id, value) {
+  const name = id.slice('branch:'.length);
+  if (!isBranchName(name) || !SAFE_BRANCH_NAME_PATTERN.test(name)) {
+    fail('INVALID_INPUT', `items has an invalid itemId: ${id}`);
+  }
+  if (
+    !isObject(value) ||
+    Object.keys(value).length !== BRANCH_ITEM_VALUE_KEYS.length ||
+    BRANCH_ITEM_VALUE_KEYS.some((key) => !Object.hasOwn(value, key)) ||
+    typeof value.itemDigest !== 'string' ||
+    !SHA256_PATTERN.test(value.itemDigest) ||
+    !BRANCH_PROOFS.includes(value.proof) ||
+    typeof value.proofCommit !== 'string' ||
+    !OID_PATTERN.test(value.proofCommit)
+  ) {
+    fail(
+      'INVALID_INPUT',
+      `items.${id} must be {itemDigest, proof, proofCommit} with a SHA-256 itemDigest, a proof of ${BRANCH_PROOFS.join('|')} and a full proofCommit`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2275,18 +2407,7 @@ async function preflightDirectories(context, roots, record, { gone = false } = {
   }
   directories.push(roots.common);
   if (record.branchPolicy === 'delete-after-integration') {
-    const branchDir = path.dirname(record.branch);
-    for (const base of [
-      path.join(roots.common, 'refs', 'heads'),
-      path.join(roots.common, 'logs', 'refs', 'heads'),
-    ]) {
-      const found = await nearestDirectory(
-        fs,
-        branchDir === '.' ? base : path.join(base, branchDir),
-        roots.common,
-      );
-      if (found) directories.push(found);
-    }
+    directories.push(...(await branchRefDirectories(fs, roots.common, record.branch)));
   }
   const parent = await nearestDirectory(fs, path.dirname(record.worktreePath), '/');
   if (parent) directories.push(parent);
@@ -2434,13 +2555,21 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
   const soft = await runGit(context, context.cwd, ['branch', '-d', branch]);
   if (gitOk(soft)) return { outcome: 'deleted', branch, branchOid };
   const refusal = errorDetail(soft?.stderr);
-  const retained = (reason, unproven = []) => ({
+  const retained = (reason, unproven = [], extra = {}) => ({
     outcome: 'retained',
     branch,
     branchOid,
     reason,
     unproven,
     detail: refusal,
+    ...extra,
+  });
+  // A refused compare-and-delete keeps the branch; a failed recreate names its restore command.
+  const refusedDeletion = ({ refused, restore }) =>
+    retained(refused, [], restore === undefined ? {} : { restore });
+  const deletedConfig = ({ configRemoved, configRemaining }) => ({
+    ...(configRemoved ? { configRemoved } : {}),
+    ...(configRemaining ? { configRemaining } : {}),
   });
   if (TEMPORARY_BRANCH_PURPOSES.includes(record.purpose)) {
     if (branchOid !== record.creationOid) {
@@ -2461,9 +2590,15 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
     if (!(await reachedElsewhere(context, record.creationOid, branch))) {
       return retained('unreachable');
     }
-    const refused = await compareAndDeleteBranch(context, branch, branchOid, deps);
-    if (refused) return retained(refused);
-    return { outcome: 'deleted-after-proof', branch, branchOid, proof: 'unadvanced' };
+    const deletion = await compareAndDeleteBranch(context, branch, branchOid, deps);
+    if (deletion.refused) return refusedDeletion(deletion);
+    return {
+      outcome: 'deleted-after-proof',
+      branch,
+      branchOid,
+      proof: 'unadvanced',
+      ...deletedConfig(deletion),
+    };
   }
   if (!integration) {
     const unmerged = await revList(context, [
@@ -2481,9 +2616,15 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
   if (!targetOid) return retained('target-missing');
   const proof = await integrationProof(context, branchOid, targetOid);
   if (!proof.proven) return retained(proof.reason, proof.unproven);
-  const refused = await compareAndDeleteBranch(context, branch, branchOid, deps);
-  if (refused) return retained(refused);
-  return { outcome: 'deleted-after-proof', branch, branchOid, proof: proof.reason };
+  const deletion = await compareAndDeleteBranch(context, branch, branchOid, deps);
+  if (deletion.refused) return refusedDeletion(deletion);
+  return {
+    outcome: 'deleted-after-proof',
+    branch,
+    branchOid,
+    proof: proof.reason,
+    ...deletedConfig(deletion),
+  };
 }
 
 // Whether a ref other than `refs/heads/<branch>` contains `oid`. A failed Git call counts as no.
@@ -2501,22 +2642,154 @@ async function reachedElsewhere(context, oid, branch) {
     .some((ref) => ref !== '' && ref !== `refs/heads/${branch}`);
 }
 
-// Deletes `refs/heads/<branch>` only while it still points at the proven `branchOid` and no
-// worktree checks it out. Returns null once deleted, else the retained reason: `checked-out` or
-// `ref-moved`.
+// Deletes `refs/heads/<branch>` only while it still points at the proven `branchOid`, is no
+// symbolic ref, and no worktree checks it out or uses it (`branchesInUse`). Returns
+// `{refused: null}` once deleted, with the removed `branch.<branch>.*` configuration
+// (`configRemoved`, or `configRemaining` when its removal failed; neither fails the deletion), else
+// `{refused}`: `checked-out`, `in-use`, `ref-moved` (also a ref that became symbolic, or whose
+// symbolic state is unknown), or `ref-recreate-failed` with the `restore` command. Both
+// `update-ref` calls pass `--no-deref`, so a symbolic ref's target is never touched. A delete that
+// failed or timed out is re-read: a ref that is gone counts as deleted (a hook can be stopped after
+// the transaction committed), so only a present or unreadable ref is `ref-moved`. A worktree that
+// checks the branch out after the deletion, or a relist that fails, gets the ref recreated at
+// `branchOid` (`git update-ref --no-deref <ref> <oid> ''`, which creates it only while it is
+// absent) and is `checked-out`.
 async function compareAndDeleteBranch(context, branch, branchOid, deps) {
-  const checkedOut = (await listWorktrees(context)).some(
-    (entry) => entry.branch === `refs/heads/${branch}`,
-  );
-  if (checkedOut) return 'checked-out';
+  const ref = `refs/heads/${branch}`;
+  const checkedOut = (await listWorktrees(context)).some((entry) => entry.branch === ref);
+  if (checkedOut) return { refused: 'checked-out' };
+  const inUse = await branchesInUse(context.fs, context.common);
+  if (inUse.unreadable || inUse.names.has(branch)) return { refused: 'in-use' };
   await phase(deps, 'beforeBranchDelete', { branch, branchOid });
+  if ((await isSymbolicBranch(context, branch)) !== false) return { refused: 'ref-moved' };
   const deleted = await runGit(context, context.cwd, [
     'update-ref',
+    '--no-deref',
     '-d',
-    `refs/heads/${branch}`,
+    ref,
     branchOid,
   ]);
-  return gitOk(deleted) ? null : 'ref-moved';
+  // What follows a delete that did not report success reconciles a deletion that may already have
+  // happened, so it may use the reserve beyond the deadline.
+  const settle = gitOk(deleted) ? (fn) => fn() : (fn) => reconciling(context, fn);
+  if (!gitOk(deleted) && (await settle(() => branchRefPresent(context, branch))) !== false) {
+    return { refused: 'ref-moved' };
+  }
+  await phase(deps, 'afterBranchDelete', { branch, branchOid });
+  let relisted = null;
+  try {
+    relisted = await settle(() => listWorktrees(context));
+  } catch {
+    relisted = null;
+  }
+  if (relisted === null || relisted.some((entry) => entry.branch === ref)) {
+    // The recreate is the reconciliation of a deletion that already happened, so it may use the
+    // reserve beyond the deadline.
+    const recreated = await reconciling(context, () =>
+      runGit(context, context.cwd, ['update-ref', '--no-deref', ref, branchOid, '']),
+    );
+    if (gitOk(recreated)) return { refused: 'checked-out', recreated: true };
+    return {
+      refused: 'ref-recreate-failed',
+      restore: restoreCommand(branch, branchOid),
+      detail: gitFailureDetail(recreated, 'git update-ref failed'),
+    };
+  }
+  return { refused: null, ...(await settle(() => removeBranchConfig(context, branch))) };
+}
+
+// The shell-quoted command that recreates a deleted branch at its tip.
+export function restoreCommand(branch, oid) {
+  return `git branch '${branch.replaceAll("'", "'\\''")}' ${oid}`;
+}
+
+// The branch names a rebase or bisect in the main checkout or a linked worktree still uses, read
+// from BRANCH_IN_USE_FILES below `common` and `common/worktrees/*/`, never through Git: `{names,
+// unreadable}`. An entry that exists but cannot be read, or an unreadable `worktrees/` directory,
+// sets `unreadable`, which callers treat as every branch in use.
+export async function branchesInUse(fs, common) {
+  const names = new Set();
+  if (typeof common !== 'string' || !path.isAbsolute(common)) return { names, unreadable: true };
+  let unreadable = false;
+  const directories = [common];
+  try {
+    for (const entry of (await fs.readdir(path.join(common, 'worktrees'))).sort()) {
+      directories.push(path.join(common, 'worktrees', entry));
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') unreadable = true;
+  }
+  const add = (value) => {
+    const name = value.startsWith('refs/heads/') ? value.slice(11) : value;
+    if (name !== '') names.add(name);
+  };
+  for (const directory of directories) {
+    for (const file of BRANCH_IN_USE_FILES) {
+      const read = await readBoundedFile(fs, path.join(directory, file), MAX_IN_USE_FILE_BYTES);
+      if (read.state === 'missing') continue;
+      if (read.state !== 'ok') {
+        unreadable = true;
+        continue;
+      }
+      const lines = read.content
+        .toString('utf8')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (file === 'rebase-merge/update-refs') {
+        for (const line of lines) if (line.startsWith('refs/heads/')) add(line);
+      } else if (lines[0] !== undefined) {
+        add(lines[0]);
+      }
+    }
+  }
+  return { names, unreadable };
+}
+
+// Lists the repository-local `branch.<branch>.*` entries (`git config --local --null
+// --get-regexp`, filtered here to exactly that subsection) and removes their section. Returns
+// `{configRemoved}` with the removed `{key, value}` entries (omitted when none), plus
+// `configRemaining` with the entries and the reason when Git could not remove them; "no such
+// section" counts as removed.
+async function removeBranchConfig(context, branch) {
+  const listed = await runGit(context, context.cwd, [
+    'config',
+    '--local',
+    '--null',
+    '--get-regexp',
+    '^branch\\.',
+  ]);
+  if (!listed?.error && listed?.status === 1) return {};
+  if (!gitOk(listed)) {
+    return {
+      configRemaining: {
+        entries: null,
+        reason: gitFailureDetail(listed, 'git config --get-regexp failed'),
+      },
+    };
+  }
+  const entries = [];
+  for (const record of gitStdout(listed).split('\0')) {
+    if (record === '') continue;
+    const newline = record.indexOf('\n');
+    const key = newline === -1 ? record : record.slice(0, newline);
+    const value = newline === -1 ? null : record.slice(newline + 1);
+    const subsection = key.slice('branch.'.length, key.lastIndexOf('.'));
+    if (key.startsWith('branch.') && subsection === branch) entries.push({ key, value });
+  }
+  if (entries.length === 0) return {};
+  const removal = await runGit(context, context.cwd, [
+    'config',
+    '--local',
+    '--remove-section',
+    `branch.${branch}`,
+  ]);
+  if (gitOk(removal) || /no such section/i.test(asBuffer(removal?.stderr).toString('utf8'))) {
+    return { configRemoved: entries };
+  }
+  return {
+    configRemaining: { entries, reason: gitFailureDetail(removal, 'git config failed') },
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3417,7 +3690,618 @@ async function retireInvalidRecord(context, roots, recordId, expectDigest, signa
   return outcome;
 }
 
+// ---------------------------------------------------------------------------------------------
+// The `branch:` class
+
+// The delivery configuration the `branch:` class reads through the resolver: `{prefix, baseRef,
+// excluded}`, or null when it cannot be resolved or a value is invalid (no branch is then
+// classified). `prefix` is `delivery.branchPrefix` (default `effective-flow`, `''` in hidden mode)
+// without a trailing `/`; `baseRef` the branch name of `delivery.baseBranch` normalized as Issue
+// Buddy does (an `origin/` prefix stripped, `origin/HEAD` resolved, unset → `origin/HEAD`, else
+// `main`), or null when it names no safe branch; `excluded` the names that are never candidates:
+// the base branch and an explicit `delivery.returnBranch`.
+async function deliveryConfiguration(context, deps) {
+  let config;
+  try {
+    config = await resolveConfiguration(
+      { cwd: context.cwd, tool: 'cleanup' },
+      { runner: context.runner, env: deps.env },
+    );
+  } catch {
+    return null;
+  }
+  const read = (key) => {
+    const entry = config.values?.[key];
+    if (!entry) return { state: 'unset', value: null };
+    const value = typeof entry.value === 'string' ? entry.value : entry.raw;
+    return entry.state === 'set' && typeof value === 'string'
+      ? { state: 'set', value: value.trim() }
+      : { state: 'invalid', value: null };
+  };
+  const prefixEntry = read('delivery.branchPrefix');
+  const baseEntry = read('delivery.baseBranch');
+  const returnEntry = read('delivery.returnBranch');
+  if ([prefixEntry, baseEntry, returnEntry].some((entry) => entry.state === 'invalid')) return null;
+  const prefix =
+    prefixEntry.state === 'set' ? prefixEntry.value.replace(/\/+$/, '') : DEFAULT_BRANCH_PREFIX;
+  if (prefix !== '' && !SAFE_BRANCH_NAME_PATTERN.test(prefix)) return null;
+  const configured = baseEntry.value ? baseEntry.value.replace(/^origin\//, '') || null : null;
+  let baseRef = configured;
+  if (baseRef === null || baseRef === 'HEAD') {
+    baseRef =
+      (await originHeadBranch(context)) ?? (configured === null ? DEFAULT_BASE_BRANCH : null);
+  }
+  if (baseRef !== null && !isSafeBaseRef(baseRef)) baseRef = null;
+  const returnBranch = returnEntry.value && returnEntry.value !== 'auto' ? returnEntry.value : null;
+  return {
+    prefix,
+    baseRef,
+    excluded: new Set([configured, baseRef, returnBranch].filter((name) => name !== null)),
+  };
+}
+
+// The branch `refs/remotes/origin/HEAD` points at, or null.
+async function originHeadBranch(context) {
+  const ref = await gitLine(context, context.cwd, [
+    'symbolic-ref',
+    '-q',
+    'refs/remotes/origin/HEAD',
+  ]);
+  return ref?.startsWith('refs/remotes/origin/') ? ref.slice(20) || null : null;
+}
+
+// Every local branch as `{tips, symbolic}`: `tips` maps name → tip, `symbolic` holds the names
+// whose ref is a symbolic ref (listed with its target's tip, so never a candidate); null when Git
+// fails. A ref name holds no space, so the third field is the symbolic target or empty.
+async function localBranches(context) {
+  const result = await runGit(context, context.cwd, [
+    '--no-replace-objects',
+    'for-each-ref',
+    '--format=%(objectname) %(refname) %(symref)',
+    'refs/heads/',
+  ]);
+  if (!gitOk(result)) return null;
+  const tips = new Map();
+  const symbolic = new Set();
+  for (const line of gitStdout(result).split('\n')) {
+    if (line === '') continue;
+    const [oid, ref, target, ...rest] = line.split(' ');
+    if (!OID_PATTERN.test(oid) || !ref?.startsWith('refs/heads/') || rest.length > 0) return null;
+    const name = ref.slice(11);
+    tips.set(name, oid);
+    if (target) symbolic.add(name);
+  }
+  return { tips, symbolic };
+}
+
+// Whether `refs/heads/<branch>` itself is a symbolic ref: true, false (a plain ref or none), or
+// null when Git fails.
+async function isSymbolicBranch(context, branch) {
+  const result = await runGit(context, context.cwd, ['symbolic-ref', '-q', `refs/heads/${branch}`]);
+  if (gitOk(result)) return true;
+  return !result?.error && result?.status === 1 ? false : null;
+}
+
+// Whether the ref `refs/heads/<branch>` itself exists, never following a symbolic ref: true,
+// false, or null when Git fails. `for-each-ref` silently skips a dangling symbolic ref and a broken
+// loose ref, so the symbolic-ref check runs first: a symbolic ref, dangling or not, is present, and
+// one `symbolic-ref` cannot read (a broken ref) is null. Only a ref neither check finds is gone.
+async function branchRefPresent(context, branch) {
+  const symbolic = await isSymbolicBranch(context, branch);
+  if (symbolic !== false) return symbolic;
+  const ref = `refs/heads/${branch}`;
+  const result = await runGit(context, context.cwd, ['for-each-ref', '--format=%(refname)', ref]);
+  if (!gitOk(result)) return null;
+  return gitStdout(result)
+    .split('\n')
+    .some((line) => line === ref);
+}
+
+// What the record set says about branches: `named` (branch → IDs of the valid records and of the
+// invalid records with a validated `branch` that name it) and `unreadable`, set by an invalid
+// record without a validated `branch` or a foreign `*.json` name, which suppresses every orphan.
+function recordBranchFacts(set) {
+  const named = new Map();
+  const add = (branch, recordId) => named.set(branch, [...(named.get(branch) ?? []), recordId]);
+  let unreadable = set.foreign.length > 0;
+  for (const record of set.valid.values()) add(record.branch, record.recordId);
+  for (const entry of set.invalid.values()) {
+    const branch = INVALID_JSON_REASONS.includes(entry.schemaReason) ? null : entry.value?.branch;
+    if (isBranchName(branch)) add(branch, entry.recordId);
+    else unreadable = true;
+  }
+  return { named, unreadable };
+}
+
+// Every exclusion that applies to `name`: `record-unreadable` (an orphan while a record or the
+// build-run state is unreadable), `unsafe-name` (also a symbolic ref, in `symbolic`), `recorded` (a record other than its own, or a
+// non-terminal build run, names it), and, where `worktrees` and `inUse` are given, `checked-out`
+// (a worktree other than its own record's checks it out) and `in-use`. `bound` maps a record-bound
+// branch to its own record.
+function branchExclusions(
+  name,
+  { records, runs, bound, worktrees = null, inUse = null, symbolic = null },
+) {
+  const own = bound.get(name) ?? null;
+  const reasons = [];
+  if (own === null && (records.unreadable || runs.state !== 'ok'))
+    reasons.push('record-unreadable');
+  if (!isBranchName(name) || !SAFE_BRANCH_NAME_PATTERN.test(name) || symbolic?.has(name)) {
+    reasons.push('unsafe-name');
+  }
+  const naming = records.named.get(name) ?? [];
+  if (
+    naming.some((recordId) => recordId !== own?.recordId) ||
+    (runs.state === 'ok' && runs.branches.includes(name))
+  ) {
+    reasons.push('recorded');
+  }
+  if (
+    worktrees?.some(
+      (entry) =>
+        entry.branch === `refs/heads/${name}` && !(own && matches(entry, own.worktreePath)),
+    )
+  ) {
+    reasons.push('checked-out');
+  }
+  if (inUse && (inUse.unreadable || inUse.names.has(name))) reasons.push('in-use');
+  return reasons;
+}
+
+// The one reason of a retained branch: the first of RETAINED_BRANCH_REASONS among `reasons`.
+export function retainedBranchReason(reasons) {
+  return RETAINED_BRANCH_REASONS.find((reason) => reasons.includes(reason)) ?? null;
+}
+
+// The digest input of a `branch:` item: `kind` plus exactly the fields the item binds. The current
+// base commit is reported beside it, never digested, so a fetch alone changes no digest.
+export function branchDigestInput({ branch, tip, baseRef, proof, proofCommit, source, dependsOn }) {
+  return { kind: 'branch', branch, tip, baseRef, proof, proofCommit, source, dependsOn };
+}
+
+// A copy of `context` whose Git calls run with GIT_NO_REPLACE_OBJECTS=1 and record a timeout in
+// `tracking`; with `deadline` (epoch ms, read through `now`) each call is also bounded by what is
+// left, and one the deadline already passed is not started.
+function branchGitContext(context, tracking, deadline = null, now = Date.now) {
+  const runner = context.runner;
+  return {
+    ...context,
+    env: { ...context.env, ...NO_REPLACE_ENV },
+    runner: async (request) => {
+      let bounded = request;
+      if (deadline !== null) {
+        const remaining = Math.floor(deadline - now());
+        if (remaining <= 0) {
+          tracking.timedOut = true;
+          return {
+            status: null,
+            signal: null,
+            stdout: Buffer.alloc(0),
+            stderr: '',
+            timedOut: true,
+          };
+        }
+        bounded = {
+          ...request,
+          timeoutMs:
+            typeof request.timeoutMs === 'number'
+              ? Math.min(request.timeoutMs, remaining)
+              : remaining,
+          processGroup: true,
+        };
+      }
+      const result = await runner(bounded);
+      if (result?.timedOut) tracking.timedOut = true;
+      return result;
+    },
+  };
+}
+
+// The dependencies the proof core gets: the injected runner (bound by the caller's deadline inside
+// the proof core), environment, clock and temporary directory.
+function proofDeps(context, deps) {
+  return {
+    runner: context.runner,
+    env: deps.env,
+    now: deps.now ?? Date.now,
+    ...(deps.tmpdir ? { tmpdir: deps.tmpdir } : {}),
+  };
+}
+
+// One proof call as its result. The proof core throws only PrDeliveryGitError: a refused input
+// (never expected) is `proof-unavailable` with `invalid-input`, any other code `git-failed`; both
+// details are in BRANCH_PROOF_UNAVAILABLE_DETAILS. Any other error is a defect and propagates.
+async function settleBranchProof(run) {
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof PrDeliveryGitError)) throw error;
+    return {
+      proof: null,
+      proofCommit: null,
+      reason: 'proof-unavailable',
+      detail: error.code === 'INVALID_INPUT' ? 'invalid-input' : 'git-failed',
+    };
+  }
+}
+
+// The `branch:` items and retained branches of `cleanup plan`. Its own clock bounds only this
+// part: the proof budget is min(BRANCH_PROOF_BUDGET_MS, DEFAULT_DEADLINE_MS − what the plan already
+// used) and bounds the repository facts and every proof Git call; the discovery calls before them
+// are bounded by what is left of DEFAULT_DEADLINE_MS. A branch the budget no longer reaches is
+// retained as `timeout`, never offered. The
+// candidates are the local branches under `<prefix>/` (only with a non-empty prefix) and the
+// branch of each `retain` record of BRANCH_ITEM_PURPOSES whose `worktree:` item this plan lists
+// (`actionable`), under the prefix unless it is empty; the base and return branch never are.
+// Every exclusion is decided before any proof; at most MAX_BRANCH_ITEMS candidates, record-bound
+// first, then by name, are proven: pass 1 `ancestor`/`tip-tree` for each, pass 2 the `squash-tree`
+// search for those `not-proven`, with the budget left. Everything else is retained with one reason.
+async function planBranches(context, roots, { worktrees, recordSet, actionable }, deps, startedAt) {
+  const monotonic = deps.monotonicNow ?? (() => performance.now());
+  const now = deps.now ?? Date.now;
+  const left = (deps.deadlineMs ?? DEFAULT_DEADLINE_MS) - (monotonic() - startedAt);
+  // Discovery (configuration, the branch listing) is bounded by what is left of the plan's
+  // deadline; the repository facts and every proof by the proof budget.
+  const discoveryDeadline = now() + Math.max(0, left);
+  const deadline =
+    now() + Math.max(0, Math.min(deps.branchProofBudgetMs ?? BRANCH_PROOF_BUDGET_MS, left));
+  const tracking = { timedOut: false };
+  const git = branchGitContext(context, tracking, discoveryDeadline, now);
+  const summary = { prefix: null, baseRef: null, baseCommit: null, reason: null, detail: null };
+  const items = [];
+  const retained = [];
+  const delivery = await deliveryConfiguration(git, deps);
+  if (delivery === null) {
+    return { items, retained, summary: { ...summary, reason: 'configuration-unavailable' } };
+  }
+  Object.assign(summary, { prefix: delivery.prefix, baseRef: delivery.baseRef });
+  const listing = await localBranches(git);
+  if (listing === null) {
+    const reason = tracking.timedOut ? 'timeout' : 'proof-unavailable';
+    return { items, retained, summary: { ...summary, reason, detail: 'git-failed' } };
+  }
+  const { tips: branches, symbolic } = listing;
+  const bound = new Map();
+  for (const record of recordSet.valid.values()) {
+    if (!actionable.has(record.recordId) || !BRANCH_ITEM_PURPOSES.includes(record.purpose))
+      continue;
+    if (delivery.prefix !== '' && !record.branch.startsWith(`${delivery.prefix}/`)) continue;
+    if (!bound.has(record.branch)) bound.set(record.branch, record);
+  }
+  const names = [...branches.keys()]
+    .filter(
+      (name) =>
+        !delivery.excluded.has(name) &&
+        ((delivery.prefix !== '' && name.startsWith(`${delivery.prefix}/`)) || bound.has(name)),
+    )
+    .sort();
+  if (names.length === 0) return { items, retained, summary };
+  let repository = null;
+  if (delivery.baseRef !== null) {
+    repository = await settleBranchProof(() =>
+      branchProofRepository(
+        { cwd: roots.cwd, baseRef: delivery.baseRef, deadline },
+        proofDeps(context, deps),
+      ),
+    );
+  }
+  const repositoryReason = delivery.baseRef === null ? 'base-ref-missing' : repository.reason;
+  Object.assign(summary, {
+    baseCommit: repository?.baseCommit ?? null,
+    reason: repositoryReason,
+    detail: repository?.detail ?? null,
+  });
+  const facts = {
+    records: recordBranchFacts(recordSet),
+    runs: await nonTerminalBuildRunBranches(roots.cwd),
+    bound,
+    worktrees,
+    inUse: await branchesInUse(context.fs, roots.common),
+    symbolic,
+  };
+  const sourceOf = (name) => (bound.has(name) ? 'record' : 'orphan');
+  const retain = (name, reason, detail = null) =>
+    retained.push({
+      branch: name,
+      tip: branches.get(name),
+      reason,
+      ...(detail ? { detail } : {}),
+      ...(FETCH_HINT_REASONS.includes(reason) && delivery.baseRef
+        ? { fetchHint: `git fetch origin ${delivery.baseRef}` }
+        : {}),
+    });
+  const candidates = [];
+  for (const name of names) {
+    const reasons = branchExclusions(name, facts);
+    if (repositoryReason !== null) reasons.push(repositoryReason);
+    const reason = retainedBranchReason(reasons);
+    if (reason === null) candidates.push(name);
+    else retain(name, reason, reason === repositoryReason ? summary.detail : null);
+  }
+  candidates.sort(
+    (left, right) => Number(bound.has(right)) - Number(bound.has(left)) || (left < right ? -1 : 1),
+  );
+  for (const name of candidates.slice(MAX_BRANCH_ITEMS)) retain(name, 'branch-limit');
+  const proving = candidates.slice(0, MAX_BRANCH_ITEMS);
+  const results = new Map();
+  const timedOut = { proof: null, proofCommit: null, reason: 'timeout', detail: null };
+  for (const [pass, prove] of [
+    [1, branchTipProof],
+    [2, branchSquashProof],
+  ]) {
+    for (const name of proving) {
+      if (pass === 2 && results.get(name).reason !== 'not-proven') continue;
+      results.set(
+        name,
+        now() >= deadline
+          ? timedOut
+          : await settleBranchProof(() =>
+              prove(
+                { cwd: roots.cwd, tip: branches.get(name), repository, deadline },
+                proofDeps(context, deps),
+              ),
+            ),
+      );
+    }
+  }
+  for (const name of proving) {
+    const result = results.get(name);
+    if (result.proof === null) {
+      retain(name, result.reason, result.detail);
+      continue;
+    }
+    const source = sourceOf(name);
+    const fields = {
+      branch: name,
+      tip: branches.get(name),
+      baseRef: delivery.baseRef,
+      proof: result.proof,
+      proofCommit: result.proofCommit,
+      source,
+      dependsOn: source === 'record' ? `worktree:${bound.get(name).recordId}` : null,
+    };
+    items.push({
+      itemId: `branch:${name}`,
+      kind: 'branch',
+      ...fields,
+      baseCommit: summary.baseCommit,
+      itemDigest: itemDigest(branchDigestInput(fields)),
+    });
+  }
+  retained.sort((left, right) => (left.branch < right.branch ? -1 : 1));
+  return { items, retained, summary };
+}
+
+// The record whose `worktree:` item binds `name` as a record-bound `branch:` item: a valid
+// `retain` record of BRANCH_ITEM_PURPOSES naming it (under the prefix unless it is empty) whose
+// worktree item `cleanup plan` would list as actionable now; null when there is none.
+async function boundRecord(context, roots, shared, delivery, name) {
+  const candidates = [...shared.recordSet.valid.values()]
+    .filter(
+      (record) =>
+        record.branch === name &&
+        BRANCH_ITEM_PURPOSES.includes(record.purpose) &&
+        (delivery.prefix === '' || name.startsWith(`${delivery.prefix}/`)),
+    )
+    .sort((left, right) => (left.recordId < right.recordId ? -1 : 1));
+  for (const record of candidates) {
+    const facts = await gatherFacts(context, roots, shared.worktrees, record, {
+      mergeGateRelease: true,
+    });
+    const { conditions, blockers } = assessEligibility(facts, {
+      removal: true,
+      mergeGateRelease: true,
+    });
+    if (conditions.length === 0 && blockers.length === 0) return record;
+  }
+  return null;
+}
+
+// The cheap pre-write check of one selected `branch:` item, run with GIT_NO_REPLACE_OBJECTS=1 and
+// writing nothing: `proofCommit` names a commit (else `proof-commit-missing`); candidacy is
+// re-derived from the current configuration, record set and build runs (`unknown-item`, or
+// `not-actionable` with the retained reason as its one blocker); the digest over the current
+// `branch`, `tip`, `baseRef`, `source`, `dependsOn` and the supplied `proof`/`proofCommit` matches
+// (else `digest`); and `proofCommit` is in the current `origin/<base>`. No proof, checkout or
+// in-use check runs here: those are the item's own step.
+async function recomputeBranchItem(context, roots, name, value, shared, deps) {
+  const tracking = { timedOut: false };
+  const git = branchGitContext(context, tracking);
+  const resolved = await gitLine(git, roots.cwd, [
+    '--no-replace-objects',
+    'rev-parse',
+    '--verify',
+    '-q',
+    `${value.proofCommit}^{commit}`,
+  ]);
+  if (resolved !== value.proofCommit) return { reason: 'proof-commit-missing' };
+  if (shared.delivery === undefined) shared.delivery = await deliveryConfiguration(git, deps);
+  const delivery = shared.delivery;
+  if (delivery === null || delivery.excluded.has(name)) return { reason: 'unknown-item' };
+  const tip = await branchTip(git, name);
+  if (tip === null) return { reason: 'unknown-item' };
+  const symbolicRef = await isSymbolicBranch(git, name);
+  if (symbolicRef === null) {
+    return {
+      reason: 'not-actionable',
+      blockers: [tracking.timedOut ? 'timeout' : 'proof-unavailable'],
+    };
+  }
+  shared.worktrees ??= await listWorktrees(git);
+  shared.recordSet ??= await readRecordSet(context, roots);
+  shared.buildRuns ??= await nonTerminalBuildRunBranches(roots.cwd);
+  const own = await boundRecord(git, roots, shared, delivery, name);
+  if (own === null && !(delivery.prefix !== '' && name.startsWith(`${delivery.prefix}/`))) {
+    return { reason: 'unknown-item' };
+  }
+  const reason = retainedBranchReason(
+    branchExclusions(name, {
+      records: recordBranchFacts(shared.recordSet),
+      runs: shared.buildRuns,
+      bound: own ? new Map([[name, own]]) : new Map(),
+      symbolic: symbolicRef ? new Set([name]) : null,
+    }),
+  );
+  if (reason !== null) return { reason: 'not-actionable', blockers: [reason] };
+  const fields = {
+    branch: name,
+    tip,
+    baseRef: delivery.baseRef,
+    proof: value.proof,
+    proofCommit: value.proofCommit,
+    source: own ? 'record' : 'orphan',
+    dependsOn: own ? `worktree:${own.recordId}` : null,
+  };
+  const digest = itemDigest(branchDigestInput(fields));
+  if (digest !== value.itemDigest) return { reason: 'digest' };
+  if (delivery.baseRef === null)
+    return { reason: 'not-actionable', blockers: ['base-ref-missing'] };
+  const contained = await runGit(git, roots.cwd, [
+    '--no-replace-objects',
+    'merge-base',
+    '--is-ancestor',
+    value.proofCommit,
+    `refs/remotes/origin/${delivery.baseRef}`,
+  ]);
+  if (!gitOk(contained)) {
+    const blocker = tracking.timedOut
+      ? 'timeout'
+      : contained?.status === 1
+        ? 'not-proven'
+        : 'base-ref-missing';
+    return { reason: 'not-actionable', blockers: [blocker] };
+  }
+  return { digest, branchItem: fields };
+}
+
+// The nearest existing `refs/heads/<dir>` and `logs/refs/heads/<dir>` directories of `branch`
+// below `common`: where Git writes when it deletes or recreates the ref.
+async function branchRefDirectories(fs, common, branch) {
+  const directories = [];
+  const branchDir = path.dirname(branch);
+  for (const base of [
+    path.join(common, 'refs', 'heads'),
+    path.join(common, 'logs', 'refs', 'heads'),
+  ]) {
+    const found = await nearestDirectory(
+      fs,
+      branchDir === '.' ? base : path.join(base, branchDir),
+      common,
+    );
+    if (found) directories.push(found);
+  }
+  return directories;
+}
+
+// A proof result's reason as a delete-time `reason` of BRANCH_ITEM_REASONS.
+function branchItemReason(reason) {
+  if (BRANCH_ITEM_REASONS.includes(reason)) return reason;
+  if (['no-merge-base', 'base-ref-missing', 'candidate-limit'].includes(reason))
+    return 'not-proven';
+  return 'proof-unavailable';
+}
+
+// The step of one `branch:` item, immediately before its deletion and with GIT_NO_REPLACE_OBJECTS=1
+// on every Git call: a record-bound item needs its `worktree:` item selected and removed in this
+// call (`completed`, else `worktree-not-removed`); the tip is still the planned one (`ref-moved`);
+// `verifyBranchProof` re-checks grafts, shallow, `proofCommit` in the current base and the one
+// claimed proof (never a search); the whole record set and build-run state are read again
+// (`recorded`, `record-unreadable` for an orphan); the sandbox preflight probes `<common>` and the
+// ref directories (SANDBOX_DENIED); then `compareAndDeleteBranch` checks checkout and in-use and
+// deletes. A Git call cut off by the deadline is `timeout`. Every kept branch is BRANCH_RETAINED
+// with its `reason`; nothing else in the call is affected.
+async function applyBranchItem(context, roots, entry, completed, deps) {
+  const item = entry.branchItem;
+  const retained = (reason, extra = {}) => ({
+    itemId: entry.itemId,
+    ok: false,
+    code: 'BRANCH_RETAINED',
+    branch: item.branch,
+    tip: item.tip,
+    reason,
+    ...extra,
+  });
+  if (item.dependsOn !== null && completed.get(item.dependsOn) !== true) {
+    return retained('worktree-not-removed');
+  }
+  await phase(deps, 'beforeBranchItem', { itemId: entry.itemId, branch: item.branch });
+  const tracking = { timedOut: false };
+  const git = branchGitContext(context, tracking);
+  try {
+    const tip = await branchTip(git, item.branch);
+    if (tip !== item.tip) return retained(tracking.timedOut ? 'timeout' : 'ref-moved');
+    const now = deps.now ?? Date.now;
+    const verified = await settleBranchProof(() =>
+      verifyBranchProof(
+        {
+          cwd: roots.cwd,
+          tip,
+          baseRef: item.baseRef,
+          proof: item.proof,
+          proofCommit: item.proofCommit,
+          deadline: now() + context.clock.remaining(),
+        },
+        proofDeps(git, deps),
+      ),
+    );
+    if (verified.proof !== item.proof || verified.proofCommit !== item.proofCommit) {
+      return retained(
+        branchItemReason(verified.reason ?? 'not-proven'),
+        verified.detail ? { detail: verified.detail } : {},
+      );
+    }
+    const set = await readRecordSet(context, roots);
+    const runs = await nonTerminalBuildRunBranches(roots.cwd);
+    const reason = retainedBranchReason(
+      branchExclusions(item.branch, {
+        records: recordBranchFacts(set),
+        runs,
+        // A record-bound item's own record is already gone, and the record-unreadable suppression
+        // applies only to orphans.
+        bound: item.source === 'record' ? new Map([[item.branch, { recordId: null }]]) : new Map(),
+      }),
+    );
+    if (reason !== null) return retained(reason);
+    const denied = await probeDirectories(
+      context,
+      [roots.common, ...(await branchRefDirectories(context.fs, roots.common, item.branch))],
+      deps,
+    );
+    if (denied) {
+      return {
+        itemId: entry.itemId,
+        ok: false,
+        code: 'SANDBOX_DENIED',
+        branch: item.branch,
+        ...denied,
+      };
+    }
+    const deletion = await compareAndDeleteBranch(git, item.branch, tip, deps);
+    if (deletion.refused) {
+      const { refused, ...rest } = deletion;
+      return retained(refused === 'ref-moved' && tracking.timedOut ? 'timeout' : refused, rest);
+    }
+    return {
+      itemId: entry.itemId,
+      ok: true,
+      deleted: true,
+      branch: item.branch,
+      tip,
+      proof: item.proof,
+      proofCommit: item.proofCommit,
+      source: item.source,
+      restore: restoreCommand(item.branch, tip),
+      ...(deletion.configRemoved ? { configRemoved: deletion.configRemoved } : {}),
+      ...(deletion.configRemaining ? { configRemaining: deletion.configRemaining } : {}),
+    };
+  } catch (error) {
+    if (tracking.timedOut && error instanceof RuntimeStateError) return retained('timeout');
+    throw error;
+  }
+}
+
 export async function cleanupPlan(input, deps) {
+  const startedAt = (deps.monotonicNow ?? (() => performance.now()))();
   const context = prepare('cleanup plan', input, deps);
   const decisions = requireDecisions(input.decisions);
   const roots = await openRoots(context, input);
@@ -3446,6 +4330,20 @@ export async function cleanupPlan(input, deps) {
       blocked.push({ itemId, kind: 'worktree', blockers: [], ...record });
     }
   }
+  const branches = await planBranches(
+    context,
+    roots,
+    {
+      worktrees,
+      recordSet,
+      actionable: new Set(
+        items.filter((item) => item.kind === 'worktree').map((item) => item.recordId),
+      ),
+    },
+    deps,
+    startedAt,
+  );
+  items.push(...branches.items);
   items.push(...invalid.items);
   blocked.push(...invalid.blocked);
   for (const orphan of orphanLocks) {
@@ -3488,14 +4386,25 @@ export async function cleanupPlan(input, deps) {
       deps,
     ),
     runs: await runInventory(context),
+    // The repository-wide facts of the `branch:` class and every branch it kept, each with its
+    // one reason.
+    branchProof: branches.summary,
+    retainedBranches: branches.retained,
     // Only when the `ledgers/` entry is unsafe; `cleanup apply` then refuses every worktree item.
     ...(ledgerDirectory ? { ledgerDirectory } : {}),
   };
 }
 
-// The order `cleanup apply` runs its items in: valid records first, then invalid records, then the
-// legacy directories and the legacy config file.
-const ITEM_ORDER = Object.freeze({ worktree: 0, 'invalid-record': 1, legacy: 2, config: 3 });
+// The order `cleanup apply` runs its items in: valid records first, then the branches (a
+// record-bound one after its worktree), then invalid records, the legacy directories and the
+// legacy config file.
+const ITEM_ORDER = Object.freeze({
+  worktree: 0,
+  branch: 1,
+  'invalid-record': 2,
+  legacy: 3,
+  config: 4,
+});
 
 function itemKind(itemId) {
   return itemId.slice(0, itemId.indexOf(':'));
@@ -3503,9 +4412,10 @@ function itemKind(itemId) {
 
 // Recomputes one selected item from fresh evidence: `{ok: true, ...}` with what apply needs, or a
 // PREVIEW_MISMATCH reason.
-async function recomputeItem(context, roots, itemId, decisions, shared, deps) {
+async function recomputeItem(context, roots, itemId, decisions, shared, deps, value = null) {
   const kind = itemKind(itemId);
   const key = itemId.slice(kind.length + 1);
+  if (kind === 'branch') return recomputeBranchItem(context, roots, key, value, shared, deps);
   if (kind === 'worktree') {
     const read = await readRecord(context, recordPaths(roots.cwd, key), key);
     if (read.state !== 'ok') return { reason: 'unknown-item' };
@@ -3634,7 +4544,15 @@ export async function cleanupApply(input, deps) {
     (left, right) =>
       ITEM_ORDER[itemKind(left)] - ITEM_ORDER[itemKind(right)] || (left < right ? -1 : 1),
   )) {
-    const fresh = await recomputeItem(context, roots, itemId, decisions, shared, deps);
+    const fresh = await recomputeItem(
+      context,
+      roots,
+      itemId,
+      decisions,
+      shared,
+      deps,
+      selected[itemId],
+    );
     if (fresh.reason) {
       return new StateOutcome('PREVIEW_MISMATCH', {
         itemId,
@@ -3644,12 +4562,24 @@ export async function cleanupApply(input, deps) {
         ...(fresh.failures ? { failures: fresh.failures } : {}),
       });
     }
-    if (fresh.digest !== selected[itemId]) {
+    const expected =
+      typeof selected[itemId] === 'string' ? selected[itemId] : selected[itemId].itemDigest;
+    if (fresh.digest !== expected) {
       return new StateOutcome('PREVIEW_MISMATCH', { itemId, reason: 'digest' });
     }
     prepared.push({ id: { itemId }, itemId, ...fresh });
   }
+  // Which items succeeded so far: a record-bound branch runs only after its worktree item did.
+  const completed = new Map();
   const items = await runItems(prepared, clock, deps, async (entry, signals) => {
+    const result = await applyItem(entry, signals);
+    completed.set(entry.itemId, result.ok === true);
+    return result;
+  });
+  return { items };
+
+  async function applyItem(entry, signals) {
+    if (entry.branchItem) return applyBranchItem(context, roots, entry, completed, deps);
     if (entry.recordId) {
       const result = await removeOne(
         context,
@@ -3680,6 +4610,5 @@ export async function cleanupApply(input, deps) {
       return { itemId: entry.itemId, ...result };
     }
     return applyLegacy(context, roots, entry.itemId, entry, decisions, deps);
-  });
-  return { items };
+  }
 }

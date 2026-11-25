@@ -26,7 +26,11 @@ import {
   RESUME_OPERATION_PROOFS,
   RESUME_PROOFS,
 } from '../src/scripts/effective-flow-state-recovery-core.mjs';
-import { MAX_RECORD_IDS, PURPOSES } from '../src/scripts/effective-flow-state-worktree-core.mjs';
+import {
+  MAX_BRANCH_ITEMS,
+  MAX_RECORD_IDS,
+  PURPOSES,
+} from '../src/scripts/effective-flow-state-worktree-core.mjs';
 import { spliceDelegatedRun } from './support/merge-gate-source.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -1039,9 +1043,10 @@ test('cleanup names the invalid-record item, its absent action and the schema-in
     [
       new RegExp(
         `one\\*\\* \`cleanup apply\` call \\(at most ${MAX_RECORD_IDS} \`worktree:\` and ` +
-          '`invalid-record:` items; the rest after a fresh `cleanup plan`\\)',
+          `\`invalid-record:\` items and ${MAX_BRANCH_ITEMS} \`branch:\` items; the rest after a fresh ` +
+          '`cleanup plan`\\)',
       ),
-      'apply batch cap (MAX_RECORD_IDS)',
+      'apply batch cap (MAX_RECORD_IDS, MAX_BRANCH_ITEMS)',
     ],
   ]);
   assert.match(
@@ -1121,7 +1126,7 @@ test('the lifecycle binds base-validation to its path, branch and policy with th
   const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
   assert.match(
     frontmatter,
-    /force-deletes a branch other than a base-validation (?:or issue-planning )?branch still at its creation commit/,
+    /a compare-and-delete under a helper proof: a base-validation (?:or issue-planning )?branch still at its creation commit/,
   );
   assert.doesNotMatch(frontmatter, /force-deletes branches/, 'the old absolute claim is false now');
 });
@@ -1173,6 +1178,52 @@ test('the lifecycle binds issue-planning to its branch and policy with the unadv
   const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
   assert.match(
     frontmatter,
-    /force-deletes a branch other than a base-validation or issue-planning branch still at its creation commit/,
+    /a compare-and-delete under a helper proof: a base-validation or issue-planning branch still at its creation commit/,
   );
+});
+
+// --- Proven delivery branches in cleanup (`branch:` items) ---
+
+// Invariant: no shipped claim still says every delivery branch remains: the cleanup description,
+// its dry-run step and the lifecycle's branch policy name the proven `branch:` item as the one
+// further compare-and-delete, which never forces outside its proof. The confirmation class and the
+// apply value shape stay eager in the tool; the outcome table and the report wording live behind
+// one lazy pointer loaded when the plan returns branch items, so they cost a run only then.
+test('cleanup offers proven delivery branches as their own lazily detailed class', () => {
+  const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
+  assert.match(
+    frontmatter,
+    /a local delivery branch whose content, squash merges included, is proven to be in the base branch/,
+  );
+  assert.doesNotMatch(flatCleanup, /Delivery, partial-diff and merge-gate branches remain/);
+  assertClauses(flatCleanup, [
+    [
+      /A delivery, partial-diff or plan-publication branch is deleted only as a confirmed `branch:` item; every other one, and every merge-gate branch, remains/,
+      'dry-run branch policy',
+    ],
+    [/"the base changed these lines after the merge"/, 'squash-tree shown distinctly'],
+    [
+      /"branch:<name>":\{"itemDigest":"<itemDigest>","proof":"<proof>","proofCommit":"<proofCommit>"\}/,
+      'apply value shape',
+    ],
+    [/Give every `cleanup plan` call an explicit Bash timeout of 120000 ms/, 'plan timeout'],
+    [/header: Branches/, 'own confirmation class'],
+    [
+      /```lazy-include cleanup-branches when: `cleanup plan` returns a `branch:` item/,
+      'lazy pointer',
+    ],
+  ]);
+  assert.match(
+    flatLifecycle,
+    /a local delivery branch is compare-and-deleted only as `\{\{SKILL:cleanup\}\}`'s confirmed `branch:` item, under its helper proof that the content landed in the base branch\. Prose never runs `git branch -D`, and a forced deletion outside these proofs never happens/,
+  );
+  const fragment = readShared('cleanup-branches').replace(/\s+/g, ' ');
+  assertClauses(fragment, [
+    [/`worktree-not-removed`/, 'record-bound outcome'],
+    [/`ref-recreate-failed` item first/, 'failed recreate reported first'],
+    [/`gc\.pruneExpire` \(default two weeks\)/, 'gc-bounded restore wording'],
+    [/while `origin\/<name>` still exists/, 'remote restore note'],
+    [/the content itself stays in `<proofCommit>`/, 'content stays in the base'],
+  ]);
+  assert.doesNotMatch(flatCleanup, /gc\.pruneExpire/, 'the report wording stays lazy');
 });

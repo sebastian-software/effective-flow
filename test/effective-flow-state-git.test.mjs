@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import { LOCKS, LOCK_NAMES, executeOperation } from '../src/scripts/effective-flow-state-core.mjs';
+import { nonTerminalBuildRunBranches } from '../src/scripts/build-run-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 import { RULE_ENTRIES } from '../src/scripts/claude-settings-core.mjs';
 import { writeHelperScripts } from './support/state-helper-fixtures.mjs';
@@ -1515,4 +1516,1344 @@ test('cleanup apply: a per-item guard error leaves the other items running', asy
     ],
   );
   assert.equal(existsSync(record.worktreePath), false);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The `branch:` class of cleanup plan and cleanup apply
+
+async function cleanupPlanOf(root, extra) {
+  return wf.expectOk(await wf.call('cleanup plan', { cwd: root, executionRoot: root }, extra));
+}
+
+function branchItem(planned, branch) {
+  return planned.items.find((item) => item.itemId === `branch:${branch}`);
+}
+
+function retainedOf(planned) {
+  return Object.fromEntries(planned.retainedBranches.map((entry) => [entry.branch, entry.reason]));
+}
+
+async function applyBranches(root, items, extra) {
+  return wf.call(
+    'cleanup apply',
+    {
+      cwd: root,
+      executionRoot: root,
+      items: Object.fromEntries(items.map((item) => [item.itemId, wf.applyValue(item)])),
+    },
+    extra,
+  );
+}
+
+// A repository whose `main` squash-merged `effective-flow/build/landed`, so `origin/main` holds its
+// content as one commit; returns the branch's tip and the squash commit.
+function squashMerged(t) {
+  const root = wf.repository(t);
+  const branch = 'effective-flow/build/landed';
+  const tip = wf.commitOnBranch(root, branch, { 'feature.txt': 'feature\n' });
+  wf.commitOnBranch(root, branch, { 'feature.txt': 'feature\nmore\n' }, { message: 'more' });
+  const squash = wf.squashIntoMain(root, branch);
+  wf.publishMain(root);
+  return { root, branch, tip: wf.git(root, 'rev-parse', branch), first: tip, squash };
+}
+
+// Invariant: a squash-merged orphan delivery branch is offered as a `branch:` item with its proof,
+// and `cleanup apply` deletes it by compare-and-delete with its restore line; nothing else changes.
+test('cleanup branch: a squash-merged orphan branch is proven, offered and deleted', async (t) => {
+  const { root, branch, tip } = squashMerged(t);
+  const base = wf.git(root, 'rev-parse', 'main');
+  const planned = await cleanupPlanOf(root);
+  const item = branchItem(planned, branch);
+  assert.ok(item, JSON.stringify(planned.retainedBranches));
+  assert.deepEqual(
+    [item.proof, item.proofCommit, item.source, item.dependsOn, item.tip, item.baseRef],
+    ['tip-tree', base, 'orphan', null, tip, 'main'],
+  );
+  assert.equal(planned.branchProof.baseCommit, base);
+  const { runner, calls } = recordingRunner();
+  const result = wf.expectOk(await applyBranches(root, [item], { runner }));
+  assert.deepEqual(
+    [result.items[0].ok, result.items[0].deleted, result.items[0].restore],
+    [true, true, `git branch '${branch}' ${tip}`],
+    JSON.stringify(result),
+  );
+  assert.equal(branchExists(root, branch), false);
+  assert.ok(!calls.some((args) => args.includes('fetch') || args.includes('push')));
+  assert.ok(!calls.some((args) => args[0] === 'branch'), 'never git branch -D');
+  assert.equal(wf.git(root, 'rev-parse', 'refs/remotes/origin/main'), base);
+});
+
+function recordingRunner() {
+  const real = createProcessRunner();
+  const calls = [];
+  return {
+    calls,
+    runner: async (request) => {
+      calls.push(request.args.slice(2).filter((arg) => arg !== '--no-replace-objects'));
+      return real(request);
+    },
+  };
+}
+
+// Invariant: a zero-commit branch is proven `ancestor`; a branch with commits the base lacks, an
+// unsafe name, a checked-out branch, a branch outside the prefix and the base branch itself are
+// never offered; each retained branch under the prefix carries exactly one reason, and an
+// unproven one the fetch hint.
+test('cleanup branch: unproven and excluded branches are retained with one reason', async (t) => {
+  const root = wf.repository(t);
+  wf.git(root, 'branch', 'effective-flow/build/zero');
+  wf.commitOnBranch(root, 'effective-flow/build/open', { 'open.txt': 'open\n' });
+  wf.git(root, 'branch', 'effective-flow/fix(x)');
+  wf.git(root, 'branch', 'user/own-work');
+  const held = join(root, '.effective-flow', 'held');
+  wf.git(root, 'worktree', 'add', '-q', '-b', 'effective-flow/build/held', held);
+  wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  assert.deepEqual(
+    planned.items.filter((item) => item.kind === 'branch').map((item) => [item.branch, item.proof]),
+    [['effective-flow/build/zero', 'ancestor']],
+  );
+  assert.deepEqual(retainedOf(planned), {
+    'effective-flow/build/held': 'checked-out',
+    'effective-flow/build/open': 'not-proven',
+    'effective-flow/fix(x)': 'unsafe-name',
+  });
+  const open = planned.retainedBranches.find((entry) => entry.reason === 'not-proven');
+  assert.equal(open.fetchHint, 'git fetch origin main');
+});
+
+// Invariant: a record-bound branch is offered only together with its actionable worktree item and
+// is deleted only after that item removed the worktree in the same call; selected alone it is kept
+// as `worktree-not-removed`.
+test('cleanup branch: a record-bound branch follows its worktree item', async (t) => {
+  const root = wf.repository(t);
+  const { record } = await wf.initialized(root);
+  await wf.moveTo(root, record, 'cleanup-ready');
+  wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  const item = branchItem(planned, record.branch);
+  assert.deepEqual(
+    [item?.source, item?.dependsOn, item?.proof],
+    ['record', `worktree:${record.recordId}`, 'ancestor'],
+    JSON.stringify(planned),
+  );
+  const alone = wf.expectOk(await applyBranches(root, [item]));
+  assert.deepEqual(
+    [alone.items[0].code, alone.items[0].reason],
+    ['BRANCH_RETAINED', 'worktree-not-removed'],
+  );
+  assert.ok(branchExists(root, record.branch));
+  const both = wf.expectOk(
+    await applyBranches(root, [planned.items.find((entry) => entry.kind === 'worktree'), item]),
+  );
+  assert.deepEqual(
+    both.items.map((entry) => [entry.itemId, entry.ok]),
+    [
+      [`worktree:${record.recordId}`, true],
+      [`branch:${record.branch}`, true],
+    ],
+    JSON.stringify(both),
+  );
+  assert.equal(branchExists(root, record.branch), false);
+});
+
+// Invariant: a record that is not actionable binds its branch (`recorded`), and so does a
+// non-terminal build run; an unparsable record file suppresses every orphan item
+// (`record-unreadable`) while a terminal build run binds nothing.
+test('cleanup branch: records and build runs bind branches, unreadable records suppress orphans', async (t) => {
+  const root = wf.repository(t);
+  const { record } = await wf.initialized(root);
+  wf.git(root, 'branch', 'effective-flow/build/run-bound');
+  wf.git(root, 'branch', 'effective-flow/build/finished');
+  const head = wf.git(root, 'rev-parse', 'main');
+  wf.writeBuildRun(root, 'run-1', { branch: 'effective-flow/build/run-bound', head });
+  wf.writeBuildRun(root, 'run-2', {
+    branch: 'effective-flow/build/finished',
+    head,
+    terminal: true,
+  });
+  wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  assert.equal(retainedOf(planned)[record.branch], 'recorded');
+  assert.equal(retainedOf(planned)['effective-flow/build/run-bound'], 'recorded');
+  assert.ok(branchItem(planned, 'effective-flow/build/finished'));
+  wf.writeRecordFile(root, 'broken', '{not json');
+  const suppressed = await cleanupPlanOf(root);
+  assert.equal(branchItem(suppressed, 'effective-flow/build/finished'), undefined);
+  assert.equal(retainedOf(suppressed)['effective-flow/build/finished'], 'record-unreadable');
+});
+
+// Invariant: `cleanup apply` checks a `branch:` value by shape (INVALID_INPUT), resolves
+// `proofCommit` (`proof-commit-missing`), re-derives candidacy (an out-of-prefix branch is
+// `unknown-item` whatever digest it carries) and the digest over the claimed proof (a forged proof
+// is `digest`); every refusal ends the call before any write.
+test('cleanup branch: tampered or forged branch values are refused before any write', async (t) => {
+  const { root, branch } = squashMerged(t);
+  wf.git(root, 'branch', 'user/own-work', 'main');
+  const planned = await cleanupPlanOf(root);
+  const item = branchItem(planned, branch);
+  const value = wf.applyValue(item);
+  const apply = (items) => wf.call('cleanup apply', { cwd: root, executionRoot: root, items });
+  wf.expectError(await apply({ [item.itemId]: item.itemDigest }), 'INVALID_INPUT');
+  wf.expectError(await apply({ [item.itemId]: { ...value, extra: 1 } }), 'INVALID_INPUT');
+  wf.expectError(await apply({ [item.itemId]: { ...value, proof: 'forced' } }), 'INVALID_INPUT');
+  wf.expectError(await apply({ 'branch:fix(x)': value }), 'INVALID_INPUT');
+  const missing = wf.expectOutcome(
+    await apply({ [item.itemId]: { ...value, proofCommit: 'f'.repeat(40) } }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.equal(missing.reason, 'proof-commit-missing');
+  const forged = wf.expectOutcome(
+    await apply({ [item.itemId]: { ...value, proof: 'squash-tree' } }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.equal(forged.reason, 'digest');
+  const { branchDigestInput, itemDigest } =
+    await import('../src/scripts/effective-flow-state-worktree-core.mjs');
+  const outside = {
+    branch: 'user/own-work',
+    tip: wf.git(root, 'rev-parse', 'user/own-work'),
+    baseRef: 'main',
+    proof: 'ancestor',
+    proofCommit: item.proofCommit,
+    source: 'orphan',
+    dependsOn: null,
+  };
+  const selfComputed = wf.expectOutcome(
+    await apply({
+      'branch:user/own-work': {
+        itemDigest: itemDigest(branchDigestInput(outside)),
+        proof: 'ancestor',
+        proofCommit: item.proofCommit,
+      },
+    }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.equal(selfComputed.reason, 'unknown-item');
+  assert.ok(branchExists(root, branch));
+  assert.ok(branchExists(root, 'user/own-work'));
+});
+
+// Invariant: the tip moving after the dry run is a whole-call PREVIEW_MISMATCH; a branch checked
+// out or recorded between the pre-write pass and its deletion is kept by its own step.
+test('cleanup branch: changes after the plan keep the branch', async (t) => {
+  const moved = squashMerged(t);
+  const movedPlan = await cleanupPlanOf(moved.root);
+  wf.commitOnBranch(moved.root, moved.branch, { 'late.txt': 'late\n' });
+  const mismatch = wf.expectOutcome(
+    await applyBranches(moved.root, [branchItem(movedPlan, moved.branch)]),
+    'PREVIEW_MISMATCH',
+  );
+  assert.equal(mismatch.reason, 'digest');
+
+  const late = squashMerged(t);
+  const latePlan = await cleanupPlanOf(late.root);
+  const elsewhere = join(late.root, '.effective-flow', 'elsewhere');
+  const checkedOut = wf.expectOk(
+    await applyBranches(late.root, [branchItem(latePlan, late.branch)], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem')
+          wf.git(late.root, 'worktree', 'add', '-q', elsewhere, late.branch);
+      },
+    }),
+  );
+  assert.deepEqual(
+    [checkedOut.items[0].code, checkedOut.items[0].reason],
+    ['BRANCH_RETAINED', 'checked-out'],
+  );
+  assert.ok(branchExists(late.root, late.branch));
+
+  const recorded = squashMerged(t);
+  const recordedPlan = await cleanupPlanOf(recorded.root);
+  const head = wf.git(recorded.root, 'rev-parse', 'main');
+  const result = wf.expectOk(
+    await applyBranches(recorded.root, [branchItem(recordedPlan, recorded.branch)], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') {
+          wf.writeBuildRun(recorded.root, 'run-late', { branch: recorded.branch, head });
+        }
+      },
+    }),
+  );
+  assert.deepEqual([result.items[0].code, result.items[0].reason], ['BRANCH_RETAINED', 'recorded']);
+  assert.ok(branchExists(recorded.root, recorded.branch));
+});
+
+// Invariant: a branch a rebase or bisect uses is never offered (`in-use`), and an exhausted plan
+// budget retains the remaining candidates as `timeout` without touching the other plan output.
+test('cleanup branch: in-use branches and an exhausted proof budget are retained', async (t) => {
+  const { root, branch } = squashMerged(t);
+  writeFileSync(join(root, '.git', 'BISECT_START'), `${branch}\n`);
+  assert.equal(retainedOf(await cleanupPlanOf(root))[branch], 'in-use');
+  unlinkSync(join(root, '.git', 'BISECT_START'));
+  const exhausted = await cleanupPlanOf(root, { branchProofBudgetMs: 0 });
+  assert.equal(retainedOf(exhausted)[branch], 'timeout');
+  assert.deepEqual(
+    exhausted.items.filter((item) => item.kind === 'branch'),
+    [],
+  );
+});
+
+// Invariant: deleting a branch removes exactly its own `branch.<name>.*` configuration and reports
+// the removed entries; a neighbouring branch's section whose name shares the prefix stays.
+test('cleanup branch: exactly the deleted branch configuration is removed', async (t) => {
+  const { root, branch } = squashMerged(t);
+  wf.git(root, 'config', `branch.${branch}.remote`, 'origin');
+  wf.git(root, 'config', `branch.${branch}.description`, 'landed work');
+  wf.git(root, 'config', `branch.${branch}.x.remote`, 'origin');
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  const result = wf.expectOk(await applyBranches(root, [item]));
+  assert.deepEqual(result.items[0].configRemoved.map((entry) => entry.key).sort(), [
+    `branch.${branch}.description`,
+    `branch.${branch}.remote`,
+  ]);
+  assert.equal(wf.git(root, 'config', '--get', `branch.${branch}.x.remote`), 'origin');
+});
+
+// ---------------------------------------------------------------------------------------------
+// The `branch:` class: delete-time races, in-use signals, candidacy and bounds
+
+const FAILED_GIT = Object.freeze({
+  status: 1,
+  signal: null,
+  stdout: Buffer.alloc(0),
+  stderr: Buffer.from('injected failure'),
+  timedOut: false,
+});
+
+// A runner that answers the Git calls `matches(args)` selects with a failure once `armed()` holds.
+function failingRunner(matches, armed) {
+  const real = createProcessRunner();
+  return (request) => (armed() && matches(request.args) ? FAILED_GIT : real(request));
+}
+
+function hasArgs(args, ...needles) {
+  return needles.every((needle) => args.includes(needle));
+}
+
+function writeUnderGit(root, relative, content = '') {
+  const target = join(root, '.git', relative);
+  mkdirSync(join(target, '..'), { recursive: true });
+  writeFileSync(target, content);
+}
+
+async function digestFor(fields) {
+  const { branchDigestInput, itemDigest } =
+    await import('../src/scripts/effective-flow-state-worktree-core.mjs');
+  return itemDigest(branchDigestInput(fields));
+}
+
+// A self-consistent apply value a caller could compute alone: the digest over `fields`.
+async function selfComputed(root, branch, proof, proofCommit, source = 'orphan') {
+  return {
+    itemDigest: await digestFor({
+      branch,
+      tip: wf.git(root, 'rev-parse', `refs/heads/${branch}`),
+      baseRef: 'main',
+      proof,
+      proofCommit,
+      source,
+      dependsOn: null,
+    }),
+    proof,
+    proofCommit,
+  };
+}
+
+function applyRaw(root, items, extra) {
+  return wf.call('cleanup apply', { cwd: root, executionRoot: root, items }, extra);
+}
+
+// Invariant: a worktree that checks the branch out between the delete-time check and the deletion
+// gets its ref back at the proven tip (recreated only while absent) and the item is `checked-out`.
+test('cleanup branch: a checkout racing the deletion restores the ref and keeps the branch', async (t) => {
+  const { root, branch, tip } = squashMerged(t);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  const held = join(root, '.effective-flow', 'racing');
+  const result = wf.expectOk(
+    await applyBranches(root, [item], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchDelete') wf.git(root, 'worktree', 'add', '-q', held, branch);
+      },
+    }),
+  );
+  assert.deepEqual(
+    [result.items[0].ok, result.items[0].code, result.items[0].reason],
+    [false, 'BRANCH_RETAINED', 'checked-out'],
+    JSON.stringify(result),
+  );
+  assert.equal(wf.git(root, 'rev-parse', `refs/heads/${branch}`), tip);
+});
+
+// Invariant: a failed relist after the deletion cannot prove no worktree took the branch, so the
+// ref is recreated at the tip (`checked-out`); when that recreate fails too, the item is
+// `ref-recreate-failed` carrying the tip and the restore command, and nothing else is claimed.
+test('cleanup branch: a failed relist recreates the ref, a failed recreate names the restore command', async (t) => {
+  const relist = squashMerged(t);
+  let deleted = false;
+  const relistItem = branchItem(await cleanupPlanOf(relist.root), relist.branch);
+  const relisted = wf.expectOk(
+    await applyBranches(relist.root, [relistItem], {
+      runner: failingRunner(
+        (args) => hasArgs(args, 'worktree', 'list'),
+        () => deleted,
+      ),
+      onPhase: (name) => {
+        if (name === 'afterBranchDelete') deleted = true;
+      },
+    }),
+  );
+  assert.deepEqual(
+    [relisted.items[0].code, relisted.items[0].reason],
+    ['BRANCH_RETAINED', 'checked-out'],
+    JSON.stringify(relisted),
+  );
+  assert.equal(wf.git(relist.root, 'rev-parse', `refs/heads/${relist.branch}`), relist.tip);
+
+  const failed = squashMerged(t);
+  let armed = false;
+  const failedItem = branchItem(await cleanupPlanOf(failed.root), failed.branch);
+  const lost = wf.expectOk(
+    await applyBranches(failed.root, [failedItem], {
+      runner: failingRunner(
+        (args) => hasArgs(args, 'worktree', 'list') || hasArgs(args, 'update-ref', ''),
+        () => armed,
+      ),
+      onPhase: (name) => {
+        if (name === 'afterBranchDelete') armed = true;
+      },
+    }),
+  );
+  assert.deepEqual(
+    [lost.items[0].code, lost.items[0].reason, lost.items[0].tip, lost.items[0].restore],
+    [
+      'BRANCH_RETAINED',
+      'ref-recreate-failed',
+      failed.tip,
+      `git branch '${failed.branch}' ${failed.tip}`,
+    ],
+    JSON.stringify(lost),
+  );
+  assert.equal(branchExists(failed.root, failed.branch), false);
+});
+
+// Invariant: every file a rebase (`--update-refs` included), a rebase-apply or a bisect writes names
+// a branch in use, in the main checkout or a linked worktree, read as a file; an unreadable entry
+// puts every branch in use. `cleanup plan` retains such a branch as `in-use`.
+test('cleanup branch: rebase, update-refs, rebase-apply and bisect entries mark the branch in-use', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const linked = join(root, '.effective-flow', 'linked');
+  wf.git(root, 'worktree', 'add', '-q', '--detach', linked);
+  const linkedId = readdirSync(join(root, '.git', 'worktrees'))[0];
+  const signals = {
+    'rebase-merge/head-name': `refs/heads/${branch}\n`,
+    'rebase-merge/update-refs': `refs/heads/other\nrefs/heads/${branch}\n`,
+    'rebase-apply/head-name': `refs/heads/${branch}\n`,
+    BISECT_START: `${branch}\n`,
+    [`worktrees/${linkedId}/BISECT_START`]: `${branch}\n`,
+    [`worktrees/${linkedId}/rebase-merge/update-refs`]: `refs/heads/${branch}\n`,
+  };
+  for (const [file, content] of Object.entries(signals)) {
+    writeUnderGit(root, file, content);
+    assert.equal(retainedOf(await cleanupPlanOf(root))[branch], 'in-use', file);
+    unlinkSync(join(root, '.git', file));
+  }
+  assert.ok(branchItem(await cleanupPlanOf(root), branch), 'no signal left, offered again');
+  // A signal naming another branch leaves this one alone.
+  writeUnderGit(root, 'rebase-merge/update-refs', 'refs/heads/unrelated\n');
+  assert.ok(branchItem(await cleanupPlanOf(root), branch));
+  unlinkSync(join(root, '.git', 'rebase-merge', 'update-refs'));
+  // An entry that exists but is not a readable regular file counts as in use for every branch.
+  mkdirSync(join(root, '.git', 'rebase-merge', 'head-name'), { recursive: true });
+  assert.equal(retainedOf(await cleanupPlanOf(root))[branch], 'in-use');
+});
+
+// Invariant: the in-use scan runs again in the item's own step, so a rebase (`--update-refs`) that
+// starts after the dry run keeps the branch (`in-use`).
+test('cleanup branch: a rebase starting after the plan keeps the branch at delete time', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  const result = wf.expectOk(
+    await applyBranches(root, [item], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') {
+          writeUnderGit(root, 'rebase-merge/update-refs', `refs/heads/${branch}\n`);
+        }
+      },
+    }),
+  );
+  assert.deepEqual([result.items[0].code, result.items[0].reason], ['BRANCH_RETAINED', 'in-use']);
+  assert.ok(branchExists(root, branch));
+});
+
+// Invariant: a denied write probe in the ref directory or its reflog directory ends only that item
+// as SANDBOX_DENIED with the branch and every probe file left untouched.
+test('cleanup branch: a denied ref directory is SANDBOX_DENIED for the item and touches nothing', async (t) => {
+  for (const area of ['refs/heads', 'logs/refs/heads']) {
+    const { root, branch } = squashMerged(t);
+    assert.ok(existsSync(join(root, '.git', area, 'effective-flow')), `${area} exists`);
+    const item = branchItem(await cleanupPlanOf(root), branch);
+    const fs = {
+      open: async (target, ...rest) => {
+        if (target.includes(`/.git/${area}/`) && target.includes('.effective-flow-probe-')) {
+          throw Object.assign(new Error('denied'), { code: 'EPERM' });
+        }
+        return openPath(target, ...rest);
+      },
+    };
+    const result = wf.expectOk(await applyBranches(root, [item], { fs }));
+    assert.deepEqual(
+      [result.items[0].code, result.items[0].errno, result.items[0].directory.includes(area)],
+      ['SANDBOX_DENIED', 'EPERM', true],
+      `${area}: ${JSON.stringify(result)}`,
+    );
+    assert.ok(branchExists(root, branch));
+  }
+});
+
+// Invariant: grafts and a shallow boundary that appear after the dry run are re-checked in the
+// item's own step; either keeps the branch (`grafts`, `shallow-repository`).
+test('cleanup branch: grafts or a shallow boundary added after the plan keep the branch', async (t) => {
+  const grafted = squashMerged(t);
+  const graftedItem = branchItem(await cleanupPlanOf(grafted.root), grafted.branch);
+  const graftResult = wf.expectOk(
+    await applyBranches(grafted.root, [graftedItem], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') writeUnderGit(grafted.root, 'info/grafts', '');
+      },
+    }),
+  );
+  assert.deepEqual(
+    [graftResult.items[0].code, graftResult.items[0].reason],
+    ['BRANCH_RETAINED', 'grafts'],
+  );
+  assert.ok(branchExists(grafted.root, grafted.branch));
+
+  const shallow = squashMerged(t);
+  const shallowItem = branchItem(await cleanupPlanOf(shallow.root), shallow.branch);
+  const shallowResult = wf.expectOk(
+    await applyBranches(shallow.root, [shallowItem], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') {
+          writeUnderGit(shallow.root, 'shallow', `${wf.git(shallow.root, 'rev-parse', 'main')}\n`);
+        }
+      },
+    }),
+  );
+  assert.deepEqual(
+    [shallowResult.items[0].code, shallowResult.items[0].reason],
+    ['BRANCH_RETAINED', 'shallow-repository'],
+  );
+  assert.ok(branchExists(shallow.root, shallow.branch));
+});
+
+// Invariant: a merge attribute added after the dry run is caught by the delete-time attribute
+// pre-check before any merge runs; the branch stays (`merge-attribute`).
+test('cleanup branch: a merge attribute added after the plan keeps the branch', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  const result = wf.expectOk(
+    await applyBranches(root, [item], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') {
+          writeFileSync(join(root, '.gitattributes'), 'feature.txt merge=ours\n');
+        }
+      },
+    }),
+  );
+  assert.deepEqual(
+    [result.items[0].code, result.items[0].reason],
+    ['BRANCH_RETAINED', 'merge-attribute'],
+    JSON.stringify(result),
+  );
+  assert.ok(branchExists(root, branch));
+});
+
+// Invariant: a branch item value is checked by shape alone before anything is read: a missing
+// key, a null or array value, a short, upper-case or non-string proofCommit and a malformed
+// itemDigest are each INVALID_INPUT.
+test('cleanup branch: malformed branch values are INVALID_INPUT', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const value = wf.applyValue(branchItem(await cleanupPlanOf(root), branch));
+  const id = `branch:${branch}`;
+  const { proofCommit, ...withoutCommit } = value;
+  const malformed = [
+    withoutCommit,
+    null,
+    [value.itemDigest, value.proof, value.proofCommit],
+    { ...value, proofCommit: proofCommit.slice(0, 12) },
+    { ...value, proofCommit: proofCommit.toUpperCase() },
+    { ...value, proofCommit: 7 },
+    { ...value, itemDigest: value.itemDigest.toUpperCase() },
+    { ...value, itemDigest: 'a'.repeat(63) },
+    { ...value, proof: undefined },
+  ];
+  for (const bad of malformed) {
+    wf.expectError(await applyRaw(root, { [id]: bad }), 'INVALID_INPUT');
+  }
+  for (const name of ['fix(x)', 'a b', '-x', 'a//b', 'x/../y']) {
+    wf.expectError(await applyRaw(root, { [`branch:${name}`]: value }), 'INVALID_INPUT');
+  }
+  assert.ok(branchExists(root, branch));
+});
+
+// Invariant: `requireItems` bounds the call: at most MAX_BRANCH_ITEMS branch items, and the total
+// cap is MAX_RECORD_IDS + 3 + MAX_BRANCH_ITEMS, which a full selection of every class still meets.
+test('cleanup branch: the apply cap counts branch items beside records and the legacy items', async (t) => {
+  const { MAX_BRANCH_ITEMS, MAX_RECORD_IDS } =
+    await import('../src/scripts/effective-flow-state-worktree-core.mjs');
+  assert.deepEqual([MAX_BRANCH_ITEMS, MAX_RECORD_IDS], [32, 64]);
+  const root = wf.repository(t);
+  const digest = createHash('sha256').update('x').digest('hex');
+  const value = { itemDigest: digest, proof: 'ancestor', proofCommit: 'b'.repeat(40) };
+  const branches = (count) =>
+    Object.fromEntries(
+      Array.from({ length: count }, (_, index) => [`branch:effective-flow/b${index}`, value]),
+    );
+  wf.expectError(await applyRaw(root, branches(MAX_BRANCH_ITEMS + 1)), 'INVALID_INPUT');
+  const full = {
+    ...branches(MAX_BRANCH_ITEMS),
+    ...Object.fromEntries(
+      Array.from({ length: MAX_RECORD_IDS }, (_, index) => [`worktree:r${index}`, digest]),
+    ),
+    'legacy:.firmo': digest,
+    'legacy:.sf-plugin': digest,
+    'config:.effective-flow/config.json': digest,
+  };
+  assert.equal(Object.keys(full).length, MAX_RECORD_IDS + 3 + MAX_BRANCH_ITEMS);
+  const envelope = await applyRaw(root, full);
+  assert.notEqual(envelope.error?.code, 'INVALID_INPUT', JSON.stringify(envelope));
+  wf.expectError(
+    await applyRaw(root, { ...full, [`worktree:r${MAX_RECORD_IDS}`]: digest }),
+    'INVALID_INPUT',
+  );
+});
+
+// Invariant: an apply value computed from scratch cannot widen what the proof allows: a net-zero
+// branch with a forged `tip-tree`, an unproven branch with a forged `ancestor`, `tip-tree` or
+// `squash-tree` value passes the shape and digest checks and is still kept by the delete-time proof.
+test('cleanup branch: forged proof claims with a self-computed digest are retained, never deleted', async (t) => {
+  const root = wf.repository(t);
+  wf.commitOnBranch(root, 'effective-flow/build/netzero', { 'base.txt': 'changed\n' });
+  wf.commitOnBranch(root, 'effective-flow/build/netzero', { 'base.txt': 'base\n' });
+  wf.commitOnBranch(root, 'effective-flow/build/open', { 'open.txt': 'open\n' });
+  wf.commitOnBranch(root, 'main', { 'second.txt': 'second\n' });
+  const base = wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  assert.deepEqual(
+    planned.items.filter((item) => item.kind === 'branch'),
+    [],
+  );
+  assert.equal(retainedOf(planned)['effective-flow/build/netzero'], 'empty-diff');
+  assert.equal(retainedOf(planned)['effective-flow/build/open'], 'not-proven');
+  const forged = [
+    ['effective-flow/build/netzero', 'tip-tree', base, 'empty-diff'],
+    ['effective-flow/build/open', 'ancestor', base, 'not-proven'],
+    ['effective-flow/build/open', 'tip-tree', base, 'not-proven'],
+    ['effective-flow/build/open', 'squash-tree', base, 'not-proven'],
+  ];
+  for (const [branch, proof, proofCommit, reason] of forged) {
+    const result = wf.expectOk(
+      await applyRaw(root, {
+        [`branch:${branch}`]: await selfComputed(root, branch, proof, proofCommit),
+      }),
+    );
+    assert.deepEqual(
+      [result.items[0].code, result.items[0].reason],
+      ['BRANCH_RETAINED', reason],
+      `${branch} ${proof}: ${JSON.stringify(result)}`,
+    );
+    assert.ok(branchExists(root, branch));
+  }
+});
+
+// Invariant: the base ref rewound between the pre-write pass and the deletion drops `proofCommit`
+// from it, so the item's own step retains the branch (`not-proven`); a fetch that only advances
+// the base keeps `proofCommit` in it, so the same plan still deletes.
+test('cleanup branch: a rewound base keeps the branch, an advanced base still deletes it', async (t) => {
+  const rewound = squashMerged(t);
+  const rewoundItem = branchItem(await cleanupPlanOf(rewound.root), rewound.branch);
+  const kept = wf.expectOk(
+    await applyBranches(rewound.root, [rewoundItem], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') {
+          wf.git(
+            rewound.root,
+            'update-ref',
+            'refs/remotes/origin/main',
+            wf.git(rewound.root, 'rev-parse', 'main~1'),
+          );
+        }
+      },
+    }),
+  );
+  assert.deepEqual([kept.items[0].code, kept.items[0].reason], ['BRANCH_RETAINED', 'not-proven']);
+  assert.ok(branchExists(rewound.root, rewound.branch));
+
+  const advanced = squashMerged(t);
+  const advancedPlan = await cleanupPlanOf(advanced.root);
+  const advancedItem = branchItem(advancedPlan, advanced.branch);
+  wf.commitOnBranch(advanced.root, 'main', { 'later.txt': 'later\n' });
+  const moved = wf.publishMain(advanced.root);
+  assert.notEqual(moved, advancedItem.proofCommit);
+  const deleted = wf.expectOk(await applyBranches(advanced.root, [advancedItem]));
+  assert.deepEqual([deleted.items[0].ok, deleted.items[0].deleted], [true, true]);
+  assert.equal(branchExists(advanced.root, advanced.branch), false);
+});
+
+// Invariant: a record that becomes unreadable, or build-run state that does, between the pre-write
+// pass and the deletion keeps an orphan branch (`record-unreadable`); a foreign file in the records
+// directory does the same at plan time.
+test('cleanup branch: record or build-run state turning unreadable keeps the orphan', async (t) => {
+  const records = squashMerged(t);
+  const recordItem = branchItem(await cleanupPlanOf(records.root), records.branch);
+  const recordResult = wf.expectOk(
+    await applyBranches(records.root, [recordItem], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') wf.writeRecordFile(records.root, 'broken', '{not json');
+      },
+    }),
+  );
+  assert.deepEqual(
+    [recordResult.items[0].code, recordResult.items[0].reason],
+    ['BRANCH_RETAINED', 'record-unreadable'],
+  );
+  assert.ok(branchExists(records.root, records.branch));
+
+  const runs = squashMerged(t);
+  const runItem = branchItem(await cleanupPlanOf(runs.root), runs.branch);
+  const runResult = wf.expectOk(
+    await applyBranches(runs.root, [runItem], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') {
+          mkdirSync(join(runs.root, '.effective-flow', 'build-runs', 'not a run id'), {
+            recursive: true,
+          });
+        }
+      },
+    }),
+  );
+  assert.deepEqual(
+    [runResult.items[0].code, runResult.items[0].reason],
+    ['BRANCH_RETAINED', 'record-unreadable'],
+  );
+  assert.ok(branchExists(runs.root, runs.branch));
+
+  const foreign = squashMerged(t);
+  wf.writeRecordFile(foreign.root, 'not a record id', '{}');
+  assert.equal(retainedOf(await cleanupPlanOf(foreign.root))[foreign.branch], 'record-unreadable');
+  const objectless = squashMerged(t);
+  wf.writeRecordFile(objectless.root, 'objectless', { schemaVersion: 1 });
+  assert.equal(
+    retainedOf(await cleanupPlanOf(objectless.root))[objectless.branch],
+    'record-unreadable',
+  );
+  const unreadableRuns = squashMerged(t);
+  mkdirSync(join(unreadableRuns.root, '.effective-flow', 'build-runs', 'not a run id'), {
+    recursive: true,
+  });
+  assert.equal(
+    retainedOf(await cleanupPlanOf(unreadableRuns.root))[unreadableRuns.branch],
+    'record-unreadable',
+  );
+});
+
+// Invariant: an invalid record that still carries a validated `branch` binds that branch
+// (`recorded`) without suppressing the other orphans.
+test('cleanup branch: an invalid record with a branch binds it and suppresses no other orphan', async (t) => {
+  const root = wf.repository(t);
+  wf.git(root, 'branch', 'effective-flow/build/bound');
+  wf.git(root, 'branch', 'effective-flow/build/free');
+  wf.publishMain(root);
+  const worktree = {
+    worktreePath: join(root, '.effective-flow', 'gone'),
+    branch: 'effective-flow/build/bound',
+    head: wf.git(root, 'rev-parse', 'main'),
+  };
+  wf.writeRecordFile(root, 'inv', {
+    ...wf.makeRecord(root, worktree, { recordId: 'inv' }),
+    status: 'bogus-status',
+  });
+  const planned = await cleanupPlanOf(root);
+  assert.equal(retainedOf(planned)['effective-flow/build/bound'], 'recorded');
+  assert.ok(branchItem(planned, 'effective-flow/build/free'));
+});
+
+// Invariant: a `merge-gate` record's branch is never a candidate while the record exists (it may be
+// a contributor's branch); once the record is gone it is an ordinary orphan under the prefix.
+test('cleanup branch: a merge-gate record branch is never offered while its record exists', async (t) => {
+  const root = wf.repository(t);
+  const options = { purpose: 'merge-gate', workflow: 'merge-gate' };
+  const { worktree, record } = await wf.initialized(root, options);
+  wf.git(root, 'update-ref', `refs/remotes/origin/${worktree.branch}`, worktree.head);
+  await wf.moveTo(root, record, 'aborted', 'stopped');
+  wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  assert.ok(planned.items.some((item) => item.itemId === `worktree:${record.recordId}`));
+  assert.equal(branchItem(planned, worktree.branch), undefined);
+  assert.equal(retainedOf(planned)[worktree.branch], 'recorded');
+  wf.expectOk(
+    await wf.call('cleanup apply', {
+      cwd: root,
+      executionRoot: root,
+      items: { [`worktree:${record.recordId}`]: wf.applyValue(planned.items[0]) },
+    }),
+  );
+  const after = branchItem(await cleanupPlanOf(root), worktree.branch);
+  assert.deepEqual([after?.source, after?.dependsOn], ['orphan', null]);
+});
+
+function writeProjectSetup(root, rows) {
+  writeFileSync(
+    join(root, 'AGENTS.md'),
+    '# Agents\n\n**Effective Flow project setup:** docs/adr/effective-flow-project-setup.md\n',
+  );
+  mkdirSync(join(root, 'docs', 'adr'), { recursive: true });
+  const table = Object.entries(rows)
+    .map(([key, value]) => `| ${key} | ${value} |`)
+    .join('\n');
+  writeFileSync(
+    join(root, 'docs', 'adr', 'effective-flow-project-setup.md'),
+    `# Effective Flow project setup\n\n## Status\n\nActive\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n${table}\n`,
+  );
+}
+
+// Invariant: with an empty prefix no local branch is an orphan candidate (the prefix only narrows
+// what is offered), while a record-bound delivery branch still is; the base branch is never one.
+test('cleanup branch: an empty prefix offers no orphan, only record-bound branches', async (t) => {
+  const root = wf.repository(t);
+  writeProjectSetup(root, { 'delivery.branchPrefix': '' });
+  const { record } = await wf.initialized(root);
+  await wf.moveTo(root, record, 'cleanup-ready');
+  wf.git(root, 'branch', 'effective-flow/build/orphan');
+  wf.git(root, 'branch', 'plain-orphan');
+  wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  assert.equal(planned.branchProof.prefix, '');
+  assert.deepEqual(
+    planned.items
+      .filter((item) => item.kind === 'branch')
+      .map((item) => [item.branch, item.source]),
+    [[record.branch, 'record']],
+    JSON.stringify(planned.retainedBranches),
+  );
+  assert.equal(retainedOf(planned)['plain-orphan'], undefined);
+  assert.equal(retainedOf(planned)['effective-flow/build/orphan'], undefined);
+});
+
+// Invariant: the local base branch is never offered, even when it is an ancestor of a newer
+// `origin/<base>` (its content is trivially "landed"), neither is a configured return branch or a
+// branch outside the prefix; none of them appears in the retained list.
+test('cleanup branch: base, return and out-of-prefix branches are never offered', async (t) => {
+  const root = wf.repository(t);
+  writeProjectSetup(root, { 'delivery.returnBranch': 'effective-flow/return' });
+  wf.git(root, 'branch', 'effective-flow/return');
+  wf.git(root, 'branch', 'user/own-work');
+  wf.git(root, 'branch', 'effective-flow/build/inside');
+  wf.commitOnBranch(root, 'newer', { 'newer.txt': 'n\n' });
+  wf.git(root, 'update-ref', 'refs/remotes/origin/main', wf.git(root, 'rev-parse', 'newer'));
+  const planned = await cleanupPlanOf(root);
+  assert.deepEqual(
+    planned.items.filter((item) => item.kind === 'branch').map((item) => item.branch),
+    ['effective-flow/build/inside'],
+  );
+  assert.deepEqual(retainedOf(planned), {});
+});
+
+// Invariant: exactly one retained reason is chosen, always the first of RETAINED_BRANCH_REASONS
+// (repository-wide, exclusions, limits, proof result), whatever order the reasons arrive in.
+test('cleanup branch: the retained reason is the first in precedence order, independent of input order', async () => {
+  const { RETAINED_BRANCH_REASONS, retainedBranchReason } =
+    await import('../src/scripts/effective-flow-state-worktree-core.mjs');
+  assert.equal(retainedBranchReason([]), null);
+  RETAINED_BRANCH_REASONS.forEach((earlier, index) => {
+    for (const later of RETAINED_BRANCH_REASONS.slice(index + 1)) {
+      assert.equal(retainedBranchReason([later, earlier]), earlier);
+      assert.equal(retainedBranchReason([earlier, later]), earlier);
+    }
+  });
+  const group = (from, to) => RETAINED_BRANCH_REASONS.slice(from, to);
+  const at = (reason) => RETAINED_BRANCH_REASONS.indexOf(reason);
+  assert.ok(at('record-unreadable') < at('unsafe-name'), 'repository-wide before exclusions');
+  assert.ok(at('in-use') < at('branch-limit'), 'exclusions before limits');
+  assert.ok(at('candidate-limit') < at('no-merge-base'), 'limits before the proof result');
+  assert.ok(group(0, at('no-merge-base')).includes('timeout'));
+});
+
+// Invariant: the same repository plans the same retained list twice, each branch carrying the one
+// reason the precedence picks: a repository-wide reason overrides every exclusion, an exclusion
+// beats an unproven result, and `tip-tree`'s reason stands unless the squash search ran.
+test('cleanup branch: retained reasons are deterministic and follow the precedence', async (t) => {
+  const root = wf.repository(t);
+  wf.commitOnBranch(root, 'effective-flow/build/open', { 'open.txt': 'open\n' });
+  wf.commitOnBranch(root, 'effective-flow/build/netzero', { 'base.txt': 'x\n' });
+  wf.commitOnBranch(root, 'effective-flow/build/netzero', { 'base.txt': 'base\n' });
+  wf.git(root, 'branch', 'effective-flow/fix(x)');
+  const bothHeld = join(root, '.effective-flow', 'both');
+  wf.git(root, 'worktree', 'add', '-q', '-b', 'effective-flow/build/both', bothHeld);
+  wf.writeBuildRun(root, 'run-both', {
+    branch: 'effective-flow/build/both',
+    head: wf.git(root, 'rev-parse', 'main'),
+  });
+  wf.publishMain(root);
+  const calls = [];
+  const first = await cleanupPlanOf(root, { runner: recordingRunnerInto(calls) });
+  const second = await cleanupPlanOf(root);
+  assert.deepEqual(first.retainedBranches, second.retainedBranches);
+  assert.deepEqual(retainedOf(first), {
+    'effective-flow/build/both': 'recorded',
+    'effective-flow/build/netzero': 'empty-diff',
+    'effective-flow/build/open': 'not-proven',
+    'effective-flow/fix(x)': 'unsafe-name',
+  });
+  const searches = calls.filter((args) => args.includes('--first-parent'));
+  assert.equal(searches.length, 1, 'only the not-proven branch ran the squash search');
+  writeUnderGit(root, 'info/grafts', '');
+  const repositoryWide = await cleanupPlanOf(root);
+  assert.deepEqual(
+    Object.values(retainedOf(repositoryWide)),
+    ['grafts', 'grafts', 'grafts', 'grafts'],
+    'a repository-wide reason overrides every exclusion and proof result',
+  );
+});
+
+function recordingRunnerInto(calls) {
+  const real = createProcessRunner();
+  return (request) => {
+    calls.push(request.args.slice(2).filter((arg) => arg !== '--no-replace-objects'));
+    return real(request);
+  };
+}
+
+// Invariant: when the base later reverted the squash, `tip-tree` fails and the squash search
+// replaces its `not-proven` with a `squash-tree` proof naming the squash commit, offered with that
+// proof (the item is distinct for the confirmation).
+test('cleanup branch: a reverted squash is offered as squash-tree naming the squash commit', async (t) => {
+  const { root, branch, squash } = squashMerged(t);
+  wf.git(root, 'rm', '-q', 'feature.txt');
+  wf.git(root, 'commit', '-q', '-m', 'revert the feature');
+  wf.publishMain(root);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  assert.deepEqual([item?.proof, item?.proofCommit], ['squash-tree', squash]);
+  const result = wf.expectOk(await applyBranches(root, [item]));
+  assert.deepEqual([result.items[0].ok, result.items[0].proof], [true, 'squash-tree']);
+});
+
+// Invariant: pass 1 (`ancestor`/`tip-tree`) runs for every candidate before any `squash-tree`
+// search, so an unprovable branch sorting first cannot starve a later branch the cheap proof
+// handles; the unprovable branch is retained, never offered.
+test('cleanup branch: squash searches never starve a later cheap proof', async (t) => {
+  const root = wf.repository(t);
+  wf.commitOnBranch(root, 'effective-flow/build/a-open', { 'open.txt': 'open\n' });
+  wf.commitOnBranch(root, 'effective-flow/build/z-landed', { 'z.txt': 'z\n' });
+  wf.squashIntoMain(root, 'effective-flow/build/z-landed');
+  wf.publishMain(root);
+  let offset = 0;
+  const real = createProcessRunner();
+  const planned = await cleanupPlanOf(root, {
+    runner: async (request) => {
+      const result = await real(request);
+      // A squash search is one `git log --first-parent`; it consumes the whole budget.
+      if (request.args.includes('--first-parent')) offset += 60_000;
+      return result;
+    },
+    now: () => Date.now() + offset,
+    branchProofBudgetMs: 30_000,
+  });
+  assert.deepEqual(
+    planned.items.filter((item) => item.kind === 'branch').map((item) => [item.branch, item.proof]),
+    [['effective-flow/build/z-landed', 'tip-tree']],
+  );
+  assert.ok(['timeout', 'not-proven'].includes(retainedOf(planned)['effective-flow/build/a-open']));
+});
+
+// Invariant: at most MAX_BRANCH_ITEMS candidates are proven per plan, record-bound branches first,
+// then by name; the rest is retained as `branch-limit`, never offered.
+test('cleanup branch: more than 32 candidates keep the record-bound one and the first by name', async (t) => {
+  const root = wf.repository(t);
+  const { record } = await wf.initialized(root);
+  await wf.moveTo(root, record, 'cleanup-ready');
+  const names = Array.from(
+    { length: 33 },
+    (_, index) => `effective-flow/aa/b${String(index).padStart(2, '0')}`,
+  );
+  for (const name of names) wf.git(root, 'branch', name);
+  wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  const offered = planned.items.filter((item) => item.kind === 'branch').map((item) => item.branch);
+  assert.equal(offered.length, 32);
+  assert.ok(offered.includes(record.branch), 'record-bound branch first');
+  assert.deepEqual(offered.filter((name) => name !== record.branch).sort(), names.slice(0, 31));
+  assert.deepEqual(
+    Object.entries(retainedOf(planned)).sort(),
+    names.slice(31).map((name) => [name, 'branch-limit']),
+  );
+});
+
+// Invariant: an exhausted proof budget retains every branch as `timeout` and leaves every other
+// plan item exactly as an unbounded plan reports it.
+test('cleanup branch: an exhausted proof budget changes no other plan item', async (t) => {
+  const root = wf.repository(t);
+  const { record } = await wf.initialized(root);
+  await wf.moveTo(root, record, 'cleanup-ready');
+  wf.git(root, 'branch', 'effective-flow/build/orphan');
+  wf.publishMain(root);
+  const normal = await cleanupPlanOf(root);
+  const exhausted = await cleanupPlanOf(root, { branchProofBudgetMs: 0 });
+  const others = (planned) => planned.items.filter((item) => item.kind !== 'branch');
+  assert.ok(others(normal).length > 0);
+  assert.deepEqual(others(exhausted), others(normal));
+  assert.deepEqual(exhausted.blocked, normal.blocked);
+  assert.deepEqual(retainedOf(exhausted), {
+    [record.branch]: 'timeout',
+    'effective-flow/build/orphan': 'timeout',
+  });
+});
+
+// Invariant: config entries are matched by their exact `branch.<name>.` subsection: a branch whose
+// name is a prefix of, or differs only by a regex metacharacter from, another branch's keeps that
+// branch's entries, and a locked configuration file leaves the entries as `configRemaining`
+// without failing the deletion.
+test("cleanup branch: only the deleted branch's exact config section goes; a locked config is reported", async (t) => {
+  const root = wf.repository(t);
+  wf.git(root, 'branch', 'effective-flow/a.b');
+  wf.publishMain(root);
+  const config = (name, key) => `branch.${name}.${key}`;
+  wf.git(root, 'config', config('effective-flow/a.b', 'remote'), 'origin');
+  wf.git(root, 'config', config('effective-flow/aXb', 'remote'), 'keep-regex');
+  wf.git(root, 'config', config('effective-flow/a.b.c', 'remote'), 'keep-longer');
+  wf.git(root, 'config', config('effective-flow/a', 'remote'), 'keep-shorter');
+  wf.git(root, 'config', config('effective-flow/a.b(x)', 'remote'), 'keep-paren');
+  const item = branchItem(await cleanupPlanOf(root), 'effective-flow/a.b');
+  const result = wf.expectOk(await applyBranches(root, [item]));
+  assert.deepEqual(
+    result.items[0].configRemoved.map((entry) => entry.key),
+    [config('effective-flow/a.b', 'remote')],
+  );
+  for (const kept of [
+    'effective-flow/aXb',
+    'effective-flow/a.b.c',
+    'effective-flow/a',
+    'effective-flow/a.b(x)',
+  ]) {
+    assert.ok(wf.git(root, 'config', '--get', config(kept, 'remote')), kept);
+  }
+
+  const locked = squashMerged(t);
+  wf.git(locked.root, 'config', `branch.${locked.branch}.remote`, 'origin');
+  const lockedItem = branchItem(await cleanupPlanOf(locked.root), locked.branch);
+  const outcome = wf.expectOk(
+    await applyBranches(locked.root, [lockedItem], {
+      onPhase: (name) => {
+        if (name === 'afterBranchDelete') writeUnderGit(locked.root, 'config.lock', '');
+      },
+    }),
+  );
+  assert.deepEqual([outcome.items[0].ok, outcome.items[0].deleted], [true, true]);
+  assert.equal(outcome.items[0].configRemaining.entries[0].key, `branch.${locked.branch}.remote`);
+  assert.equal(branchExists(locked.root, locked.branch), false);
+});
+
+// Invariant: neither plan nor apply fetches, pushes or asks a forge: no Git call names a network
+// operation and the remote-tracking ref stays exactly where it was.
+test('cleanup branch: plan and apply make no network call', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const before = wf.git(root, 'rev-parse', 'refs/remotes/origin/main');
+  const calls = [];
+  const planned = await cleanupPlanOf(root, { runner: recordingRunnerInto(calls) });
+  wf.expectOk(
+    await applyBranches(root, [branchItem(planned, branch)], {
+      runner: recordingRunnerInto(calls),
+    }),
+  );
+  assert.ok(calls.length > 0);
+  for (const verb of ['fetch', 'push', 'pull', 'ls-remote', 'remote', 'clone']) {
+    assert.ok(!calls.some((args) => args.includes(verb)), verb);
+  }
+  assert.equal(wf.git(root, 'rev-parse', 'refs/remotes/origin/main'), before);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The `branch:` class: real build runs, symbolic refs, settled deletes and the other
+// compare-and-delete callers
+
+// Invariant: the build-run reader reads what `build-run-core.mjs` itself writes: a transitioned
+// run binds its `execution.json` branch, not the request's, a created-only run its request
+// branch; `cleanup plan` keeps such a branch as `recorded`. A run directory a crashed `create`
+// left without `request.json` makes the build-run state unreadable, so every orphan is
+// `record-unreadable`.
+test('cleanup branch: the build-run reader follows the real create and transition layout', async (t) => {
+  const root = wf.repository(t);
+  const branch = 'effective-flow/build/run-bound';
+  await wf.createBuildRun(root, 'run-moved', { branch });
+  assert.deepEqual(await nonTerminalBuildRunBranches(root), { state: 'ok', branches: [branch] });
+  await wf.createBuildRun(root, 'run-created');
+  assert.deepEqual(await nonTerminalBuildRunBranches(root), {
+    state: 'ok',
+    branches: [branch, 'main'],
+  });
+  wf.git(root, 'branch', 'effective-flow/build/orphan');
+  wf.publishMain(root);
+  const planned = await cleanupPlanOf(root);
+  assert.equal(retainedOf(planned)[branch], 'recorded', JSON.stringify(planned.retainedBranches));
+  assert.ok(branchItem(planned, 'effective-flow/build/orphan'));
+  const crashed = join(root, '.effective-flow', 'build-runs', 'run-crashed');
+  mkdirSync(crashed);
+  writeFileSync(join(crashed, 'source.json'), '{}\n');
+  assert.equal((await nonTerminalBuildRunBranches(root)).state, 'unreadable');
+  const suppressed = await cleanupPlanOf(root);
+  assert.equal(retainedOf(suppressed)['effective-flow/build/orphan'], 'record-unreadable');
+  assert.equal(branchItem(suppressed, 'effective-flow/build/orphan'), undefined);
+});
+
+// Invariant: the pre-write pass re-derives candidacy, so a build run or a record that names the
+// branch after the plan is a whole-call PREVIEW_MISMATCH `not-actionable` with `recorded`, and
+// nothing is deleted.
+test('cleanup branch: a build run or record naming the branch after the plan is not-actionable', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  wf.writeBuildRun(root, 'run-late', { branch, head: wf.git(root, 'rev-parse', 'main') });
+  const byRun = wf.expectOutcome(await applyBranches(root, [item]), 'PREVIEW_MISMATCH');
+  assert.deepEqual([byRun.reason, byRun.blockers], ['not-actionable', ['recorded']]);
+  rmSync(join(root, '.effective-flow', 'build-runs'), { recursive: true });
+  const worktree = {
+    worktreePath: wf.requiredPath(root),
+    branch,
+    head: wf.git(root, 'rev-parse', branch),
+  };
+  wf.writeRecordFile(root, 'late', wf.makeRecord(root, worktree, { recordId: 'late' }));
+  const byRecord = wf.expectOutcome(await applyBranches(root, [item]), 'PREVIEW_MISMATCH');
+  assert.deepEqual([byRecord.reason, byRecord.blockers], ['not-actionable', ['recorded']]);
+  assert.ok(branchExists(root, branch));
+});
+
+// Invariant: a symbolic ref under the prefix is listed with its target's tip but is never offered
+// (`unsafe-name`); a branch that turns into a symbolic ref after the plan is refused by the
+// pre-write pass, and one that turns into it right before the deletion is `ref-moved`. The target
+// branch is never deleted, and the successful delete passes `--no-deref`.
+test('cleanup branch: a symbolic ref is never offered and its target is never deleted', async (t) => {
+  const { root, branch, tip } = squashMerged(t);
+  const alias = 'effective-flow/build/alias';
+  wf.git(root, 'symbolic-ref', `refs/heads/${alias}`, 'refs/heads/main');
+  const planned = await cleanupPlanOf(root);
+  assert.equal(retainedOf(planned)[alias], 'unsafe-name');
+  assert.equal(branchItem(planned, alias), undefined);
+  const item = branchItem(planned, branch);
+  wf.git(root, 'branch', 'keep-target', tip);
+  wf.git(root, 'symbolic-ref', `refs/heads/${branch}`, 'refs/heads/keep-target');
+  const prepass = wf.expectOutcome(await applyBranches(root, [item]), 'PREVIEW_MISMATCH');
+  assert.deepEqual([prepass.reason, prepass.blockers], ['not-actionable', ['unsafe-name']]);
+  wf.git(root, 'update-ref', '--no-deref', `refs/heads/${branch}`, tip);
+  const racing = wf.expectOk(
+    await applyBranches(root, [item], {
+      onPhase: (name) => {
+        if (name === 'beforeBranchDelete') {
+          wf.git(root, 'symbolic-ref', `refs/heads/${branch}`, 'refs/heads/keep-target');
+        }
+      },
+    }),
+  );
+  assert.deepEqual(
+    [racing.items[0].code, racing.items[0].reason],
+    ['BRANCH_RETAINED', 'ref-moved'],
+    JSON.stringify(racing),
+  );
+  assert.equal(wf.git(root, 'rev-parse', 'refs/heads/keep-target'), tip);
+  assert.ok(branchExists(root, 'main'));
+  wf.git(root, 'update-ref', '--no-deref', `refs/heads/${branch}`, tip);
+  const { runner, calls } = recordingRunner();
+  const deleted = wf.expectOk(await applyBranches(root, [item], { runner }));
+  assert.equal(deleted.items[0].ok, true, JSON.stringify(deleted));
+  assert.ok(
+    calls.some(
+      (args) => args[0] === 'update-ref' && args.includes('--no-deref') && args.includes('-d'),
+    ),
+  );
+  assert.equal(wf.git(root, 'rev-parse', 'refs/heads/keep-target'), tip);
+  assert.equal(wf.git(root, 'symbolic-ref', `refs/heads/${alias}`), 'refs/heads/main');
+});
+
+// Invariant: a delete Git reports as failed or timed out may still have committed (a hook stopped
+// after the transaction): the ref is read again, and a ref that is gone counts as deleted, with
+// its restore line and the configuration removal; a ref still present is `ref-moved`.
+test('cleanup branch: a delete reported failed after it committed counts as deleted', async (t) => {
+  for (const report of [
+    { status: null, timedOut: true },
+    { status: 1, timedOut: false },
+  ]) {
+    const { root, branch, tip } = squashMerged(t);
+    wf.git(root, 'config', `branch.${branch}.remote`, 'origin');
+    const item = branchItem(await cleanupPlanOf(root), branch);
+    const real = createProcessRunner();
+    const result = wf.expectOk(
+      await applyBranches(root, [item], {
+        runner: async (request) => {
+          const outcome = await real(request);
+          return hasArgs(request.args, 'update-ref', '-d') ? { ...outcome, ...report } : outcome;
+        },
+      }),
+    );
+    const [entry] = result.items;
+    assert.deepEqual(
+      [entry.ok, entry.deleted, entry.restore],
+      [true, true, `git branch '${branch}' ${tip}`],
+      JSON.stringify(result),
+    );
+    assert.deepEqual(
+      entry.configRemoved.map((config) => config.key),
+      [`branch.${branch}.remote`],
+    );
+    assert.equal(branchExists(root, branch), false);
+  }
+  const { root, branch } = squashMerged(t);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  const kept = wf.expectOk(
+    await applyBranches(root, [item], {
+      runner: failingRunner(
+        (args) => hasArgs(args, 'update-ref', '-d'),
+        () => true,
+      ),
+    }),
+  );
+  assert.deepEqual([kept.items[0].code, kept.items[0].reason], ['BRANCH_RETAINED', 'ref-moved']);
+  assert.ok(branchExists(root, branch));
+});
+
+// Invariant: after a failed delete, only a ref proven absent counts as deleted. `for-each-ref`
+// skips a dangling symbolic ref and a broken loose ref, so either one still in place is
+// `ref-moved`: never reported deleted, its configuration kept.
+test('cleanup branch: a dangling symbolic or broken ref left by a failed delete is ref-moved', async (t) => {
+  const corruptions = {
+    dangling: (root, branch) =>
+      wf.git(root, 'symbolic-ref', `refs/heads/${branch}`, 'refs/heads/nowhere'),
+    broken: (root, branch) => writeUnderGit(root, `refs/heads/${branch}`, 'garbage\n'),
+  };
+  for (const [name, corrupt] of Object.entries(corruptions)) {
+    const { root, branch } = squashMerged(t);
+    wf.git(root, 'config', `branch.${branch}.remote`, 'origin');
+    const item = branchItem(await cleanupPlanOf(root), branch);
+    const real = createProcessRunner();
+    const result = wf.expectOk(
+      await applyBranches(root, [item], {
+        runner: async (request) => {
+          if (!hasArgs(request.args, 'update-ref', '-d')) return real(request);
+          corrupt(root, branch);
+          return FAILED_GIT;
+        },
+      }),
+    );
+    const [entry] = result.items;
+    assert.deepEqual(
+      [entry.ok, entry.code, entry.reason, entry.deleted],
+      [false, 'BRANCH_RETAINED', 'ref-moved', undefined],
+      `${name}: ${JSON.stringify(result)}`,
+    );
+    assert.equal(wf.git(root, 'config', '--get', `branch.${branch}.remote`), 'origin', name);
+  }
+});
+
+// A released `issue-planning` record whose temporary branch is still at `creationOid`, which
+// `build/baseline` also reaches, so `git branch -d` refuses it and the compare-and-delete runs.
+async function unadvancedIssuePlanning(root) {
+  const tree = wf.git(root, 'rev-parse', 'HEAD^{tree}');
+  const baseline = wf.git(root, 'commit-tree', tree, '-p', 'HEAD', '-m', 'baseline head');
+  wf.git(root, 'branch', 'build/baseline', baseline);
+  const worktree = wf.addWorktree(root, {
+    path: join(wf.baseDir(root), `${wf.SESSION}-issue-planning`),
+    branch: `issue-planning/${wf.SESSION}`,
+    base: baseline,
+  });
+  const record = wf.makeRecord(root, worktree, {
+    purpose: 'issue-planning',
+    overrides: { branchPolicy: 'delete-after-integration' },
+  });
+  wf.expectOk(await wf.call('worktree record-init', { cwd: root, executionRoot: root, record }));
+  return record;
+}
+
+// Invariant: the other compare-and-delete callers, the apply-review `integrationRoot` route and
+// the unadvanced temporary branch, share its guards: a branch a bisect or rebase uses is `in-use`
+// and kept; a deletion passes `--no-deref` and removes exactly the branch's configuration; a ref
+// turned symbolic right before the deletion is `ref-moved` and its target stays.
+test('compare-and-delete: the apply-review and temporary-branch routes share the guards', async (t) => {
+  const routes = {
+    'apply-review': async (root) => {
+      const { record, tip } = await component(root, 'c1', (wt) =>
+        writeFileSync(join(wt, 'feature.txt'), 'feature line\n'),
+      );
+      integrate(root, tip);
+      return {
+        branch: record.branch,
+        tip,
+        remove: (extra) => removeComponents(root, ['c1'], extra),
+      };
+    },
+    'issue-planning': async (root) => {
+      const record = await unadvancedIssuePlanning(root);
+      return {
+        branch: record.branch,
+        tip: record.creationOid,
+        remove: (extra) =>
+          wf.call(
+            'worktree remove',
+            { cwd: root, executionRoot: root, sessionId: wf.SESSION, recordIds: [record.recordId] },
+            extra,
+          ),
+      };
+    },
+  };
+  for (const [route, prepare] of Object.entries(routes)) {
+    const busy = wf.repository(t);
+    const inUse = await prepare(busy);
+    writeUnderGit(busy, 'rebase-merge/head-name', `refs/heads/${inUse.branch}\n`);
+    const refused = wf.expectOk(await inUse.remove({}));
+    assert.deepEqual(
+      [refused.items[0].code, refused.items[0].branch.reason],
+      ['BRANCH_RETAINED', 'in-use'],
+      `${route}: ${JSON.stringify(refused)}`,
+    );
+    assert.ok(branchExists(busy, inUse.branch), route);
+
+    const symbolic = wf.repository(t);
+    const aliased = await prepare(symbolic);
+    wf.git(symbolic, 'branch', 'keep-target', aliased.tip);
+    const moved = wf.expectOk(
+      await aliased.remove({
+        onPhase: (name) => {
+          if (name === 'beforeBranchDelete') {
+            wf.git(
+              symbolic,
+              'symbolic-ref',
+              `refs/heads/${aliased.branch}`,
+              'refs/heads/keep-target',
+            );
+          }
+        },
+      }),
+    );
+    assert.equal(moved.items[0].branch.reason, 'ref-moved', `${route}: ${JSON.stringify(moved)}`);
+    assert.equal(wf.git(symbolic, 'rev-parse', 'refs/heads/keep-target'), aliased.tip, route);
+
+    const clean = wf.repository(t);
+    const deleted = await prepare(clean);
+    wf.git(clean, 'config', `branch.${deleted.branch}.remote`, 'origin');
+    wf.git(clean, 'config', `branch.${deleted.branch}x.remote`, 'origin');
+    const { runner, calls } = recordingRunner();
+    const result = wf.expectOk(await deleted.remove({ runner }));
+    assert.equal(result.items[0].ok, true, `${route}: ${JSON.stringify(result)}`);
+    assert.equal(result.items[0].branch.outcome, 'deleted-after-proof', route);
+    assert.deepEqual(
+      result.items[0].branch.configRemoved.map((entry) => entry.key),
+      [`branch.${deleted.branch}.remote`],
+      route,
+    );
+    assert.equal(wf.git(clean, 'config', '--get', `branch.${deleted.branch}x.remote`), 'origin');
+    assert.ok(
+      calls.some(
+        (args) => args[0] === 'update-ref' && args.includes('--no-deref') && args.includes('-d'),
+      ),
+      route,
+    );
+    assert.equal(branchExists(clean, deleted.branch), false, route);
+  }
 });
