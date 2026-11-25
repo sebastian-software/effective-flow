@@ -4207,10 +4207,11 @@ function branchItemReason(reason) {
 // `verifyBranchProof` re-checks grafts, shallow, `proofCommit` in the current base and the one
 // claimed proof (never a search); the whole record set and build-run state are read again
 // (`recorded`, `record-unreadable` for an orphan); the sandbox preflight probes `<common>` and the
-// ref directories (SANDBOX_DENIED); then `compareAndDeleteBranch` checks checkout and in-use and
-// deletes. A Git call cut off by the deadline is `timeout`. Every kept branch is BRANCH_RETAINED
-// with its `reason`; nothing else in the call is affected.
-async function applyBranchItem(context, roots, entry, completed, deps) {
+// ref directories (SANDBOX_DENIED); a signal recorded by then is INTERRUPTED before any deletion;
+// then `compareAndDeleteBranch` checks checkout and in-use and deletes. A Git call cut off by the
+// deadline is `timeout`. Every kept branch is BRANCH_RETAINED with its `reason`; nothing else in
+// the call is affected.
+async function applyBranchItem(context, roots, entry, completed, deps, signals) {
   const item = entry.branchItem;
   const retained = (reason, extra = {}) => ({
     itemId: entry.itemId,
@@ -4274,6 +4275,17 @@ async function applyBranchItem(context, roots, entry, completed, deps) {
         code: 'SANDBOX_DENIED',
         branch: item.branch,
         ...denied,
+      };
+    }
+    // A signal that arrived during any step above stops the item here: nothing is deleted yet.
+    if (signals.signal) {
+      return {
+        itemId: entry.itemId,
+        ok: false,
+        code: 'INTERRUPTED',
+        signal: signals.signal,
+        branch: item.branch,
+        tip: item.tip,
       };
     }
     const deletion = await compareAndDeleteBranch(git, item.branch, tip, deps);
@@ -4579,7 +4591,7 @@ export async function cleanupApply(input, deps) {
   return { items };
 
   async function applyItem(entry, signals) {
-    if (entry.branchItem) return applyBranchItem(context, roots, entry, completed, deps);
+    if (entry.branchItem) return applyBranchItem(context, roots, entry, completed, deps, signals);
     if (entry.recordId) {
       const result = await removeOne(
         context,

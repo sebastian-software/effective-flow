@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -2199,6 +2200,28 @@ test('cleanup branch: a rewound base keeps the branch, an advanced base still de
   const deleted = wf.expectOk(await applyBranches(advanced.root, [advancedItem]));
   assert.deepEqual([deleted.items[0].ok, deleted.items[0].deleted], [true, true]);
   assert.equal(branchExists(advanced.root, advanced.branch), false);
+});
+
+// Invariant: a termination signal recorded before a branch item's deletion returns INTERRUPTED for
+// that item and leaves the ref, and the signal handlers are removed again.
+test('cleanup branch: a signal before the deletion interrupts the item and keeps the branch', async (t) => {
+  const { root, branch } = squashMerged(t);
+  const item = branchItem(await cleanupPlanOf(root), branch);
+  const signalTarget = new EventEmitter();
+  const interrupted = wf.expectOk(
+    await applyBranches(root, [item], {
+      signalTarget,
+      onPhase: (name) => {
+        if (name === 'beforeBranchItem') signalTarget.emit('SIGTERM');
+      },
+    }),
+  );
+  assert.deepEqual(
+    [interrupted.items[0].code, interrupted.items[0].signal, interrupted.items[0].branch],
+    ['INTERRUPTED', 'SIGTERM', branch],
+  );
+  assert.ok(branchExists(root, branch));
+  assert.equal(signalTarget.listenerCount('SIGTERM'), 0, 'the signal handlers are removed');
 });
 
 // Invariant: a record that becomes unreadable, or build-run state that does, between the pre-write
