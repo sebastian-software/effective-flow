@@ -5,15 +5,16 @@
 // Operations: scan, branch-name, assert-changeset, publish, complete-branch, inspect-branch,
 // assess-base-move. `inspect-branch` is read-only and may bind its result to `expectedBaseOid`;
 // `publish` accepts `expectedBaseOid`, `expectedBlobOid` and an optional `baseMove` (an unresolved
-// assessed move, rendered as a fixed flag paragraph in the body), while `complete-branch` accepts
-// `expectedBaseOid` and `expectedTipOid`. `assess-base-move` is read-only apart from its base fetch:
-// `{cwd, issue, planDir, planFile, remote, baseBranch, fromBaseOid, expectedBlobOid}` in,
-// `{state: "assessed", fromBaseOid, toBaseOid, verdict: fits|overlap|undecidable, reason,
-// republish, commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths}` out, both path
-// lists bounded to 20 entries.
-// `publish` and `complete-branch` stay a dry run unless `--apply` is passed. Writes exactly one JSON envelope
-// line to stdout and exits non-zero on failure. Input never travels as command-line arguments;
-// only the operation name and `--apply` do.
+// assessed move, rendered as a fixed flag paragraph in the body) and an optional `allowNewerBase`
+// (publish on the assessed `expectedBaseOid` behind a newer tip, flagged and reported as
+// `furtherBaseMove`), while `complete-branch` accepts `expectedBaseOid` and `expectedTipOid`.
+// `assess-base-move` is read-only apart from its base fetch: `{cwd, issue, planDir, planFile,
+// remote, baseBranch, fromBaseOid, expectedBlobOid}` in, `{state: "assessed", fromBaseOid,
+// toBaseOid, verdict: fits|overlap|undecidable, reason, republish, commitCount, changedPathCount,
+// citedPathCount, citedPaths, overlappingPaths}` out, both path lists bounded to 20 entries.
+// `publish` and `complete-branch` stay a dry run unless `--apply` is passed. Writes exactly one
+// JSON envelope line to stdout and exits non-zero on failure. Input never travels as command-line
+// arguments; only the operation name and `--apply` do.
 
 import { realpathSync } from 'node:fs';
 import process from 'node:process';

@@ -82,7 +82,8 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    request, so a configured `delivery.completion` of `merge` or `branch` never applies. On an issue,
    the work continues on the plan pull request's branch, so plan, code and the archived plan arrive
    in one pull request.
-4. **Fit.** After the implementation is committed, a read-only reviewer scores from 1 to 10 how
+4. **Fit.** After the implementation is committed and the
+   [delivery base](#end-states) is checked, a read-only reviewer scores from 1 to 10 how
    well the change fits your accepted ADRs in `docs/adr/`, `docs/developer-guide/architecture.md`,
    `docs/concept/` and your other open plans, as committed on the delivery branch. With none of these, the record says "not assessed —
    no architecture or roadmap sources found". When the reviewer still fails after one retry, it
@@ -163,14 +164,29 @@ These cases produce **no** pull request:
 - a failed publication step (plan-only draft or `pr`), for example a leftover plan branch without
   its draft pull request;
 - a base branch that moved during planning and cannot be followed: its history was rewritten, it
-  already holds or may hold a plan for the same issue, the plan or tip changed, or it moved a
-  second time. The plan and its planning worktree are kept and named in the report.
+  already holds or may hold a plan for the same issue, or the plan or tip changed. The plan and
+  its planning worktree are kept and named in the report.
 
 A base branch that moves during planning does not stop a run by itself: Issue Buddy publishes the
 plan once on the new tip. When the move overlaps the plan or cannot be decided, the plan pull
 request carries an "Unresolved base move" paragraph, autopilot continues to its draft pull
-request, and that pull request's appendix "Base move" section says so. Reconciling the plan with
-the new base is left to review.
+request, and that pull request's appendix "Base move" section says so. When the base moves again
+while Issue Buddy publishes, the plan is still published on the tip it assessed, and the same
+paragraph says the further move was not assessed. Reconciling the plan with the new base is left
+to review.
+
+A conflict with the base at delivery does not stop a run either. Before `pr`, autopilot checks
+whether the base moved past the delivery branch. If the branch conflicts with it, autopilot makes
+exactly one automatic resolution attempt with merge-gate's conflict resolver, independent
+verification and review. It never rebases or force-pushes. A successful attempt adds one merge
+commit to the branch; `pr` then reports the workflow's verification as `stale`, because that
+commit came after the verified head. A failed attempt leaves the branch unchanged, and the draft pull request is
+still published with an "Unresolved delivery conflict" note; resolving it is left to a later
+session such as `merge-gate`. `mergeGate.conflictResolution` controls the attempt: `off` skips it,
+and `ask` counts as the automatic attempt, because nobody can be asked during the run, which the
+pull request discloses. `mergeGate.conflictValidation` sets the validation mode. Only a failure of
+the step itself – a failed fetch or base check, a failed `merge --abort`, an unverified quick
+marker – is a blocker, handled as above without an implementation pull request.
 
 On a private repository a security blocker is listed in the pull request with neutral wording that
 does not mention security.
@@ -187,6 +203,10 @@ every later update:
 - **Close decisions:** each question with the chosen option, its score and reason, every
   alternative within 3 points, and both rounds of a tie;
 - **Automatic decisions:** the number of clear-winner decisions;
+- **Delivery base:** only when the base moved past the delivery branch: the range and commit
+  count, and whether there was no conflict, the conflict was resolved by a merge commit, it stayed
+  unresolved (with the reason, the conflicted paths and the "Unresolved delivery conflict" note), or
+  it could not be checked;
 - **Blockers:** only when there are any;
 - **Architecture fit:** `n/10 — <reason>` with the sources used, or the not-assessed line.
 
@@ -196,8 +216,8 @@ local-only finding never appear in it.
 
 **Output:** The draft pull request URL or the reason there is none, the number of automatic, close
 and tie-resolved decisions, every blocker and retained worktree, whether your plan copy was
-restored and where the retained copy is, every local change left untouched, and the
-architecture-fit score, followed by the [next-step recommendation](tool-flow.md).
+restored and where the retained copy is, every local change left untouched, the delivery-base
+result, and the architecture-fit score, followed by the [next-step recommendation](tool-flow.md).
 
 **Cleaning up:** a run releases its issue's claim when it closes. A killed run leaves the claim
 behind and blocks only that issue: `/effective-flow cleanup` lists planning claims with their age,

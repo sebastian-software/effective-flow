@@ -12,13 +12,15 @@
 //   range with the paths the plan cites and looks for a plan of the same issue in the range. Its
 //   envelope's `republish` is false only for a reason in `BASE_MOVE_STOPPING_REASONS` (a rewritten
 //   base or a possible plan of the same issue); otherwise a caller may call `publish` once more with
-//   the new tip as `expectedBaseOid`, passing the assessment as `baseMove` unless it `fits`.
-//   `publish` keeps its exact base binding.
+//   the new tip as `expectedBaseOid` and `allowNewerBase: true`, passing the assessment as
+//   `baseMove` unless it `fits`. Without `allowNewerBase`, `publish` keeps its exact base binding.
 // - `publish` and `complete-branch` (mutations, dry run unless `apply`): an unattended pass commits
 //   the plan with plumbing in a temporary index, pushes it without force so the remote branch is
 //   the lock, and opens a draft pull request carrying the shipped plan marker and `Refs #<N>`.
 //   `publish` alone takes an optional `baseMove` and renders it as one fixed English paragraph
-//   ("Unresolved base move") between the caller's prose and the marker.
+//   ("Unresolved base move") between the caller's prose and the marker. With `allowNewerBase`, a
+//   tip that moved past `expectedBaseOid` publishes on that assessed base after the further-range
+//   stops, extends or adds the flag, and reports `furtherBaseMove` (null on an unmoved tip).
 //
 // Model judgment stays outside: callers pass the plan file, the title, body and commit message,
 // and the run state. This module spawns nothing itself; every process goes through the injected
@@ -134,7 +136,7 @@ const SCHEMAS = Object.freeze({
       'body',
       'commitMessage',
     ],
-    optional: ['expectedBaseOid', 'expectedBlobOid', 'baseMove'],
+    optional: ['expectedBaseOid', 'expectedBlobOid', 'baseMove', 'allowNewerBase'],
   },
   'complete-branch': {
     required: [
@@ -1266,28 +1268,47 @@ function requireBaseMove(value, expectedBaseOid) {
   return { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths };
 }
 
+function commitsText(commitCount) {
+  return `${commitCount} commit${commitCount === 1 ? '' : 's'}`;
+}
+
 // The fixed English flag a flagged re-publish carries, so reviewers and agents can search for it.
-// A list of exactly the bound may have been cut by the assessment, so it says so.
-export function buildBaseMoveFlag({
-  fromBaseOid,
-  toBaseOid,
-  reason,
-  commitCount,
-  overlappingPaths,
-}) {
+// A list of exactly the bound may have been cut by the assessment, so it says so. An optional
+// `furtherBaseMove` (`publish` with `allowNewerBase`) appends one sentence naming the unassessed
+// move past the assessed base.
+export function buildBaseMoveFlag(
+  { fromBaseOid, toBaseOid, reason, commitCount, overlappingPaths },
+  furtherBaseMove = null,
+) {
   const from = fromBaseOid.slice(0, 7);
   const to = toBaseOid.slice(0, 7);
-  const commits = `${commitCount} commit${commitCount === 1 ? '' : 's'}`;
   const truncated = overlappingPaths.length === MAX_BASE_MOVE_PATHS ? ' (list truncated)' : '';
   const paths =
     overlappingPaths.length === 0
       ? ''
       : ` Overlapping paths: ${overlappingPaths.map((entry) => `\`${entry}\``).join(', ')}${truncated}.`;
+  const further =
+    furtherBaseMove === null
+      ? ''
+      : ` The base moved again to \`${furtherBaseMove.toBaseOid.slice(0, 7)}\` ` +
+        `(${commitsText(furtherBaseMove.commitCount)}) after this assessment; that move was not ` +
+        'assessed.';
   return (
     `**Unresolved base move.** The base moved from \`${from}\` to \`${to}\` while this plan was ` +
-    `written (${commits}). The plan was published on \`${to}\` without reconciling it. ` +
-    `Reason: \`${reason}\`.${paths} Review must reconcile the plan with the new base before it is ` +
-    'implemented.'
+    `written (${commitsText(commitCount)}). The plan was published on \`${to}\` without ` +
+    `reconciling it. Reason: \`${reason}\`.${paths} Review must reconcile the plan with the new ` +
+    `base before it is implemented.${further}`
+  );
+}
+
+// The standalone flag of a further move after a fitting assessment, which itself carries no flag.
+export function buildFurtherBaseMoveFlag({ fromBaseOid, toBaseOid, commitCount }) {
+  const from = fromBaseOid.slice(0, 7);
+  return (
+    `**Unresolved base move.** The base moved again from \`${from}\` to ` +
+    `\`${toBaseOid.slice(0, 7)}\` (${commitsText(commitCount)}) after the plan was assessed ` +
+    `against it. The plan was published on \`${from}\` without assessing that move. Review must ` +
+    'reconcile the plan with the new base before it is implemented.'
   );
 }
 
@@ -2164,16 +2185,87 @@ async function pushBranch(git, { remote, branch, commitOid }, network, state) {
   }
 }
 
+// `allowNewerBase`: the assessed re-publish binds to `expectedBaseOid` behind a newer fetched tip.
+// It requires the assessed base to be an ancestor of the tip and runs only the stopping subset on
+// the further range (the plan path tracked on the tip, a same-issue or invalid-identity plan file);
+// it computes no fit verdict. Returns `{fromBaseOid, toBaseOid, commitCount}`.
+async function requireFurtherBaseMove(
+  git,
+  context,
+  { expectedBaseOid, tipOid, issue, planDir, planPath },
+) {
+  const stop = (reason) =>
+    fail('BASE_CHANGED', 'base changed since authorization', {
+      expectedOid: expectedBaseOid,
+      actualOid: tipOid,
+      reason,
+    });
+  const present = (await git.run(['cat-file', '-e', `${expectedBaseOid}^{commit}`]))?.status === 0;
+  if (!present) stop('not-ancestor');
+  const ancestry = await git.run(['merge-base', '--is-ancestor', expectedBaseOid, tipOid]);
+  if (ancestry?.error || ![0, 1].includes(ancestry?.status)) {
+    fail('COMMAND_FAILED', 'git merge-base failed', {
+      command: 'git merge-base',
+      status: ancestry?.status ?? null,
+      stderr: diagnosticText(ancestry?.stderr ?? ancestry?.error?.code ?? ''),
+    });
+  }
+  if (ancestry.status !== 0) stop('not-ancestor');
+  if ((await git.run(['cat-file', '-e', `${tipOid}:${planPath}`]))?.status === 0) {
+    fail('CHANGESET_INVALID', 'the newer base already tracks the plan path', {
+      violations: [{ violation: 'modification', path: planPath }],
+    });
+  }
+  const changes = parseRawDiff(
+    (
+      await git.checked([
+        'diff-tree',
+        '-r',
+        '-z',
+        '--no-renames',
+        '--no-commit-id',
+        '--ignore-submodules=none',
+        '--raw',
+        expectedBaseOid,
+        tipOid,
+      ])
+    ).stdout,
+  );
+  const folding = await foldingFlags(context.cwd, context.runner);
+  const identities = (
+    await rangePlanFiles(git, changes, { issue, planDir, planPath, folding })
+  ).map((file) => file.identity);
+  if (identities.includes('invalid')) stop('plan-identity');
+  if (identities.includes('same-issue')) stop('same-issue-plan');
+  const commitCount = Number(
+    await git.text(['rev-list', '--count', `${expectedBaseOid}..${tipOid}`]),
+  );
+  return { fromBaseOid: expectedBaseOid, toBaseOid: tipOid, commitCount };
+}
+
 async function publishOperation(input, context) {
   const base = mutatingInput('publish', input);
   const commitMessage = validateCommitMessage(input.commitMessage);
   const baseMove =
     input.baseMove === undefined ? null : requireBaseMove(input.baseMove, input.expectedBaseOid);
+  if (input.allowNewerBase !== undefined && typeof input.allowNewerBase !== 'boolean') {
+    fail('INVALID_INPUT', 'allowNewerBase must be a boolean', { field: 'allowNewerBase' });
+  }
+  const allowNewerBase = input.allowNewerBase === true;
+  if (allowNewerBase && input.expectedBaseOid === undefined) {
+    fail('INVALID_INPUT', 'allowNewerBase needs expectedBaseOid', { field: 'allowNewerBase' });
+  }
   const cwdReal = resolveCwd(input.cwd, context.fs);
   const planPath = requirePlanFilePath(input.planFile);
-  // The flag joins the caller's prose before the body checks, so it passes them like any prose.
-  const prose = baseMove ? `${base.body.trimEnd()}\n\n${buildBaseMoveFlag(baseMove)}` : base.body;
-  const body = buildPullRequestBody(prose, planPath, base.issue);
+  // A flag joins the caller's prose before the body checks, so it passes them like any prose.
+  const composeBody = (furtherBaseMove) => {
+    const flag = baseMove
+      ? buildBaseMoveFlag(baseMove, furtherBaseMove)
+      : furtherBaseMove && buildFurtherBaseMoveFlag(furtherBaseMove);
+    const prose = flag ? `${base.body.trimEnd()}\n\n${flag}` : base.body;
+    return buildPullRequestBody(prose, planPath, base.issue);
+  };
+  let body = composeBody(null);
   const branch = planBranchName({ branchPrefix: input.branchPrefix, issue: base.issue });
 
   const git = createGit({ ...context, cwd: cwdReal });
@@ -2192,14 +2284,35 @@ async function publishOperation(input, context) {
       violations: [{ violation: nameProblem, path: planPath }],
     });
   }
-  const baseOid = await fetchBase(git, base.remote, base.baseBranch, network);
-  requireExpectedOid(input.expectedBaseOid, baseOid, 'BASE_CHANGED', 'base');
+  const tipOid = await fetchBase(git, base.remote, base.baseBranch, network);
+  // `baseOid` is the plan commit's parent: the fetched tip, or the assessed base behind it.
+  let baseOid = tipOid;
+  let furtherBaseMove = null;
+  if (allowNewerBase && tipOid !== input.expectedBaseOid) {
+    furtherBaseMove = await requireFurtherBaseMove(
+      git,
+      { ...context, cwd: cwdReal },
+      {
+        expectedBaseOid: input.expectedBaseOid,
+        tipOid,
+        issue: base.issue,
+        planDir: base.planDir,
+        planPath,
+      },
+    );
+    baseOid = input.expectedBaseOid;
+    body = composeBody(furtherBaseMove);
+  } else {
+    requireExpectedOid(input.expectedBaseOid, tipOid, 'BASE_CHANGED', 'base');
+  }
   const tracked = await git.run(['cat-file', '-e', `${baseOid}:${planPath}`]);
   if (tracked?.status === 0) {
     fail('CHANGESET_INVALID', 'the base already tracks the plan path', {
       violations: [{ violation: 'modification', path: planPath }],
     });
   }
+  // Only a publish with `allowNewerBase` reports the field, so one without it stays unchanged.
+  const further = allowNewerBase ? { furtherBaseMove } : {};
 
   const scan = scanEntries(
     [
@@ -2238,6 +2351,7 @@ async function publishOperation(input, context) {
       body,
       findings: scan.findings,
       ignoredPullRequests,
+      ...further,
       gitVersion,
       plannedCommands: [
         ['git', 'hash-object', '-w', '--no-filters', '--stdin'],
@@ -2326,6 +2440,7 @@ async function publishOperation(input, context) {
     planFile: planPath,
     pullRequest,
     ignoredPullRequests,
+    ...further,
   };
 }
 

@@ -109,14 +109,34 @@ the group is absent, no source may emit.
   security blocker on a public repository, an Issue Buddy stop or pass failure (including a base
   move with a stopping reason (a rewritten base, or a plan of the same issue in the range that is
   there or may be), or a re-publish that stopped), a preflight failure, an appendix that its scan
-  blocks, which is never published, and a failed publication step (plan-only draft or `pr`).
+  blocks, which is never published, and a failed publication step (plan-only draft or `pr`). A
+  delivery conflict with the base never adds to these end states; the delivery base step's own
+  failures (a failed fetch, a helper `GIT_FAILED` or `INVARIANT_FAILED`, a failed `merge --abort`,
+  an unverified quick marker) are `post-branch-failure` blockers, handled like any other blocker,
+  so the run opens no implementation pull request.
 - **Base move.** When the base branch moved during planning and Issue Buddy re-published the plan,
   the run continues, also when the move overlaps the plan or its fit cannot be decided. Issue
   Buddy reports the move, `base-move-record` stores it with its verdict, reason and overlapping
   paths in the ledger (one per run, issue source only, an identical repeat is a no-op) and
   withdraws the recorded appendix digest, and `pr-appendix` renders it as a "Base move" section
   before the blockers. For an unresolved move that section is the flag: it leaves reconciling the
-  plan with the new base to review, and the draft pull request is not blocked.
+  plan with the new base to review, and the draft pull request is not blocked. A base that moved
+  again during that re-publish is published on the assessed tip and flagged in the plan pull
+  request; the delivery base step below sees that move again.
+- **Delivery base.** Before `pr`, the first pre-delivery step fetches the base and checks
+  read-only (`delivery-base-check`) whether it moved past the delivery branch's merge base, on an
+  issue and a plan source alike. A textual conflict gets exactly one automatic resolution attempt
+  that reuses merge-gate's conflict-resolution delegation contract and conflict validation mode,
+  governed by `mergeGate.conflictResolution` (`off` or unreadable skips it, `ask` counts as the
+  attempt because the run is unattended) and `mergeGate.conflictValidation`. Success is one merge
+  commit on the unrebased head; failure runs `git merge --abort` and leaves the branch unchanged.
+  No rebase, force-push or retry. `delivery-base-record` verifies these invariants against Git and
+  stores one record per run, and `pr-appendix` renders it as a "Delivery base" section. An
+  unresolved conflict is no blocker: the draft pull request is published with an "Unresolved
+  delivery conflict" flag in that section, and resolving it is left to a later session such as
+  `merge-gate`. A delivery conflict therefore never prevents the draft pull request; only the
+  step's own failures do, as `post-branch-failure` blockers without an implementation pull
+  request.
 - **Architecture fit.** A read-only `deep` leaf scores the committed diff against the repository's
   ADRs, architecture guide, concepts and open plans. With no source, or when the leaf still fails
   after one retry, the appendix states that the fit was not assessed and why; it is never a

@@ -763,6 +763,61 @@ test('an overlapping base move publishes on the new tip with the flag', async (t
   await release(world, passId);
 });
 
+// Invariant (issue #734): a base that moves again after the assessment does not stop the pass. The
+// one re-publish with `allowNewerBase` builds the plan commit on the assessed tip, the PR carries the
+// further-move flag, and the pass reports `published` with the single assessed `baseMoves` entry.
+test('a further base move during the re-publish publishes flagged', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  const { tree, metadata } = await planInWorktree(world, collected);
+  const assessedTip = advanceRemoteBase(world, { 'unrelated/notes.txt': 'notes\n' });
+  const assessed = checked(
+    await world.publication(
+      'assess-base-move',
+      assessInput(collected.baseOid, metadata.blobOid, { cwd: tree }),
+    ),
+  );
+  assert.equal(assessed.verdict, 'fits');
+  assert.equal(assessed.toBaseOid, assessedTip);
+  const furtherTip = advanceRemoteBase(world, { 'unrelated/more.txt': 'more\n' });
+  assert.notEqual(furtherTip, assessedTip);
+
+  assert.deepEqual(checked(await world.lint('publication-metadata', { cwd: tree })), metadata);
+  const published = checked(
+    await world.publication(
+      'publish',
+      publicationInput(assessedTip, {
+        cwd: tree,
+        expectedBlobOid: metadata.blobOid,
+        allowNewerBase: true,
+      }),
+    ),
+  );
+  assert.equal(published.state, 'pull-request-opened');
+  assert.equal(world.git(world.bare, 'rev-parse', `${published.commitOid}^`), assessedTip);
+  assert.deepEqual(published.furtherBaseMove, {
+    fromBaseOid: assessedTip,
+    toBaseOid: furtherTip,
+    commitCount: 1,
+  });
+  assert.match(world.state().pulls[0].body, /\*\*Unresolved base move\.\*\* The base moved again/);
+
+  const recorded = await record(world, passId, collected, { pullRequest: published.pullRequest });
+  const move = baseMoveEntry(assessed);
+  const stored = await report(world, passId, collected, {
+    verdicts: [recorded],
+    pullRequestsOpened: [prIdentity(published)],
+    leftoverPlanFiles: [],
+    baseMoves: [move],
+  });
+  assert.equal(stored.outcome, 'completed');
+  assert.deepEqual(stored.failures, []);
+  assert.equal(stored.pullRequestsOpened.length, 1);
+  assert.deepEqual(stored.baseMoves, [move]);
+  await release(world, passId);
+});
+
 // Invariant (issue #734): a plan of the same issue in the moved range is a duplicate, not a conflict
 // review reconciles: the assessment answers `republish: false`, nothing is published, the pass stops
 // with the null BASE_CHANGED failure, and the plan and its planning worktree stay for the operator.

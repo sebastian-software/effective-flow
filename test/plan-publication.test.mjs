@@ -33,6 +33,7 @@ import {
   assessBaseMove,
   baseMoveRepublishes,
   buildBaseMoveFlag,
+  buildFurtherBaseMoveFlag,
   buildPlanPrMarkerLine,
   buildPullRequestBody,
   decodePlanBytes,
@@ -2259,6 +2260,51 @@ test('publish refuses an invalid baseMove as INVALID_INPUT with zero runner call
   assert.equal(refused.error.code, 'INVALID_INPUT');
   assert.deepEqual(refused.error.details.keys, ['baseMove'], 'complete-branch takes no flag');
   assert.equal(runner.calls.length, 0);
+});
+
+// Protects the `allowNewerBase` input contract of `publish`: a boolean that needs the assessed
+// `expectedBaseOid` to bind to, refused before any process starts.
+test('allowNewerBase is a boolean that needs expectedBaseOid, refused with zero runner calls', async () => {
+  const cases = [
+    ['no expected base', { allowNewerBase: true }, true],
+    ['a string', { expectedBaseOid: TO_OID, allowNewerBase: 'true' }, false],
+    ['a number', { expectedBaseOid: TO_OID, allowNewerBase: 1 }, false],
+    ['null', { expectedBaseOid: TO_OID, allowNewerBase: null }, false],
+  ];
+  for (const [label, overrides, dropBase] of cases) {
+    const runner = recordingRunner();
+    const input = publishInput(overrides);
+    if (dropBase) delete input.expectedBaseOid;
+    const envelope = await run('publish', input, { runner, apply: true });
+    assert.equal(envelope.ok, false, label);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', label);
+    assert.equal(envelope.error.details.field, 'allowNewerBase', label);
+    assert.equal(runner.calls.length, 0, label);
+  }
+  const runner = recordingRunner();
+  const refused = await run(
+    'complete-branch',
+    completeBranchInput({ expectedBaseOid: TO_OID, allowNewerBase: true }),
+    { runner },
+  );
+  assert.equal(refused.error.code, 'INVALID_INPUT');
+  assert.deepEqual(refused.error.details.keys, ['allowNewerBase'], 'complete-branch takes no flag');
+  assert.equal(runner.calls.length, 0);
+});
+
+// Protects the flag text of a further move: one sentence appended to the assessed flag, and a
+// standalone paragraph for a fitting assessment; no further move leaves the flag unchanged.
+test('buildBaseMoveFlag appends the further-move sentence and buildFurtherBaseMoveFlag stands alone', () => {
+  const further = { fromBaseOid: TO_OID, toBaseOid: '3'.repeat(40), commitCount: 2 };
+  assert.equal(buildBaseMoveFlag(baseMoveInput(), null), buildBaseMoveFlag(baseMoveInput()));
+  assert.equal(
+    buildBaseMoveFlag(baseMoveInput(), further),
+    `${buildBaseMoveFlag(baseMoveInput())} The base moved again to \`3333333\` (2 commits) after this assessment; that move was not assessed.`,
+  );
+  assert.equal(
+    buildFurtherBaseMoveFlag(further),
+    '**Unresolved base move.** The base moved again from `2222222` to `3333333` (2 commits) after the plan was assessed against it. The plan was published on `2222222` without assessing that move. Review must reconcile the plan with the new base before it is implemented.',
+  );
 });
 
 // Protects the normalization order: suffix strip, then candidate detection, then reduction.

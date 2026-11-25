@@ -238,6 +238,31 @@ test('countAppendixBlockers ignores the base-move section in either language', (
   assert.equal(countAppendixBlockers([block(...move('### Base move'))]), 0);
 });
 
+// Invariant: the delivery-base section sits outside the blocker section, so its lines (even bullets
+// or the unresolved-conflict flag) never change the blocker count that gates the appendix.
+test('countAppendixBlockers ignores the delivery-base section in either language', () => {
+  const delivery = (heading, flag) => [
+    heading,
+    '',
+    '- not a blocker',
+    'Conflicted paths: `src/a.mjs`',
+    flag,
+    '',
+  ];
+  const en = delivery(
+    '### Delivery base',
+    'Unresolved delivery conflict: resolving it is left to a later session such as `merge-gate`.',
+  );
+  const de = delivery(
+    '### Basis bei Auslieferung',
+    'Ungelöster Auslieferungskonflikt: ihn zu lösen bleibt einer späteren Sitzung wie `merge-gate` überlassen.',
+  );
+  assert.equal(countAppendixBlockers([block(...en, '### Blockers', '', '- a', '- b')]), 2);
+  assert.equal(countAppendixBlockers([block(...de, '### Blocker', '- a')]), 1);
+  assert.equal(countAppendixBlockers([block(...en)]), 0);
+  assert.equal(countAppendixBlockers([block(...de)]), 0);
+});
+
 // Invariant (issue #734 follow-up): a flagged, unresolved base move is the PR's flag, not a
 // blocker: an appendix whose only section after the decisions is that move counts no blocker in
 // either language, so the draft PR is not gated by it.

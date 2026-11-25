@@ -2901,6 +2901,172 @@ test('assess-base-move: an overlapping move publishes flagged on the new tip', a
   assert.deepEqual(inspectPlanPrMarker(stored), { status: 'valid', plan: PLAN_FILE });
 });
 
+// Invariant (issue #734): `allowNewerBase` binds the plan commit to the assessed base behind a newer
+// fetched tip, reports the further move, and renders the fixed text: a standalone paragraph after a
+// fitting assessment, one appended sentence after a flagged one.
+test('publish with allowNewerBase publishes on the assessed base behind a newer tip and flags the further move', async (t) => {
+  const { buildBaseMoveFlag, buildFurtherBaseMoveFlag } =
+    await import('../src/scripts/plan-publication-core.mjs');
+  const world = createWorld(t);
+  const base0 = trackingTip(world);
+  const base1 = moveBase(world, { files: { 'README.md': 'changed\n' }, message: 'docs: first' });
+  const base2 = moveBase(world, { files: { 'docs/more.md': 'x\n' }, message: 'docs: second' });
+  const prose = publishInput(world).body;
+  const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
+
+  // Fits variant: the assessed base is base1 and carries no flag of its own.
+  const fitting = { fromBaseOid: base1, toBaseOid: base2, commitCount: 1 };
+  const further = `**Unresolved base move.** The base moved again from \`${base1.slice(0, 7)}\` to \`${base2.slice(0, 7)}\` (1 commit) after the plan was assessed against it. The plan was published on \`${base1.slice(0, 7)}\` without assessing that move. Review must reconcile the plan with the new base before it is implemented.`;
+  assert.equal(buildFurtherBaseMoveFlag(fitting), further);
+  const dry = await publish(
+    world,
+    { expectedBaseOid: base1, allowNewerBase: true },
+    { apply: false },
+  );
+  assert.equal(dry.ok, true, JSON.stringify(dry.error));
+  assert.equal(dry.data.body, `${prose}\n\n${further}\n\n${tail}`);
+  assert.deepEqual(dry.data.furtherBaseMove, fitting);
+  assert.equal(remoteRef(world, BRANCH), null);
+
+  const envelope = await publish(world, { expectedBaseOid: base1, allowNewerBase: true });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.state, 'pull-request-opened');
+  assert.equal(envelope.data.baseOid, base1);
+  assert.deepEqual(envelope.data.furtherBaseMove, fitting);
+  assert.equal(world.gitIn(world.remote, 'rev-parse', `${BRANCH}^`), base1);
+  assert.equal(world.forge.creates.length, 1);
+  assert.equal(world.forge.creates[0].payload.draft, true);
+  assert.equal(world.forge.creates[0].payload.base, 'main');
+  assert.ok(world.forge.pulls.at(-1).body.includes(further));
+  assert.deepEqual(inspectPlanPrMarker(world.forge.pulls.at(-1).body), {
+    status: 'valid',
+    plan: PLAN_FILE,
+  });
+
+  // Overlap variant: the assessed move base0..base1 keeps its flag and gains one sentence.
+  const second = createWorld(t);
+  const first0 = trackingTip(second);
+  const first1 = moveBase(second, { files: { 'README.md': 'changed\n' } });
+  const first2 = moveBase(second, { files: { 'docs/more.md': 'x\n' } });
+  const baseMove = {
+    fromBaseOid: first0,
+    toBaseOid: first1,
+    verdict: 'overlap',
+    reason: 'cited-path',
+    commitCount: 1,
+    overlappingPaths: ['README.md'],
+  };
+  const flagged = buildBaseMoveFlag(baseMove, {
+    fromBaseOid: first1,
+    toBaseOid: first2,
+    commitCount: 1,
+  });
+  assert.ok(
+    flagged.endsWith(
+      ` The base moved again to \`${first2.slice(0, 7)}\` (1 commit) after this assessment; that move was not assessed.`,
+    ),
+    flagged,
+  );
+  const overlapped = await publish(second, {
+    expectedBaseOid: first1,
+    allowNewerBase: true,
+    baseMove,
+  });
+  assert.equal(overlapped.ok, true, JSON.stringify(overlapped.error));
+  assert.equal(second.gitIn(second.remote, 'rev-parse', `${BRANCH}^`), first1);
+  assert.deepEqual(overlapped.data.furtherBaseMove, {
+    fromBaseOid: first1,
+    toBaseOid: first2,
+    commitCount: 1,
+  });
+  const stored = second.forge.pulls.at(-1).body;
+  assert.ok(stored.includes(flagged), stored);
+  assert.ok(!stored.includes('after the plan was assessed against it'), 'one flag, not two');
+});
+
+// Invariant (issue #734): the further range keeps every integrity stop. A base that is not an
+// ancestor of the tip, a same-issue plan or a plan whose header and file name name different issues
+// in the range stops with BASE_CHANGED before any write.
+test('allowNewerBase stops on a non-ancestor, a same-issue plan or a plan-identity conflict in the further range', async (t) => {
+  const stopped = async (world, overrides, reason) => {
+    const envelope = await publish(world, { allowNewerBase: true, ...overrides });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'BASE_CHANGED', JSON.stringify(envelope.error));
+    assert.equal(envelope.error.details.reason, reason);
+    assertNothingWritten(world, { allowFetch: true });
+    assert.equal(remoteRef(world, BRANCH), null);
+  };
+  const unknown = createWorld(t);
+  moveBase(unknown, { files: { 'docs/a.md': 'a\n' } });
+  await stopped(unknown, { expectedBaseOid: '9'.repeat(40) }, 'not-ancestor');
+
+  const diverged = createWorld(t);
+  const tree = diverged.git('rev-parse', 'HEAD^{tree}');
+  const sideways = diverged.git('commit-tree', tree, '-m', 'side');
+  moveBase(diverged, { files: { 'docs/a.md': 'a\n' } });
+  await stopped(diverged, { expectedBaseOid: sideways }, 'not-ancestor');
+
+  for (const [files, reason] of [
+    [{ 'docs/plan/2026-11-01-issue-12-second.md': '# Second\n' }, 'same-issue-plan'],
+    [
+      { 'docs/plan/2026-11-01-renamed-topic.md': `# R\n\n**Issue:** #${ISSUE}\n` },
+      'same-issue-plan',
+    ],
+    [
+      { 'docs/plan/2026-11-01-issue-9-confused.md': `# Confused\n\n**Issue:** #${ISSUE}\n` },
+      'plan-identity',
+    ],
+  ]) {
+    const world = createWorld(t);
+    const assessed = trackingTip(world);
+    moveBase(world, { files });
+    await stopped(world, { expectedBaseOid: assessed }, reason);
+  }
+
+  const tracked = createWorld(t);
+  const assessed = trackingTip(tracked);
+  moveBase(tracked, { files: { [PLAN_FILE]: PLAN_TEXT } });
+  const refused = await publish(tracked, { expectedBaseOid: assessed, allowNewerBase: true });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'CHANGESET_INVALID', JSON.stringify(refused.error));
+  assertNothingWritten(tracked, { allowFetch: true });
+
+  // Without the flag the moved tip keeps failing the exact base binding.
+  const exact = createWorld(t);
+  const before = trackingTip(exact);
+  moveBase(exact, { files: { 'docs/a.md': 'a\n' } });
+  const plain = await publish(exact, { expectedBaseOid: before });
+  assert.equal(plain.error.code, 'BASE_CHANGED');
+  assert.equal(plain.error.details.reason, undefined);
+});
+
+// Invariant (issue #734): the flag changes nothing on a tip that did not move; the envelope reports
+// `furtherBaseMove: null`, the body is the plain one, and a publish without the flag has no key.
+test('allowNewerBase on an unmoved tip publishes exactly as before', async (t) => {
+  const world = createWorld(t);
+  const tip = trackingTip(world);
+  const prose = publishInput(world).body;
+  const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
+  const dry = await publish(
+    world,
+    { expectedBaseOid: tip, allowNewerBase: true },
+    { apply: false },
+  );
+  assert.equal(dry.ok, true, JSON.stringify(dry.error));
+  assert.equal(dry.data.body, `${prose}\n\n${tail}`);
+  assert.equal(dry.data.furtherBaseMove, null);
+  const plain = await publish(world, { expectedBaseOid: tip }, { apply: false });
+  assert.equal(plain.data.body, dry.data.body);
+  assert.equal('furtherBaseMove' in plain.data, false);
+
+  const envelope = await publish(world, { expectedBaseOid: tip, allowNewerBase: true });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.furtherBaseMove, null);
+  assert.equal(envelope.data.baseOid, tip);
+  assert.equal(world.gitIn(world.remote, 'rev-parse', `${BRANCH}^`), tip);
+  assert.ok(!world.forge.pulls.at(-1).body.includes('Unresolved base move'));
+});
+
 // Protects the folding rule end to end: the assessing clone's `core.ignorecase`, read from Git and
 // not from the file system, decides whether a citation differing only in case names a changed file.
 test('assess-base-move: core.ignorecase in the assessing clone makes a case-differing citation overlap', async (t) => {

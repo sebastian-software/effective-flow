@@ -1190,6 +1190,15 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   reads the pull request back to confirm draft and marker. An optional `baseMove` (an unresolved
   `assess-base-move` result whose `republish` is true, moving to exactly `expectedBaseOid`) adds
   one fixed English "Unresolved base move" paragraph between the caller's prose and the marker.
+  An optional `allowNewerBase: true` (only Issue Buddy's single assessed re-publish passes it)
+  accepts a fetched tip that moved past `expectedBaseOid`: it requires `expectedBaseOid` to be an
+  ancestor of the tip (`BASE_CHANGED`, `details.reason: "not-ancestor"`), refuses a plan path the
+  tip already tracks (`CHANGESET_INVALID`), stops on a same-issue or invalid-identity plan file in
+  `expectedBaseOid..tip` (`BASE_CHANGED` with `same-issue-plan` or `plan-identity`), builds the
+  commit on `expectedBaseOid`, appends one fixed sentence to the flag (or, without `baseMove`,
+  renders a standalone "Unresolved base move" paragraph) and returns
+  `furtherBaseMove: {fromBaseOid, toBaseOid, commitCount}`, `null` when the tip did not move.
+  Without it, a moved tip is `BASE_CHANGED`.
   `complete-branch` instead adopts an existing pushed plan branch: it asserts its changeset, scans
   the plan blob read back from Git, and opens the draft pull request. `scan` is read-only and also
   serves the interactive content check in `src/shared/plan-publication.md`: it reports findings by
@@ -1486,7 +1495,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   they validate 1–10 option scores and classify them (lead > 3 silent, 1–3 documented, 0 tie;
   distinct tie re-scores; floor 2; cap 20) and parse a plan's "Decided by score" machine block.
   `run-init`, `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed`, `delivery-record`,
-  `delivery-confirm`, `base-move-record`, `pr-appendix` and `run-close` write the run ledger under `.effective-flow/autopilot/<run-id>/` of the primary checkout through the
+  `delivery-confirm`, `base-move-record`, `delivery-base-record`, `pr-appendix` and `run-close` write the run ledger under `.effective-flow/autopilot/<run-id>/` of the primary checkout through the
   runtime-state guard, and `consent-check` reads it for Issue Buddy's per-run private publication;
   it grants only for a ledger whose recorded visibility is `private`. `run-check` (reads only)
   confirms an open ledger as `{runId, status: "open", source}` and otherwise fails with
@@ -1495,8 +1504,17 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   itself. `fit-record` also accepts `{unavailable: true}` without sources,
   rendered as `Architecture fit: not assessed — scoring unavailable`. `delivery-record` stores the
   archive path (exactly `<dir>/archive/<file>`) or `unarchived: true`, which the appendix source
-  line names; `delivery-confirm` stores the verified pushed head. `run-close` returns the recorded
-  fit object without its timestamp, or `null`. `plan-copy-restore` (`{cwd, runId, sourceRoot}`) is
+  line names; `delivery-confirm` stores the verified pushed head and, after a `resolved` delivery
+  base, refuses one that is not the merge commit or a descendant of it with `MERGE_NOT_DELIVERED`. `delivery-base-check`
+  (`{cwd, runId, headOid, baseRef}`, reads only, fetches nothing) reports whether the fetched
+  `origin/<baseRef>` moved past the head's merge base, with `localMergeProof` for a moved base.
+  `delivery-base-record` stores at most one record per run on either source (an identical repeat
+  is a no-op, a different one `INVALID_STATE`) with result `none`, `resolved`, `unresolved` or
+  `unchecked`, and verifies a named checkout with Git: it is on `refs/heads/<branch>` (the record's
+  `branch`, set exactly when `checkout` is), a `resolved` tip is exactly one merge commit with
+  parents `[headOid, baseOid]`, an `unresolved` branch is still at `headOid` with no merge in
+  progress; `pr-appendix` renders it as the "Delivery base" section. `run-close` returns the
+  recorded fit, `baseMove` and `deliveryBase` without their timestamps, or `null`. `plan-copy-restore` (`{cwd, runId, sourceRoot}`) is
   the helper's one project-file write: only after a confirmed delivery whose head carries the
   recorded archive path, with `HEAD:<P>` unchanged since preflight, nothing staged and the working
   copy still at `reviewedPlanSha256`, it moves the reviewed copy aside, re-hashes it, retains it as
@@ -1513,7 +1531,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   file still has it, and with `APPENDIX_WITHHELD` while a security blocker stands on a repository
   whose recorded visibility is not `private`; it replaces the one appendix block of a pull-request
   body, or appends it, for `pr`'s `Appendix:` input. A `blocked` or `withheld` render and every
-  later `decision-record`, `blocker-record`, `fit-record`, `base-move-record`, `plan-reviewed` and `delivery-record`
+  later `decision-record`, `blocker-record`, `fit-record`, `base-move-record`, `delivery-base-record`, `plan-reviewed` and `delivery-record`
   withdraw the recorded digest; `delivery-confirm` does not. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
   removes a run's ledger and appendix only while its run is closed and produced no pull request or
   the caller's `pr-read` stated it merged or closed, and never deletes a retained plan copy (no
@@ -1528,8 +1546,10 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   implementing workflow, `commit` and `pr` as declared `WORKFLOW_EDGES`, and starts one spawn of
   its own, the read-only `deep` leaf `autopilot/architecture-fit`. Its rare branches sit in the
   autopilot-only lazy fragments `autopilot-issue-source` (with the read-only `standard` Stage B
-  leaf `autopilot-issue-source/issue-classification`, so autopilot never holds issue text) and
-  `autopilot-blockers`, which may emit the scored control lines because only an Automation tool
+  leaf `autopilot-issue-source/issue-classification`, so autopilot never holds issue text),
+  `autopilot-delivery-conflict` (the one delivery-conflict attempt under merge-gate's resolution
+  contract, with the spawn sites `autopilot-delivery-conflict/resolver`, `/verification` and
+  `/review`) and `autopilot-blockers`, which may emit the scored control lines because only an Automation tool
   reaches them. A receiving tool honours the lines only after the `run-check` of
   `scored-decisions` "Recognition".
 

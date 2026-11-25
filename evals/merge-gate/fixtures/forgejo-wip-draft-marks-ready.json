@@ -612,6 +612,7 @@
           "baseCommit": "53eb937622b0afcf2b0120a22955e32bed791291",
           "headSha": "63ece662f6a610cf9448399d103831f852b6dcd9",
           "conflictCount": 0,
+          "conflictedPaths": [],
           "status": "clean",
           "reason": null
         },

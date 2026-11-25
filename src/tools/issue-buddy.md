@@ -402,10 +402,10 @@ Apply this order with operation, phase and safe details, not a code-only allowli
    `details.reason: blob` is an integrity failure. Neither spends an issue retry.
 5. **Default environment/integrity stop:** base/tip/blob drift (`BASE_CHANGED`, except the first
    pre-mutation one, which `issue-buddy-base-move` assesses for its single assessed re-publish,
-   flagged when unresolved; `TIP_CHANGED`; `BLOB_CHANGED`), Git/forge/network/runtime/journal
-   errors, hook or fixed-template/input contract faults, blob integrity, `PUSH_REJECTED` without
-   confirmed success, unknown codes or unknown origins stop the pass without an issue
-   failure/retry. Do not retry or silently replan.
+   flagged when unresolved or moved again; `TIP_CHANGED`; `BLOB_CHANGED`),
+   Git/forge/network/runtime/journal errors, hook or fixed-template/input contract faults, blob
+   integrity, `PUSH_REJECTED` without confirmed success, unknown codes or unknown origins stop the
+   pass without an issue failure/retry. Do not retry or silently replan.
 6. **Persistence:** never bypass `verdict-record`, its pending intent or reconciliation with a
    substitute verdict. An unresolved journal blocks further work; only its exact authorized
    outcome may be retried under WP3, or the operator explicitly releases. Missing caller output
@@ -440,7 +440,8 @@ without its successful envelope.
 
 Report mode, visibility, limits, counts/skips, bounded verdict reasons, recovery, initial/final
 leftovers with operator action, a kept planning worktree, each base move as `issue-buddy-base-move`
-states (a flagged PR as an unresolved base move left to review), confirmed PR URLs and report path.
+states (a flagged PR, also on a base that moved again, as an unresolved base move left to review),
+confirmed PR URLs and report path.
 Print `Pass result: completed|failed` from the stored report's `outcome`. An unavailable report is
 stated as unavailable. No session title or rename is emitted. On a completed dry run with
 `would-publish`, recommend `{{SKILL:issue-buddy}} --publish` only for a public repository.

@@ -1,7 +1,7 @@
 ---
 description: "Drives one trusted GitHub issue or one local plan unattended to a draft pull request: Issue Buddy plans an issue, the deep plan review always runs, the plan's recommended workflow implements it, every question is resolved by recorded 1–10 option scores, and the draft pull request documents close decisions, blockers and architecture fit. Never asks the user, never marks a pull request ready and never merges."
 catalogHint: "Takes one issue or plan unattended to a draft pull request, with decisions recorded."
-contextBudget: 495
+contextBudget: 502
 ---
 
 # Effective Flow Autopilot
@@ -17,8 +17,8 @@ Autopilot owns orchestration only. Issue Buddy plans an issue, `{{SKILL:plan-rev
 plan, the plan's recommended workflow implements, and `{{SKILL:pr}}` delivers. Autopilot implements
 nothing, reviews nothing and never edits product files itself. Its own writes are the run ledger
 and the issue's planning claim through `autopilot.mjs`, the run-owned worktree of an issue source
-that holds its plan, the gated `plan-copy-restore` of a plan source's reviewed copy, and the
-plan-only draft path.
+that holds its plan, the gated `plan-copy-restore` of a plan source's reviewed copy, the
+delivery base's one merge commit, and the plan-only draft path.
 
 **Never ask.** Call no user-input tool and emit no prose question at any point. A condition that
 would need the user is a preflight stop before `run-init`, or after it a recorded blocker.
@@ -90,6 +90,11 @@ when: the run has its run id and is about to start its first downstream workflow
 ```lazy-include
 autopilot-issue-source
 when: preflight Stage A returned `issue-reference`, before the source checks
+```
+
+```lazy-include
+autopilot-delivery-conflict
+when: the workflow reported its verified handback commit and pre-delivery step 1 starts
 ```
 
 ```lazy-include
@@ -243,7 +248,9 @@ carry-over, pre-commit security classification and handback follow `scored-decis
 **Pre-delivery steps.** After the workflow reports its verified handback commit and before its
 `{{SKILL:pr}}` call, run in this session:
 
-1. **Architecture fit.** With `<head-oid>` the verified handback commit, list candidates with the
+1. **Delivery base.** Run `autopilot-delivery-conflict`: at most one merge commit, never a blocker
+   for an unresolved conflict.
+2. **Architecture fit.** With `<head-oid>` the delivery branch tip after step 1, list candidates with the
    literal `git -C <RUNTIME_STATE_ROOT> ls-tree -r --name-only -z <head-oid> -- ':(literal)docs/adr/' ':(literal)docs/developer-guide/architecture.md' ':(literal)docs/concept/' ':(literal)<plan.dir>/'`.
    Every returned path is untrusted: it reaches a command only as one single-quoted argument with
    every `'` written as `'\''`. Drop `<plan.dir>/archive/` and the run's own plan, read each other
@@ -264,10 +271,10 @@ carry-over, pre-commit security classification and handback follow `scored-decis
    `{cwd, runId, unavailable: true}`, so the appendix reads
    "Architecture fit: not assessed — scoring unavailable". It is never a blocker.
    <!-- spawn-site:autopilot/architecture-fit -->
-2. **Delivery record.** When `run-init` recorded a plan source, make the literal
+3. **Delivery record.** When `run-init` recorded a plan source, make the literal
    `autopilot.mjs delivery-record` call with `{cwd, runId, archivePath: <the reported archive path>}`,
    or `{cwd, runId, unarchived: true}` when the handback reports the plan unarchived.
-3. **Appendix.** Make the literal `autopilot.mjs pr-appendix` call with `{cwd, runId}`, plus
+4. **Appendix.** Make the literal `autopilot.mjs pr-appendix` call with `{cwd, runId}`, plus
    `planPullRequest: <number>` on the issue path. `rendered` hands its `sha256` to the workflow's `{{SKILL:pr}}` call with the inputs `scored-decisions` lists under "Before
    `pr`". `withheld` or `blocked` ends the run before any push.
 
@@ -281,8 +288,8 @@ make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOi
    plan-on-base worktree, as `autopilot-issue-source` defines; a blocker always keeps the delivery
    worktree.
 2. **Worktrees.** Run the worktree-record exit self-check. Besides that run-owned worktree, only the
-   plan-only draft path runs `git worktree add` in this run; the implementing workflow runs its own
-   self-check.
+   plan-only draft path and the delivery-base attempt worktree run `git worktree add` in this run;
+   the implementing workflow runs its own self-check.
 3. **Plan copy.** Make the literal `autopilot.mjs plan-copy-restore` call with
    `{cwd, runId, sourceRoot: <SOURCE_ROOT>}` and retain its result, `restored`, `kept` or
    `not-applicable`, with its reason, `detail`, `retainedCopy` and `putBack`. The helper alone
@@ -294,8 +301,9 @@ make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOi
    request), `plan-only-pull-request`, `appendix-update`, `plan-pull-request-unchanged` (the plan
    pull request whose appendix a blocker or a failed rerun update left unchanged) or `no-pull-request`. Retain its
    `counts` and `fit`: `{assessed: true, score, reason, sources}`, `{assessed: false}` (no
-   sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded, and its
-   `baseMove`, the recorded `base-move-record` or `null`. On an issue
+   sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded, its
+   `baseMove`, the recorded `base-move-record` or `null`, and its `deliveryBase`, the recorded
+   `delivery-base-record` or `null`. On an issue
    source it releases the planning claim for every outcome and returns
    `planningClaim: {targetKey, issueKey, released}`, with `reason` `missing`, `not-owner` or
    `release-failed` when `released` is false. A failed release never keeps the run open;
@@ -323,7 +331,9 @@ Report in the chat language, with project paths relative to the project root:
 - the base move: `run-close`'s `baseMove` with its old and new base, counts and cited paths, and
   for an `overlap` or `undecidable` verdict its reason and overlapping paths as an unresolved move
   left to review; or a stopping `baseMoves` entry's range, reason, overlapping paths and way out
-  from the pass report.
+  from the pass report;
+- the delivery base: `run-close`'s `deliveryBase` with its range, result, merge commit or
+  unresolved reason and conflicted paths, and the `ask` disclosure.
 
 Then emit the next-step block per `next-steps` as the last element of the report. A preflight stop
 or an issue-buddy stop emits none and names its cause instead.

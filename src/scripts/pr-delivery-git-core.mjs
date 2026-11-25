@@ -16,7 +16,8 @@
 //   directory afterwards (a failed removal leaves it behind and keeps the proof's result); the
 //   repository's object set is unchanged. Git may still freshen (touch the
 //   mtime of) an object it finds through the alternate. Every failure that keeps the proof from
-//   running is `unavailable` with a named reason, never `clean`.
+//   running is `unavailable` with a named reason, never `clean`. A conflict also lists its
+//   conflicted paths, unique, sorted, reportable only and bounded (`conflictedPaths`).
 //
 // Nothing here fetches, writes a ref, the index or the working tree, or runs a hook (`merge-tree`
 // runs none). Every call goes through the injected runner without a shell, under an environment
@@ -59,6 +60,13 @@ export const PR_DELIVERY_GIT_ERROR_CODES = Object.freeze([
 
 // A merge of a large tree is bounded, so a stuck Git cannot hold the caller's run open.
 export const MERGE_PROOF_TIMEOUT_MS = 120_000;
+// The bound of `conflictedPaths`; `conflictCount` keeps the full count beside it.
+export const MAX_CONFLICTED_PATHS = 20;
+// A conflicted path is listed only when it is safe to carry into a report, a ledger and a
+// pull-request appendix: not blank, no control or line-separator character, no backtick, no
+// backslash and at most this many characters (the base-move path rule).
+const MAX_REPORTED_PATH_CHARS = 512;
+const UNREPORTABLE_PATH = /[\u0000-\u001f\u007f-\u009f\u2028\u2029`\\]/;
 
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const ORIGIN_REF_PREFIX = 'refs/remotes/origin/';
@@ -289,22 +297,30 @@ function stoppedByBound(result) {
   );
 }
 
+function reportablePath(value) {
+  return (
+    value.trim() !== '' && value.length <= MAX_REPORTED_PATH_CHARS && !UNREPORTABLE_PATH.test(value)
+  );
+}
+
 // Classifies one `merge-tree --write-tree -z --name-only --no-messages` run: status 0 with exactly
 // the merged tree id is clean, status 1 with the tree id and the conflicted paths is a conflict, and
-// anything else proves nothing.
+// anything else proves nothing. `conflictedPaths` is `[]` for a clean proof and the sorted unique
+// reportable names, at most MAX_CONFLICTED_PATHS, for a conflict.
 function mergeTreeOutcome(result) {
   if (stoppedByBound(result)) return unavailable('timeout');
   if (failed(result)) return unavailable('merge-tree-failed');
   const fields = asBuffer(result.stdout).toString('utf8').split('\0').filter(Boolean);
   if (result.status === 0) {
     return fields.length === 1 && OBJECT_ID.test(fields[0])
-      ? { status: 'clean', reason: null, conflictCount: 0 }
+      ? { status: 'clean', reason: null, conflictCount: 0, conflictedPaths: [] }
       : unavailable('unexpected-output');
   }
   if (result.status === 1 && fields.length >= 1 && OBJECT_ID.test(fields[0])) {
-    const conflictCount = new Set(fields.slice(1)).size;
-    return conflictCount > 0
-      ? { status: 'conflict', reason: null, conflictCount }
+    const names = [...new Set(fields.slice(1))];
+    const conflictedPaths = names.filter(reportablePath).sort().slice(0, MAX_CONFLICTED_PATHS);
+    return names.length > 0
+      ? { status: 'conflict', reason: null, conflictCount: names.length, conflictedPaths }
       : unavailable('unexpected-output');
   }
   const detail = asBuffer(result.stderr).toString('utf8');
@@ -312,17 +328,24 @@ function mergeTreeOutcome(result) {
   return unavailable('merge-tree-failed');
 }
 
-// The local merge proof: `{ status, reason, gitVersion, baseCommit, headSha, conflictCount }`, where
-// `status` is `clean`, `conflict` or `unavailable` and `reason` names why an `unavailable` proof
-// could not run (one of MERGE_PROOF_UNAVAILABLE_REASONS; null otherwise). Fields a proof did not
-// reach are null. Only invalid input throws (PrDeliveryGitError INVALID_INPUT); every Git failure is
-// `unavailable`.
+// The local merge proof: `{ status, reason, gitVersion, baseCommit, headSha, conflictCount,
+// conflictedPaths }`, where `status` is `clean`, `conflict` or `unavailable` and `reason` names why
+// an `unavailable` proof could not run (one of MERGE_PROOF_UNAVAILABLE_REASONS; null otherwise).
+// Fields a proof did not reach are null: `conflictCount` and `conflictedPaths` are null for every
+// `unavailable` proof, `0` and `[]` for a clean one. Only invalid input throws (PrDeliveryGitError
+// INVALID_INPUT); every Git failure is `unavailable`.
 export async function localMergeProof(input, deps = {}) {
   const cwd = requireCwd(input?.cwd);
   const headSha = requireHeadSha(input?.headSha);
   const baseRef = requireBaseRef(input?.baseRef);
   const context = makeContext(deps);
-  const report = { gitVersion: null, baseCommit: null, headSha, conflictCount: null };
+  const report = {
+    gitVersion: null,
+    baseCommit: null,
+    headSha,
+    conflictCount: null,
+    conflictedPaths: null,
+  };
   const version = await readGitVersion(context, cwd);
   if (version === null) return unavailable('git-version-unreadable', report);
   report.gitVersion = version.join('.');
@@ -390,6 +413,7 @@ export async function localMergeProof(input, deps = {}) {
       ...report,
       ...outcome,
       conflictCount: outcome.status === 'unavailable' ? null : outcome.conflictCount,
+      conflictedPaths: outcome.status === 'unavailable' ? null : outcome.conflictedPaths,
     };
   } finally {
     // The proof is already decided when the cleanup runs, and a directory left behind does not

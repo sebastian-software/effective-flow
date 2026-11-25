@@ -637,7 +637,10 @@ test('pr keeps drafts and merges the appendix after the body check', () => {
   );
   assert.match(before, /A `withheld` or `blocked` result ends the run before any push/);
   // The handback output the Automation caller reads for `delivery-record` and `delivery-confirm`.
-  assert.match(before, /autopilot: architecture fit, `delivery-record`, then `pr-appendix`/);
+  assert.match(
+    before,
+    /autopilot: the delivery base first, then architecture fit, `delivery-record` and `pr-appendix`\)/,
+  );
   assert.match(
     before,
     /beside `Finalize plan draft:`\. The handback output the caller reads is the plan's archive path or `unarchived`, the local changes S-LOC left untouched, and after `pr` its verified pushed head OID; a failed push reports none\./,
@@ -647,6 +650,75 @@ test('pr keeps drafts and merges the appendix after the body check', () => {
     before,
     /ends the run before any push\. Otherwise `pr` also receives the copied control lines/,
   );
+});
+
+// Invariant: autopilot's delivery-base step is the first pre-delivery step and makes exactly one
+// attempt at a textual conflict (merge commit on the unrebased head, `git merge --abort` on any
+// failure, never a rebase, force-push or retry); `off` skips it and `ask` counts as the attempt;
+// an unresolved conflict is no blocker, so the run continues to `pr-appendix` and `pr` and
+// publishes the draft; Phase 6 reports `deliveryBase`; and "Before `pr`" resolves the workflow's
+// final head only after the pre-delivery steps, so a merge commit joins the delivered range.
+test('autopilot makes one delivery conflict attempt and publishes the draft despite an unresolved conflict', () => {
+  const autopilot = flat(tool('autopilot'));
+  const steps = autopilot.slice(autopilot.indexOf('**Pre-delivery steps.**'));
+  const first = steps.indexOf('1. **Delivery base.**');
+  assert.ok(first > 0, 'the delivery base is pre-delivery step 1');
+  assert.ok(first < steps.indexOf('2. **Architecture fit.**'));
+  assert.ok(steps.indexOf('2. **Architecture fit.**') < steps.indexOf('3. **Delivery record.**'));
+  assert.ok(steps.indexOf('3. **Delivery record.**') < steps.indexOf('4. **Appendix.**'));
+  assert.match(
+    steps,
+    /1\. \*\*Delivery base\.\*\* Run `autopilot-delivery-conflict`: at most one merge commit, never a blocker for an unresolved conflict\./,
+  );
+  assert.match(
+    autopilot,
+    /```lazy-include autopilot-delivery-conflict when: the workflow reported its verified handback commit and pre-delivery step 1 starts ```/,
+  );
+
+  const fragment = flat(read('shared/autopilot-delivery-conflict.md'));
+  assert.match(
+    fragment,
+    /makes \*\*exactly one\*\* automatic attempt to resolve a textual conflict/,
+  );
+  assert.match(
+    fragment,
+    /Its only outcomes are no merge commit or one merge commit on the unrebased head\./,
+  );
+  assert.match(fragment, /Never rebase, reset, force-push or retry here\./);
+  assert.match(fragment, /no rounds, one attempt/);
+  assert.match(
+    fragment,
+    /while `git -C <checkout> rev-parse -q --verify MERGE_HEAD` finds a merge in progress, run `git -C <checkout> merge --abort`, leaving the branch at `<head-oid>`\./,
+  );
+  assert.match(
+    fragment,
+    /`off` makes no attempt: step 11 records `unresolved` with `conflict-resolution-off`\. `ask` cannot be posed in this unattended run and counts as the one automatic attempt/,
+  );
+  assert.match(fragment, /the record keeps `conflictResolution: "ask"`/);
+  assert.match(
+    fragment,
+    /An unresolved conflict is \*\*no blocker\*\*: the run continues to the remaining pre-delivery steps, `pr-appendix` and `\{\{SKILL:pr\}\}`, and publishes the draft with the appendix's "Delivery base" flag/,
+  );
+  assert.match(
+    fragment,
+    /resolving it is left to a later session such as `\{\{SKILL:merge-gate\}\}`/,
+  );
+  assert.match(
+    fragment,
+    /From here the remaining pre-delivery steps and the workflow's final head OID use the branch tip/,
+  );
+
+  assert.match(
+    autopilot,
+    /the delivery base: `run-close`'s `deliveryBase` with its range, result, merge commit or unresolved reason and conflicted paths, and the `ask` disclosure\./,
+  );
+
+  const before = flat(FRAGMENT.slice(FRAGMENT.indexOf('**Before `pr`:**')));
+  assert.match(
+    before,
+    /The workflow resolves its verified final head OID only after these steps, so a merge commit of a resolved delivery conflict is part of the delivered range/,
+  );
+  assert.match(before, /an earlier `Verification evidence:` record then reads `stale` in `pr`/);
 });
 
 // Invariant: local state in the invocation checkout blocks only when it matters: precondition 3 of

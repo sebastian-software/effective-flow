@@ -31,12 +31,15 @@ publishing.
 
 Publication text is fixed and contains only the issue number, review result, and open-point count,
 plus, after an unresolved base move, the helper-rendered English paragraph that starts with
-"**Unresolved base move.**" and names the range, reason and overlapping paths. The plan helper owns
-content scanning, single-file inspection, expected base/tip/blob checks, create-only branch
-publication, and draft pull-request confirmation. A changed base gets one assessed re-publish on
-the new tip, flagged when the plan overlaps it or the fit cannot be decided, so review reconciles
-it. A base move with a stopping reason (a rewritten base, or a plan of the same issue in the range
-that is there or may be), a second base change, and branch tip or plan blob drift stop the pass
+"**Unresolved base move.**" and names the range, reason and overlapping paths, or a further move of
+the base after the assessment. The plan helper owns content scanning, single-file inspection,
+expected base/tip/blob checks, create-only branch publication, and draft pull-request confirmation.
+A changed base gets one assessed re-publish on the new tip, flagged when the plan overlaps it or the
+fit cannot be decided, so review reconciles it. A base that moves again during that re-publish no
+longer stops it: the plan is published on the assessed tip and the flag says the further move was
+not assessed (the owner's decision on PR #735, overriding issue #734's criterion that a second move
+stops). A base move with a stopping reason (a rewritten base, or a plan of the same issue in the
+first or further range that is there or may be) and branch tip or plan blob drift stop the pass
 without spending an issue retry. Preserved plan files are reported with the operator action; the
 pass never deletes an ambiguous or earlier file.
 

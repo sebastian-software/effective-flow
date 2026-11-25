@@ -62,8 +62,11 @@ publishes on that OID, or on one later tip that passed the read-only `plan-publi
 assess-base-move` check (fetch only, verdict `fits`, `overlap` or `undecidable`). The pass makes
 at most one assessed re-publish per issue, on the assessed tip; an overlapping or undecidable move
 publishes too, with a fixed "Unresolved base move" flag in the plan pull request for review to
-reconcile. A rewritten base and a plan of the same issue in the range still stop. Orphan recovery
-keeps the strict binding to the collected base.
+reconcile. When the base moves again during that re-publish, `publish` (with `allowNewerBase`)
+still builds the plan commit on the assessed tip behind the newer one, assesses nothing more, and
+the flag states that the further move was not assessed. The owner chose this on PR #735 over
+issue #734's criterion that a second move stops. A rewritten base and a plan of the same issue in
+either range still stop. Orphan recovery keeps the strict binding to the collected base.
 
 ## Consequences
 
@@ -75,8 +78,8 @@ orphanhood itself and never calls `pass-close`), removes trusted text no pass re
 discarded its preserved plan.
 
 A moved base no longer stops a run: a fitting move publishes as is, an overlapping or undecidable
-one publishes flagged and leaves the reconciliation to review. A rewritten base and a same-issue
-plan in the range still stop.
+one, or a base that moved again after the assessment, publishes flagged and leaves the
+reconciliation to review. A rewritten base and a same-issue plan in the range still stop.
 
 Claims are machine-local. Across machines the existing remote guards still prevent duplicates:
 `BRANCH_EXISTS`, `PR_EXISTS`, `plan-branch-exists`, the create-only push and the canonical planning
