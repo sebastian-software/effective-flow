@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { ASK_SCORING, parseAskBlock } from '../build-lib.mjs';
 import {
   BLOCKER_KINDS,
+  LIMITS,
   RUN_OUTCOMES,
   SITE_ID,
   SITE_REQUIRED_KINDS,
@@ -877,4 +878,23 @@ test('autopilot wires the delivery-state calls and reads fit sources from the de
   }
   assert.match(source, /never a blocker\.\n {3}<!-- spawn-site:autopilot\/architecture-fit -->\n/);
   assert.match(text, /`\{assessed: false, unavailable: true\}`, or `null` when none was recorded/);
+});
+
+// Invariant: the limit the architecture-fit prompt states for the leaf's `reason` equals
+// `LIMITS.reason` in `autopilot-core.mjs`, which `fit-record` enforces, so the leaf is never told to
+// write a reason the helper rejects.
+test('autopilot architecture-fit prompt states the reason limit that fit-record enforces', () => {
+  const source = tool('autopilot');
+  const start = source.indexOf('**Architecture fit.**');
+  const end = source.indexOf('<!-- spawn-site:autopilot/architecture-fit -->');
+  assert.ok(start !== -1, 'step 2 anchor `**Architecture fit.**` is missing');
+  assert.ok(end > start, 'spawn-site marker autopilot/architecture-fit is missing after step 2');
+  const text = flat(source.slice(start, end));
+  const matches = [...text.matchAll(/"reason": "<one sentence, at most (\d+) characters>"/g)];
+  assert.equal(
+    matches.length,
+    1,
+    'the architecture-fit prompt must state `"reason": "<one sentence, at most N characters>"` exactly once',
+  );
+  assert.equal(Number(matches[0][1]), LIMITS.reason);
 });

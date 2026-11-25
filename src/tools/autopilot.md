@@ -265,7 +265,7 @@ carry-over, pre-commit security classification and handback follow `scored-decis
    nothing, scores from 1 to 10 how well the diff fits the recorded architecture and
    long-term plans (1–2 conflicts with it, 5–6 viable with trade-offs, 9–10 clearly follows it)
    and returns JSON only:
-   `{"score": <integer>, "reason": "<one sentence>", "sources": ["<repository-relative path>"]}`,
+   `{"score": <integer>, "reason": "<one sentence, at most 300 characters>", "sources": ["<repository-relative path>"]}`,
    listing at most 20 sources it used. Record it with `fit-record`. A declined spawn, a failure or
    malformed output gets one retry; after that make the literal `fit-record` call with
    `{cwd, runId, unavailable: true}`, so the appendix reads
