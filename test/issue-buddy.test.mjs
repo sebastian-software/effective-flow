@@ -3802,3 +3802,261 @@ test('the cleanup inventory lists unclaimed trusted text and trusted-prune remov
   for (const issues of [[], [0], [1, 1]])
     assert.equal((await f.run('trusted-prune', { issues })).error.code, 'INVALID_PAYLOAD');
 });
+
+// Pass report v2 `baseMoves` (issue #734): one assessed base move per issue, bound to the
+// persisted collection and to the pass outcome.
+const TO_OID = 'b'.repeat(40);
+const baseMove = (overrides = {}) => ({
+  issue: 1,
+  fromBaseOid: OID,
+  toBaseOid: TO_OID,
+  verdict: 'fits',
+  reason: null,
+  commitCount: 2,
+  changedPathCount: 3,
+  citedPathCount: 1,
+  citedPaths: ['src/a.mjs'],
+  overlappingPaths: [],
+  ...overrides,
+});
+const overlapMove = (overrides = {}) =>
+  baseMove({
+    verdict: 'overlap',
+    reason: 'cited-path',
+    overlappingPaths: ['src/a.mjs'],
+    ...overrides,
+  });
+const BASE_CHANGED_STOP = { issue: null, stage: 'publish', code: 'BASE_CHANGED' };
+const moveReport = (f, c, baseMoves, extra = {}) =>
+  f.report(c, {
+    reportVersion: 2,
+    repositoryVisibility: 'unknown',
+    leftoverPlanFiles: [],
+    baseMoves,
+    ...extra,
+  });
+const stopped = { outcome: 'failed', failures: [BASE_CHANGED_STOP] };
+
+// Invariant: a fitting move that ended in a confirmed PR, and a fitting move whose issue later
+// failed, are both reportable, so the continued publication and its failure stay traceable.
+test('baseMoves accepts a valid v2 entry for a published issue and a fits entry paired with a failed verdict', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f);
+  assert.equal(c.baseOid, OID);
+  const url = 'https://github.com/example/flow/pull/30';
+  const first = c.eligible[0];
+  assert.equal(
+    (
+      await f.record(c, 'published', {
+        pullRequest: { number: 30, url },
+        headRef: first.headRef,
+      })
+    ).ok,
+    true,
+  );
+  const accepted = await moveReport(f, c, [baseMove()], {
+    verdicts: [{ issue: 1, verdict: 'published', reason: 'Bounded reason' }],
+    pullRequestsOpened: [{ issue: 1, number: 30, headRef: first.headRef, url }],
+  });
+  assert.equal(accepted.ok, true, JSON.stringify(accepted));
+  assert.deepEqual(accepted.data.baseMoves, [baseMove()]);
+  assert.deepEqual(validatePassReport(accepted.data), accepted.data);
+
+  const g = await fixture(t);
+  const c2 = await collected(g);
+  assert.equal((await g.record(c2, 'failed')).ok, true);
+  const failed = await moveReport(g, c2, [baseMove()], {
+    verdicts: [{ issue: 1, verdict: 'failed', reason: 'Bounded reason' }],
+    failures: [{ issue: 1, stage: 'judgment', code: 'MODEL_FAILED' }],
+  });
+  assert.equal(failed.ok, true, JSON.stringify(failed));
+  assert.deepEqual(failed.data.baseMoves, [baseMove()]);
+});
+
+// Invariant: `baseMoves` is optional, so a stored v2 report from before the field still validates
+// and an empty list is a valid value.
+test('baseMoves stays optional: a stored v2 report without it validates, and an empty list is accepted', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f);
+  const plain = await moveReport(f, c, undefined);
+  assert.equal(plain.ok, true, JSON.stringify(plain));
+  assert.equal('baseMoves' in plain.data, false);
+  assert.deepEqual(validatePassReport(plain.data), plain.data);
+  await f.next();
+  const c2 = await collected(f);
+  const empty = await moveReport(f, c2, []);
+  assert.equal(empty.ok, true, JSON.stringify(empty));
+  assert.deepEqual(empty.data.baseMoves, []);
+});
+
+// Invariant: a stopping move is always reported with the pass-level BASE_CHANGED stop, never
+// as a completed pass.
+test('baseMoves accepts an overlap or undecidable entry only with the null publish/BASE_CHANGED failure', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f);
+  const overlap = await moveReport(f, c, [overlapMove()], stopped);
+  assert.equal(overlap.ok, true, JSON.stringify(overlap));
+  assert.equal(overlap.data.baseMoves[0].verdict, 'overlap');
+  await f.next();
+  const c2 = await collected(f);
+  const undecidable = await moveReport(
+    f,
+    c2,
+    [baseMove({ verdict: 'undecidable', reason: 'no-affected-files', citedPaths: [] })],
+    stopped,
+  );
+  assert.equal(undecidable.ok, true, JSON.stringify(undecidable));
+  for (const [name, extra] of [
+    ['a completed outcome', {}],
+    ['a failed outcome without the stop record', { outcome: 'failed', failures: [] }],
+    [
+      'another pass-level code',
+      { outcome: 'failed', failures: [{ ...BASE_CHANGED_STOP, code: 'TIP_CHANGED' }] },
+    ],
+    [
+      'another stage',
+      { outcome: 'failed', failures: [{ ...BASE_CHANGED_STOP, stage: 'planning' }] },
+    ],
+    [
+      'an issue-bound BASE_CHANGED failure',
+      { outcome: 'failed', failures: [{ ...BASE_CHANGED_STOP, issue: 1 }] },
+    ],
+  ]) {
+    await f.next();
+    const c3 = await collected(f);
+    const refused = await moveReport(f, c3, [overlapMove()], extra);
+    assert.equal(refused.ok, false, name);
+    assert.equal(refused.error.code, 'INVALID_PAYLOAD', name);
+  }
+});
+
+// Invariant: every entry is validated against closed shapes, so no free text or oversized list
+// reaches the stored report, the ledger or a pull-request appendix.
+test('baseMoves rejects malformed entries: object IDs, enums, counts, paths and unknown keys', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f);
+  const cases = [
+    ['short from id', baseMove({ fromBaseOid: 'abc123' })],
+    ['uppercase to id', baseMove({ toBaseOid: 'B'.repeat(40) })],
+    ['non-hex to id', baseMove({ toBaseOid: 'g'.repeat(40) })],
+    ['unknown verdict', baseMove({ verdict: 'maybe' })],
+    ['unknown overlap reason', overlapMove({ reason: 'other' })],
+    ['reason of another verdict', overlapMove({ reason: 'gitlink' })],
+    ['fits with a reason', baseMove({ reason: 'cited-path' })],
+    [
+      'undecidable with an overlap reason',
+      baseMove({ verdict: 'undecidable', reason: 'cited-path' }),
+    ],
+    ['negative count', baseMove({ commitCount: -1 })],
+    ['fractional count', baseMove({ changedPathCount: 1.5 })],
+    ['cited paths exceed their count', baseMove({ citedPathCount: 0 })],
+    ['unsafe path', baseMove({ citedPaths: ['../escape'] })],
+    ['backtick path', baseMove({ citedPaths: ['a`b'] })],
+    ['issue zero', baseMove({ issue: 0 })],
+    ['unknown key', { ...baseMove(), extra: true }],
+    ['missing key', (({ commitCount: _omitted, ...rest }) => rest)(baseMove())],
+  ];
+  for (const [name, entry] of cases) {
+    const refused = await moveReport(f, c, [entry], stopped);
+    assert.equal(refused.ok, false, name);
+    assert.equal(refused.error.code, 'INVALID_PAYLOAD', name);
+  }
+  assert.equal((await moveReport(f, c, baseMove(), stopped)).error.code, 'INVALID_PAYLOAD');
+});
+
+// Invariant: `overlappingPaths` is tied to the verdict one way only. A fitting move overlaps
+// nothing, so a listed path contradicts it; an overlap may list none, because `assess-base-move`
+// drops every path that is unsafe to report.
+test('baseMoves refuses a fits entry with an overlapping path and accepts an overlap without one', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f);
+  // The failed pass binds a fits entry, so only the path rule can refuse it.
+  assert.equal((await moveReport(f, c, [baseMove()], stopped)).ok, true);
+  await f.next();
+  const c2 = await collected(f);
+  const refused = await moveReport(f, c2, [baseMove({ overlappingPaths: ['src/a.mjs'] })], stopped);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'INVALID_PAYLOAD');
+  assert.match(refused.error.message, /fitting base move lists no overlapping path/);
+  await f.next();
+  const c3 = await collected(f);
+  const unlisted = await moveReport(f, c3, [overlapMove({ overlappingPaths: [] })], stopped);
+  assert.equal(unlisted.ok, true, JSON.stringify(unlisted));
+});
+
+// Invariant: a path list is bounded at 20 entries, the same bound `assess-base-move` applies.
+test('baseMoves bounds both path lists at 20 entries', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f);
+  const paths = (count) => Array.from({ length: count }, (_, i) => `src/file-${i}.mjs`);
+  const accepted = await moveReport(
+    f,
+    c,
+    [overlapMove({ citedPathCount: 25, citedPaths: paths(20), overlappingPaths: paths(20) })],
+    stopped,
+  );
+  assert.equal(accepted.ok, true, JSON.stringify(accepted));
+  for (const entry of [
+    overlapMove({ citedPathCount: 25, citedPaths: paths(21) }),
+    overlapMove({ citedPathCount: 25, overlappingPaths: paths(21) }),
+  ]) {
+    await f.next();
+    const c2 = await collected(f);
+    const refused = await moveReport(f, c2, [entry], stopped);
+    assert.equal(refused.ok, false);
+    assert.equal(refused.error.code, 'INVALID_PAYLOAD');
+  }
+});
+
+// Invariant: a base move is assessed from the collected base, for an issue this pass collected,
+// and at most once per issue.
+test('baseMoves binds each entry to the persisted collection: its baseOid, its issues, one entry per issue', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const c = await collected(f);
+  assert.equal(c.eligible.length, 2);
+  for (const [name, entries] of [
+    ['a fromBaseOid other than the collection baseOid', [overlapMove({ fromBaseOid: TO_OID })]],
+    ['an issue the pass did not collect', [overlapMove({ issue: 9 })]],
+    ['two entries for one issue', [overlapMove(), overlapMove({ toBaseOid: 'c'.repeat(40) })]],
+  ]) {
+    const refused = await moveReport(f, c, entries, stopped);
+    assert.equal(refused.ok, false, name);
+    assert.equal(refused.error.code, 'INVALID_PAYLOAD', name);
+  }
+  const two = await moveReport(f, c, [overlapMove(), overlapMove({ issue: 2 })], stopped);
+  assert.equal(two.ok, true, JSON.stringify(two));
+  assert.equal(two.data.baseMoves.length, 2);
+});
+
+// Invariant: a fits entry must trace to the pass outcome of its own issue: a confirmed PR, a
+// failed verdict or a failed pass; a completed pass without any of them is not reportable.
+test('baseMoves refuses a fits entry that the pass outcome does not account for', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const c = await collected(f);
+  const refused = await moveReport(f, c, [baseMove()]);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'INVALID_PAYLOAD');
+  const stoppedFits = await moveReport(f, c, [baseMove()], stopped);
+  assert.equal(stoppedFits.ok, true, JSON.stringify(stoppedFits), 'a failed pass accounts for it');
+});
+
+// Invariant: a dry run publishes nothing, so it can carry no base move; version 1 reports carry
+// no v2 metadata at all and a stored v1 report is never rewritten.
+test('baseMoves is refused in a dry-run report and on a version-1 report', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f, { mode: 'dry-run' });
+  const dry = await moveReport(f, c, [overlapMove()], stopped);
+  assert.equal(dry.ok, false);
+  assert.equal(dry.error.code, 'INVALID_PAYLOAD');
+  await f.next();
+  const c2 = await collected(f);
+  const v1 = await f.report(c2, { baseMoves: [overlapMove()], ...stopped });
+  assert.equal(v1.ok, false);
+  assert.equal(v1.error.code, 'INVALID_PAYLOAD');
+  const stored = await moveReport(f, c2, [overlapMove()], stopped);
+  assert.equal(stored.ok, true, JSON.stringify(stored));
+  assert.throws(() => validatePassReport({ ...stored.data, schemaVersion: 1 }));
+  assert.throws(() =>
+    validatePassReport({ ...stored.data, mode: 'dry-run', limits: stored.data.limits }),
+  );
+});

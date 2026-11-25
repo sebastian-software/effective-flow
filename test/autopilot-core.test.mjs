@@ -2918,7 +2918,13 @@ test('a legacy pass lock stops an issue-source run-init and a plan source takes 
   assert.equal(existsSync(join(root, '.effective-flow/planning-claims')), false);
   const closedPlan = await closeRun(root, planRunId);
   assert.equal(closedPlan.ok, true, JSON.stringify(closedPlan));
-  assert.deepEqual(Object.keys(closedPlan.data).sort(), ['counts', 'fit', 'outcome', 'runId']);
+  assert.deepEqual(Object.keys(closedPlan.data).sort(), [
+    'baseMove',
+    'counts',
+    'fit',
+    'outcome',
+    'runId',
+  ]);
 });
 
 // Invariant: when the ledger cannot be created after the claim was taken, `run-init` gives the
@@ -3082,7 +3088,13 @@ test('run-close reports a missing, foreign or failed release and still closes', 
   rmSync(claimPath(root, 64));
   const closedLegacy = await closeRun(root, legacy, 'pull-request', { pullRequest: 8 });
   assert.equal(closedLegacy.ok, true, JSON.stringify(closedLegacy));
-  assert.deepEqual(Object.keys(closedLegacy.data).sort(), ['counts', 'fit', 'outcome', 'runId']);
+  assert.deepEqual(Object.keys(closedLegacy.data).sort(), [
+    'baseMove',
+    'counts',
+    'fit',
+    'outcome',
+    'runId',
+  ]);
 });
 
 // Invariant: `run-close` writes the closed ledger before it releases the claim, so a failed ledger
@@ -3203,4 +3215,158 @@ test('the restored plan lives in a delivery worktree while cwd stays primary', a
   assert.equal(existsSync(join(delivery, '.effective-flow')), false);
   const closed = await closeRun(root, runId);
   assert.equal(closed.data.planningClaim.released, true);
+});
+
+const FROM_OID = 'a'.repeat(40);
+const TO_OID = `${'b'.repeat(7)}${'c'.repeat(33)}`;
+const baseMoveInput = (root, runId, extra = {}) => ({
+  cwd: root,
+  runId,
+  fromBaseOid: FROM_OID,
+  toBaseOid: TO_OID,
+  commitCount: 3,
+  changedPathCount: 5,
+  citedPathCount: 4,
+  citedPaths: ['src/a.mjs', 'docs/b.md'],
+  ...extra,
+});
+
+// Invariant: a recorded base move is stored once per run, returned verbatim, and withdraws a
+// rendered appendix digest, so a stale render that misses the move can never be merged.
+test('base-move-record stores one record and withdraws the appendix digest', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const rendered = await op('pr-appendix', { cwd: root, runId });
+  assert.equal(rendered.data.status, 'rendered');
+  assert.notEqual(ledger(root, runId).appendixSha256, undefined);
+  const input = baseMoveInput(root, runId);
+  const recorded = await op('base-move-record', input);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  const { cwd: _cwd, runId: _runId, ...record } = input;
+  assert.deepEqual(recorded.data, { recorded: true, baseMove: record });
+  assert.equal(ledger(root, runId).appendixSha256, undefined);
+  assert.deepEqual((({ recordedAt: _t, ...rest }) => rest)(ledger(root, runId).baseMove), record);
+  const refused = await op('appendix-merge', {
+    cwd: root,
+    runId,
+    appendixSha256: rendered.data.sha256,
+    body: '',
+  });
+  assert.equal(refused.error.code, 'APPENDIX_MISMATCH');
+});
+
+// Invariant: an identical repeat is idempotent and leaves the ledger and any new digest alone;
+// a different second record is refused, so a run never carries two base moves.
+test('base-move-record accepts an identical repeat and rejects a different second record', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const input = baseMoveInput(root, runId);
+  await op('base-move-record', input);
+  await op('pr-appendix', { cwd: root, runId });
+  const digest = ledger(root, runId).appendixSha256;
+  assert.notEqual(digest, undefined);
+  const repeat = await op('base-move-record', input);
+  assert.equal(repeat.ok, true);
+  assert.equal(repeat.data.recorded, true);
+  assert.equal(ledger(root, runId).appendixSha256, digest);
+  const different = await op('base-move-record', baseMoveInput(root, runId, { commitCount: 4 }));
+  assert.equal(different.error.code, 'INVALID_STATE');
+  assert.equal(ledger(root, runId).baseMove.commitCount, 3);
+});
+
+test('base-move-record takes no plan-source ledger', async (t) => {
+  const root = repository(t);
+  const runId = await init(root, {
+    source: { kind: 'plan', planPath: 'docs/plan/x.md', planSha256: SHA },
+  });
+  const refused = await op('base-move-record', baseMoveInput(root, runId));
+  assert.equal(refused.error.code, 'INVALID_INPUT');
+  assert.equal(Object.hasOwn(ledger(root, runId), 'baseMove'), false);
+});
+
+// Invariant: the base-move record schema is closed: object ids are full lowercase hashes, counts
+// are non-negative integers, and the cited paths are bounded, safe, repository-relative paths.
+test('base-move-record keeps its schema closed', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const cases = {
+    'unknown key': { extra: true },
+    'short oid': { fromBaseOid: 'abc1234' },
+    'uppercase oid': { toBaseOid: 'A'.repeat(40) },
+    'non-hex oid': { fromBaseOid: 'z'.repeat(40) },
+    'negative count': { commitCount: -1 },
+    'fractional count': { changedPathCount: 1.5 },
+    'citedPaths not an array': { citedPaths: 'src/a.mjs' },
+    'over-long citedPaths': {
+      citedPathCount: 30,
+      citedPaths: Array.from({ length: 21 }, (_, i) => `src/f${i}.mjs`),
+    },
+    'more listed than counted': { citedPathCount: 1 },
+    'backtick path': { citedPaths: ['src/a`b.mjs'] },
+    'control character path': { citedPaths: ['src/a\nb.mjs'] },
+    'absolute path': { citedPaths: ['/etc/passwd'] },
+    'parent path': { citedPaths: ['../a.mjs'] },
+    'backslash path': { citedPaths: ['src\\a.mjs'] },
+  };
+  for (const [label, extra] of Object.entries(cases)) {
+    const refused = await op('base-move-record', baseMoveInput(root, runId, extra));
+    assert.equal(refused.error.code, 'INVALID_INPUT', label);
+  }
+  assert.equal(Object.hasOwn(ledger(root, runId), 'baseMove'), false);
+});
+
+// Invariant: the appendix carries the base move as its own section, before the blockers, with
+// short object ids, the counts and the cited paths in the run language.
+test('pr-appendix renders the base move before the blockers in English and German', async (t) => {
+  const cases = [
+    {
+      language: 'en',
+      heading: '### Base move',
+      blockers: '### Blockers',
+      range: 'from `aaaaaaa` to `bbbbbbb` during planning: 3 commits, 5 changed paths.',
+      cited:
+        'No changed path overlaps the 4 paths the plan cites: `src/a.mjs`, `docs/b.md` (+2 more)',
+    },
+    {
+      language: 'de',
+      heading: '### Basis-Verschiebung',
+      blockers: '### Blocker',
+      range: 'von `aaaaaaa` auf `bbbbbbb` verschoben: 3 Commits, 5 geänderte Pfade.',
+      cited:
+        'Kein geänderter Pfad überschneidet sich mit den 4 Pfaden, die der Plan nennt: `src/a.mjs`, `docs/b.md` (+2 weitere)',
+    },
+  ];
+  for (const copy of cases) {
+    const root = repository(t);
+    const runId = await init(root, { language: copy.language });
+    await op('blocker-record', { cwd: root, runId, kind: 'validation-red', summary: 'Red.' });
+    await op('base-move-record', baseMoveInput(root, runId));
+    const { appendix } = (await op('pr-appendix', { cwd: root, runId })).data;
+    assert.ok(appendix.includes(`${copy.heading}\n`), copy.language);
+    assert.ok(appendix.includes(copy.range), copy.language);
+    assert.ok(appendix.includes(copy.cited), copy.language);
+    assert.ok(!appendix.includes(FROM_OID), 'only the short object id is shown');
+    const blockerAt = appendix.indexOf(`${copy.blockers}\n`);
+    assert.ok(blockerAt > 0, copy.language);
+    assert.ok(appendix.indexOf(copy.heading) < blockerAt, copy.language);
+  }
+});
+
+test('run-close returns the base move, or null without one', async (t) => {
+  const withoutRoot = repository(t);
+  const withoutId = await init(withoutRoot);
+  const without = await op('run-close', {
+    cwd: withoutRoot,
+    runId: withoutId,
+    outcome: 'no-pull-request',
+  });
+  assert.equal(without.data.baseMove, null);
+
+  const root = repository(t);
+  const runId = await init(root);
+  const input = baseMoveInput(root, runId);
+  await op('base-move-record', input);
+  const closed = await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  const { cwd: _cwd, runId: _runId, ...record } = input;
+  assert.deepEqual(closed.data.baseMove, record);
 });

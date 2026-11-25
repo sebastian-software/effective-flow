@@ -1,7 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 570
+contextBudget: 580
 ---
 
 # Effective Flow Issue Buddy
@@ -359,7 +359,16 @@ Call `plan-publication.mjs publish --apply` with exactly
 remote: "origin", baseBranch, title, body, commitMessage, expectedBaseOid: collect.baseOid,
 expectedBlobOid: <metadata blobOid>}`. WP4 scans, runs hooks, creates the single-file plumbing
 commit, compares its actual plan blob before push, pushes create-only and confirms the draft PR.
-Do not implement those mechanics here or retry an ambiguous create. Record `published` only
+Do not implement those mechanics here or retry an ambiguous create. A `BASE_CHANGED` without
+`details.state`, for an issue whose base move this pass has not yet assessed, follows
+`issue-buddy-base-move` instead of item 5:
+
+```lazy-include
+issue-buddy-base-move
+when: `publish --apply` fails with `BASE_CHANGED` and no `details.state`, and this pass has assessed no base move for this issue
+```
+
+Record `published` only
 from confirmed success, with the Phase-2 verdict-record shape; append its confirmed
 `{issue, number, headRef, url}` to `pullRequestsOpened` and consume one plan slot.
 When no slot remains, set `cutOff: publish-limit` and proceed to Phase 6.
@@ -391,10 +400,12 @@ Apply this order with operation, phase and safe details, not a code-only allowli
    review metadata) may record `failed`. Prove origin using operation/phase/safe details.
    `SCAN_BLOCKED` for a hook-modified commit message is not plan content; `INVALID_CONTENT` with
    `details.reason: blob` is an integrity failure. Neither spends an issue retry.
-5. **Default environment/integrity stop:** base/tip/blob drift (`BASE_CHANGED`, `TIP_CHANGED`,
-   `BLOB_CHANGED`), Git/forge/network/runtime/journal errors, hook or fixed-template/input contract
-   faults, blob integrity, `PUSH_REJECTED` without confirmed success, unknown codes or unknown
-   origins stop the pass without an issue failure/retry. Do not retry or silently replan.
+5. **Default environment/integrity stop:** base/tip/blob drift (`BASE_CHANGED`, except the first
+   pre-mutation one, which `issue-buddy-base-move` assesses for its single assessed re-publish;
+   `TIP_CHANGED`; `BLOB_CHANGED`), Git/forge/network/runtime/journal errors, hook or
+   fixed-template/input contract faults, blob integrity, `PUSH_REJECTED` without confirmed success,
+   unknown codes or unknown origins stop the pass without an issue failure/retry. Do not retry or
+   silently replan.
 6. **Persistence:** never bypass `verdict-record`, its pending intent or reconciliation with a
    substitute verdict. An unresolved journal blocks further work; only its exact authorized
    outcome may be retried under WP3, or the operator explicitly releases. Missing caller output
@@ -404,9 +415,9 @@ Apply this order with operation, phase and safe details, not a code-only allowli
 
 Always reach this phase on a controlled ending after `pass-open`. Request `issue-buddy.mjs
 pass-report` with `{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts,
-pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`.
-After successful collection also pass `collect: <exact persisted returned result>`; before it,
-pass `mode` and `limits`. Use only reconciled successfully recorded verdicts/PR identities.
+pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`,
+plus `baseMoves` when `issue-buddy-base-move` added an entry. After successful collection also pass
+`collect: <exact persisted returned result>`; before it, pass `mode` and `limits`. Use only reconciled successfully recorded verdicts/PR identities.
 Initial leftovers are bound by collection; append only validated preserved new-file diagnostics.
 No `ready`, `passFailure` or extra cache field is admitted. Never rewrite a v1 report.
 
@@ -428,8 +439,8 @@ report/close, name the primary error and retained state; never claim success for
 without its successful envelope.
 
 Report mode, visibility, limits, counts/skips, bounded verdict reasons, recovery, initial/final
-leftovers with operator action, a kept planning worktree, confirmed PR URLs and report path. Print
-`Pass result: completed|failed` from the stored report's `outcome`. An unavailable report is stated
+leftovers with operator action, a kept planning worktree, each base move as `issue-buddy-base-move`
+states, confirmed PR URLs and report path. Print `Pass result: completed|failed` from the stored report's `outcome`. An unavailable report is stated
 as unavailable. No session title or rename is emitted. On a completed dry run with
 `would-publish`, recommend `{{SKILL:issue-buddy}} --publish` only for a public repository.
 After publication, name the exact plan path and PR branch; when absent locally, explain restoring

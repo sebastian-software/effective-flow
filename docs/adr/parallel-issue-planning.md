@@ -57,6 +57,12 @@ per run) and without recovery authority; the token never leaves the helper. Auto
 `open-pull-request` skip is a stop with no pull request. The restored plan lives in a run-owned
 delivery worktree, set up per `worktree.setup`, that `plan-pr-continuation` adopts.
 
+A planning run may meet a base branch that moved while it planned. It plans at `collect.baseOid` and
+publishes on that OID, or on one later tip that passed the read-only `plan-publication
+assess-base-move` fit check (fetch only, verdict `fits`, `overlap` or `undecidable`). The pass
+makes at most one assessed re-publish per issue, on the assessed tip. Orphan recovery keeps the
+strict binding to the collected base.
+
 ## Consequences
 
 Runs for different issues proceed in parallel from any checkout of the repository, and a stuck or
@@ -65,6 +71,9 @@ pass records as confirmed-per-item classes (`planning-claim prune`, `pass-prune`
 orphanhood itself and never calls `pass-close`), removes trusted text no pass record lists through
 `trusted-prune`, and removes a kept `issue-planning` worktree once the operator has moved or
 discarded its preserved plan.
+
+A moved base no longer stops a run whose plan still fits; an overlapping or undecidable move still
+does, as before.
 
 Claims are machine-local. Across machines the existing remote guards still prevent duplicates:
 `BRANCH_EXISTS`, `PR_EXISTS`, `plan-branch-exists`, the create-only push and the canonical planning

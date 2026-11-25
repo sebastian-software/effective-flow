@@ -1178,7 +1178,7 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   in `plan.md` Phase 3.
 - **Plan-publication.** Invoke it as `node <skill-root>/scripts/plan-publication.mjs <operation>`
   with one closed-schema JSON object on standard input; the operations are `scan`, `branch-name`,
-  `assert-changeset`, `publish` and `complete-branch`. Every operation takes an absolute `cwd`;
+  `assert-changeset`, `assess-base-move`, `publish` and `complete-branch`. Every operation takes an absolute `cwd`;
   `scan` and `branch-name` accept any directory, and the Git operations require the repository
   root. An unknown key is `INVALID_INPUT` before any Git or forge call. It emits
   one JSON envelope and exits nonzero with `ok: false` on failure. `publish` and `complete-branch`
@@ -1484,7 +1484,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   they validate 1–10 option scores and classify them (lead > 3 silent, 1–3 documented, 0 tie;
   distinct tie re-scores; floor 2; cap 20) and parse a plan's "Decided by score" machine block.
   `run-init`, `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed`, `delivery-record`,
-  `delivery-confirm`, `pr-appendix` and `run-close` write the run ledger under `.effective-flow/autopilot/<run-id>/` of the primary checkout through the
+  `delivery-confirm`, `base-move-record`, `pr-appendix` and `run-close` write the run ledger under `.effective-flow/autopilot/<run-id>/` of the primary checkout through the
   runtime-state guard, and `consent-check` reads it for Issue Buddy's per-run private publication;
   it grants only for a ledger whose recorded visibility is `private`. `run-check` (reads only)
   confirms an open ledger as `{runId, status: "open", source}` and otherwise fails with
@@ -1511,7 +1511,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   file still has it, and with `APPENDIX_WITHHELD` while a security blocker stands on a repository
   whose recorded visibility is not `private`; it replaces the one appendix block of a pull-request
   body, or appends it, for `pr`'s `Appendix:` input. A `blocked` or `withheld` render and every
-  later `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed` and `delivery-record`
+  later `decision-record`, `blocker-record`, `fit-record`, `base-move-record`, `plan-reviewed` and `delivery-record`
   withdraw the recorded digest; `delivery-confirm` does not. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
   removes a run's ledger and appendix only while its run is closed and produced no pull request or
   the caller's `pr-read` stated it merged or closed, and never deletes a retained plan copy (no

@@ -288,6 +288,42 @@ test('autopilot blockers update a rerun draft and record an unchanged plan pull 
   }
 });
 
+// Invariant: the autopilot Phase 6 report names the base move, from `run-close`'s `baseMove` or a
+// stopping `baseMoves` pass-report entry, so a base that moved during planning is never silent.
+test('autopilot Phase 6 reports the base move', () => {
+  const phase6 = read('tools/autopilot.md').split('## Phase 6: Report')[1].replace(/\s+/g, ' ');
+  assert.match(phase6, /the base move: `run-close`'s `baseMove` with its old and new base/);
+  assert.match(phase6, /counts and cited paths/);
+  assert.match(
+    phase6,
+    /a stopping `baseMoves` entry's range, reason, overlapping paths and way out/,
+  );
+});
+
+// Invariant: the autopilot issue source records a base move only through the literal
+// `base-move-record` call with its exact key list, only for a `fits` entry beside a confirmed pull
+// request for `#<N>`, before that pull request continues, and records nothing for any other entry.
+test('autopilot issue source records only a fitting base move beside its pull request', () => {
+  const mapping = read('shared/autopilot-issue-source.md').replace(/\s+/g, ' ');
+  assert.match(
+    mapping,
+    /only verdict `fits` beside a confirmed pull request for `#<N>` is recorded, with the literal `autopilot\.mjs base-move-record` call `\{cwd, runId, fromBaseOid, toBaseOid, commitCount, changedPathCount, citedPathCount, citedPaths\}` copied from the entry/,
+  );
+  assert.match(
+    mapping,
+    /Any other entry, an `overlap` or `undecidable` verdict or a `fits` verdict without that pull request, records nothing/,
+  );
+  const record = mapping.indexOf('`autopilot.mjs base-move-record`');
+  const continuation = mapping.indexOf(
+    'in `pullRequestsOpened`: continue under "Restore the plan"',
+  );
+  assert.ok(
+    record !== -1 && continuation !== -1 && record < continuation,
+    'record precedes continuation',
+  );
+  assert.equal(mapping.split('base-move-record').length, 2, 'the record call is stated once');
+});
+
 // ---------------------------------------------------------------------------------------------
 // Downstream adoption: recognition behind the trusted control lines, fixed answers, blockers,
 // pre-commit security classification and `pr`'s draft-preserving appendix mechanics.

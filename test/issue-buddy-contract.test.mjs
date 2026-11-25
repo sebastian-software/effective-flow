@@ -11,6 +11,11 @@ const caller = readFileSync(
   'utf8',
 );
 const callerProse = caller.replace(/\s+/g, ' ');
+const baseMoveFragment = readFileSync(
+  new URL('../src/shared/issue-buddy-base-move.md', import.meta.url),
+  'utf8',
+);
+const baseMoveProse = baseMoveFragment.replace(/\s+/g, ' ');
 const flat = (text) => text.replace(/\s+/g, ' ');
 const prose = flat(source);
 
@@ -377,5 +382,118 @@ test('Issue Buddy plans in a per-pass issue-planning worktree at collect.baseOid
   assert.match(
     prose,
     /the configured `delivery\.baseBranch` \(a remote ref only on `origin`, normalized to the branch name\), else local `origin\/HEAD`, else `origin\/main`/,
+  );
+});
+
+// Invariant (issue #734): the base-move continuation is reached through exactly one lazy pointer at
+// the publication decision point, only for a pre-mutation `BASE_CHANGED` that this pass has not
+// assessed yet, and it replaces item 5 only for that case.
+test('Issue Buddy reaches the base-move fragment through one lazy pointer at Phase 5', () => {
+  const pointers = source.match(/^```lazy-include\nissue-buddy-base-move\nwhen: [^\n]+\n```$/gm);
+  assert.equal(pointers?.length, 1);
+  assert.match(pointers[0], /`BASE_CHANGED`/);
+  assert.match(pointers[0], /no `details\.state`/);
+  assert.match(pointers[0], /assessed no base move for this issue/);
+  assert.match(
+    prose,
+    /A `BASE_CHANGED` without `details\.state`, for an issue whose base move this pass has not yet assessed, follows `issue-buddy-base-move` instead of item 5/,
+  );
+  ordered(
+    'Call `plan-publication.mjs publish --apply`',
+    '`issue-buddy-base-move`',
+    'Record `published` only',
+  );
+});
+
+// Invariant (issue #734): item 5 still stops on base drift, with exactly one exception: the first
+// pre-mutation `BASE_CHANGED`, which the fragment assesses for its single assessed re-publish. A
+// `BASE_CHANGED` from that re-publish is not exempt, and tip and blob drift keep stopping.
+test('Issue Buddy item 5 keeps base drift a stop except the single assessed re-publish', () => {
+  assert.match(
+    prose,
+    /base\/tip\/blob drift \(`BASE_CHANGED`, except the first pre-mutation one, which `issue-buddy-base-move` assesses for its single assessed re-publish; `TIP_CHANGED`; `BLOB_CHANGED`\)/,
+  );
+  assert.doesNotMatch(prose, /`BASE_CHANGED` except the single assessed re-publish/);
+  assert.match(
+    prose,
+    /stop the pass without an issue failure\/retry\. Do not retry or silently replan/,
+  );
+});
+
+// Invariant (issue #734): the stored report can carry the move, so Phase 6 names `baseMoves` in the
+// exact `pass-report` key list, only when the fragment added an entry, and the chat report names it.
+test('Issue Buddy Phase 6 lists baseMoves in the pass-report keys and reports each base move', () => {
+  assert.match(
+    prose,
+    /pass-report` with `\{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts, pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles\}`, plus `baseMoves` when `issue-buddy-base-move` added an entry/,
+  );
+  assert.match(prose, /each base move as `issue-buddy-base-move` states/);
+});
+
+// Invariant (issue #734): at most one assessed re-publish per issue and pass; a second
+// `BASE_CHANGED` never continues, and the re-publish changes only the expected base.
+test('the base-move fragment allows one assessed re-publish and never a second', () => {
+  assert.match(
+    baseMoveProse,
+    /One assessed re-publish per issue and pass may continue; a second `BASE_CHANGED` never does/,
+  );
+  assert.match(baseMoveProse, /call `plan-publication\.mjs assess-base-move`/i);
+  assert.match(baseMoveProse, /it pushes nothing and writes no forge object/i);
+  assert.match(
+    baseMoveProse,
+    /call `publish --apply` once, with the unchanged input and fixed texts and only `expectedBaseOid: <toBaseOid>` changed/,
+  );
+  assert.match(baseMoveProse, /a further `BASE_CHANGED` is an item-5 stop that keeps the entry/);
+  assert.match(
+    baseMoveProse,
+    /same input\. Its projection, `blobOid` included, must equal the first run's/,
+  );
+});
+
+// Invariant (issue #734): every successful assessment, whatever its verdict, is recorded once with
+// the closed field list; an assessment error records none and stops with its own code.
+test('the base-move fragment records one baseMoves entry per successful assessment', () => {
+  assert.match(
+    baseMoveProse,
+    /A successful envelope, whatever its verdict, adds exactly one `baseMoves` entry for this issue/,
+  );
+  for (const field of [
+    'issue',
+    'fromBaseOid',
+    'toBaseOid',
+    'verdict',
+    'reason',
+    'commitCount',
+    'changedPathCount',
+    'citedPathCount',
+    'citedPaths',
+    'overlappingPaths',
+  ])
+    assert.match(baseMoveProse, new RegExp(`\`${field}\``), `missing entry field ${field}`);
+  assert.match(
+    baseMoveProse,
+    /An error envelope, such as `BASE_REWRITTEN` or `BLOB_CHANGED`, stops the pass with the null failure `\{issue: null, stage: "publish", code: <its code>\}` and adds no `baseMoves` entry/,
+  );
+});
+
+// Invariant (issue #734): an overlapping or undecidable move, and a fitting move whose re-publish
+// stopped, stop the pass with the null BASE_CHANGED record, preserve the plan, and tell the operator
+// the range, the overlapping paths, the reason and the way out.
+test('the base-move fragment stops on overlap, undecidable or a stopped re-publish with range, paths and way out', () => {
+  assert.match(
+    baseMoveProse,
+    /`overlap` or `undecidable`\.\*\* Stop as item 5 does: preserve the plan and its planning worktree \(Phase 2\) and record the pass failure `\{issue: null, stage: "publish", code: "BASE_CHANGED"\}`/,
+  );
+  assert.match(
+    baseMoveProse,
+    /A stopping move, which is an `overlap` or `undecidable` verdict or a `fits` verdict whose re-publish then stopped, names the range, the commit count, the bounded `overlappingPaths` with the `reason`, the preserved plan and planning worktree paths, and the way out/,
+  );
+  assert.match(
+    baseMoveProse,
+    /move or discard the preserved plan, run `\{\{SKILL:cleanup\}\}` to remove the kept planning worktree, then rerun the pass or the autopilot run, which plans on the current tip/,
+  );
+  assert.match(
+    baseMoveProse,
+    /A fitting move that published is one chat line: the range `<from>\.\.<to>` as short object IDs, the commit count and the cited-path count/,
   );
 });

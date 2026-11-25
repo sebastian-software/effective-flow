@@ -503,7 +503,7 @@ diff-baseline pair makes no network call either: it runs local `git` against a p
 object directory below `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`. The
 setup-status pair writes nothing and makes a single anonymous `GET` to the published repository's
 `releases/latest` endpoint for the version comparison; a failed lookup is reported as `could not
-check`. `plan-publication scan` makes no network call; `publish` and `complete-branch` reach the
+check`. `plan-publication scan` makes no network call; `assess-base-move` only fetches; `publish` and `complete-branch` reach the
 network only through `git` and the in-process remote tracker, and stay a dry run without `--apply`. Session titles add no shipped
 runtime helper or hook trust boundary: the ChatGPT Desktop Codex tab uses the app-native
 current-task capability, Claude Code renames its own session through the host's session-management

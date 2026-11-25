@@ -1,6 +1,6 @@
 # Continue autopilot when the base branch moves during planning and the plan still fits
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #734
@@ -106,31 +106,31 @@ issue from Issue Buddy, a pass-report field, an autopilot ledger record, and an 
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/plan-publication-core.mjs` | New read-only `assess-base-move` operation: closed schema, fetch, ancestry check, changed paths of the range, cited-path extraction from the plan bytes, same-issue-plan rule, overlap verdict, bounded diagnostics |
-| `src/scripts/plan-publication.mjs` | Register the operation; document input and output in the header comment |
-| `src/scripts/delivery-selection-core.mjs` | Export `pathFoldingConfig` (or an equivalent folding-flag reader) next to `computeOverlap`; no behaviour change |
-| `src/scripts/issue-buddy-core.mjs` | Pass report v2 accepts an optional, validated `baseMoves` field in `validateInput` and `validatePassReport`, bound to the persisted collection's `baseOid` and the pass outcome |
-| `src/tools/issue-buddy.md` | Phase 5: on a pre-mutation `BASE_CHANGED`, load the new fragment; outcome-mapping item 5 names the single assessed re-publish; Phase 6 `pass-report` key list gains optional `baseMoves`; `contextBudget` re-measured |
-| `src/shared/issue-buddy-base-move.md` | New lazy fragment: assessment call, verdict handling, integrity re-run, the single re-publish, pass-report entry, stop records and way-out text |
-| `src/scripts/autopilot-core.mjs` | New `base-move-record` operation and ledger field; `pr-appendix` renders a "Base move" section (English and German) outside the blocker section; `run-close` returns `baseMove` |
-| `src/scripts/autopilot.mjs` | Add `base-move-record` to the operation list in the header comment |
-| `src/shared/autopilot-issue-source.md` | Map a pass-report `baseMoves` entry for `#<N>`: record a fitting move, report a stopping one with diagnostics and way out |
-| `src/tools/autopilot.md` | Phase 6 report lists the base move; `contextBudget` re-measured if the core changes |
-| `test/plan-publication-git.test.mjs` | Real-Git cases: unrelated move fits and publishes on the new tip; overlap; glob and shorthand entries; same-issue plan by name and by header; undecidable cases |
-| `test/issue-buddy-pass.test.mjs` | Pass-level scenarios: unrelated move continues on the new tip; overlapping move stops with diagnostics |
-| `test/fixtures/issue-buddy/world.mjs` | Helper to advance the remote base with chosen path changes during a pass; fixture plan text gains an Affected files table (tracked, glob and shorthand rows) |
-| `test/scored-decisions-contract.test.mjs` | Contract assertion for the autopilot Phase 6 base-move line, beside the existing `tools/autopilot.md` prose assertions |
-| `test/plan-publication.test.mjs` | Schema and unit cases for `assess-base-move` and cited-path extraction |
-| `test/issue-buddy.test.mjs` | Pass-report `baseMoves` validation |
-| `test/issue-buddy-contract.test.mjs` | Updated prose assertions for Phase 5, item 5 and the new fragment |
-| `test/autopilot-core.test.mjs` | `base-move-record` validation, ledger write and appendix withdrawal; appendix rendering in both languages |
-| `test/autopilot-appendix-core.test.mjs` | Blocker counting is unaffected by the new section |
-| `docs/developer-guide/build-system.md` | Add `assess-base-move` to the `plan-publication` operation list and `base-move-record` to the autopilot ledger-writing and appendix-withdrawing operations |
-| `docs/developer-guide/release-and-installation.md` | Name `assess-base-move` among the `plan-publication` operations that reach the network (fetch only) |
-| `docs/adr/parallel-issue-planning.md` | Record the bounded base move after planning |
-| `docs/adr/automation-tool-category.md` | Autopilot mechanics: base-move record in ledger and appendix; the no-PR list keeps only overlapping or undecidable moves |
+| File                                               | Description                                                                                                                                                                                                           |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/plan-publication-core.mjs`            | New read-only `assess-base-move` operation: closed schema, fetch, ancestry check, changed paths of the range, cited-path extraction from the plan bytes, same-issue-plan rule, overlap verdict, bounded diagnostics   |
+| `src/scripts/plan-publication.mjs`                 | Register the operation; document input and output in the header comment                                                                                                                                               |
+| `src/scripts/delivery-selection-core.mjs`          | Export `pathFoldingConfig` (or an equivalent folding-flag reader) next to `computeOverlap`; no behaviour change                                                                                                       |
+| `src/scripts/issue-buddy-core.mjs`                 | Pass report v2 accepts an optional, validated `baseMoves` field in `validateInput` and `validatePassReport`, bound to the persisted collection's `baseOid` and the pass outcome                                       |
+| `src/tools/issue-buddy.md`                         | Phase 5: on a pre-mutation `BASE_CHANGED`, load the new fragment; outcome-mapping item 5 names the single assessed re-publish; Phase 6 `pass-report` key list gains optional `baseMoves`; `contextBudget` re-measured |
+| `src/shared/issue-buddy-base-move.md`              | New lazy fragment: assessment call, verdict handling, integrity re-run, the single re-publish, pass-report entry, stop records and way-out text                                                                       |
+| `src/scripts/autopilot-core.mjs`                   | New `base-move-record` operation and ledger field; `pr-appendix` renders a "Base move" section (English and German) outside the blocker section; `run-close` returns `baseMove`                                       |
+| `src/scripts/autopilot.mjs`                        | Add `base-move-record` to the operation list in the header comment                                                                                                                                                    |
+| `src/shared/autopilot-issue-source.md`             | Map a pass-report `baseMoves` entry for `#<N>`: record a fitting move, report a stopping one with diagnostics and way out                                                                                             |
+| `src/tools/autopilot.md`                           | Phase 6 report lists the base move; `contextBudget` re-measured if the core changes                                                                                                                                   |
+| `test/plan-publication-git.test.mjs`               | Real-Git cases: unrelated move fits and publishes on the new tip; overlap; glob and shorthand entries; same-issue plan by name and by header; undecidable cases                                                       |
+| `test/issue-buddy-pass.test.mjs`                   | Pass-level scenarios: unrelated move continues on the new tip; overlapping move stops with diagnostics                                                                                                                |
+| `test/fixtures/issue-buddy/world.mjs`              | Helper to advance the remote base with chosen path changes during a pass; fixture plan text gains an Affected files table (tracked, glob and shorthand rows)                                                          |
+| `test/scored-decisions-contract.test.mjs`          | Contract assertion for the autopilot Phase 6 base-move line, beside the existing `tools/autopilot.md` prose assertions                                                                                                |
+| `test/plan-publication.test.mjs`                   | Schema and unit cases for `assess-base-move` and cited-path extraction                                                                                                                                                |
+| `test/issue-buddy.test.mjs`                        | Pass-report `baseMoves` validation                                                                                                                                                                                    |
+| `test/issue-buddy-contract.test.mjs`               | Updated prose assertions for Phase 5, item 5 and the new fragment                                                                                                                                                     |
+| `test/autopilot-core.test.mjs`                     | `base-move-record` validation, ledger write and appendix withdrawal; appendix rendering in both languages                                                                                                             |
+| `test/autopilot-appendix-core.test.mjs`            | Blocker counting is unaffected by the new section                                                                                                                                                                     |
+| `docs/developer-guide/build-system.md`             | Add `assess-base-move` to the `plan-publication` operation list and `base-move-record` to the autopilot ledger-writing and appendix-withdrawing operations                                                            |
+| `docs/developer-guide/release-and-installation.md` | Name `assess-base-move` among the `plan-publication` operations that reach the network (fetch only)                                                                                                                   |
+| `docs/adr/parallel-issue-planning.md`              | Record the bounded base move after planning                                                                                                                                                                           |
+| `docs/adr/automation-tool-category.md`             | Autopilot mechanics: base-move record in ledger and appendix; the no-PR list keeps only overlapping or undecidable moves                                                                                              |
 
 ## Implementation details
 
@@ -225,9 +225,10 @@ issue from Issue Buddy, a pass-report field, an autopilot ledger record, and an 
    4. **`fits`** otherwise.
 
    The operation returns `{state: "assessed", fromBaseOid, toBaseOid, verdict, reason,
-   commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths}`. `citedPaths`
+commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths}`. `citedPaths`
    lists the normalized table tokens and the cited prose files. Both lists hold at most 20
    entries, and their totals are always present. Errors use the existing envelope and exit codes.
+
 5. **Issue Buddy (`src/tools/issue-buddy.md`).**
    - **Phase 5.** Add one sentence and a lazy-include pointer: when `publish --apply` fails with
      `BASE_CHANGED` and no `details.state`, and no base move has been assessed for this issue in
@@ -263,7 +264,7 @@ issue from Issue Buddy, a pass-report field, an autopilot ledger record, and an 
    `reportVersion: 2`.
    - The field is an array with at most one entry per issue:
      `{issue, fromBaseOid, toBaseOid, verdict, reason, commitCount, changedPathCount,
-     citedPathCount, citedPaths, overlappingPaths}`.
+citedPathCount, citedPaths, overlappingPaths}`.
    - Entries use full lowercase object IDs and the verdict and reason enum of step 4.
      `citedPaths` and `overlappingPaths` hold at most 20 safe repository-relative entries each.
    - The field is rejected in a dry-run (non-publishing) report.
@@ -280,7 +281,7 @@ issue from Issue Buddy, a pass-report field, an autopilot ledger record, and an 
    - **Recording.** After a confirmed plan PR for `#<N>`, a `baseMoves` entry with verdict `fits`
      is recorded by a new literal `autopilot.mjs base-move-record` call:
      `{cwd, runId, fromBaseOid, toBaseOid, commitCount, changedPathCount, citedPathCount,
-     citedPaths}`.
+citedPaths}`.
      - The schema is closed, and the operation keeps at most one record per run: an identical
        repeat returns `recorded: true` (idempotent, like `fit-record`), a different second record
        fails with `INVALID_STATE`.
@@ -381,12 +382,12 @@ Not relevant.
 ## Acceptance criteria
 
 - [ ] In `test/plan-publication-git.test.mjs`, the remote base is advanced by a commit that touches
-  only paths the plan does not cite, including an archived plan for another issue.
+      only paths the plan does not cite, including an archived plan for another issue.
   - `assess-base-move` returns `fits` with the correct `fromBaseOid` and `toBaseOid`.
   - A following `publish --apply` with `expectedBaseOid: <toBaseOid>` creates the plan branch,
     whose commit parent is the new tip, and the draft PR.
 - [ ] In the same suite, each of these commits returns `overlap` and names the reason and the
-  overlapping path, and no case creates a branch, push or forge object:
+      overlapping path, and no case creates a branch, push or forge object:
   - a commit that changes a path listed in the Affected files table;
   - a commit under a glob entry's directory;
   - a commit that changes the file a shorthand File-column token names;
@@ -399,9 +400,10 @@ Not relevant.
   `docs/developer-guide/` page, another issue's archived plan) returns `fits` for a plan whose
   prose mentions `docs/` and `docs/plan/` but not `AGENTS.md`, and `overlap` for a plan whose
   prose cites `AGENTS.md`.
+
 - [ ] `publish` with `expectedBaseOid: collect.baseOid` against a moved base still fails with
-  `BASE_CHANGED` before mutation. The existing test "publication bindings refuse a moved base or
-  branch tip before forge mutation" passes unchanged.
+      `BASE_CHANGED` before mutation. The existing test "publication bindings refuse a moved base or
+      branch tip before forge mutation" passes unchanged.
 - [ ] `issue-buddy.mjs pass-report` (`test/issue-buddy.test.mjs`):
   - accepts a valid version-2 `baseMoves` entry, including a `fits` entry paired with a `failed`
     verdict, and still validates a stored version-2 report without the field;
@@ -410,7 +412,7 @@ Not relevant.
     the null `BASE_CHANGED` failure, more than one entry per issue, over-long path lists, the
     field in a dry-run report, and the field on a version-1 report.
 - [ ] In `test/issue-buddy-pass.test.mjs` (real Git, `test/fixtures/issue-buddy/world.mjs`), a
-  pass whose base moves after collection:
+      pass whose base moves after collection:
   - with an unrelated move, publishes on the new tip and its version-2 report with a `fits`
     `baseMoves` entry is accepted;
   - with an overlapping move, ends with a `failed` version-2 report carrying the null
@@ -424,8 +426,9 @@ Not relevant.
   the cited paths, in English and German. The blocker count is unchanged, and `run-close` returns
   the record as `baseMove`, or `null` without one (`test/autopilot-core.test.mjs`,
   `test/autopilot-appendix-core.test.mjs`).
+
 - [ ] `src/tools/issue-buddy.md`, `src/shared/issue-buddy-base-move.md`,
-  `src/shared/autopilot-issue-source.md` and `src/tools/autopilot.md` state:
+      `src/shared/autopilot-issue-source.md` and `src/tools/autopilot.md` state:
   - the single assessed re-publish;
   - the stop for an overlapping or undecidable move, or a fitting move whose re-publish stopped,
     with the range, the overlapping paths, the stop record and the way out;
@@ -434,8 +437,9 @@ Not relevant.
 
   The updated contract assertions in `test/issue-buddy-contract.test.mjs` and
   `test/scored-decisions-contract.test.mjs` pass.
+
 - [ ] The CI order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs` (all context budgets
-  within their limits) and `pnpm test:distribution`.
+      within their limits) and `pnpm test:distribution`.
 
 ## Validation plan
 
@@ -484,9 +488,11 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-CLR","question":"Where should the base-move fit check live?","options":["New read-only plan-publication assess operation, called by Issue Buddy before a re-publish on the assessed tip","Inside plan-publication publish: an opt-in policy that checks overlap itself and publishes on the new tip in one call"],"scores":[{"label":"New read-only plan-publication assess operation, called by Issue Buddy before a re-publish on the assessed tip","score":8,"reason":"Keeps publish's exact expectedBaseOid guard and BASE_CHANGED test unchanged, keeps Git reads in a testable read-only script operation that reuses the overlap helpers, and any later base move is still caught by the exact compare; the cost is a few more lines in Issue Buddy's near-budget core."},{"label":"Inside plan-publication publish: an opt-in policy that checks overlap itself and publishes on the new tip in one call","score":5,"reason":"Workable, and one call closes the gap between check and publish, but it puts a judgment call inside the mutating operation, loosens the deliberate exact-base binding, and makes the fits/overlap/undecidable verdicts and the rebase record harder to test and report on their own."}]},{"site":"S-CLR","question":"Which Issue Buddy passes may continue past a moved base?","options":["Only passes driven by an autopilot run (trusted Autopilot run: caller line)","Every publishing Issue Buddy pass, standalone or autopilot-driven"],"scores":[{"label":"Only passes driven by an autopilot run (trusted Autopilot run: caller line)","score":6,"reason":"It matches the issue's acceptance criteria and fits the lazy autopilot fragment cheaply, but standalone batch passes, which run longer, still stop on BASE_CHANGED and leave plan-preserved worktrees behind."},{"label":"Every publishing Issue Buddy pass, standalone or autopilot-driven","score":7,"reason":"It fixes the stop where it costs most, in long batch passes, with one consistent Phase 5 rule, and a fit check trusted unattended is safe for hand-implemented plans; the cost is eager-core prose near the budget."}]},{"site":"S-CLR","question":"How many base moves may one pass absorb before it stops?","options":["One: a second move after the fit check stops the pass as today","Up to three fit-checked moves in a bounded loop, then stop"],"scores":[{"label":"One: a second move after the fit check stops the pass as today","score":8,"reason":"One move covers the real failure window (the ~18-minute planning period), while a move in the seconds-long check-to-publish gap is rare and stops safely with BASE_CHANGED, keeping the near-budget eager core and the ledger and appendix records minimal."},{"label":"Up to three fit-checked moves in a bounded loop, then stop","score":5,"reason":"Safe and viable since each check re-reads the whole range and overlaps still stop, but it covers a rare seconds-long case at the cost of loop text in a near-budget eager core, up to three ledger and appendix records, and drift from the no-retry rule."}]},{"site":"S-BAT","question":"How should the base-move check treat a moved range that adds a plan for the same issue?","options":["Overlap verdict when the range adds or changes a plan for this issue under the plan dir or its archive","Undecidable verdict for any change under the plan dir","Move the planning worktree to the new tip and re-lint there"],"scores":[{"label":"Overlap verdict when the range adds or changes a plan for this issue under the plan dir or its archive","score":9,"reason":"It closes the duplicate-plan gap that lint (old tree) and publish (exact path) both miss, matches fresh collection's plan-on-base skip, and still lets unrelated archive commits like 741fd348 continue, which option 2 cannot."},{"label":"Undecidable verdict for any change under the plan dir","score":2,"reason":"It is safe against duplicates, but archive commits land often, so autopilot would stop on the motivating case (741fd348 archived another issue's plan), which defeats the issue's goal."},{"label":"Move the planning worktree to the new tip and re-lint there","score":1,"reason":"Issue Buddy forbids moving HEAD in the planning worktree after collection, and the plan builds the commit by plumbing on the fetched tip, so this breaks an existing invariant for a check the range diff already gives."}]},{"site":"S-BAT","question":"What does the recorded base move show about the checked paths?","options":["A bounded list of the cited paths (at most 20, plus the total) in ledger record, pass report and appendix","Counts only, with the deviation from the issue stated in the plan"],"scores":[{"label":"A bounded list of the cited paths (at most 20, plus the total) in ledger record, pass report and appendix","score":9,"reason":"Meets the acceptance criterion's 'checked paths' literally and matches the plan's own Outcome claim. It reuses the existing LIMITS.sources/path bounds and the field() safety used for fit.sources, so the extra risk is small. Counts-only would leave the criterion unmet."},{"label":"Counts only, with the deviation from the issue stated in the plan","score":3,"reason":"Honest about the gap but still fails the stated criterion and contradicts the Outcome checkpoint. It saves little because bounded, safe path rendering already exists for fit.sources."}]},{"site":"S-DEC","question":"How should the base-move check treat a cited wildcard or placeholder token whose first segment is already a wildcard?","options":["Undecidable when such a token is in the Affected files table; ignored when it appears in prose","Match it as a basename pattern against changed paths, falling back to undecidable if no pattern can be built","Treat it as the repository root, so every base move overlaps","Decide later"],"escape":["Decide later"],"scores":[{"label":"Undecidable when such a token is in the Affected files table; ignored when it appears in prose","score":4,"reason":"The table half is safe but stops every plan with such a row, and these tokens are common (132 of 238 archived plans). Ignoring them in prose fails open on real citations, which works against the fail-closed goal."},{"label":"Match it as a basename pattern against changed paths, falling back to undecidable if no pattern can be built","score":9,"reason":"It stays fail-closed: it matches a superset of the cited files and stops when no pattern can be built. Unlike option 1, it neither drops prose citations nor stops on table rows, so unrelated docs-only moves still continue, at the cost of a few lines of pattern code."},{"label":"Treat it as the repository root, so every base move overlaps","score":2,"reason":"It is safe, but every base move would stop for the many plans that cite such tokens, including runtime-path placeholders like <RUNTIME_STATE_ROOT>. That brings back the unnecessary stops on unrelated moves that the issue is meant to remove."}]},{"site":"S-DEC","question":"How broadly do citations in the plan's prose count for the base-move overlap check?","options":["Prose directories count as prefixes; document that broad citations stop docs-only moves and add a test pair","Prose citations count only as exact files; prefixes and shorthand come only from the Affected files table","Only the Affected files table counts; prose citations are ignored","Decide later"],"escape":["Decide later"],"scores":[{"label":"Prose directories count as prefixes; document that broad citations stop docs-only moves and add a test pair","score":3,"reason":"This matches the issue's wording most literally, but 133 of 238 archived plans would stop on a 741fd348-shaped docs-only move, so the feature would rarely do what the issue asks."},{"label":"Prose citations count only as exact files; prefixes and shorthand come only from the Affected files table","score":9,"reason":"Exact files cited in prose still count, so the issue's 'any other repository path the plan cites' holds; unlike option 3 it keeps prose-cited files, and unlike option 1 broad context directories no longer stop unrelated moves."},{"label":"Only the Affected files table counts; prose citations are ignored","score":5,"reason":"This is the simplest rule and fires most often, but it breaks the issue's explicit prose-citation clause and misses a plan whose prose names a file it relies on, such as AGENTS.md."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -499,15 +505,15 @@ remains.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 3 | 2 |
-| Testability | 0 | 0 | 2 |
-| Scope | 0 | 1 | 1 |
-| Maintainability | 0 | 1 | 0 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         3 |    2 |
+| Testability     |        0 |         0 |    2 |
+| Scope           |        0 |         1 |    1 |
+| Maintainability |        0 |         1 |    0 |
 
 ### Findings
 
@@ -582,3 +588,76 @@ Notes. Where this list differs from the deep review above, the deep review super
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-25
+**Workflow:** `effective-flow build` (autopilot run `ap-20261125T093403Z-4501ba7d`, scored decision mode)
+
+### Requirement
+
+Implemented as planned: a base move during planning no longer stops a publishing Issue Buddy pass
+when a read-only fit check proves the plan still fits. An overlapping or undecidable move still
+stops, with the range, the overlapping paths and a way out. Autopilot records a fitting move in its
+ledger, its run report and the PR appendix.
+
+### Architecture decisions
+
+- Implemented exactly as the plan's architecture decisions state: a read-only `plan-publication
+assess-base-move` operation, one assessed re-publish per issue per pass, `publish`'s exact
+  `expectedBaseOid` binding and the orphan-recovery binding unchanged.
+- Review corrections made the fit check stricter, never looser, under the plan's fail-closed
+  decision:
+  - Wildcard tokens use a linear per-segment glob matcher instead of a regular expression. A
+    whole-segment `**` matches zero or more segments, and a segment whose `{…}` alternatives exceed
+    64 makes the token unusable.
+  - A table token that is not tracked and has no trailing `/` also matches as a directory
+    shorthand. A citation that differs from a tracked path only in case is folded as shorthand.
+  - A non-empty File cell that yields no path token, or that names a file outside its code spans,
+    is an unusable entry. Notes such as `(new)` or arrows between code spans stay usable.
+  - A pattern that becomes invalid under Unicode folding is an unusable entry, not an error.
+- A `baseMoves` entry must name an issue the pass collected as eligible, and a `fits` entry carries
+  no overlapping paths.
+
+### Affected files
+
+All files of the plan's Affected files table were changed as described, plus the plan itself. No
+other file changed. `RUNTIME_SCRIPT_FILES` and `build.mjs` are unchanged.
+
+### Implementation details
+
+- `src/scripts/plan-publication-core.mjs`: `assess-base-move` with closed schema, blob check before
+  the fetch, ancestry, commit count, `diff-tree` range facts with gitlink detection, cited-token
+  extraction (`normalizeCitedToken`, `extractCitedTokens`), plan identity (`planFileIdentity`) and
+  the verdict (`assessBaseMove`) with bounded diagnostics.
+- `src/scripts/delivery-selection-core.mjs`: exports `pathFoldingConfig` and `pathFold`.
+- `src/scripts/issue-buddy-core.mjs`: optional, validated `baseMoves` in version-2 pass reports.
+- `src/scripts/autopilot-core.mjs`: `base-move-record`, the `### Base move` /
+  `### Basis-Verschiebung` appendix section before the blockers, and `baseMove` in `run-close`.
+- `src/tools/issue-buddy.md`, `src/shared/issue-buddy-base-move.md`,
+  `src/shared/autopilot-issue-source.md`, `src/tools/autopilot.md`: the Phase 5 pointer, item 5,
+  the Phase 6 key list, the new lazy fragment, the autopilot mapping and the Phase 6 report line.
+  `contextBudget` of `issue-buddy` is 580 (578 lines); `autopilot` stays 495 (493 lines).
+- Documentation: both ADRs, `build-system.md` and `release-and-installation.md` updated.
+
+### Test results
+
+- Phase 5, full CI order on the implementation before the review corrections: `pnpm agent:check`
+  flagged only this plan file's pre-existing formatting; `pnpm test` 6655 tests, 0 failed, 85
+  skipped; `node build.mjs` passed with all budgets in their limits; `pnpm test:distribution`
+  passed; all five `pnpm eval <suite> verify` calls exited 0 with freshness debt only.
+- Review corrections were verified targeted: in Phase 7, 1282 tests in the 12 affected test files
+  passed, and `node build.mjs` and `pnpm test:distribution` passed. `pnpm agent:check` again flagged
+  only this plan file, which the completion formatter then formats.
+
+## Review findings
+
+**Date:** 2026-11-25
+**Reviewer:** effective-flow-nodejs-reviewer (first review, scoped re-check and three floor re-checks)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    14 |
+| Open / Not implemented |     0 |

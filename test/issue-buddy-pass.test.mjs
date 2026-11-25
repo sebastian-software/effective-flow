@@ -23,6 +23,8 @@ import {
   prIdentity,
   issue,
   planText,
+  advanceRemoteBase,
+  assessInput,
   PLAN,
   BRANCH,
 } from './fixtures/issue-buddy/world.mjs';
@@ -586,6 +588,155 @@ test('metadata blob drift preserves the new plan and refuses publication before 
   });
   assert.deepEqual(stored.counts, {});
   assert.equal(fs.existsSync(path.join(world.runtime, 'verdicts.json')), false);
+  await release(world, passId);
+});
+
+// Invariant (issue #734): a base that moves after collection, without touching anything the plan
+// cites, is assessed `fits`; the fragment's `publication-metadata` re-run yields the identical
+// projection, `blobOid` included, the one re-publish builds the plan commit on the new tip, and the
+// stored v2 report with its `fits` entry is accepted.
+test('an unrelated base move after collection fits: the pass publishes on the new tip and reports the move', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  await writePlan(world);
+  checked(await world.lint('lint'));
+  const metadata = checked(await world.lint('publication-metadata'));
+  const newTip = advanceRemoteBase(world, { 'unrelated/notes.txt': 'notes\n' });
+  assert.notEqual(newTip, collected.baseOid);
+
+  const refused = await world.publication(
+    'publish',
+    publicationInput(collected.baseOid, { expectedBlobOid: metadata.blobOid }),
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'BASE_CHANGED');
+  assert.equal(refused.error.details?.state, undefined, 'refused before any mutation');
+  assert.equal(branches(world), 'refs/heads/main');
+  assert.equal(mutations(world).length, 0);
+
+  const assessed = checked(
+    await world.publication('assess-base-move', assessInput(collected.baseOid, metadata.blobOid)),
+  );
+  assert.equal(assessed.verdict, 'fits');
+  assert.equal(assessed.fromBaseOid, collected.baseOid);
+  assert.equal(assessed.toBaseOid, newTip);
+  assert.equal(assessed.commitCount, 1);
+  assert.deepEqual(assessed.overlappingPaths, []);
+  assert.equal(branches(world), 'refs/heads/main', 'assessment pushes nothing');
+  assert.equal(mutations(world).length, 0, 'assessment writes no forge object');
+  // The integrity re-run before the single re-publish: the projection is unchanged.
+  const rerun = checked(await world.lint('publication-metadata'));
+  assert.deepEqual(rerun, metadata);
+  assert.equal(rerun.blobOid, metadata.blobOid);
+
+  const published = checked(
+    await world.publication(
+      'publish',
+      publicationInput(newTip, { expectedBlobOid: metadata.blobOid }),
+    ),
+  );
+  assert.equal(published.state, 'pull-request-opened');
+  assert.equal(world.git(world.bare, 'rev-parse', `${published.commitOid}^`), newTip);
+  assert.equal(world.git(world.bare, 'rev-parse', `refs/heads/${BRANCH}`), published.commitOid);
+  assert.equal(world.state().creates.length, 1);
+
+  const verdict = await record(world, passId, collected, { pullRequest: published.pullRequest });
+  const move = {
+    issue: 1,
+    fromBaseOid: assessed.fromBaseOid,
+    toBaseOid: assessed.toBaseOid,
+    verdict: assessed.verdict,
+    reason: assessed.reason,
+    commitCount: assessed.commitCount,
+    changedPathCount: assessed.changedPathCount,
+    citedPathCount: assessed.citedPathCount,
+    citedPaths: assessed.citedPaths,
+    overlappingPaths: assessed.overlappingPaths,
+  };
+  const stored = await report(world, passId, collected, {
+    verdicts: [verdict],
+    pullRequestsOpened: [prIdentity(published)],
+    leftoverPlanFiles: leftovers,
+    baseMoves: [move],
+  });
+  assert.equal(stored.schemaVersion, 2);
+  assert.equal(stored.outcome, 'completed');
+  assert.deepEqual(stored.baseMoves, [move]);
+  assert.equal(stored.baseMoves[0].verdict, 'fits');
+  await release(world, passId);
+});
+
+// Invariant (issue #734): a base move that changes a path the plan cites stops the pass before
+// any mutation; the v2 report carries the null BASE_CHANGED failure and the `overlap` entry, and
+// the plan and its planning worktree, HEAD still at the collected base, stay for the operator.
+test('an overlapping base move stops the pass with an overlap entry and keeps the plan', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  const tree = path.join(world.container, 'planning-1');
+  world.git(
+    world.root,
+    'worktree',
+    'add',
+    '-q',
+    '-b',
+    'issue-planning/s1',
+    tree,
+    collected.baseOid,
+  );
+  fs.mkdirSync(path.join(tree, 'docs/plan'), { recursive: true });
+  fs.writeFileSync(path.join(tree, PLAN), planText(), { flag: 'wx' });
+  const planBytes = fs.readFileSync(path.join(tree, PLAN));
+  checked(await world.lint('lint', { cwd: tree }));
+  const metadata = checked(await world.lint('publication-metadata', { cwd: tree }));
+  const newTip = advanceRemoteBase(world, { 'README.md': '# Fixture, edited elsewhere\n' });
+
+  const refused = await world.publication(
+    'publish',
+    publicationInput(collected.baseOid, { cwd: tree, expectedBlobOid: metadata.blobOid }),
+  );
+  assert.equal(refused.error.code, 'BASE_CHANGED');
+  const assessed = checked(
+    await world.publication(
+      'assess-base-move',
+      assessInput(collected.baseOid, metadata.blobOid, { cwd: tree }),
+    ),
+  );
+  assert.equal(assessed.verdict, 'overlap');
+  assert.equal(assessed.reason, 'cited-path');
+  assert.deepEqual(assessed.overlappingPaths, ['README.md']);
+  assert.equal(assessed.toBaseOid, newTip);
+  assert.equal(branches(world), 'refs/heads/main');
+  assert.equal(mutations(world).length, 0);
+  assert.equal(world.state().creates.length, 0);
+
+  const move = {
+    issue: 1,
+    fromBaseOid: assessed.fromBaseOid,
+    toBaseOid: assessed.toBaseOid,
+    verdict: assessed.verdict,
+    reason: assessed.reason,
+    commitCount: assessed.commitCount,
+    changedPathCount: assessed.changedPathCount,
+    citedPathCount: assessed.citedPathCount,
+    citedPaths: assessed.citedPaths,
+    overlappingPaths: assessed.overlappingPaths,
+  };
+  const stored = await report(world, passId, collected, {
+    outcome: 'failed',
+    failures: [{ issue: null, stage: 'publish', code: 'BASE_CHANGED' }],
+    leftoverPlanFiles: [],
+    baseMoves: [move],
+  });
+  assert.equal(stored.outcome, 'failed');
+  assert.deepEqual(stored.failures, [{ issue: null, stage: 'publish', code: 'BASE_CHANGED' }]);
+  assert.deepEqual(stored.baseMoves, [move]);
+  assert.deepEqual(stored.pullRequestsOpened, []);
+  assert.deepEqual(fs.readFileSync(path.join(tree, PLAN)), planBytes, 'the plan is preserved');
+  assert.equal(world.git(tree, 'rev-parse', 'HEAD'), collected.baseOid, 'the worktree is kept');
+  assert.equal(fs.existsSync(path.join(world.runtime, 'verdicts.json')), false);
+  assert.equal(branches(world), 'refs/heads/main');
   await release(world, passId);
 });
 

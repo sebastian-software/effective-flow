@@ -294,7 +294,8 @@ make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOi
    request), `plan-only-pull-request`, `appendix-update`, `plan-pull-request-unchanged` (the plan
    pull request whose appendix a blocker or a failed rerun update left unchanged) or `no-pull-request`. Retain its
    `counts` and `fit`: `{assessed: true, score, reason, sources}`, `{assessed: false}` (no
-   sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded. On an issue
+   sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded, and its
+   `baseMove`, the recorded `base-move-record` or `null`. On an issue
    source it releases the planning claim for every outcome and returns
    `planningClaim: {targetKey, issueKey, released}`, with `reason` `missing`, `not-owner` or
    `release-failed` when `released` is false. A failed release never keeps the run open;
@@ -318,7 +319,9 @@ Report in the chat language, with project paths relative to the project root:
   returned, its path: the reviewed copy, which may also hold a late save;
 - every local change in the invocation checkout that row S-LOC of `scored-decisions` left untouched;
 - the architecture-fit score with its sources, or the not-assessed line (no sources, scoring
-  unavailable, or not recorded).
+  unavailable, or not recorded);
+- the base move: `run-close`'s `baseMove` with its old and new base, counts and cited paths, or a
+  stopping `baseMoves` entry's range, reason, overlapping paths and way out from the pass report.
 
 Then emit the next-step block per `next-steps` as the last element of the report. A preflight stop
 or an issue-buddy stop emits none and names its cause instead.

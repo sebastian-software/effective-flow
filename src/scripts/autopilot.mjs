@@ -2,9 +2,9 @@
 
 // Thin JSON CLI over autopilot-core.mjs:
 //   node autopilot.mjs <run-init|decision-classify|decision-extract|decision-record|blocker-record|
-//                       fit-record|plan-reviewed|delivery-record|delivery-confirm|consent-check|
-//                       run-check|pr-appendix|appendix-merge|plan-copy-restore|run-close|
-//                       ledger-list|ledger-prune>
+//                       fit-record|base-move-record|plan-reviewed|delivery-record|
+//                       delivery-confirm|consent-check|run-check|pr-appendix|appendix-merge|
+//                       plan-copy-restore|run-close|ledger-list|ledger-prune>
 //   (one JSON object on stdin; `appendix-merge` takes `{cwd, runId, appendixSha256, body}`,
 //   `plan-reviewed` and `plan-copy-restore` take `{cwd, runId, sourceRoot}`)
 // Writes exactly one `{ ok, operation, data | error }` envelope line to stdout and exits non-zero

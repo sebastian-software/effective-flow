@@ -8,12 +8,13 @@
 // Operations (one JSON object in, one `{ ok, operation, data | error }` envelope out):
 // - `decision-classify` (pure): validation, classification, tie rule, floor and budget.
 // - `decision-extract` (pure, reads only): the "Decided by score" machine block of a plan file.
-// - `run-init`, `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed`,
-//   `delivery-record`, `delivery-confirm`, `run-close`: the run ledger
+// - `run-init`, `decision-record`, `blocker-record`, `fit-record`, `base-move-record`,
+//   `plan-reviewed`, `delivery-record`, `delivery-confirm`, `run-close`: the run ledger
 //   `<cwd>/.effective-flow/autopilot/<run-id>/run.json`, written only through the
 //   `runtime-state-guard.mjs` primitives; `cwd` must be the primary checkout (RUNTIME_STATE_ROOT).
 //   `plan-reviewed` hashes the reviewed plan itself; `delivery-record` stores the archive path (or
-//   an unarchived delivery) and `delivery-confirm` the verified pushed head.
+//   an unarchived delivery) and `delivery-confirm` the verified pushed head. `base-move-record`
+//   keeps at most one fitting base move of an issue source's plan publication.
 // - Planning claim: `run-init` on an issue source first takes the issue's shared planning claim
 //   (`effective-flow-state-planning-claim-core.mjs`, workflow `autopilot`, holder the minted run id)
 //   and only then creates the run directory and ledger; a held claim is ISSUE_CLAIMED with the
@@ -21,15 +22,17 @@
 //   written. The claim token is stored only in the internal ledger field `planningClaim`, which no
 //   operation output and no appendix ever carries. `run-close` writes the closed ledger first and
 //   only then releases the claim, for every outcome, reporting the release as `planningClaim`. A
-//   plan source takes no claim.
+//   plan source takes no claim. `run-close` also reports the recorded `fit` and `baseMove`
+//   (without timestamps, `null` when none was recorded).
 // - `consent-check` (reads only): an open ledger whose recorded source is the given issue and whose
 //   recorded visibility is `private`.
 // - `run-check` (reads only): an open ledger for the run id, or RUN_NOT_OPEN.
 // - `pr-appendix`: renders, sanitizes and scans the appendix, writes it beside the ledger and
 //   records its SHA-256 in the ledger. A `blocked` or `withheld` result and every later
-//   `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed` and `delivery-record`
-//   withdraw that digest, so only a render of the current ledger can be merged. `delivery-confirm`
-//   changes nothing the appendix renders and keeps it.
+//   `decision-record`, `blocker-record`, `fit-record`, `base-move-record`, `plan-reviewed` and
+//   `delivery-record` withdraw that digest, so only a render of the current ledger can be merged.
+//   `delivery-confirm` changes nothing the appendix renders and keeps it. A recorded base move
+//   renders as its own appendix section.
 // - `plan-copy-restore`: the one project-file write. It replaces the run's own review edit of a
 //   tracked plan in the invocation checkout (`sourceRoot`) with `HEAD`'s working-tree bytes, and
 //   only when every precondition holds; otherwise it reports `kept` or `not-applicable`. It never
@@ -65,6 +68,7 @@ import { constants as fsConstants } from 'node:fs';
 import { link, lstat, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { isDeepStrictEqual } from 'node:util';
 import {
   APPENDIX_BEGIN,
   APPENDIX_BLOCKER_HEADINGS,
@@ -105,6 +109,7 @@ export const AUTOPILOT_OPERATIONS = Object.freeze([
   'decision-record',
   'blocker-record',
   'fit-record',
+  'base-move-record',
   'plan-reviewed',
   'delivery-record',
   'delivery-confirm',
@@ -1061,6 +1066,71 @@ async function fitRecordOperation(input, deps) {
   return { recorded: true, fit };
 }
 
+function nonNegativeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) invalid(`${label} must be a non-negative integer`);
+  return value;
+}
+
+function objectId(value, label) {
+  if (typeof value !== 'string' || !OBJECT_ID.test(value)) {
+    invalid(`${label} must be a full lowercase Git object id`);
+  }
+  return value;
+}
+
+const BASE_MOVE_FIELDS = Object.freeze([
+  'fromBaseOid',
+  'toBaseOid',
+  'commitCount',
+  'changedPathCount',
+  'citedPathCount',
+  'citedPaths',
+]);
+
+// After a confirmed plan pull request on an issue source: the base move Issue Buddy's
+// `assess-base-move` found fitting, from the pass report's `baseMoves` entry. A run keeps at most
+// one: an identical repeat returns `recorded: true` without a write, a different one is
+// INVALID_STATE. `citedPaths` holds at most `LIMITS.sources` of the `citedPathCount` cited paths.
+async function baseMoveRecordOperation(input, deps) {
+  closed(input, ['cwd', 'runId', ...BASE_MOVE_FIELDS], [], 'input');
+  requireRunId(input.runId);
+  objectId(input.fromBaseOid, 'fromBaseOid');
+  objectId(input.toBaseOid, 'toBaseOid');
+  nonNegativeInteger(input.commitCount, 'commitCount');
+  nonNegativeInteger(input.changedPathCount, 'changedPathCount');
+  nonNegativeInteger(input.citedPathCount, 'citedPathCount');
+  if (!Array.isArray(input.citedPaths)) invalid('citedPaths must be an array');
+  if (input.citedPaths.length > LIMITS.sources) {
+    invalid(`citedPaths exceeds ${LIMITS.sources} entries`);
+  }
+  input.citedPaths.forEach((entry, index) => relativePath(entry, `citedPaths[${index}]`));
+  if (input.citedPaths.length > input.citedPathCount) {
+    invalid('citedPaths lists more paths than citedPathCount');
+  }
+  const record = Object.fromEntries(BASE_MOVE_FIELDS.map((key) => [key, input[key]]));
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  if (ledger.source?.kind !== 'issue') invalid('base-move-record requires an issue source');
+  const stored = storedBaseMove(ledger);
+  if (stored !== null) {
+    if (!isDeepStrictEqual(stored, record)) {
+      fail('INVALID_STATE', 'this run already recorded a different base move');
+    }
+    return { recorded: true, baseMove: stored };
+  }
+  ledger.baseMove = { ...record, recordedAt: timestamp(deps) };
+  withdrawAppendix(ledger);
+  await writeLedger(ctx, ledger);
+  return { recorded: true, baseMove: record };
+}
+
+// The recorded base move without its timestamp, or `null` when none was recorded.
+function storedBaseMove(ledger) {
+  if (!isObject(ledger.baseMove)) return null;
+  const { recordedAt: _recordedAt, ...baseMove } = ledger.baseMove;
+  return baseMove;
+}
+
 // The plan file below `root` at a repository-relative path, read with the bounded no-follow
 // regular-file read after proving that every parent component is a real directory. Returns
 // `{ state: 'file', bytes, sha256 }`, `{ state: 'missing' }` or `{ state: 'unsafe', code }`.
@@ -1254,6 +1324,7 @@ async function runCloseOperation(input, deps) {
     outcome: ledger.outcome,
     counts: counts(ledger),
     fit: storedFit(ledger),
+    baseMove: storedBaseMove(ledger),
     ...(planningClaim === null ? {} : { planningClaim }),
   };
 }
@@ -1508,6 +1579,12 @@ const COPY = Object.freeze({
     fitSources: 'Sources',
     notAssessed: 'Architecture fit: not assessed — no architecture or roadmap sources found',
     unavailable: 'Architecture fit: not assessed — scoring unavailable',
+    baseMove: '### Base move',
+    baseMoveRange: (from, to, commits, changed) =>
+      `The base moved from \`${from}\` to \`${to}\` during planning: ${commits} ${commits === 1 ? 'commit' : 'commits'}, ${changed} changed ${changed === 1 ? 'path' : 'paths'}. The plan was published on the new base.`,
+    baseMoveCited: (cited) =>
+      `No changed path overlaps the ${cited === 1 ? 'path' : `${cited} paths`} the plan cites`,
+    more: (count) => `(+${count} more)`,
   }),
   de: Object.freeze({
     title: '## Autopilot-Protokoll',
@@ -1531,8 +1608,17 @@ const COPY = Object.freeze({
     notAssessed:
       'Architektur-Passung: nicht bewertet — keine Architektur- oder Roadmap-Quellen gefunden',
     unavailable: 'Architektur-Passung: nicht bewertet — Bewertung nicht verfügbar',
+    baseMove: '### Basis-Verschiebung',
+    baseMoveRange: (from, to, commits, changed) =>
+      `Die Basis hat sich während der Planung von \`${from}\` auf \`${to}\` verschoben: ${commits} ${commits === 1 ? 'Commit' : 'Commits'}, ${changed} ${changed === 1 ? 'geänderter Pfad' : 'geänderte Pfade'}. Der Plan wurde auf der neuen Basis veröffentlicht.`,
+    baseMoveCited: (cited) =>
+      `Kein geänderter Pfad überschneidet sich mit ${cited === 1 ? 'dem Pfad' : `den ${cited} Pfaden`}, die der Plan nennt`,
+    more: (count) => `(+${count} weitere)`,
   }),
 });
+
+// The abbreviated object id the appendix shows for a base, Git's default short length.
+const SHORT_OID_LENGTH = 7;
 
 function scored(entry, field, sanitized) {
   return `${entry.score}/10 — ${field(entry.reason, sanitized)}`;
@@ -1599,6 +1685,27 @@ export function renderAppendix(ledger, { planPullRequest } = {}) {
     copy.automaticCount(visible.filter((entry) => entry.classification === 'silent').length),
     '',
   );
+
+  // The base move sits before the blocker section, so blocker counting never reads its lines.
+  if (isObject(ledger.baseMove)) {
+    const move = ledger.baseMove;
+    const cited = move.citedPaths
+      .map((entry) => `\`${field(entry, 'baseMove.citedPaths')}\``)
+      .join(', ');
+    const hidden = move.citedPathCount - move.citedPaths.length;
+    lines.push(
+      copy.baseMove,
+      '',
+      copy.baseMoveRange(
+        move.fromBaseOid.slice(0, SHORT_OID_LENGTH),
+        move.toBaseOid.slice(0, SHORT_OID_LENGTH),
+        move.commitCount,
+        move.changedPathCount,
+      ),
+      `${copy.baseMoveCited(move.citedPathCount)}${cited === '' ? '.' : `: ${cited}`}${hidden > 0 ? ` ${copy.more(hidden)}` : ''}`,
+      '',
+    );
+  }
 
   if (ledger.blockers.length > 0) {
     lines.push(copy.blockers, '');
@@ -2136,6 +2243,7 @@ const HANDLERS = Object.freeze({
   'decision-record': decisionRecordOperation,
   'blocker-record': blockerRecordOperation,
   'fit-record': fitRecordOperation,
+  'base-move-record': baseMoveRecordOperation,
   'plan-reviewed': planReviewedOperation,
   'delivery-record': deliveryRecordOperation,
   'delivery-confirm': confirmDeliveryOperation,

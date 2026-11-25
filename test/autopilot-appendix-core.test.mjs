@@ -216,3 +216,24 @@ test('neutralizeAppendix bounds the text to the byte limit on a code point and s
   const exact = neutralizeAppendix([block('x'.repeat(10))], { maxBytes: 10 });
   assert.equal(exact.truncated, false);
 });
+
+// Invariant: the base-move section sits outside the blocker section, so its lines (even bullets
+// or a path list) never change the blocker count that gates the appendix.
+test('countAppendixBlockers ignores the base-move section in either language', () => {
+  const move = (heading) => [
+    heading,
+    '',
+    '- not a blocker',
+    'The base moved from `aaaaaaa` to `bbbbbbb` during planning.',
+    '',
+  ];
+  assert.equal(
+    countAppendixBlockers([block(...move('### Base move'), '### Blockers', '', '- a', '- b')]),
+    2,
+  );
+  assert.equal(
+    countAppendixBlockers([block(...move('### Basis-Verschiebung'), '### Blocker', '- a')]),
+    1,
+  );
+  assert.equal(countAppendixBlockers([block(...move('### Base move'))]), 0);
+});
