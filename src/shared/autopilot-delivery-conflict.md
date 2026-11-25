@@ -36,9 +36,9 @@ when: step 4 has created the attempt worktree and is about to run its setup
    - `proof: "clean"`: no merge commit; step 11 records `result: "none"`.
    - `proof: "unavailable"`: step 11 records `result: "unchecked"` with the proof's `reason`.
    - `proof: "conflict"`: continue with step 3.
-3. **Mode.** Resolve `mergeGate.conflictResolution` as `config-merge-gate-keys` defines it (missing
-   is `auto`, unreadable or invalid is `off`). `off` makes no attempt: step 11 records `unresolved` with
-   `conflict-resolution-off`. `ask` cannot be posed in this unattended run and counts as the one
+3. **Mode.** Resolve `mergeGate.conflictResolution` as `config-merge-gate-keys` defines it.
+   `off` makes no attempt: step 11 records `unresolved` with `conflict-resolution-off`.
+   `ask` cannot be posed in this unattended run and counts as the one
    automatic attempt, unlike merge-gate's non-interactive `off`; the record keeps
    `conflictResolution: "ask"`. `auto` attempts.
 4. **Checkout.** When the run holds `DELIVERY_ROOT` (an issue source's plan pull request), the
