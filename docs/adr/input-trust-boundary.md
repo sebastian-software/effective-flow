@@ -54,7 +54,9 @@ write-permitted comment starting with `<!-- effective-flow-triage ` before any m
 instruction-level exclusion because their orchestrator still reads them, and act on an
 `effective-flow-triage-reject` issue or one with a write-permitted security notice only after an
 explicit override in an interactive run. Children created from a split keep
-the interactive baseline of two previews; this residual risk is accepted.
+the interactive baseline of two previews; this residual risk is accepted. Forge text for an
+unattended plan pull request is derived from the plan and sanitized inside the plan-publication
+helper, so it never reaches the orchestrator.
 
 **Scoped exception: `triage`.** Deciding on an issue from any author requires reading it, so the
 interactive `triage` tool extends the `backlog-audit` exception to its architecture, assessment and

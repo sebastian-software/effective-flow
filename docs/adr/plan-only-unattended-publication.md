@@ -29,8 +29,11 @@ unsandboxed model steps, so the single-file assertion and content scan are advis
 Credential isolation and verified bot branch rules are deferred to WP6b and WP7 before scheduled
 publishing.
 
-Publication text is fixed and contains only the issue number, review result, and open-point count,
-plus, after an unresolved base move, the helper-rendered English paragraph that starts with
+Publication text was originally fixed and contained only the issue number, review result, and
+open-point count. That statement is superseded in part: the plan helper now derives and sanitizes
+the title, commit subject and body from the plan bytes (see the build-system guide), so the text
+never passes through the model orchestrator and the boundary rationale below is unchanged. It
+still carries, after an unresolved base move, the helper-rendered English paragraph that starts with
 "**Unresolved base move.**" and names the range, reason and overlapping paths, or a further move of
 the base after the assessment. The plan helper owns content scanning, single-file inspection,
 expected base/tip/blob checks, create-only branch publication, and draft pull-request confirmation.

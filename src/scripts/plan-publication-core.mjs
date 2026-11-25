@@ -18,13 +18,17 @@
 //   the plan with plumbing in a temporary index, pushes it without force so the remote branch is
 //   the lock, and opens a draft pull request carrying the shipped plan marker and `Refs #<N>`.
 //   `publish` alone takes an optional `baseMove` and renders it as one fixed English paragraph
-//   ("Unresolved base move") between the caller's prose and the marker. With `allowNewerBase`, a
+//   ("Unresolved base move") between the derived prose and the marker. With `allowNewerBase`, a
 //   tip that moved past `expectedBaseOid` publishes on that assessed base after the further-range
 //   stops, extends or adds the flag, and reports `furtherBaseMove` (null on an unmoved tip).
 //
-// Model judgment stays outside: callers pass the plan file, the title, body and commit message,
-// and the run state. This module spawns nothing itself; every process goes through the injected
-// runner, which only a CLI entry creates (`process-runner.mjs`).
+// Model judgment stays outside: callers pass the plan file, the run state and the `languageGit` /
+// `languageForge` values, never forge text. `publish` and `complete-branch` derive the title, the
+// commit subject and the body prose from the verified plan bytes (`deriveForgeText`), sanitize and
+// bound them, and return them to no caller; a dry run reports only their length and digest. Every
+// refusal on that derived text carries `details.source: "derived"`, and one on the base-move flag
+// `details.source: "base-move-flag"`. This module spawns nothing itself; every process goes through
+// the injected runner, which only a CLI entry creates (`process-runner.mjs`).
 //
 // `cwd` rule: `scan` and `branch-name` accept any existing directory as `cwd` and need no
 // repository, deliberately — `scan` judges files only (the distribution smoke runs it outside a
@@ -32,8 +36,10 @@
 // require `cwd` to be the repository root.
 //
 // Every caller-supplied text is size-bounded before any scan (`INPUT_TOO_LARGE`; the plan file
-// keeps its `INVALID_CONTENT`/`oversized` refusal), so no scan pattern ever sees unbounded input.
+// keeps its `INVALID_CONTENT`/`oversized` refusal), and derived text is bounded by construction, so
+// no scan pattern ever sees unbounded input.
 
+import { createHash } from 'node:crypto';
 import nodeFs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -44,6 +50,7 @@ import {
 } from './remote-tracker-core.mjs';
 import { assertPublishable } from './remote-tracker-shared-core.mjs';
 import {
+  planForgeFields,
   publicationMetadataFromText,
   PlanLintError,
   UNATTENDED_PLAN_NAME,
@@ -87,7 +94,7 @@ export const VISIBILITIES = Object.freeze(['standard', 'hidden']);
 export const MAX_PLAN_BYTES = 512 * 1024;
 // Hard input limits, checked before any scan pattern runs.
 export const MAX_TITLE_CHARS = 256;
-// GitHub's pull-request body limit. It bounds the caller's prose and, separately, the final body
+// GitHub's pull-request body limit. It bounds the body prose and, separately, the final body
 // with the marker line and `Refs #<N>` appended, so a body never fails only after the push.
 export const MAX_BODY_CHARS = 65_536;
 export const MAX_COMMIT_MESSAGE_BYTES = 65_536;
@@ -132,9 +139,8 @@ const SCHEMAS = Object.freeze({
       'branchPrefix',
       'remote',
       'baseBranch',
-      'title',
-      'body',
-      'commitMessage',
+      'languageGit',
+      'languageForge',
     ],
     optional: ['expectedBaseOid', 'expectedBlobOid', 'baseMove', 'allowNewerBase'],
   },
@@ -149,8 +155,8 @@ const SCHEMAS = Object.freeze({
       'branchPrefix',
       'remote',
       'baseBranch',
-      'title',
-      'body',
+      'languageGit',
+      'languageForge',
     ],
     optional: ['expectedBaseOid', 'expectedTipOid'],
   },
@@ -772,31 +778,35 @@ export function buildPlanPrMarkerLine(planPath) {
   return `${PLAN_PR_MARKER_OPENER}v1 ${JSON.stringify({ plan: planPath })} -->`;
 }
 
-// The caller's prose, then the marker line, then `Refs #<N>` as the final line. The caller's body
-// must not carry a marker line or a marker comment of its own, and the body must round-trip
-// through the shipped marker parser to exactly `planPath`. Because the prose holds no opener, the
-// parser's verdict on the complete body is its verdict on the appended tail, so only the tail is
-// parsed: the parser trims every line with a pattern that is quadratic in a long inner whitespace
-// run, and the caller's prose never reaches it.
+// The body prose, then the marker line, then `Refs #<N>` as the final line. The prose must not
+// carry a marker line or a marker comment of its own, and the body must round-trip through the
+// shipped marker parser to exactly `planPath`. Because the prose holds no opener, the parser's
+// verdict on the complete body is its verdict on the appended tail, so only the tail is parsed:
+// the parser trims every line with a pattern that is quadratic in a long inner whitespace run, and
+// the prose never reaches it.
 export function buildPullRequestBody(prose, planPath, issue) {
-  callerBody(prose);
+  requireBodyProse(prose);
   const tail = bodyTail(planPath, issue);
   const body = `${prose.trimEnd()}\n\n${tail}`;
   requireFinalBodyFits(body.length);
+  requireMarkerRoundTrip(tail, planPath);
+  return body;
+}
+
+function requireMarkerRoundTrip(tail, planPath) {
   const marker = inspectPlanPrMarker(tail);
   if (marker.status !== 'valid' || marker.plan !== planPath) {
     fail('MARKER_INVALID', 'the plan marker does not round-trip', {
       reason: marker.error ?? marker.status,
     });
   }
-  return body;
 }
 
 function bodyTail(planPath, issue) {
   return `${buildPlanPrMarkerLine(planPath)}\nRefs #${issue}`;
 }
 
-// The limit applies to the body the forge receives, not only to the caller's part of it.
+// The limit applies to the body the forge receives, not only to its prose.
 function requireFinalBodyFits(length) {
   if (length > MAX_BODY_CHARS) {
     fail('INPUT_TOO_LARGE', `the final pull-request body exceeds ${MAX_BODY_CHARS} characters`, {
@@ -806,6 +816,288 @@ function requireFinalBodyFits(length) {
       length,
     });
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Derived forge text
+
+export const LANGUAGES = Object.freeze(['de', 'en']);
+// The whole commit subject stays within common commitlint header limits, which count UTF-16 code
+// units.
+export const MAX_SUBJECT_CODE_UNITS = 72;
+export const MAX_SUMMARY_CODE_POINTS = 600;
+// Only this much of a raw value is sanitized, which bounds every pattern and round below; both
+// limits above are far smaller.
+const MAX_SANITIZED_SOURCE_CODE_POINTS = 4096;
+const MAX_SANITIZER_ROUNDS = 5;
+const ELLIPSIS = '…';
+
+const TITLE_PREFIX = Object.freeze({ en: 'docs: plan ', de: 'docs: Plan ' });
+const BODY_WORDS = Object.freeze({
+  en: {
+    lead: (issue) =>
+      `Plan for issue #${issue}. The implementation follows as further commits on this branch.`,
+    workflow: 'Recommended workflow',
+    review: (result, count) =>
+      `Review result: ${result === 'approved' ? 'approved' : 'revision required'}; open points: ${count}.`,
+  },
+  de: {
+    lead: (issue) =>
+      `Plan für Issue #${issue}. Die Umsetzung folgt als weitere Commits auf diesem Branch.`,
+    workflow: 'Empfohlener Workflow',
+    review: (result, count) =>
+      `Review-Ergebnis: ${result === 'approved' ? 'freigegeben' : 'Überarbeitung nötig'}; offene Punkte: ${count}.`,
+  },
+});
+
+function codePoints(value) {
+  return Array.from(value);
+}
+
+// The first `limit` code points, read from at most twice as many code units so a long value is
+// never split into an array as a whole. A pair cut by the slice lies beyond the kept code points.
+function leadingCodePoints(value, limit) {
+  return codePoints(value.slice(0, limit * 2))
+    .slice(0, limit)
+    .join('');
+}
+
+// Removes every `<!--` comment, an unterminated one up to the end of the text; linear by
+// construction, unlike a lazy pattern restarted at every opener.
+function removeHtmlComments(text) {
+  let result = '';
+  let cursor = 0;
+  for (;;) {
+    const open = text.indexOf('<!--', cursor);
+    if (open === -1) return result + text.slice(cursor);
+    result += text.slice(cursor, open);
+    const close = text.indexOf('-->', open + 4);
+    if (close === -1) return result;
+    cursor = close + 3;
+  }
+}
+
+// A footer token with either separator a release tool reads (`Release-As: 1.0`,
+// `BREAKING CHANGE #x`).
+const FOOTER_TOKEN = /\b(BREAKING[ -]CHANGE|Release-As)[ \t]*[:#]/gi;
+// GitHub links `@name` after any character that is not an ASCII letter or digit, so an `@` after
+// a format character, a combining mark, a non-ASCII letter or `_` (Markdown emphasis, rendered
+// before the mention filter runs) is a mention too; only an ASCII letter or digit before it (an
+// e-mail address) keeps it.
+const MENTION_POSITION = /(?<![A-Za-z0-9])@(?=[\p{L}\p{N}])/u;
+
+// Removes every mention `@` run in one linear pass: each run is matched once, whole, and after an
+// ASCII letter or digit keeps a single `@`.
+function removeMentions(text) {
+  return text.replace(/@+/g, (run, offset) => {
+    if (!/^[\p{L}\p{N}]/u.test(text.slice(offset + run.length, offset + run.length + 2))) {
+      return run;
+    }
+    return /[A-Za-z0-9]/.test(text[offset - 1] ?? '') ? '@' : '';
+  });
+}
+// A run of three or more backticks or tildes could open a code fence that swallows the body tail.
+const FENCE_RUN = /`{3,}|~{3,}/g;
+
+// One round of sanitizer steps 1–6, in their fixed order.
+function sanitizeRound(text) {
+  // 1. Lines joined, whitespace collapsed.
+  let value = text.replace(/\s+/g, ' ').trim();
+  // 2. Markup: comments, tags, images, links to their text, character references (either `x`
+  //    case) and every remaining `&#`, then every remaining angle bracket, square bracket and
+  //    fence run, so no link, image or code fence survives a destination the patterns do not
+  //    match. Each bracket class is excluded from its own run, so no pattern rescans a long
+  //    unterminated opener.
+  value = removeHtmlComments(value)
+    .replace(/<\/?[A-Za-z][^<>]*>/g, '')
+    .replace(/!\[[^[\]]*\]\([^()]*\)/g, '')
+    .replace(/\[([^[\]]*)\]\([^()]*\)/g, '$1')
+    .replace(/&(?:#\d{1,8}|#[xX][0-9A-Fa-f]{1,8}|[A-Za-z][A-Za-z0-9]{0,31});/g, '')
+    .replace(/&#/g, '')
+    .replace(/[<>[\]]/g, '')
+    .replace(FENCE_RUN, '');
+  // 3. Bare URLs: with a scheme, protocol-relative (`//host`) or a `www.` autolink; like the
+  //    `GH-N` reference below, `www.` counts after anything but an ASCII letter or digit, since
+  //    `_` is Markdown emphasis that renders away before GitHub links the text.
+  value = value.replace(/(?:https?:)?\/\/\S*/gi, '').replace(/(?<![A-Za-z0-9])www\.\S*/gi, '');
+  // 4. Commit footers lose their separator.
+  value = value.replace(FOOTER_TOKEN, '$1 ');
+  // 5. References: `owner/repo#N` → `owner/repo N`, `#N` → `N`, `GH-N` → `GH N`; a run of
+  //    `#` goes at once.
+  value = value
+    .replace(/([\w.-])#+(?=\d)/g, '$1 ')
+    .replace(/(?<!#)#+(?=\d)/g, '')
+    .replace(/(?<![A-Za-z0-9])(GH)-(?=\d)/gi, '$1 ');
+  // 6. Mentions, a run of `@` at once; an e-mail address keeps its `@`.
+  return removeMentions(value);
+}
+
+function residualToken(text) {
+  return (
+    /#\d/.test(text) ||
+    /&#/.test(text) ||
+    MENTION_POSITION.test(text) ||
+    /[<>[\]]/.test(text) ||
+    /\/\/|(?<![A-Za-z0-9])www\./i.test(text) ||
+    new RegExp(FENCE_RUN.source).test(text) ||
+    /(?<![A-Za-z0-9])GH-\d/i.test(text) ||
+    new RegExp(FOOTER_TOKEN.source, 'i').test(text)
+  );
+}
+
+// Sanitizer steps 1–7: the rounds repeat until the text is a fixed point, and any reference,
+// character reference, mention, bracket, URL, fence run or footer token left after them makes the
+// plan text unusable.
+export function sanitizeDerivedText(raw, field) {
+  let value = leadingCodePoints(raw, MAX_SANITIZED_SOURCE_CODE_POINTS);
+  for (let round = 0; round < MAX_SANITIZER_ROUNDS; round += 1) {
+    const next = sanitizeRound(value);
+    if (next === value) break;
+    value = next;
+  }
+  if (residualToken(value)) {
+    fail('PLAN_TEXT_UNUSABLE', `the derived ${field} keeps a reference or markup token`, {
+      field,
+      reason: 'residual-token',
+      source: 'derived',
+    });
+  }
+  return value;
+}
+
+// Step 8 for the title description: a hard cut within `limit` UTF-16 code units, never inside a
+// surrogate pair, then the one-unit ellipsis.
+export function truncateTitleDescription(value, limit) {
+  if (value.length <= limit) return value;
+  let kept = '';
+  for (const point of value) {
+    if (kept.length + point.length > limit - ELLIPSIS.length) break;
+    kept += point;
+  }
+  return `${kept.trimEnd()}${ELLIPSIS}`;
+}
+
+// Step 8 for the summary: cut at the last sentence end that fits, else at the last word boundary,
+// else hard, and always end with the ellipsis.
+export function truncateSummary(value, limit = MAX_SUMMARY_CODE_POINTS) {
+  const points = codePoints(value);
+  if (points.length <= limit) return value;
+  // A cut at a space at `index` keeps `index` code points: a word cut adds the ellipsis, a
+  // sentence cut a space and the ellipsis.
+  let sentence = -1;
+  let word = -1;
+  for (let index = 1; index <= limit - 1; index += 1) {
+    if (points[index] !== ' ') continue;
+    word = index;
+    const before = points.slice(Math.max(0, index - 2), index).join('');
+    if (index <= limit - 2 && /[.!?]["')\]’”»]?$/u.test(before)) sentence = index;
+  }
+  if (sentence !== -1) return `${points.slice(0, sentence).join('')} ${ELLIPSIS}`;
+  if (word !== -1) return `${points.slice(0, word).join('')}${ELLIPSIS}`;
+  return `${points.slice(0, limit - 1).join('')}${ELLIPSIS}`;
+}
+
+// Re-raises a refusal on helper-derived or flag text with the source Issue Buddy classifies by.
+function withSource(source, action) {
+  try {
+    return action();
+  } catch (error) {
+    if (error instanceof PlanPublicationError) {
+      error.details = { ...error.details, source };
+    }
+    throw error;
+  }
+}
+
+// The review result and open points of a plan that satisfies the publication contract; null for
+// one that does not, whose body then carries no review paragraph.
+function reviewMetadata(planText) {
+  try {
+    return publicationMetadataFromText(planText);
+  } catch (error) {
+    if (error instanceof PlanLintError) return null;
+    throw error;
+  }
+}
+
+// The summary is optional: a summary that keeps a token after the rounds is dropped, not refused.
+function optionalSummary(raw) {
+  try {
+    return sanitizeDerivedText(raw, 'summary');
+  } catch (error) {
+    if (error instanceof PlanPublicationError && error.code === 'PLAN_TEXT_UNUSABLE') return '';
+    throw error;
+  }
+}
+
+// Title, commit subject and body prose derived from the verified plan text alone. Nothing here is
+// returned to a caller; the title and body leave the helper only as pull-request fields.
+export function deriveForgeText(planText, { planPath, issue, languageGit, languageForge }) {
+  const fields = planForgeFields(planText);
+  const prefix = TITLE_PREFIX[languageGit];
+  const description = fields.title === null ? '' : sanitizeDerivedText(fields.title, 'title');
+  if (description === '') {
+    fail('PLAN_TEXT_UNUSABLE', 'the plan has no usable H1 title', {
+      field: 'title',
+      reason: 'empty-title',
+      source: 'derived',
+    });
+  }
+  const title = `${prefix}${truncateTitleDescription(
+    description,
+    MAX_SUBJECT_CODE_UNITS - prefix.length,
+  )}`;
+  const summary = fields.summary === null ? '' : optionalSummary(fields.summary);
+  const metadata = reviewMetadata(planText);
+  const words = BODY_WORDS[languageForge];
+  const paragraphs = [
+    words.lead(issue),
+    `Plan: ${planPath}`,
+    fields.workflow === null ? null : `${words.workflow}: ${fields.workflow}`,
+    summary === '' ? null : truncateSummary(summary),
+    metadata === null ? null : words.review(metadata.reviewResult, metadata.openPointCount),
+  ].filter((paragraph) => paragraph !== null);
+  return { title, commitMessage: title, prose: paragraphs.join('\n\n') };
+}
+
+// Validates and scans the derived text on its own, before any base fetch: every refusal carries
+// `details.source: "derived"`.
+function requireDerivedText(derived, planPath, issue) {
+  return withSource('derived', () => {
+    validateTitle(derived.title);
+    validateCommitMessage(derived.commitMessage);
+    buildPullRequestBody(derived.prose, planPath, issue);
+    requireUnblocked(
+      scanEntries(
+        [
+          { field: 'title', text: derived.title },
+          { field: 'body', text: derived.prose },
+          { field: 'commitMessage', text: derived.commitMessage },
+        ],
+        'unattended',
+      ),
+      'derived',
+    );
+    return derived;
+  });
+}
+
+// The checked forge text of one mutating operation; every refusal names `derived` as its source.
+function derivedForgeText(planText, planPath, base) {
+  const derived = withSource('derived', () =>
+    deriveForgeText(planText, {
+      planPath,
+      issue: base.issue,
+      languageGit: base.languageGit,
+      languageForge: base.languageForge,
+    }),
+  );
+  return requireDerivedText(derived, planPath, base.issue);
+}
+
+// What a dry run reports of a derived text: its length and digest, never the text.
+function textDigest(text) {
+  return { length: text.length, sha256: createHash('sha256').update(text, 'utf8').digest('hex') };
 }
 
 export function planBranchName({ branchPrefix, issue }) {
@@ -2025,28 +2317,25 @@ async function assertChangesetOperation(input, context) {
   };
 }
 
-// The checks both mutating operations share before any Git or forge access.
+// The schema and enum checks both mutating operations share before any Git or forge access. The
+// forge text is derived from the plan bytes later and checked before the base fetch (`publish`)
+// or before any pull-request call (`complete-branch`).
 function mutatingInput(operation, input) {
   closedSchema(operation, input);
   unattendedRules(input);
   expectedOids(input);
-  const checked = {
+  return {
     issue: normalizeIssueNumber(input.issue),
     planDir: requireRelativePath(input.planDir, 'planDir'),
     remote: requireRemoteName(input.remote),
     baseBranch: requireRefPath(input.baseBranch, 'baseBranch'),
-    title: validateTitle(input.title),
-    body: callerBody(input.body),
+    languageGit: requireEnum(input.languageGit, 'languageGit', LANGUAGES),
+    languageForge: requireEnum(input.languageForge, 'languageForge', LANGUAGES),
   };
-  // `complete-branch` learns the plan path only from the fetched branch, so its exact final body
-  // is checked later; the prose plus the shortest possible tail is a lower bound known now, and a
-  // body that cannot fit is refused before any Git call.
-  requireFinalBodyFits(checked.body.trimEnd().length + 2 + bodyTail('', checked.issue).length);
-  return checked;
 }
 
-// The caller's body prose before anything is read: no closing keyword, no marker of its own.
-function callerBody(prose) {
+// The body prose before the tail is appended: no closing keyword, no marker of its own.
+function requireBodyProse(prose) {
   requireText(requireBounded(prose, 'body'), 'body');
   refuseClosingKeyword(prose, 'body');
   // Equivalent to the shipped parser not answering `absent`, without its quadratic line trim.
@@ -2061,6 +2350,17 @@ async function prepareRemote(context, git, remote) {
   const forge = { ...context, remoteUrl: url };
   const repository = await requireGithubDraftCapability(forge);
   return { forge, repository };
+}
+
+// A hook, local or on the server, may echo the helper-derived commit message, and the helper
+// returns none of that text: a refusal reports the hook's stderr only as its length and digest,
+// plus the spawn error code when there is one.
+function hookStderr(result) {
+  const code = result?.error?.code;
+  return {
+    stderr: textDigest(String(result?.stderr ?? '')),
+    ...(typeof code === 'string' ? { errorCode: diagnosticText(code) } : {}),
+  };
 }
 
 function messageForCommit(message) {
@@ -2078,7 +2378,7 @@ async function runCommitMsgHook(git, message, context) {
     if (timedOut(result) || result?.error || result?.status !== 0) {
       fail('COMMIT_MSG_HOOK_REJECTED', 'the commit-msg hook refused the message', {
         reason: timedOut(result) ? 'timeout' : 'rejected',
-        stderr: diagnosticText(result?.stderr ?? ''),
+        ...hookStderr(result),
       });
     }
     return decodePlanBytes(readHookMessage(context.fs, file), 'commitMessage');
@@ -2180,7 +2480,7 @@ async function pushBranch(git, { remote, branch, commitOid }, network, state) {
   if (result?.error || result?.status !== 0) {
     fail('PUSH_REJECTED', 'the remote refused the push', {
       ...state,
-      stderr: diagnosticText(result?.stderr ?? result?.error?.code ?? ''),
+      ...hookStderr(result),
     });
   }
 }
@@ -2253,7 +2553,6 @@ async function requireFurtherBaseMove(
 
 async function publishOperation(input, context) {
   const base = mutatingInput('publish', input);
-  const commitMessage = validateCommitMessage(input.commitMessage);
   const baseMove =
     input.baseMove === undefined ? null : requireBaseMove(input.baseMove, input.expectedBaseOid);
   if (input.allowNewerBase !== undefined && typeof input.allowNewerBase !== 'boolean') {
@@ -2265,15 +2564,8 @@ async function publishOperation(input, context) {
   }
   const cwdReal = resolveCwd(input.cwd, context.fs);
   const planPath = requirePlanFilePath(input.planFile);
-  // A flag joins the caller's prose before the body checks, so it passes them like any prose.
-  const composeBody = (furtherBaseMove) => {
-    const flag = baseMove
-      ? buildBaseMoveFlag(baseMove, furtherBaseMove)
-      : furtherBaseMove && buildFurtherBaseMoveFlag(furtherBaseMove);
-    const prose = flag ? `${base.body.trimEnd()}\n\n${flag}` : base.body;
-    return buildPullRequestBody(prose, planPath, base.issue);
-  };
-  let body = composeBody(null);
+  // A plan path the marker grammar refuses is refused before any Git call.
+  requireMarkerRoundTrip(bodyTail(planPath, base.issue), planPath);
   const branch = planBranchName({ branchPrefix: input.branchPrefix, issue: base.issue });
 
   const git = createGit({ ...context, cwd: cwdReal });
@@ -2292,6 +2584,19 @@ async function publishOperation(input, context) {
       violations: [{ violation: nameProblem, path: planPath }],
     });
   }
+  const derived = derivedForgeText(planText, planPath, base);
+  // A flag joins the derived prose before the body checks, so it passes them like any prose; a
+  // refusal it causes names the flag as its source.
+  const composeBody = (furtherBaseMove) => {
+    const flag = baseMove
+      ? buildBaseMoveFlag(baseMove, furtherBaseMove)
+      : furtherBaseMove && buildFurtherBaseMoveFlag(furtherBaseMove);
+    if (!flag) return buildPullRequestBody(derived.prose, planPath, base.issue);
+    return withSource('base-move-flag', () =>
+      buildPullRequestBody(`${derived.prose}\n\n${flag}`, planPath, base.issue),
+    );
+  };
+  let body = composeBody(null);
   const tipOid = await fetchBase(git, base.remote, base.baseBranch, network);
   // `baseOid` is the plan commit's parent: the fetched tip, or the assessed base behind it.
   let baseOid = tipOid;
@@ -2325,12 +2630,18 @@ async function publishOperation(input, context) {
   const scan = scanEntries(
     [
       { field: 'plan', text: planText },
-      { field: 'title', text: base.title },
+      { field: 'title', text: derived.title },
       { field: 'body', text: body },
-      { field: 'commitMessage', text: commitMessage },
+      { field: 'commitMessage', text: derived.commitMessage },
     ],
     'unattended',
   );
+  // The derived prose already passed this scan, so a body finding here comes from the flag.
+  const flagged = baseMove !== null || furtherBaseMove !== null;
+  const bodyBlocked = scan.blocking.some((id) => id.split(':')[1] === 'body');
+  if (flagged && bodyBlocked) {
+    withSource('base-move-flag', () => requireUnblocked(scan, 'pre-publication'));
+  }
   requireUnblocked(scan, 'pre-publication');
 
   const existingOid = await remoteBranchOid(git, base.remote, branch, network);
@@ -2355,8 +2666,8 @@ async function publishOperation(input, context) {
       baseOid,
       planFile: planPath,
       blobId,
-      title: base.title,
-      body,
+      title: textDigest(derived.title),
+      body: textDigest(body),
       findings: scan.findings,
       ignoredPullRequests,
       ...further,
@@ -2388,7 +2699,7 @@ async function publishOperation(input, context) {
   }
   requireUnblocked(scanEntries([{ field: 'plan', bytes: blobBytes }], 'unattended'), 'blob');
 
-  const finalMessage = await runCommitMsgHook(git, commitMessage, context);
+  const finalMessage = await runCommitMsgHook(git, derived.commitMessage, context);
   validateCommitMessage(finalMessage);
   requireUnblocked(
     scanEntries([{ field: 'commitMessage', text: finalMessage }], 'unattended'),
@@ -2434,7 +2745,7 @@ async function publishOperation(input, context) {
   await requireLockHeld(git, { remote: base.remote, branch, commitOid }, network, state);
   const pullRequest = await openDraftPullRequest(
     forge,
-    { planPath, branch, baseBranch: base.baseBranch, title: base.title, body },
+    { planPath, branch, baseBranch: base.baseBranch, title: derived.title, body },
     state,
   );
   return {
@@ -2738,11 +3049,13 @@ async function completeBranchOperation(input, context) {
   const network = await networkOptions(git, context);
   const { baseOid, tipOid, changeset, planPath, blobBytes, commitMessage } =
     await inspectBranchContents(input, base, branch, git, network);
-  const body = buildPullRequestBody(base.body, planPath, base.issue);
+  // The branch keeps its own commit subject; only the pull request carries the derived text.
+  const derived = derivedForgeText(decodePlanBytes(blobBytes), planPath, base);
+  const body = buildPullRequestBody(derived.prose, planPath, base.issue);
   const scan = scanEntries(
     [
       { field: 'plan', bytes: blobBytes },
-      { field: 'title', text: base.title },
+      { field: 'title', text: derived.title },
       { field: 'body', text: body },
       { field: 'commitMessage', text: commitMessage },
     ],
@@ -2760,8 +3073,8 @@ async function completeBranchOperation(input, context) {
       baseBranch: base.baseBranch,
       planFile: planPath,
       blobOid: changeset.blobOid,
-      title: base.title,
-      body,
+      title: textDigest(derived.title),
+      body: textDigest(body),
       findings: scan.findings,
       ignoredPullRequests,
       gitVersion,
@@ -2774,7 +3087,7 @@ async function completeBranchOperation(input, context) {
   await requireLockHeld(git, { remote: base.remote, branch, commitOid: tipOid }, network, state);
   const pullRequest = await openDraftPullRequest(
     forge,
-    { planPath, branch, baseBranch: base.baseBranch, title: base.title, body },
+    { planPath, branch, baseBranch: base.baseBranch, title: derived.title, body },
     state,
   );
   return {

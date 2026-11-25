@@ -1187,9 +1187,30 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   the single-file commit in a temporary index, pushes it without force to
   `<branchPrefix>/plan/issue-<N>` so the remote branch is the lock, and opens a draft pull request
   whose body ends with the shipped plan marker line and the non-closing `Refs #<N>`; it then
-  reads the pull request back to confirm draft and marker. An optional `baseMove` (an unresolved
+  reads the pull request back to confirm draft and marker. Callers pass no title, body or commit
+  message, only `languageGit` and `languageForge` (`de` or `en`); `publish` and `complete-branch`
+  derive the forge text from the verified plan bytes. The title is `docs: plan <plan H1>` (`docs:
+Plan …` in German) cut to the 72-UTF-16-code-unit subject limit commitlint counts, never inside a
+  surrogate pair; the commit message is that title alone,
+  and the body is an implementation-follows sentence naming `#<N>`, `Plan: <path>`, the recommended
+  workflow, the requirement summary (bounded to 600 code points) and the review result with its
+  open-point count, then the marker line and `Refs #<N>`. A plan whose publication metadata fails
+  gets no review paragraph. Each derived field is sanitized before use: only its first 4096 code
+  points are read, then rounds repeat to a fixed point (at most five) that remove markup, HTML
+  character references in any case and every remaining `&#`, square brackets, runs of three or more
+  backticks or tildes, URLs (with a scheme, `//host` or `www.`), references (`#N` and `#` runs,
+  `GH-N`), mentions (an `@` run) and the separator of a `BREAKING CHANGE` or `Release-As` footer
+  (`:` or `#`). A `www.`, `GH-N` or `@` counts after anything but an ASCII letter or digit, so an
+  e-mail address keeps its `@` while `_`, Markdown emphasis, shields none of them. A token
+  that survives the rounds, or an empty title, is `PLAN_TEXT_UNUSABLE`; a summary that keeps one is
+  dropped from the body instead. The derived text is checked before the base fetch (`publish`) or
+  before any pull-request call (`complete-branch`), and every refusal on it carries
+  `details.source: "derived"`; one caused by the base-move flag carries `"base-move-flag"`. The
+  helper returns none of the text: a dry run reports only each field's length and `sha256`, and a
+  `COMMIT_MSG_HOOK_REJECTED` or `PUSH_REJECTED` reports the hook's stderr, which may echo the
+  message, only as `stderr: {length, sha256}`. An optional `baseMove` (an unresolved
   `assess-base-move` result whose `republish` is true, moving to exactly `expectedBaseOid`) adds
-  one fixed English "Unresolved base move" paragraph between the caller's prose and the marker.
+  one fixed English "Unresolved base move" paragraph between the derived prose and the marker.
   An optional `allowNewerBase: true` (only Issue Buddy's single assessed re-publish passes it)
   accepts a fetched tip that moved past `expectedBaseOid`: it requires `expectedBaseOid` to be an
   ancestor of the tip (`BASE_CHANGED`, `details.reason: "not-ancestor"`), refuses a plan path the

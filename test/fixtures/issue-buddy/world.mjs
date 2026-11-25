@@ -309,15 +309,14 @@ export function publicationInput(baseOid, extra = {}) {
     branchPrefix: 'effective-flow',
     remote: 'origin',
     baseBranch: 'main',
-    title: 'docs: plan issue #1',
-    body: 'Plan for issue #1; review result: approved; open points: 0.',
-    commitMessage: 'docs: plan issue #1',
+    languageGit: 'en',
+    languageForge: 'en',
     expectedBaseOid: baseOid,
     ...extra,
   };
 }
 export function recoveryInput(baseOid, extra = {}) {
-  const { planFile, commitMessage, ...input } = publicationInput(baseOid);
+  const { planFile, ...input } = publicationInput(baseOid);
   return { ...input, branch: BRANCH, ...extra };
 }
 export async function writePlan(world, text = planText()) {

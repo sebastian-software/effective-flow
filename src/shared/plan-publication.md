@@ -356,6 +356,8 @@ after a controlled stop, or to `failed` after an error, and retains the worktree
   line after that prose.
 - **At delivery**, the implementing run's `{{SKILL:pr}}` derives the final title and body in its
   step 9 and keeps the marker line.
+- **Unattended Issue Buddy plans** get the same title and body shape, plus the recommended workflow
+  and review status, rendered inside the `plan-publication.mjs` helper from the plan bytes.
 
 ### Prohibited on every path
 

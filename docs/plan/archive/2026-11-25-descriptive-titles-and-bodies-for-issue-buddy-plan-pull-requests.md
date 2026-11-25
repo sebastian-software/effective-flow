@@ -1,6 +1,6 @@
 # Descriptive titles and bodies for Issue Buddy plan pull requests
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -103,6 +103,7 @@ Classification is Feature: the published forge text changes visibly, and the hel
   - `Fixes #12 for @someone` → `Fixes 12 for someone`
   - `#<!-- -->12` → `12`
   - `Release-As: 2.0.0` → `Release-As 2.0.0`
+
 - **Rendered body.** The connecting words follow `languageForge`; derived values stay in the plan's language. One paragraph each, omitted paragraphs dropped:
   - English:
     1. `Plan for issue #<N>. The implementation follows as further commits on this branch.`
@@ -118,25 +119,26 @@ Classification is Feature: the published forge text changes visibly, and the hel
     5. `Review-Ergebnis: <freigegeben|Überarbeitung nötig>; offene Punkte: <n>.`
 
   `#<N>` in paragraph 1 is the helper's own trusted issue number. Then come the marker line and `Refs #<N>` as today.
+
 - **No derived prose in envelopes.** The dry-run envelopes of `publish` and `complete-branch` (`:2341-2350`, `:2756-2765`) return only the length and SHA-256 of the title and body.
 - **Outcome mapping in Issue Buddy.** A refusal with `details.source: "derived"` is a plan-content fault: item 4, issue `failed` (`src/tools/issue-buddy.md:398-408`). This covers `PLAN_TEXT_UNUSABLE` and `INVALID_TITLE`, `CLOSING_KEYWORD`, `MARKER_INVALID`, `INPUT_TOO_LARGE`, `INVALID_CONTENT` or `SCAN_BLOCKED` raised on derived text. It prevents the same issue from stopping every later pass. In `issue-buddy-base-move.md:26-34`, derived faults can no longer occur at the re-publish, because they are rejected before `fetchBase`. Its `body` refusal mapping therefore applies to `source: "base-move-flag"` only.
 - **ADR update.** `docs/adr/plan-only-unattended-publication.md:32` is superseded in part: the text is helper-derived, sanitized and kept away from the parent, and the boundary rationale stays. `docs/adr/input-trust-boundary.md` gains one sentence on the same point.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/plan-lint-core.mjs` | Export the pure `planForgeFields(text)`. Existing classification and `publication-metadata` are unchanged. |
-| `src/scripts/plan-publication-core.mjs` | Schema changes. Derive review result, open points and text from the verified bytes. Add the sanitizer, the limits, `PLAN_TEXT_UNUSABLE`, `details.source`, validation before `fetchBase`, the subject-only commit message and redacted dry-run envelopes. Update the header comment at `:25`. |
-| `src/tools/issue-buddy.md` | Phase 5 (`:346-360`): drop the fixed templates and pass `languageGit` and `languageForge`. Recovery (`:237-243`): the same for `complete-branch`. Outcome table (`:398-408`): map `source: "derived"` to item 4 and reword "fixed-template". Set `contextBudget` to the measured count. |
-| `src/shared/issue-buddy-base-move.md` | Re-publish passes the unchanged two keys. The `body` refusal mapping is limited to `source: "base-move-flag"`. |
-| `src/shared/plan-publication.md` | One sentence: the unattended Issue Buddy path renders the same title and body shape inside the helper. |
-| `test/plan-lint.test.mjs` | `planForgeFields`: prose paragraph, list fallback, omission, skill-name workflow mapping, fences, blockquotes, tables. |
-| `test/plan-publication.test.mjs`, `test/plan-publication-git.test.mjs` | Every acceptance criterion below. Migrate fixtures from `title`/`body`/`commitMessage` input. Keep `PLAN_TEXT` (`plan-publication-git.test.mjs:41-53`) as it is for the scan line assertions, and add a separate fixture with H1, workflow and Requirement for the derivation tests. Adapt `plan-publication.test.mjs:323`. |
-| `test/issue-buddy-contract.test.mjs`, `test/issue-buddy-pass.test.mjs`, `test/fixtures/issue-buddy/world.mjs` | Replace the `plan issue #` and fixed-sentence assertions (`:162-169`, `:79-81`, `:948-950`, `world.mjs:312-314`). Cover the recovery and base-move inputs and the `source` mapping. |
-| `docs/developer-guide/build-system.md` (`:1179-1210`) | Helper contract: inputs, derivation, refusal timing, `details.source`. |
-| `docs/user-guide/tools-automation.md`, `docs/user-guide/tools-understand.md` (incl. `:497`) | New Issue Buddy and autopilot plan PR title and body. |
-| `docs/adr/plan-only-unattended-publication.md`, `docs/adr/input-trust-boundary.md` | The partial supersession and the boundary sentence. |
+| File                                                                                                          | Description                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/plan-lint-core.mjs`                                                                              | Export the pure `planForgeFields(text)`. Existing classification and `publication-metadata` are unchanged.                                                                                                                                                                                                                  |
+| `src/scripts/plan-publication-core.mjs`                                                                       | Schema changes. Derive review result, open points and text from the verified bytes. Add the sanitizer, the limits, `PLAN_TEXT_UNUSABLE`, `details.source`, validation before `fetchBase`, the subject-only commit message and redacted dry-run envelopes. Update the header comment at `:25`.                               |
+| `src/tools/issue-buddy.md`                                                                                    | Phase 5 (`:346-360`): drop the fixed templates and pass `languageGit` and `languageForge`. Recovery (`:237-243`): the same for `complete-branch`. Outcome table (`:398-408`): map `source: "derived"` to item 4 and reword "fixed-template". Set `contextBudget` to the measured count.                                     |
+| `src/shared/issue-buddy-base-move.md`                                                                         | Re-publish passes the unchanged two keys. The `body` refusal mapping is limited to `source: "base-move-flag"`.                                                                                                                                                                                                              |
+| `src/shared/plan-publication.md`                                                                              | One sentence: the unattended Issue Buddy path renders the same title and body shape inside the helper.                                                                                                                                                                                                                      |
+| `test/plan-lint.test.mjs`                                                                                     | `planForgeFields`: prose paragraph, list fallback, omission, skill-name workflow mapping, fences, blockquotes, tables.                                                                                                                                                                                                      |
+| `test/plan-publication.test.mjs`, `test/plan-publication-git.test.mjs`                                        | Every acceptance criterion below. Migrate fixtures from `title`/`body`/`commitMessage` input. Keep `PLAN_TEXT` (`plan-publication-git.test.mjs:41-53`) as it is for the scan line assertions, and add a separate fixture with H1, workflow and Requirement for the derivation tests. Adapt `plan-publication.test.mjs:323`. |
+| `test/issue-buddy-contract.test.mjs`, `test/issue-buddy-pass.test.mjs`, `test/fixtures/issue-buddy/world.mjs` | Replace the `plan issue #` and fixed-sentence assertions (`:162-169`, `:79-81`, `:948-950`, `world.mjs:312-314`). Cover the recovery and base-move inputs and the `source` mapping.                                                                                                                                         |
+| `docs/developer-guide/build-system.md` (`:1179-1210`)                                                         | Helper contract: inputs, derivation, refusal timing, `details.source`.                                                                                                                                                                                                                                                      |
+| `docs/user-guide/tools-automation.md`, `docs/user-guide/tools-understand.md` (incl. `:497`)                   | New Issue Buddy and autopilot plan PR title and body.                                                                                                                                                                                                                                                                       |
+| `docs/adr/plan-only-unattended-publication.md`, `docs/adr/input-trust-boundary.md`                            | The partial supersession and the boundary sentence.                                                                                                                                                                                                                                                                         |
 
 ## Implementation details
 
@@ -152,6 +154,7 @@ Classification is Feature: the published forge text changes visibly, and the hel
    - validate and scan them with `details.source: "derived"`.
 
    All of this happens before `fetchBase`. Then continue with the unchanged base check, the full-body scan, the hook, the commit, the blob binding, the marker and the `Refs #<N>` tail.
+
 4. **Helper envelopes.** Redact the dry-run envelopes in both operations.
 5. **Issue Buddy.** Switch Phase 5, recovery and the outcome table, and update the base-move fragment.
 6. **Docs and budget.**
@@ -184,12 +187,14 @@ Classification is Feature: the published forge text changes visibly, and the hel
   - an `owner/repo#3`, an issue URL and `![x](https://…)` leave no `#\d`, URL or image.
 
   Asserted by test.
+
 - [ ] Limits:
   - a 200-code-point H1 yields a title of at most 72 code points ending in `…`;
   - a 2,000-code-point paragraph yields a summary of at most 600 code points ending in `…`;
   - a cut next to an emoji leaves well-formed text.
 
   Asserted by test.
+
 - [ ] A plan whose H1 sanitizes to empty yields `PLAN_TEXT_UNUSABLE` with `details.source: "derived"`, before `fetchBase`, and with no commit, push or PR. Asserted by test.
 - [ ] `publish` rejects `title`, `body` or `commitMessage` with `INVALID_INPUT`, and `complete-branch` rejects `title` or `body` with `INVALID_INPUT`. Asserted by test.
 - [ ] Dry-run envelopes contain no derived title or body text. Asserted by test.
@@ -219,15 +224,15 @@ Together these are the completion condition. The manual autopilot run below is p
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 3 | 2 |
-| Security | 0 | 2 | 1 |
-| Data protection | 0 | 0 | 1 |
-| Error cases | 0 | 4 | 0 |
-| Testability | 0 | 1 | 4 |
-| Scope | 0 | 2 | 1 |
-| Maintainability | 0 | 1 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         3 |    2 |
+| Security        |        0 |         2 |    1 |
+| Data protection |        0 |         0 |    1 |
+| Error cases     |        0 |         4 |    0 |
+| Testability     |        0 |         1 |    4 |
+| Scope           |        0 |         2 |    1 |
+| Maintainability |        0 |         1 |    1 |
 
 ### Findings
 
@@ -258,3 +263,70 @@ Internal review (Phase 6), all incorporated:
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-25
+
+### Requirement
+
+Implemented as planned: Issue Buddy and autopilot plan pull requests get the title `docs: plan <plan title>` (`docs: Plan …` for `language.git = de`), a subject-only commit message, and a derived body. The `plan-publication` helper composes and sanitizes all of it from the verified plan bytes, and the orchestrator never sees the text.
+
+### Architecture decisions
+
+All plan decisions hold. The implementation adds the following, each confirmed in review:
+
+- **Metadata failure:** a plan that fails `publicationMetadataFromText` still publishes. Only the review paragraph is omitted, which keeps "only an unusable title fails".
+- **Sanitizer scope:**
+  - It reads at most the first 4096 code points of a raw value.
+  - It also removes:
+    - numeric and named character references, and every leftover `&#`;
+    - all `[` and `]` after links are turned into text;
+    - protocol-relative and `www.` URLs;
+    - runs of three or more backticks or tildes.
+  - The commit-footer rule also covers the `#` separator.
+  - A mention, `GH-N` or `www.` counts after anything but an ASCII letter or digit, so `_` (Markdown emphasis) protects none of them.
+  - Runs of `#` and `@` are removed in one linear pass.
+  - A leftover token in the summary drops the summary paragraph; a title still refuses.
+- **Subject limit:** the 72-character subject limit counts UTF-16 code units, matching commitlint, and never splits a surrogate pair.
+- **Hook errors:** `COMMIT_MSG_HOOK_REJECTED` and `PUSH_REJECTED` report hook stderr only as `{length, sha256}`, so a hook that echoes the derived subject cannot leak it to the orchestrator.
+- **Marker check:** the marker check on `planFile` stays before any Git call.
+
+### Affected files
+
+- `src/scripts/plan-lint-core.mjs`, `src/scripts/plan-publication-core.mjs`
+- `src/tools/issue-buddy.md`, `src/shared/issue-buddy-base-move.md`, `src/shared/plan-publication.md`
+- `docs/developer-guide/build-system.md`, `docs/user-guide/tools-understand.md`, `docs/adr/input-trust-boundary.md`, `docs/adr/plan-only-unattended-publication.md`
+- `test/plan-lint.test.mjs`, `test/plan-publication.test.mjs`, `test/plan-publication-git.test.mjs`, `test/issue-buddy-contract.test.mjs`, `test/issue-buddy-pass.test.mjs`, `test/fixtures/issue-buddy/world.mjs`
+
+`docs/user-guide/tools-automation.md` needed no change, because it does not describe the plan pull request text.
+
+### Implementation details
+
+The steps followed the plan's approach. `issue-buddy`'s always-loaded core is 579 of 580 budget lines, so `contextBudget` is unchanged.
+
+### Test results
+
+- **Full suite** (`pnpm test`) on the implementation before the review corrections: 6721 passed, 0 failed, 85 skipped.
+- **Also passed at that point:** `pnpm agent:check` (after formatting this plan file), `node build.mjs` and `pnpm test:distribution`.
+- **After the review corrections, targeted:**
+  - `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` passed.
+  - The ten affected test files passed: 1666 passed, 0 failed.
+- **Eval verify** for `build-context`, `iterate`, `merge-gate` and `next-steps`: no integrity blockers. Evidence debt (stale or absent scenarios) is reported, not re-recorded.
+- **Not yet run:** the post-merge manual autopilot run.
+
+### Review result
+
+One Node.js review, one incorporation pass and one re-check. Every finding was in the current scope, all are fixed, and none was offloaded.
+
+## Review findings
+
+**Date:** 2026-11-25
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    10 |
+| Open / Not implemented |     0 |

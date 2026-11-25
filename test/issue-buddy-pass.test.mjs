@@ -76,9 +76,19 @@ test('real WP3/WP4 draft publish records confirmed identity; the unchanged next 
   assert.equal(world.state().pulls.length, 1);
   assert.equal(world.state().creates.length, 1);
   const created = world.state().creates[0];
-  assert.equal(created.title, 'docs: plan issue #1');
-  assert.match(created.body, /^Plan for issue #1; review result: approved; open points: 0\./);
-  assert.match(created.body, /Refs #1/);
+  // The helper derives the title from the plan H1 and the body from the plan bytes.
+  assert.equal(created.title, 'docs: plan Fixture plan');
+  assert.equal(
+    created.body.split('\n\n').slice(0, 5).join('\n\n'),
+    [
+      'Plan for issue #1. The implementation follows as further commits on this branch.',
+      `Plan: ${PLAN}`,
+      'Recommended workflow: Feature',
+      'Ship the fixture.',
+      'Review result: approved; open points: 0.',
+    ].join('\n\n'),
+  );
+  assert.match(created.body, /\nRefs #1$/);
   assert.equal(world.git(world.bare, 'rev-parse', `refs/heads/${BRANCH}`), published.commitOid);
   assert.equal(
     world.git(world.bare, 'show', `${published.commitOid}:${PLAN}`),
@@ -250,7 +260,7 @@ test('an actual pushed orphan is inspected/completed once, and its recovery cons
     [2],
   );
   const input = recoveryInput(collected.baseOid);
-  const { title, body, ...inspectInput } = input;
+  const { languageGit, languageForge, ...inspectInput } = input;
   const inspected = checked(await world.publication('inspect-branch', inspectInput));
   assert.deepEqual(
     Object.keys(inspected).sort(),
@@ -261,6 +271,8 @@ test('an actual pushed orphan is inspected/completed once, and its recovery cons
   const completed = checked(
     await world.publication('complete-branch', { ...input, expectedTipOid: inspected.branchTip }),
   );
+  // Recovery derives the same title from the branch blob; the orphan keeps its own commit subject.
+  assert.equal(world.state().creates.at(-1).title, 'docs: plan Fixture plan');
   const verdict = await record(world, passId, collected, {
     candidate: collected.authorizedRecovery[0],
     pullRequest: completed.pullRequest,
@@ -945,9 +957,6 @@ test('two overlapping single-issue passes for different issues both publish from
           cwd: tree,
           issue: number,
           planFile: file,
-          title: `docs: plan issue #${number}`,
-          body: `Plan for issue #${number}; review result: approved; open points: 0.`,
-          commitMessage: `docs: plan issue #${number}`,
           expectedBlobOid: metadata.blobOid,
         }),
         { apply: true, runner, environment: {} },
