@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.80.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.79.0...effective-flow-v1.80.0) (2026-11-25)
+
+
+### Features
+
+* **cleanup:** offer safe deletion of squash-merged delivery branches ([#736](https://github.com/sebastian-software/effective-flow/issues/736)) ([d321637](https://github.com/sebastian-software/effective-flow/commit/d321637541f5482992018791af606f186d3263d3))
+* publish the draft despite base moves and unresolved conflicts ([#735](https://github.com/sebastian-software/effective-flow/issues/735)) ([ba71e1f](https://github.com/sebastian-software/effective-flow/commit/ba71e1fe85ee6209a168175863e15eaf1f2dd114))
+
+
+### Bug Fixes
+
+* **iterate:** raise contextBudget to cover the merged config-merge-gate-keys line ([#748](https://github.com/sebastian-software/effective-flow/issues/748)) ([bbdb346](https://github.com/sebastian-software/effective-flow/commit/bbdb3466f7a21581a3a6b3e97ff9c0d40506758b)), closes [#740](https://github.com/sebastian-software/effective-flow/issues/740)
+* **merge-gate:** name the helper input fields in PR resolution ([#741](https://github.com/sebastian-software/effective-flow/issues/741)) ([ea0c5b9](https://github.com/sebastian-software/effective-flow/commit/ea0c5b940c28ddacc05986af766386dfc369b706)), closes [#740](https://github.com/sebastian-software/effective-flow/issues/740)
+* **remote-tracker:** read every GitHub review thread and reply before reporting ([#727](https://github.com/sebastian-software/effective-flow/issues/727)) ([356a6c7](https://github.com/sebastian-software/effective-flow/commit/356a6c7fadd077bd8b1edc7677cbe1f4649d1d46)), closes [#694](https://github.com/sebastian-software/effective-flow/issues/694)
+
 ## [1.79.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.78.0...effective-flow-v1.79.0) (2026-11-24)
 
 
