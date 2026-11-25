@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.79.0",
+  "version": "1.80.0",
   "exposedTools": [
     "concept",
     "investigate",
@@ -2422,6 +2422,10 @@
         {
           "tool": "autopilot",
           "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.merge-conflict-resolver"
         },
         {
           "tool": "autopilot",

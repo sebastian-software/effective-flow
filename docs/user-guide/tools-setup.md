@@ -652,8 +652,12 @@ dry-run preview of each deletion class. It removes tracked legacy files via `git
 through Git history), removes untracked or gitignored legacy directories physically and
 irreversibly after explicit confirmation, and removes an eligible worktree with ordinary
 `git worktree remove <path>` only after confirmation. It never uses `--force`, broad
-`git worktree prune`, or `git branch -D`. Delivery, partial-diff and merge-gate branches remain in
-the repository; a temporary `apply-review` branch may be removed only with `git branch -d` when its
+`git worktree prune`, or `git branch -D`. A merge-gate branch remains in the repository. A local
+delivery, partial-diff or plan-publication branch is offered as its own `branch:` item only when
+cleanup proves, offline from your local `origin/<base>`, that its content is already there, a
+squash merge included; nothing is fetched and no remote branch is touched. You confirm these
+separately, each is proven again right before its deletion, and the report gives the branch tip and
+a `git branch '<name>' <tip>` line to restore it. Every other delivery branch remains. A temporary `apply-review` branch may be removed only with `git branch -d` when its
 lifecycle proves that the component was integrated safely, and a `base-validation` or
 `issue-planning` branch only under the exception above.
 

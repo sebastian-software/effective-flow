@@ -32,8 +32,9 @@ marker, adopting and removing a root `.sf-memory.json` through its own guard cla
 and `.effective-flow/.acceptance-lens-<id>.md` through the runtime-state guard, no-clobber, the diff
 at most 1 MiB, creating `.effective-flow/` if absent and writing through (and pruning stale)
 `.acceptance-lens-*.tmp` siblings, and never writes the forge. The
-`worktree` and `cleanup plan` rules write only lifecycle records and their locks and never remove a
-worktree or branch, with two bounded exceptions in `worktree transition`: `release: "partial-diff"`
+`worktree` and `cleanup plan` rules write only lifecycle records and their locks (`cleanup plan`
+also a private temporary object directory it removes, under the system temp dir) and never remove
+a worktree or branch, with two bounded exceptions in `worktree transition`: `release: "partial-diff"`
 restores exactly the residual paths it proved equal to the delivery ledger and still in the source,
 removing such a file `HEAD` lacks, and a `partial-diff-resume` adoption appends at most one proven
 tip commit to that ledger. That ledger is one private file of the record below

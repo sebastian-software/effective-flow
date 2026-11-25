@@ -128,6 +128,51 @@
       ]
     },
     {
+      "id": "autopilot-delivery-conflict/resolver",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "merge-conflict-resolver",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "autopilot-delivery-conflict/verification",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "autopilot-delivery-conflict/review",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
       "id": "backlog-audit/architecture-context",
       "downAllowed": true,
       "panel": false,

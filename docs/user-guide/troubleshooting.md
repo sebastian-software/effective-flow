@@ -180,10 +180,13 @@ follow-up question instead of an automatic continuation:
 
 A merge conflict on completion (`delivery.completion: merge`) is likewise never
 resolved automatically: Effective Flow stops, leaves the delivery branch in place and informs you, so you
-can resolve the conflict deliberately. The one place that does resolve conflicts is
-[`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base), and only for a
-conflict between an open pull request's head branch and its base, in a delegated worker whose result
-is verified before anything is committed. `mergeGate.conflictResolution: off` switches that off.
+can resolve the conflict deliberately. Conflicts are resolved in two places only:
+[`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base), for a
+conflict between an open pull request's head branch and its base, and
+[`/effective-flow autopilot`](./tools-automation.md), which makes one attempt for a conflict between
+its delivery branch and the base before it opens the draft pull request and publishes the draft
+unchanged if that attempt fails. Both resolve in a delegated worker whose result is verified before
+anything is committed. `mergeGate.conflictResolution: off` switches both off.
 
 ## Cleanup keeps a linked worktree
 
@@ -263,7 +266,12 @@ If normal `git worktree remove <path>` fails, the lifecycle remains `cleanup-fai
 reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership, the receipt, Git
 registration, branch, status, lock, and lifecycle before retrying. If the worktree was removed but
 its lifecycle record or temporary component branch remains, the report calls this partial cleanup.
-Delivery branches are intentionally retained. A temporary `apply-review` branch is removed only
+A local delivery branch is deleted only when you confirm it as a `branch:` item and cleanup proves
+its content is in `origin/<base>`; the others are kept, and the dry run and report give each one's
+reason. For `not-proven` or `base-ref-missing`, run the `git fetch` shown in the entry's hint and
+rerun cleanup; for `recorded`, `checked-out` or `in-use`, let that run finish first. A deleted
+branch can be restored with the `git branch` line in the report until garbage collection. A
+temporary `apply-review` branch is removed only
 when integration is proven and `git branch -d` accepts it, or when `apply-review` proves every
 component commit by patch-id. Otherwise the branch stays and the report lists it as
 `BRANCH_RETAINED`: the worktree and its lifecycle record are already deleted, so delete or keep the

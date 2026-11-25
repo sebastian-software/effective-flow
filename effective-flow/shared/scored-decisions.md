@@ -160,7 +160,10 @@ copies the received control lines verbatim, with `Decision budget:` reduced per 
   owned worktree `active` → `aborted`, stage, commit and push nothing, and report the retained
   worktree. The publication offer is never reached.
 - **Before `pr`:** after the handback commit, the Automation caller's pre-delivery steps run in
-  this session (autopilot: architecture fit, `delivery-record`, then `pr-appendix`). A `withheld`
+  this session (autopilot: the delivery base first, then architecture fit, `delivery-record` and
+  `pr-appendix`). The workflow resolves its verified final head OID only after these steps, so a
+  merge commit of a resolved delivery conflict is part of the delivered range; an earlier
+  `Verification evidence:` record then reads `stale` in `pr`. A `withheld`
   or `blocked` result ends the run before any push. Otherwise `pr` also receives the copied control lines,
   `Draft: requested`, the source reference (`Refs #<N>` as a supplied issue reference, never a
   closing keyword, or the plan path) and `Appendix: <sha256>`, the digest `pr-appendix` returned

@@ -134,8 +134,12 @@ head branch, base branch, URL, and state:
 - **From the current branch:** if no PR reference was passed, try to determine the open PR of the
   currently checked-out branch.
 
-Use helper reference parsing followed by the normalized PR read/list operations. For current-
-branch resolution, list open PRs for the exact head branch and require exactly one match.
+Parse an argument with `reference-parse` and `{cwd, reference, expectedKind: "pull-request"}`; for
+a PR URL only, first call `repository-resolve` with `{cwd}` and pass its whole `data` object as
+`repository`, so `REFERENCE_REPOSITORY_MISMATCH` identifies a pull request of another repository.
+Read the PR with `pr-read` and `{cwd, number}`, taking `number` from the parsed item, never the raw
+reference. Without an argument, list open PRs with `pr-list` and `{cwd, head}` for the exact head
+branch and require exactly one match that is `sameRepository: true`.
 
 If the PR is already `merged`/`closed`: report it and perform no write – no commits and no
 comments (for the inbound direction see the error cases in `effective-flow iterate`).
@@ -146,6 +150,9 @@ Read the review comments **directly before** classification fresh from the host 
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, the `resolved` status, and the thread's `url`.
 On a `tea`-backed forge only, a thread also carries an optional `reviewId`, the id of the review it was read under, and holds that review's later comments at its location as replies.
+The review-thread read returns every thread and reply or fails closed. A failed thread read is
+never an empty thread list: it blocks every decision that rests on threads, such as a merge or
+"all threads assessed".
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read

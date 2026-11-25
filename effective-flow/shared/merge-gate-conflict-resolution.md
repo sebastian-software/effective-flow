@@ -11,7 +11,9 @@ observes the conflict in the provisioned checkout, and everything that decides t
 `mergeGate.conflictResolution` with the unreadable value that resolves to `off`, the
 `pre-commit-gate` stand-in that names the verification below, and the untrusted-head-branch threat
 model, which has to stay readable as a configuration decision rather than from inside the branch
-that creates it. `effective-flow merge-gate` is this fragment's only consumer.
+that creates it. `effective-flow merge-gate` is this fragment's primary consumer; the second is
+`effective-flow autopilot`'s single delivery-conflict attempt (`autopilot-delivery-conflict`), which
+applies this contract and "Conflict validation mode" with its own stated substitutions.
 
 The second delegation of this workflow is a **worker-role** delegation, not a workflow handoff, and
 it is separate from the `effective-flow iterate` contract above precisely because nothing it carries is

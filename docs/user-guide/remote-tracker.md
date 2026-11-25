@@ -540,6 +540,18 @@ thread takes its id, location and resolution state from the first comment. A rep
 appears inside its thread, not as a separate unresolved one, and the thread id is the comment id the
 resolve route takes.
 
+**GitHub reads review threads by cursor, so a large pull request is complete or fails.**
+`review-threads-read` reads every page of `reviewThreads` (100 threads per request), then, thread by
+thread, every further page of a thread's comments (one follow-up request per further 100 replies). A
+pull request with at most 100 threads and at most 100 replies per thread still costs exactly one
+GraphQL request. A read sends at most 100 GraphQL requests, thread pages and comment follow-ups
+together. Past that bound, and on GraphQL `errors`, missing page information or a cursor that does
+not advance, it fails closed with `INVALID_PAYLOAD` (not retryable) instead of returning a partial
+list. Every request appears in `data.steps` (`threads-page` or `comments-page`), while `data.command`
+keeps naming the first request, the same primary-plus-list shape `pr-merge` uses. Each page is read
+as it stood when requested and there is no snapshot across pages, so a thread or reply deleted
+between two requests can shift a later item past the cursor.
+
 Five of the merge-gate operations – `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read`,
 and `issue-close` – are gated on one `tea api` transport probe rather than on a version floor.
 `issue-state-wait` is not: it rides the `tea issues` probe instead and derives `issueRead` from it.
@@ -858,10 +870,12 @@ fails the whole operation.
 
 `merge-proof-local` exists for Forgejo, where the forge states no merge state and leaves
 mergeability unstated for a conflicting or WIP-titled pull request; the merge gate uses it for its
-WIP-draft exit and to find a conflict it then resolves. It
+WIP-draft exit and to find a conflict it then resolves; autopilot's delivery-base check reuses the
+same proof. It
 runs `git merge-tree --write-tree` in a private temporary object directory that it removes, so the
 repository's objects and refs stay unchanged. The result `status` is `clean`, `conflict` (with a
-`conflictCount`) or `unavailable`, and `reason` explains why. A Git older than 2.38, a missing ref,
+`conflictCount` and `conflictedPaths`, the sorted unique conflicted paths that are safe to report,
+at most 20) or `unavailable`, and `reason` explains why. A Git older than 2.38, a missing ref,
 a shallow repository, a Git failure or a merge that exceeds its time bound (`timeout`) gives
 `unavailable`; the caller then treats mergeability as unproven and never as clean.
 

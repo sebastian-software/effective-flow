@@ -288,8 +288,10 @@ node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"
 `integrationRoot` lets the helper prove every component commit by exact patch-id against the branch
 checked out there and then compare-and-delete the ref; a never-integrated `base-validation` branch
 is compare-and-deleted only while its tip is `creationOid` and another ref reaches it, else kept
-(`advanced`, `unreachable`), and so is an `issue-planning` branch. Prose never runs
-`git branch -D`, and a forced deletion outside these proofs never happens.
+(`advanced`, `unreachable`), and so is an `issue-planning` branch; a local delivery branch is
+compare-and-deleted only as `effective-flow cleanup`'s confirmed `branch:` item, under its helper proof
+that the content landed in the base branch. Prose never runs `git branch -D`, and a forced deletion
+outside these proofs never happens.
 
 **`base-validation`** is the orchestrator's, at `baselineHead`; setup follows the worktree setup
 policy, the validator installs nothing. Every exit path – completion, failure or abort – restores
@@ -301,20 +303,20 @@ or `failed`, so a refused removal stays `cleanup-ready` or `cleanup-failed` for 
 envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `result.items[]`, one
 `{recordId, ok, code?}` per record.
 
-| Result                                                                                       | Handling                                                                                                                                         |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                              |
-| `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                          |
-| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                             |
-| item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                             |
-| item `BRANCH_RETAINED`                                                                       | Worktree and record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven`.                                            |
-| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                      |
-| item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                               |
-| item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                 |
-| item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows. |
-| item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                      |
-| item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.    |
-| harness denial, auto-mode refusal, another exit, an unparsable envelope or an `error`        | Nothing beyond the reported items changed: report the call.                                                                                      |
+| Result                                                                                       | Handling                                                                                                                                              |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                                   |
+| `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                               |
+| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                                  |
+| item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                                  |
+| item `BRANCH_RETAINED`                                                                       | Worktree, record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven` (`ref-recreate-failed`: deleted; `branch.restore`). |
+| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                           |
+| item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                                    |
+| item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                      |
+| item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows.      |
+| item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                           |
+| item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.         |
+| harness denial, auto-mode refusal, another exit, an unparsable envelope or an `error`        | Nothing beyond the reported items changed: report the call.                                                                                           |
 
 **Denial fallback.** After `worktree remove` returns any item that is not `ok` (`BRANCH_RETAINED`
 aside) or fails as a whole call, and after the one `SANDBOX_DENIED` rerun, call `worktree
@@ -576,8 +578,10 @@ included lifecycle contract. `cwd` is `RUNTIME_STATE_ROOT`, `executionRoot` the 
 
 ```text
 node <skill-root>/scripts/effective-flow-state.mjs cleanup plan <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>}'
-node <skill-root>/scripts/effective-flow-state.mjs cleanup apply <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>,"items":{"<itemId>":"<itemDigest>"}}'
+node <skill-root>/scripts/effective-flow-state.mjs cleanup apply <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>,"items":{"<itemId>":"<itemDigest>","branch:<name>":{"itemDigest":"<itemDigest>","proof":"<proof>","proofCommit":"<proofCommit>"}}}'
 ```
+
+Give every `cleanup plan` call an explicit Bash timeout of 120000 ms.
 
 `decisions` holds the carry-over answers: `discardAll` (legacy directory names whose open entries
 are discarded), `discard` (single `.firmo/<path>` or `.sf-plugin/<path>` entries), and `config`
@@ -588,7 +592,11 @@ is read-only and returns `items` (actionable, each with `itemId` and `itemDigest
 `unrecorded` registered worktrees; item IDs are `worktree:<RECORD_ID>` (a stopped `merge-gate`
 record included), `invalid-record:<RECORD_ID>` (with `schemaReason`, `action` and `evidence`; a
 file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), `legacy:.firmo`,
-`legacy:.sf-plugin` and `config:.effective-flow/config.json`.
+`legacy:.sf-plugin`, `config:.effective-flow/config.json` and `branch:<name>` (a proven local
+branch with `branch`, `tip`, `proof`, `proofCommit`, `source` and `dependsOn`). Every other branch
+under `delivery.branchPrefix` is in `retainedBranches` with one `reason`.
+
+**Load on demand:** Read `shared/cleanup-branches.md`, when `cleanup plan` returns a `branch:` item, a non-empty `retainedBranches` or a non-null `branchProof.reason`.
 
 ### Phase 1: Discovery / inventory
 
@@ -600,7 +608,8 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    `git worktree list --porcelain -z` and the records below
    `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/` it classifies every record by the removal
    eligibility conditions; the main worktree and this cleanup's own execution worktree are
-   excluded as removal candidates.
+   excluded as removal candidates. It also proves, offline, which local delivery branches have
+   landed in `origin/<base>` (`branch:` items) and keeps every other one (`retainedBranches`).
 3. Classify every linked worktree other than the main worktree into exactly one preliminary
    result: a **removal candidate** (`worktree:` or `invalid-record:` item), **retained** with its
    first failed condition, status or blocker (a `blocked` record: `active`, `aborted`, `failed`,
@@ -670,7 +679,8 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    diff baselines by run ID, presence markers by session ID and PR, autopilot ledgers by run
    ID, outcome and pull request, planning claims and pass records by issue, holder, age, `stale`
    and `liveness`, unclaimed trusted text by issue, pilot reservations by workflow, age,
-   `liveness` and `stale`, and triage reports by run ID, finished or `run-in-progress`. Never end
+   `liveness` and `stale`, triage reports by run ID, finished or `run-in-progress`, and proven and
+   retained branches. Never end
    for lack of migration remnants; worktree preview and the final report still run.
 
 ### Phase 2: Carry-over check
@@ -748,9 +758,12 @@ Before any deletion, list exactly what will be removed — **without** deleting 
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
    `apply-review` branch is deleted only by `git branch -d`; when Git refuses, cleanup keeps it and
    reports it as `BRANCH_RETAINED`; a refused `base-validation` branch is deleted only under the
-   lifecycle's exception, as is an `issue-planning` branch. Delivery, partial-diff and merge-gate
-   branches remain. Cleanup never runs `git worktree prune` or `git branch -D`.
-9. If there are no deletable migration artifacts, stale diff baselines, presence-marker, ledger, claim, pass-record, trusted-text, triage-report, pilot-reservation or worktree removal candidates, call the
+   lifecycle's exception, as is an `issue-planning` branch. A delivery, partial-diff or
+   plan-publication branch is deleted only as a confirmed `branch:` item; every other one, and
+   every merge-gate branch, remains. Cleanup never runs `git worktree prune` or `git branch -D`.
+   Show `branch:` items as their own class as `cleanup-branches` defines; a `squash-tree` item
+   distinctly: "the base changed these lines after the merge".
+9. If there are no deletable migration artifacts, stale diff baselines, presence-marker, ledger, claim, pass-record, trusted-text, triage-report, pilot-reservation or worktree removal candidates and no `branch:` item, call the
    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
    still produced.
 
@@ -767,6 +780,11 @@ If there is at least one verified worktree removal candidate: Ask the user: **Re
 - Remove all verified -- Revalidate and remove every still-eligible listed worktree with ordinary git worktree remove
 - Select individually -- Choose which listed worktrees may be revalidated and removed
 - Keep all -- Remove no worktree; list every one in the final retained-worktree report
+
+If there is at least one `branch:` item: Ask the user: **Delete the local branches listed in the dry run whose content the helper proved is in the base branch? Each is proven again right before its deletion.**
+- Delete all proven -- Re-prove and compare-and-delete every listed branch; a squash-tree one included
+- Select individually -- Choose which listed branches may be re-proven and deleted
+- Keep all -- Delete no branch; each stays for a later cleanup run
 
 If there is at least one presence-marker removal candidate: Ask the user: **Remove the merge-gate presence markers listed in the dry run, whose runs left no wisdom file?**
 - Remove all listed -- Remove every listed marker whose wisdom file is still absent
@@ -790,9 +808,11 @@ Execute per class:
 - **Tracked files:** remove via `git rm` (staged, **no** commit).
 - **Untracked/gitignored legacy items and worktrees:** "Yes, remove as listed" selects every
   `legacy:` and `config:` item of the dry run; "Remove all verified" every `worktree:` and
-  `invalid-record:` item, "Select individually" the chosen ones. Send all selected items in **one**
-  `cleanup apply` call (at most 64 `worktree:` and `invalid-record:` items; the rest after a fresh
-  `cleanup plan`) with the dry run's `decisions` and each item's `itemDigest`; give it an explicit
+  `invalid-record:` item, "Delete all proven" every `branch:` item, "Select individually" the
+  chosen ones. Send all selected items in **one** `cleanup apply` call (at most 64 `worktree:` and
+  `invalid-record:` items and 32 `branch:` items; the rest after a fresh `cleanup plan`) with the
+  dry run's `decisions` and each item's `itemDigest`, for a `branch:` item the object
+  `{itemDigest, proof, proofCommit}` from its plan entry; give it an explicit
   Bash timeout of 120000 ms and, in Codex, request sandbox escalation for it up front. The helper
   re-proves every selected item from fresh evidence before it removes anything.
 - **Stale diff baselines:** for each confirmed directory, revalidate the receipt and `RUNTIME_STATE_ROOT`, apply runtime-state safety to its exact handle,
@@ -827,16 +847,16 @@ Execute per class:
 `cleanup apply` outcomes:
 
 - `PREVIEW_MISMATCH` (`itemId`, `reason`), whole call: a selected item changed since the dry run
-  (`digest`), vanished (`unknown-item`) or is no longer actionable (`not-actionable`), which then
-  carries its `conditions` and `blockers`, and nothing was written. Call `cleanup plan` again, show
+  (`digest`), vanished (`unknown-item`, `proof-commit-missing`) or is no longer actionable
+  (`not-actionable`), which then carries its `conditions` and `blockers`, and nothing was written. Call `cleanup plan` again, show
   the new dry run, and ask again.
 - `result.items[]`, one per selected item: worktree items follow the lifecycle outcome table, where
   `BRANCH_RETAINED` keeps a branch Git refused to delete. An `invalid-record:` item
   changed by its turn is its own `PREVIEW_MISMATCH`; its `REMOVE_FAILED` keeps the record file. A
   legacy item reports `ok` with `removedEntries`, or its code: `LEGACY_CHANGED`, `UNSAFE_TARGET` and
   `WRITE_FAILED` stop that item with the partial state (`removedEntries`, `stoppedAt`), the plan codes
-  of Phase 4 block it, and `DEADLINE_REACHED` or `INTERRUPTED` leave it for a later run. Every other
-  item continues. After `git rm` of tracked remnants, rerun cleanup so the untracked rest of a mixed
+  of Phase 4 block it, and `DEADLINE_REACHED` or `INTERRUPTED` leave it for a later run. A
+  `branch:` item reports as `cleanup-branches` defines. Every other item continues. After `git rm` of tracked remnants, rerun cleanup so the untracked rest of a mixed
   legacy directory is planned.
 - A denied or refused call, another nonzero exit, an `error` (`INVALID_ROOT`, `INVALID_INPUT`,
   `RUNTIME_STATE_UNSAFE`, `GIT_FAILED`): nothing beyond the reported items changed; report it and
@@ -869,6 +889,7 @@ Report to the user:
   `merge-gate` worktree released after its no-unpushed-commits proof with its kept head branch,
   every retired `invalid-record:` item with its path, and every `BRANCH_RETAINED` branch with its
   unproven commits
+- every deleted and every retained branch as `cleanup-branches` defines
 - failed removal attempts and partial cleanup, including exact record, lock, branch, or command
   state that remains
 - every remaining linked worktree other than the main worktree, one entry per worktree, with a
@@ -946,7 +967,8 @@ report that found neither matches no row.
 - Never classify a worktree from age, last-modified time, base-directory shape, branch prefix, or
   apparent emptiness. There is no TTL, heartbeat, stale-after threshold, or automatic crash
   inference.
-- Never use `git worktree remove --force`, `git worktree prune`, or `git branch -D`.
+- Never use `git worktree remove --force`, `git worktree prune`, or `git branch -D`; delete a
+  branch only through `cleanup apply`.
 - If no legacy remnant is present, continue through worktree inventory and completion reporting.
   A no-op means that neither a migration action nor an eligible confirmed worktree removal ran.
 - Output project-internal paths relative to the project root and external worktree paths in

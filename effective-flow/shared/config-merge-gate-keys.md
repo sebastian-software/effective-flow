@@ -1,0 +1,81 @@
+## Merge-gate configuration keys
+
+This fragment carries only the `mergeGate.*` block of the Effective Flow configuration – the keys,
+their values and defaults, and the retirement of the legacy `prReview.*` namespace – and the one
+`iterate.*` key the gate resolves. It is loaded by the sources that resolve those keys without
+documenting them themselves. The config locator (where the project setup ADR is found) and the
+table encoding (how a value is written and read) are not repeated here; they live in the
+"Effective Flow configuration (project setup ADR)" fragment `config-migration`, which every
+consumer of this block also loads.
+
+### Merge-gate keys (`mergeGate.*`) and their legacy namespace
+
+effective-flow merge-gate reads the keys below; effective-flow iterate reads the `bots` entries for its
+review-in-flight guard; effective-flow autopilot reads the conflict keys for its delivery attempt
+(`autopilot-delivery-conflict`). A missing line means the default, per the encoding rule above.
+
+| Key                               | Values                                | Default   |
+| --------------------------------- | ------------------------------------- | --------- |
+| `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
+| `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.conflictValidation`    | `full`, `quick`                       | `full`    |
+| `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
+| `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
+| `mergeGate.maxRounds`             | positive integer                      | `10`      |
+| `mergeGate.botWaitMinutes`        | positive integer                      | `10`      |
+| `mergeGate.bots`                  | comma list of logins                  | `(empty)` |
+| `mergeGate.bots.<login>.trigger`  | literal trigger comment text          | unset     |
+| `mergeGate.bots.<login>.check`    | commit-status or check-run context    | unset     |
+| `mergeGate.botAccounts`           | comma list of logins                  | `(empty)` |
+| `mergeGate.noCiPolicy.bases`      | comma list of exact base branch names | unset     |
+| `mergeGate.noCiPolicy.unattended` | `true`, `false`                       | `false`   |
+
+A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
+splits on `.` only.
+
+**`mergeGate.botAccounts` is not `mergeGate.bots`.** It lists non-reviewer bots: automated accounts,
+possibly typed as users, whose top-level comments and review-thread items effective-flow merge-gate
+treats as bot comments. The gate never triggers or waits for them, and their changes-requested
+reviews still count. A record a `mergeGate.bots` entry matches is a reviewer either way.
+
+**`mergeGate.noCiPolicy.*` is the declared no-CI policy,** set by effective-flow setup only on an
+explicit operator choice. `bases` is active only when its decoded `value` is a string with at least
+one item, and `unattended` grants only when `value === true`; any other value is off and reported
+once. The gate honors it only where these rows are identical on `origin/<baseRef>` and in the
+working checkout. Removing `bases` revokes it, and no state outlives the configuration.
+
+**`mergeGate.conflictValidation`** caps a conflict commit's validation: `quick` counts only where
+the row is identical on `origin/<baseRef>` or in hidden mode; anything else means `full`.
+
+**`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
+row; one that exists anyway is retired like any other `prReview.<key>` row, with successor
+`mergeGate.conflictResolution`, and a project whose legacy block effective-flow setup migrates without one gets the default `auto`. `auto` resolves a conflict with the base through
+effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
+once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
+once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
+behaves as `off` in a non-interactive delegated one, and `off` reports the conflict and makes no
+commit and no push. That last claim is about the branch: the gate provisions its checkout before it
+reads this key, and cleans it up on the same stop path.
+
+**An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to `auto`.** The
+general rule above says to use a safe default for the run; for every other key in this block the safe
+default and the documented default are the same value, and for this one they are not — an
+unparseable line must never authorize a commit and a push. Report the affected key as that rule
+requires and continue with `off`.
+
+**Retired namespace:** these keys were formerly named `prReview.*`. A `prReview.<key>` row is retired
+and never read; the configuration building block's retired-key rule decides whether it stops a run.
+
+**`delivery.prReview` is not part of this block** and is never migrated: it decides whether a run
+publishes **its own review findings** onto a pull request it created (see the encoding rule above),
+while `mergeGate.*` configures the gate that takes an **existing** pull request from open to merged.
+
+### Review-fix validation key (`iterate.reviewFixValidation`)
+
+| Key                           | Values          | Default |
+| ----------------------------- | --------------- | ------- |
+| `iterate.reviewFixValidation` | `full`, `quick` | `full`  |
+
+effective-flow merge-gate resolves it, guarded like `mergeGate.conflictValidation`, before it delegates a
+review-fix round; `quick` holds only for such a round with the gate's CI evidence
+(`merge-gate-review-fix-validation`).

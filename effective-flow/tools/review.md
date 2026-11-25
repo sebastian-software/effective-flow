@@ -483,8 +483,8 @@ On a resolved pull request:
    `effective-flow iterate <PR>`. Only its generic fallback uses the pull-request row.
 
 An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
-interpretations and ask, never guess. A merged or closed pull request, or one belonging to another
-repository, is reviewed read-only and reported as such.
+interpretations and ask, never guess. A merged or closed pull request is reviewed read-only and
+reported as such; one belonging to another repository is reported read-only and not reviewed.
 
 **Load on demand:** Read `shared/pr-review-integration.md`, when the review argument may be a pull-request reference that must be resolved, or findings are published onto a resolved pull request.
 

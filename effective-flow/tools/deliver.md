@@ -440,8 +440,10 @@ node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"
 `integrationRoot` lets the helper prove every component commit by exact patch-id against the branch
 checked out there and then compare-and-delete the ref; a never-integrated `base-validation` branch
 is compare-and-deleted only while its tip is `creationOid` and another ref reaches it, else kept
-(`advanced`, `unreachable`), and so is an `issue-planning` branch. Prose never runs
-`git branch -D`, and a forced deletion outside these proofs never happens.
+(`advanced`, `unreachable`), and so is an `issue-planning` branch; a local delivery branch is
+compare-and-deleted only as `effective-flow cleanup`'s confirmed `branch:` item, under its helper proof
+that the content landed in the base branch. Prose never runs `git branch -D`, and a forced deletion
+outside these proofs never happens.
 
 **`base-validation`** is the orchestrator's, at `baselineHead`; setup follows the worktree setup
 policy, the validator installs nothing. Every exit path – completion, failure or abort – restores
@@ -453,20 +455,20 @@ or `failed`, so a refused removal stays `cleanup-ready` or `cleanup-failed` for 
 envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `result.items[]`, one
 `{recordId, ok, code?}` per record.
 
-| Result                                                                                       | Handling                                                                                                                                         |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                              |
-| `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                          |
-| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                             |
-| item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                             |
-| item `BRANCH_RETAINED`                                                                       | Worktree and record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven`.                                            |
-| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                      |
-| item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                               |
-| item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                 |
-| item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows. |
-| item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                      |
-| item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.    |
-| harness denial, auto-mode refusal, another exit, an unparsable envelope or an `error`        | Nothing beyond the reported items changed: report the call.                                                                                      |
+| Result                                                                                       | Handling                                                                                                                                              |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                                   |
+| `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                               |
+| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                                  |
+| item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                                  |
+| item `BRANCH_RETAINED`                                                                       | Worktree, record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven` (`ref-recreate-failed`: deleted; `branch.restore`). |
+| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                           |
+| item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                                    |
+| item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                      |
+| item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows.      |
+| item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                           |
+| item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.         |
+| harness denial, auto-mode refusal, another exit, an unparsable envelope or an `error`        | Nothing beyond the reported items changed: report the call.                                                                                           |
 
 **Denial fallback.** After `worktree remove` returns any item that is not `ok` (`BRANCH_RETAINED`
 aside) or fails as a whole call, and after the one `SANDBOX_DENIED` rerun, call `worktree
