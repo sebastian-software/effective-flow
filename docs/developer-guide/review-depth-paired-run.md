@@ -14,10 +14,26 @@ no claim beyond the examples below.
 | Host            | T3 Code, one fresh top-level Claude session per arm                                                                                              |
 | Model           | `claude-opus-5-5` for the orchestrator and every worker (inherited; per-spawn tiers not applied, identical in both arms)                         |
 | Before          | `61fbb376`, the parent of #656, portable build                                                                                                   |
-| After           | `406413d4`, the merge of #660, portable build; the two commits in between (#658, #659) touch only `merge-gate` and `cleanup`                     |
+| After           | `406413d4`, the merge of #660, portable build; the merges between the two arms are listed below the table                                        |
 | Targets         | Throwaway local Git repositories (a word-count CLI, a bearer-token HTTP API), no remote, `.effective-flow/` git-ignored                          |
 | Scripted user   | One fixed answer script for every arm: the recommended or first option, decline optional deep review, approve local commits, decline push and PR |
 | Recording rules | Every arm logged each ask round, each worker start with its scope, every incorporation pass, floor record and re-check report verbatim           |
+
+Three merges sit between #656 and #660. The "after" arm includes them, although the comparison targets
+#656 through #660:
+
+- #655 (`fe0624d4`): `merge-gate` honors an explicit no-CI policy for named base branches. It adds the
+  `mergeGate.noCiPolicy.*` keys and the `config-resolve` `no-ci-policy` operation, with their setup
+  source.
+- #658 (`ccf2d3a8`): adds a `merge-gate` worktree purpose to the shared worktree lifecycle
+  (`worktree-lifecycle.md`) and its runtime helper (`effective-flow-state-worktree-core.mjs`), and lets
+  `cleanup` alone release a stopped `merge-gate` record.
+- #659 (`c9793539`): lets `cleanup` retire schema-invalid worktree records. It extends the same
+  lifecycle contract and runtime helper.
+
+#658 and #659 therefore change the lifecycle that `build` provisions its worktree through; none of the
+three changes the `plan` or `build` tool sources or the review-depth sources. The run measures no effect
+of these changes.
 
 The first attempts at examples 1 and 2 ran on targets that did not ignore `.effective-flow/`; the
 build stopped at the runtime-state guard, or ran without worktree and diff baseline. Those attempts
