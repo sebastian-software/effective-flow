@@ -1,6 +1,6 @@
 # Name the required check keys in the verification-evidence producer mapping
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #744
@@ -72,10 +72,10 @@ script, tool source or budget change expected.
 
 ## Affected files
 
-| File | Description |
-| --- | --- |
+| File                                  | Description                                                                                                                                                                                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/shared/verification-evidence.md` | In `### Producer mapping`, extend the intro sentence to name the check-entry shape: required `check`, `outcome`, `provenance`, `scope`; optional `limitation` (omitted rather than empty); `comparison` only with `baseline-failure`; no other key; the bullet values go in `outcome` and `provenance`. |
-| `test/workflow-contracts.test.mjs` | Add one contract test next to the existing producer-mapping test that asserts the mapping names every required check key and both conditional keys as backticked key names, pins the required list's order with `ordered`, and pins the `comparison` and no-other-key clauses with `includes`. |
+| `test/workflow-contracts.test.mjs`    | Add one contract test next to the existing producer-mapping test that asserts the mapping names every required check key and both conditional keys as backticked key names, pins the required list's order with `ordered`, and pins the `comparison` and no-other-key clauses with `includes`.          |
 
 ## Implementation details
 
@@ -202,6 +202,7 @@ Not relevant: no UI.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -253,6 +254,7 @@ Not relevant: no UI.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -261,15 +263,15 @@ Not relevant: no UI.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 0 |
-| Testability | 0 | 0 | 3 |
-| Scope | 0 | 0 | 3 |
-| Maintainability | 0 | 0 | 2 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    0 |
+| Testability     |        0 |         0 |    3 |
+| Scope           |        0 |         0 |    3 |
+| Maintainability |        0 |         0 |    2 |
 
 ### Findings
 
