@@ -2134,6 +2134,16 @@ function mutationMayHaveApplied(label) {
   return POSSIBLY_APPLIED_MUTATIONS.has(label);
 }
 
+const PR_WRITE_MUTATIONS = new Set(['review-thread-reply', 'pr-comment', 'review-create']);
+
+// A PR write that `gh api` failed with a stated 4xx other than 408 or 429 was refused, not lost:
+// gh's stderr summary (`gh: Validation Failed (HTTP 422)`) carries the status the forge answered.
+function ghStatedPrWriteRefusal(plan, label, result) {
+  if (plan.executable !== 'gh' || !PR_WRITE_MUTATIONS.has(label)) return false;
+  const status = /\(HTTP (4\d\d)\)/.exec(result?.stderr ?? '')?.[1];
+  return status !== undefined && status !== '408' && status !== '429';
+}
+
 // A non-2xx status becomes a structured error rather than data. A 4xx is never retryable: an auth,
 // path or permission failure repeats identically. A 5xx is retryable for a read, which observes
 // nothing and changes nothing by being repeated — but for one of the mutations above it is the
@@ -2360,10 +2370,10 @@ async function runChecked(runner, plan, label) {
     // documented as "after `mutationMayHaveSucceeded: true`, never re-run without first re-reading
     // the state" — and not by whether a repeat would duplicate anything. The membership itself lives
     // beside `teaApiSuccess`, which applies the same set to a 5xx the forge did state: on the
-    // `tea api` transport that failure exits 0 and never reaches this exit-code path at all. GitHub's
-    // CLI cannot tell a stated 4xx from a lost response, so every CLI failure of a member is flagged;
-    // that costs one extra re-read and never a duplicate.
-    const mayHaveApplied = mutationMayHaveApplied(label);
+    // `tea api` transport that failure exits 0 and never reaches this exit-code path at all. A PR
+    // write that gh reports as a stated 4xx is a refusal like `teaApiSuccess`'s and stays unflagged.
+    const member = mutationMayHaveApplied(label);
+    const mayHaveApplied = member && !ghStatedPrWriteRefusal(plan, label, result);
     fail(
       'COMMAND_FAILED',
       `${label} failed`,
@@ -2374,7 +2384,7 @@ async function runChecked(runner, plan, label) {
         stderr: redact(result?.stderr ?? ''),
         ...(mayHaveApplied ? { mutationMayHaveSucceeded: true } : {}),
       },
-      !mayHaveApplied,
+      !member,
     );
   }
   return result;

@@ -10248,6 +10248,49 @@ for (const [operation, input] of [
     assert.equal(envelope.error.retryable, false);
     assert.equal(runner.calls.length, 1);
   });
+
+  // Invariant: gh's `(HTTP 4xx)` stderr summary states a refusal, so it is not possibly applied.
+  test(`a GitHub ${operation} refused with HTTP 422 stays a plain non-retryable failure`, async () => {
+    const runner = fakeRunner([
+      {
+        status: 1,
+        stdout: JSON.stringify({ message: 'Validation Failed', errors: [] }),
+        stderr: 'gh: Validation Failed (HTTP 422)\n',
+      },
+    ]);
+    const envelope = await executeOperation(operation, input, {
+      runner,
+      skipProbe: true,
+      apply: true,
+    });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'COMMAND_FAILED');
+    assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+    assert.equal(envelope.error.retryable, false);
+    assert.equal(runner.calls.length, 1);
+  });
+
+  // Invariant: a timeout or rate limit is no statement about the write, so it stays possibly applied.
+  for (const [status, reason] of [
+    [408, 'Request Timeout'],
+    [429, 'Too Many Requests'],
+  ]) {
+    test(`a GitHub ${operation} that fails with HTTP ${status} stays possibly applied`, async () => {
+      const runner = fakeRunner([
+        { status: 1, stdout: '', stderr: `gh: ${reason} (HTTP ${status})\n` },
+      ]);
+      const envelope = await executeOperation(operation, input, {
+        runner,
+        skipProbe: true,
+        apply: true,
+      });
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'COMMAND_FAILED');
+      assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+      assert.equal(envelope.error.retryable, false);
+      assert.equal(runner.calls.length, 1);
+    });
+  }
 }
 
 test('on a forge declaring the resolve route, review-thread-resolve posts the numeric thread id', async () => {

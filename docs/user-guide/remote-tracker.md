@@ -581,11 +581,11 @@ the provider's comment `id`. Missing transport flags produce `UNSUPPORTED_CAPABI
 creation; support for the human `tea comment` renderer is not required.
 
 A `pr-comment` whose outcome the adapter could not observe reports `retryable: false` and
-`mutationMayHaveSucceeded: true` on both forges: the CLI or `tea` transport failed, or on Forgejo
-the forge answered `5xx`. The comment may already exist, so the caller re-reads the pull request's
-comments before it posts again and never retries blindly. On Forgejo a refusal the forge stated,
-such as a 403, stays a non-retryable rejection without that flag; GitHub's CLI cannot tell such a
-refusal from a lost response, so it carries the flag and costs one extra re-read. `issue-comment`
+`mutationMayHaveSucceeded: true` on both forges: the CLI or `tea` transport failed, the forge
+answered `5xx`, or on GitHub it answered `408` or `429`. The comment may already exist, so the
+caller re-reads the pull request's comments before it posts again and never retries blindly. Any
+other `4xx` refusal the forge stated, such as a 403 or 422, stays a non-retryable rejection without
+that flag; on GitHub, `gh api` reports that status in its `(HTTP 4xx)` summary. `issue-comment`
 stays retryable on those failures.
 
 What a Forgejo `pr-status-read` does **not** report is worth knowing before you configure the gate
