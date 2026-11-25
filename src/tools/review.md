@@ -415,8 +415,8 @@ On a resolved pull request:
    `{{SKILL:iterate}} <PR>`. Only its generic fallback uses the pull-request row.
 
 An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
-interpretations and ask, never guess. A merged or closed pull request, or one belonging to another
-repository, is reviewed read-only and reported as such.
+interpretations and ask, never guess. A merged or closed pull request is reviewed read-only and
+reported as such; one belonging to another repository is reported read-only and not reviewed.
 
 ```lazy-include
 pr-review-integration

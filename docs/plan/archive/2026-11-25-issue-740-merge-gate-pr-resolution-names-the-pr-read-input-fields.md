@@ -1,6 +1,6 @@
 # merge-gate PR resolution names the pr-read input fields
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #740
@@ -87,13 +87,13 @@ documentation), with no new capability.
 
 ## Affected files
 
-| File | Description |
-|---|---|
+| File                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/shared/pr-review-comments.md` | In "PR resolution", replace the paragraph "Use helper reference parsing followed by the normalized PR read/list operations. For current-branch resolution, …" with wording that names `reference-parse` with `{cwd, reference, expectedKind: "pull-request"}`, adding `repository` (the whole `data` of `repository-resolve` with `{cwd}`) only for a PR URL; maps `REFERENCE_REPOSITORY_MISMATCH` to a pull request of another repository; reads the PR with `pr-read` and `{cwd, number}`; and for current-branch resolution lists open PRs with `pr-list` and `{cwd, head}`, requiring exactly one match that is `sameRepository: true`. |
-| `src/tools/review.md` | Lines 418-419: split the sentence so a merged or closed pull request is still reviewed read-only and reported as such, while one belonging to another repository is reported read-only and not reviewed. |
-| `src/tools/merge-gate.md` | Update the last frontmatter line `contextBudget:` only if the measured always-loaded core exceeds the current value 949. |
-| `src/tools/iterate.md` | Update the last frontmatter line `contextBudget:` only if the measured always-loaded core exceeds the current value 1869. |
-| `test/workflow-contracts.test.mjs` | Add one small test next to "both forge adapters load the shared remote-helper invocation contract" (around line 4708), named for its own invariant (for example "PR resolution names the helper input fields"), pinning the call shapes, the URL-only repository check, the `sameRepository` requirement and the mismatch mapping. |
+| `src/tools/review.md`              | Lines 418-419: split the sentence so a merged or closed pull request is still reviewed read-only and reported as such, while one belonging to another repository is reported read-only and not reviewed.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/tools/merge-gate.md`          | Update the last frontmatter line `contextBudget:` only if the measured always-loaded core exceeds the current value 949.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/tools/iterate.md`             | Update the last frontmatter line `contextBudget:` only if the measured always-loaded core exceeds the current value 1869.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `test/workflow-contracts.test.mjs` | Add one small test next to "both forge adapters load the shared remote-helper invocation contract" (around line 4708), named for its own invariant (for example "PR resolution names the helper input fields"), pinning the call shapes, the URL-only repository check, the `sameRepository` requirement and the mismatch mapping.                                                                                                                                                                                                                                                                                                          |
 
 `src/tools/review.md` keeps `contextBudget: 899` unless the build reports a higher measured count.
 
@@ -116,6 +116,7 @@ documentation), with no new capability.
    Prefer two or three compact sentences over a list; no history, no rationale. Rewrap to the
    file's existing line width. The following merged/closed sentence and each host's own
    another-repository rule stay where they are.
+
 2. In `src/tools/review.md:418-419`, rewrite the sentence so merged or closed pull requests keep
    "reviewed read-only and reported as such", and a pull request belonging to another repository is
    "reported read-only and not reviewed".
@@ -143,7 +144,7 @@ documentation), with no new capability.
   returns `{kind: "pull-request", number: 736, repository: undefined}` without a remote call;
   `pr-read` then reads `origin`'s PR 736.
 - Issue URL (`/issues/`): `reference-parse` fails with `INVALID_REFERENCE` (`expected pull-request
-  reference but received issue`); the run reports it and writes nothing.
+reference but received issue`); the run reports it and writes nothing.
 - PR URL of another repository: `reference-parse` fails with `REFERENCE_REPOSITORY_MISMATCH`;
   `merge-gate` reports a pull request belonging to another repository without mutation and ends;
   `review` reports it read-only and does not review it.
@@ -202,9 +203,11 @@ documentation), with no new capability.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-BAT","question":"How should the plan handle reference-parse required input (expectedKind) in the rewritten PR resolution sentence?","options":["Name both shapes","Keep pr-read only","Bare number direct"],"escape":[],"stop":[],"scores":[{"label":"Name both shapes","score":8,"reason":"Only option fixing both helper calls: without expectedKind pull-request, reference-parse rejects a bare 736 or #736 before pr-read and the field also rejects an issue URL; one helper path, at the cost of likely more than one extra line."},{"label":"Keep pr-read only","score":3,"reason":"Follows the issue wording but not its goal: a bare reference copied into reference-parse still fails on the first helper call and needs a follow-up issue."},{"label":"Bare number direct","score":4,"reason":"Avoids the reference-parse failure but needs a prompt branch stripping # itself, contradicts helper reference parsing, adds more prose and still needs expectedKind for URLs."}]},{"site":"S-BAT","question":"How should the rewritten clause keep a PR URL from another repository from being silently read as the origin PR with the same number?","options":["Stop on foreign URL","Pass origin to parse","Pass parsed repository"],"escape":[],"stop":[],"scores":[{"label":"Stop on foreign URL","score":6,"reason":"Keeps the existing stop working, but the model compares repositories in prose (host and case rules) and still needs origin from repository-resolve; about the same prompt text as option 2 without the helper fail-closed check."},{"label":"Pass origin to parse","score":8,"reason":"Beats option 1: the helper owns parsing and already compares host, owner and repo case-insensitively, failing closed with REFERENCE_REPOSITORY_MISMATCH; costs one repository-resolve call plus a repository field in the clause."},{"label":"Pass parsed repository","score":3,"reason":"Reads another repository PR before refusing it, can fail with AMBIGUOUS_HOST on Forgejo hosts and still leaves a prose comparison against origin; most calls and wording for the weakest guarantee."}]},{"site":"S-BAT","question":"Should the current-branch sentence in PR resolution also name the pr-list input fields?","options":["Leave pr-list unchanged","Name pr-list fields"],"escape":[],"stop":[],"scores":[{"label":"Leave pr-list unchanged","score":4,"reason":"Saves a few words, but once the paragraph names fields for three operations, leaving pr-list out invites a guess; a misnamed head field makes pr-list return every open PR."},{"label":"Name pr-list fields","score":8,"reason":"pr-list keeps every PR when head is absent (remote-tracker-core.mjs:4100), so a guessed field can silently match a single PR on another branch; costs a few words and follows house phrasing."}]},{"site":"S-DEC","question":"How should the plan keep the new repository-resolve call from breaking iterate Phase-0 refusal behaviour?","options":["URL-only repository check","Tie calls to resolve step","Keep wording, rerun evals"],"escape":[],"stop":[],"scores":[{"label":"URL-only repository check","score":8,"reason":"Fits best: pr-read needs only {cwd, number}, and the repository match only matters for a URL, so bare refs (every scenario, every merge-gate dispatch) skip the remote call. A URL in iterate Phase 0 still calls it."},{"label":"Tie calls to resolve step","score":7,"reason":"Cleanest structure, since iterate Phase 0 makes no remote call for any reference shape. The cost is an iterate.md edit, a contextBudget check, a test pin and a fresh Phase-0 recording, all for a URL case no scenario covers."},{"label":"Keep wording, rerun evals","score":2,"reason":"An unconditional repository-resolve before Phase-0 refusal breaks the evaluator pure-local helper set. A rerun would only record the failure of the seven refusal scenarios, not prevent it."}]},{"site":"S-DEC","question":"How should the plan reconcile the new another-repository mapping with the review rule that such a PR is reviewed read-only?","options":["Neutral mapping","Align review rule","Follow-up issue"],"escape":[],"stop":[],"scores":[{"label":"Neutral mapping","score":6,"reason":"Keeps the shared fragment narrow and accurate for merge-gate, but hands review an unworkable rule: no PR number after the mismatch and an origin-bound scope, so the model must improvise extra calls."},{"label":"Align review rule","score":8,"reason":"Ahead of the neutral mapping: it settles the conflict, matching review with pr-review-integration.md:58, which already reports read-only with no comment. Costs one rewritten line in one more file and a contextBudget check."},{"label":"Follow-up issue","score":3,"reason":"Ships known conflicting instructions: the shared fragment says report with no write while review says review read-only. The model has to arbitrate, and the fix is too small to justify deferring."}]},{"site":"S-DEC","question":"Should the literal call shapes in PR resolution also mention the chosen provider override?","options":["Rely on helper contract","Mention provider override"],"escape":[],"stop":[],"scores":[{"label":"Rely on helper contract","score":8,"reason":"The eager helper contract sits right above PR resolution and states the override rule once (AGENTS.md point 2). A dropped override fails closed with AMBIGUOUS_HOST, so the worst case is one retry."},{"label":"Mention provider override","score":5,"reason":"Copying the shapes would keep the override, but it restates a contract that is owned and loaded right next to it, and the length is paid on every run. It only saves a retry that already fails closed."}]},{"site":"S-DEC","question":"How should the plan handle a false another-repository refusal of the origin own PR URL when the origin remote host differs from the web host?","options":["Accept and document","Compare slugs on mismatch"],"escape":[],"stop":[],"scores":[{"label":"Accept and document","score":8,"reason":"Fails closed, affects a minority of setups and has a bare-number workaround. It adds only a plan edge case, with no eager text in merge-gate and iterate, which AGENTS.md says every run pays for."},{"label":"Compare slugs on mismatch","score":5,"reason":"Gives a clearer message for alias hosts, but adds an eager clause paid on every merge-gate and iterate run. It repeats part of the helper comparison in prose and lets the model judge error details, for a rare case."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -213,15 +216,15 @@ documentation), with no new capability.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 1 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 3 | 2 |
-| Testability | 0 | 1 | 4 |
-| Scope | 0 | 1 | 0 |
-| Maintainability | 0 | 0 | 3 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         1 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         3 |    2 |
+| Testability     |        0 |         1 |    4 |
+| Scope           |        0 |         1 |    0 |
+| Maintainability |        0 |         0 |    3 |
 
 ### Findings
 
