@@ -79,3 +79,6 @@ is no runtime application – you edit `src/`, never `dist/`.
 - [Host-driver test profile](host-driver-test-profile.md) – point-in-time profile of the slow
   host-driver Python modules on a host without SHA extensions: the composed-fixture before/after
   timing, hot spots with their decisions, and the stage-loop wait gate.
+- [T3 acceptance runs](t3-acceptance-runs.md) – how manual acceptance runs that must watch a PR and
+  be woken are set up on T3 Code: own top-level thread, announcement, two-way links, host-timestamp
+  durations and evidence.
