@@ -30,7 +30,15 @@ import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { executeOperation as trackerOperation } from './remote-tracker-core.mjs';
 import { ledgerRepository } from './remote-tracker-ledger-core.mjs';
-import { planBranchName, parsePlanBranch, parseIssueHeader } from './plan-publication-core.mjs';
+import {
+  BASE_MOVE_REASONS,
+  BASE_MOVE_VERDICTS,
+  MAX_BASE_MOVE_PATHS,
+  baseMoveRepublishes,
+  planBranchName,
+  parsePlanBranch,
+  parseIssueHeader,
+} from './plan-publication-core.mjs';
 import { StateOutcome } from './effective-flow-state-core.mjs';
 import {
   AUTOPILOT_RUN_ID_PATTERN,
@@ -283,6 +291,60 @@ function leftoverPlanFiles(value = [], planDir, { deduplicate = false } = {}) {
 function reportVersion(value = 1) {
   return enumeration(value, [1, 2]);
 }
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const BASE_MOVE_KEYS = [
+  'issue',
+  'fromBaseOid',
+  'toBaseOid',
+  'verdict',
+  'reason',
+  'commitCount',
+  'changedPathCount',
+  'citedPathCount',
+  'citedPaths',
+  'overlappingPaths',
+];
+function nonNegative(value) {
+  if (!Number.isSafeInteger(value) || value < 0) invalid('expected a non-negative safe integer');
+  return value;
+}
+// A path list of a base move: at most MAX_BASE_MOVE_PATHS safe repository-relative entries that a
+// ledger and a pull-request appendix can carry (no C1 control, line separator or backtick).
+function baseMovePaths(value) {
+  if (!Array.isArray(value) || value.length > MAX_BASE_MOVE_PATHS)
+    invalid(`base-move paths must be an array of at most ${MAX_BASE_MOVE_PATHS} entries`);
+  for (const entry of value) {
+    safePath(entry);
+    if (entry.length > 512 || /[\u0080-\u009f\u2028\u2029`]/.test(entry))
+      invalid('unsafe base-move path');
+  }
+  return value;
+}
+// The optional v2 `baseMoves` field: one `assess-base-move` result per issue, at most one entry per
+// issue, with the closed verdict and reason enum of `plan-publication`. A `fits` entry lists no
+// overlapping path; an overlap may list none when every path was unsafe to report.
+function baseMoves(value) {
+  if (!Array.isArray(value)) invalid('baseMoves must be an array');
+  for (const entry of value) {
+    exact(entry, BASE_MOVE_KEYS);
+    positive(entry.issue);
+    match(entry.fromBaseOid, OBJECT_ID);
+    match(entry.toBaseOid, OBJECT_ID);
+    enumeration(entry.verdict, BASE_MOVE_VERDICTS);
+    if (!BASE_MOVE_REASONS[entry.verdict].includes(entry.reason))
+      invalid('base-move reason does not belong to its verdict');
+    nonNegative(entry.commitCount);
+    nonNegative(entry.changedPathCount);
+    nonNegative(entry.citedPathCount);
+    baseMovePaths(entry.citedPaths);
+    baseMovePaths(entry.overlappingPaths);
+    if (entry.citedPaths.length > entry.citedPathCount) invalid('base-move cited count mismatch');
+    if (entry.verdict === 'fits' && entry.overlappingPaths.length > 0)
+      invalid('a fitting base move lists no overlapping path');
+  }
+  uniqueEntries(value, (entry) => entry.issue);
+  return value;
+}
 function same(a, b) {
   return isDeepStrictEqual(a, b);
 }
@@ -386,6 +448,7 @@ function validateInput(operation, input) {
         'reportVersion',
         'repositoryVisibility',
         'leftoverPlanFiles',
+        'baseMoves',
       ],
     ],
     fingerprint: [['trustedTextPath', 'issueAuthor'], []],
@@ -463,12 +526,15 @@ function validateInput(operation, input) {
     const version = reportVersion(input.reportVersion);
     if (
       version === 1 &&
-      (input.repositoryVisibility !== undefined || input.leftoverPlanFiles !== undefined)
+      (input.repositoryVisibility !== undefined ||
+        input.leftoverPlanFiles !== undefined ||
+        input.baseMoves !== undefined)
     )
       invalid('report metadata requires version 2');
     if (version === 2) {
       repositoryVisibility(input.repositoryVisibility);
       leftoverPlanFiles(input.leftoverPlanFiles, undefined, { deduplicate: true });
+      if (input.baseMoves !== undefined) baseMoves(input.baseMoves);
     }
     enumeration(input.outcome, ['completed', 'failed']);
     enumeration(input.cutOff, ['none', 'judgment-limit', 'publish-limit']);
@@ -2435,6 +2501,7 @@ export function validatePassReport(report) {
   exact(
     report,
     version === 1 ? reportKeys : [...reportKeys, 'repositoryVisibility', 'leftoverPlanFiles'],
+    version === 1 ? [] : ['baseMoves'],
   );
   if (version === 2) {
     enumeration(report.repositoryVisibility, ['public', 'private', 'unknown']);
@@ -2565,7 +2632,30 @@ export function validatePassReport(report) {
       invalid('invalid failed-pass report');
   } else if (report.failures.some((entry) => entry.issue === null))
     invalid('completed report has pass-level failure');
+  if (report.baseMoves !== undefined) baseMoveOutcomes(report);
   return report;
+}
+// Each base move is bound to the pass outcome by its reason, through `plan-publication`'s
+// `BASE_MOVE_STOPPING_REASONS`: a re-publishing move (`fits`, or an unresolved one published with
+// its flag) to its issue's confirmed PR, its `failed` verdict or a failed pass; a stopping move to a
+// failed pass with the null `publish`/`BASE_CHANGED` failure. A dry run publishes nothing, so it
+// carries no base move.
+function baseMoveOutcomes(report) {
+  baseMoves(report.baseMoves);
+  if (report.mode !== 'publish') invalid('dry-run base move');
+  const stopped =
+    report.outcome === 'failed' &&
+    report.failures.some(
+      (entry) => entry.issue === null && entry.stage === 'publish' && entry.code === 'BASE_CHANGED',
+    );
+  for (const entry of report.baseMoves) {
+    const bound = baseMoveRepublishes(entry.reason)
+      ? report.outcome === 'failed' ||
+        report.pullRequestsOpened.some((pr) => pr.issue === entry.issue) ||
+        report.verdicts.some((item) => item.issue === entry.issue && item.verdict === 'failed')
+      : stopped;
+    if (!bound) invalid('base move does not match the pass outcome');
+  }
 }
 async function report(context, input, pass, resolved) {
   const collection = pass.collection;
@@ -2704,6 +2794,19 @@ async function report(context, input, pass, resolved) {
         : repositoryVisibility(input.repositoryVisibility),
       leftoverPlanFiles: final,
     };
+    // A base move is assessed from the collected base, for an issue this pass collected.
+    if (input.baseMoves !== undefined) {
+      if (
+        !collected ||
+        input.baseMoves.some(
+          (entry) =>
+            entry.fromBaseOid !== collected.baseOid ||
+            !collected.eligible.some((candidate) => candidate.issue === entry.issue),
+        )
+      )
+        invalid('base move differs from persisted collection');
+      metadata.baseMoves = input.baseMoves;
+    }
   }
   const value = validatePassReport({
     schemaVersion: version,

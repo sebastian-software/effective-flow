@@ -2,15 +2,18 @@
 
 // Thin JSON CLI over autopilot-core.mjs:
 //   node autopilot.mjs <run-init|decision-classify|decision-extract|decision-record|blocker-record|
-//                       fit-record|plan-reviewed|delivery-record|delivery-confirm|consent-check|
-//                       run-check|pr-appendix|appendix-merge|plan-copy-restore|run-close|
-//                       ledger-list|ledger-prune>
+//                       fit-record|base-move-record|delivery-base-check|delivery-base-record|
+//                       plan-reviewed|delivery-record|delivery-confirm|consent-check|run-check|
+//                       pr-appendix|appendix-merge|plan-copy-restore|run-close|ledger-list|
+//                       ledger-prune>
 //   (one JSON object on stdin; `appendix-merge` takes `{cwd, runId, appendixSha256, body}`,
-//   `plan-reviewed` and `plan-copy-restore` take `{cwd, runId, sourceRoot}`)
+//   `plan-reviewed` and `plan-copy-restore` take `{cwd, runId, sourceRoot}`,
+//   `delivery-base-check` takes `{cwd, runId, headOid, baseRef}`)
 // Writes exactly one `{ ok, operation, data | error }` envelope line to stdout and exits non-zero
 // on failure: 2 for a rejected input or score set or a run that is not open, 1 otherwise. Input never travels as
 // command-line arguments; only the operation name does. The ledger operations run their
-// runtime-state guard's git checks, and `plan-copy-restore` its git reads and its restore, through
+// runtime-state guard's git checks, `plan-copy-restore` its git reads and its restore, and
+// `delivery-base-check`, `delivery-base-record` and `delivery-confirm` their git reads, through
 // the shared process runner without a shell.
 
 import { realpathSync } from 'node:fs';

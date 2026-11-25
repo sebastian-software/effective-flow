@@ -465,6 +465,15 @@ worktree, on any branch, clean or not – and requires the configured remote tra
 It plans from the fetched tip of the resolved remote base branch (the configured
 `delivery.baseBranch`, else `origin/HEAD`, else `origin/main`) in a planning worktree of its own,
 so your checkout is never touched.
+If the base branch moves while a plan is written, the pass checks the new commits against the
+paths the plan cites and publishes the plan once on the new tip. When the move overlaps the plan or
+cannot be decided, the plan pull request still opens and carries an "Unresolved base move"
+paragraph with the commit range, the commit count and the overlapping paths; reconciling the plan
+with the new base is left to review. When the base moves again while the plan is published, the
+plan is still published on the tip that was checked, and the paragraph adds that this further
+move was not assessed. The pass stops without a pull request when the base history was rewritten,
+when the base already holds or may hold a plan for the same issue, or when the plan or the tip
+changed. The plan and its planning worktree are kept.
 Publication is allowed only for a public repository. Private and unknown repositories remain
 dry-run-only; the one exception is a run that you start with
 [`autopilot`](tools-automation.md#trust-model) on a single issue, which is your consent to publish

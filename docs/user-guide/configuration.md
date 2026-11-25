@@ -390,6 +390,9 @@ location of the overall workflow. See [Worktree and delivery](./worktree-and-del
 
 Controls [`/effective-flow merge-gate`](./tools-deliver.md), the merge gate that drives an
 already-open pull request to merge-readiness and, if allowed, merges it.
+[`/effective-flow autopilot`](./tools-automation.md) also reads `conflictResolution` and
+`conflictValidation` for its single attempt to resolve a conflict with the base before delivery.
+There `off` skips the attempt and `ask` counts as the attempt, because an unattended run cannot ask.
 
 | Key                     | Values                                | Default   | Meaning                                                                                                              |
 | ----------------------- | ------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------- |

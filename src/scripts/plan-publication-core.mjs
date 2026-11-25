@@ -1,15 +1,26 @@
 // Deterministic plan publication: the core behind `plan-publication.mjs`.
 //
-// Six operations, each with a closed input schema and one JSON envelope:
+// Seven operations, each with a closed input schema and one JSON envelope:
 // - `scan` (read-only, no network): the one content scan of a plan file and the texts published
 //   with it. Interactive publication (`shared/plan-publication.md`) and the unattended path share
 //   it, so both apply one class table.
 // - `branch-name` (read-only): the plan branch `<branchPrefix>/plan/issue-<N>`.
 // - `assert-changeset` (read-only): a commit adds exactly one plan file and nothing else.
 // - `inspect-branch` (read-only): bounded recovery metadata from a verified plan branch.
+// - `assess-base-move` (read-only apart from the base fetch): whether a plan still fits after its
+//   base moved from `fromBaseOid` to the freshly fetched tip. It compares the changed paths of that
+//   range with the paths the plan cites and looks for a plan of the same issue in the range. Its
+//   envelope's `republish` is false only for a reason in `BASE_MOVE_STOPPING_REASONS` (a rewritten
+//   base or a possible plan of the same issue); otherwise a caller may call `publish` once more with
+//   the new tip as `expectedBaseOid` and `allowNewerBase: true`, passing the assessment as
+//   `baseMove` unless it `fits`. Without `allowNewerBase`, `publish` keeps its exact base binding.
 // - `publish` and `complete-branch` (mutations, dry run unless `apply`): an unattended pass commits
 //   the plan with plumbing in a temporary index, pushes it without force so the remote branch is
 //   the lock, and opens a draft pull request carrying the shipped plan marker and `Refs #<N>`.
+//   `publish` alone takes an optional `baseMove` and renders it as one fixed English paragraph
+//   ("Unresolved base move") between the caller's prose and the marker. With `allowNewerBase`, a
+//   tip that moved past `expectedBaseOid` publishes on that assessed base after the further-range
+//   stops, extends or adds the flag, and reports `furtherBaseMove` (null on an unmoved tip).
 //
 // Model judgment stays outside: callers pass the plan file, the title, body and commit message,
 // and the run state. This module spawns nothing itself; every process goes through the injected
@@ -17,7 +28,7 @@
 //
 // `cwd` rule: `scan` and `branch-name` accept any existing directory as `cwd` and need no
 // repository, deliberately — `scan` judges files only (the distribution smoke runs it outside a
-// repository), and `branch-name` only asks `git check-ref-format`. The other four operations
+// repository), and `branch-name` only asks `git check-ref-format`. The other five operations
 // require `cwd` to be the repository root.
 //
 // Every caller-supplied text is size-bounded before any scan (`INPUT_TOO_LARGE`; the plan file
@@ -44,8 +55,12 @@ import {
 } from './remote-tracker-decomposition-core.mjs';
 import {
   UPSTREAM_FETCH_TIMEOUT_MS,
+  computeOverlap,
   diagnosticText,
   nonInteractiveFetchEnv,
+  pathFold,
+  pathFoldingConfig,
+  validateLiteralPath,
 } from './delivery-selection-core.mjs';
 
 // The unattended plan-name pattern and the in-process ref-path rule are owned by plan-lint-core;
@@ -59,6 +74,7 @@ export const PLAN_PUBLICATION_OPERATIONS = Object.freeze([
   'publish',
   'complete-branch',
   'inspect-branch',
+  'assess-base-move',
 ]);
 
 // The operations that stay a dry run without `apply`; the CLI reads this list too, so an envelope it
@@ -120,7 +136,7 @@ const SCHEMAS = Object.freeze({
       'body',
       'commitMessage',
     ],
-    optional: ['expectedBaseOid', 'expectedBlobOid'],
+    optional: ['expectedBaseOid', 'expectedBlobOid', 'baseMove', 'allowNewerBase'],
   },
   'complete-branch': {
     required: [
@@ -151,6 +167,19 @@ const SCHEMAS = Object.freeze({
       'baseBranch',
     ],
     optional: ['expectedBaseOid'],
+  },
+  'assess-base-move': {
+    required: [
+      'cwd',
+      'issue',
+      'planDir',
+      'planFile',
+      'remote',
+      'baseBranch',
+      'fromBaseOid',
+      'expectedBlobOid',
+    ],
+    optional: [],
   },
 });
 
@@ -1144,6 +1173,629 @@ function requireAcceptedChangeset(result) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Base-move assessment: cited tokens and the fit verdict (pure; the Git reads are in the operation)
+
+export const BASE_MOVE_VERDICTS = Object.freeze(['fits', 'overlap', 'undecidable']);
+// The closed reason enum per verdict. `fits` carries `reason: null`; `no-affected-files` means no
+// Affected files table or none with a usable token, `unusable-entry` at least one unusable table
+// token.
+export const BASE_MOVE_REASONS = Object.freeze({
+  fits: Object.freeze([null]),
+  overlap: Object.freeze(['same-issue-plan', 'cited-path']),
+  undecidable: Object.freeze([
+    'not-ancestor',
+    'gitlink',
+    'no-affected-files',
+    'unusable-entry',
+    'plan-identity',
+  ]),
+});
+// The bound of each returned path list; the cited total is returned beside it.
+export const MAX_BASE_MOVE_PATHS = 20;
+// A cited or overlapping path is reported only when it is safe to carry into a pass report, a
+// ledger and a pull-request appendix: no control or line-separator character, no backtick, no
+// backslash and at most this many characters.
+const MAX_REPORTED_PATH_CHARS = 512;
+const UNREPORTABLE_PATH = /[\u0000-\u001f\u007f-\u009f\u2028\u2029`\\]/;
+const AFFECTED_FILES_HEADINGS = Object.freeze(['## Affected files', '## Betroffene Dateien']);
+const FILE_COLUMN = /^(?:file|files|datei|dateien)$/i;
+// A segment holding one of these is a wildcard or a placeholder.
+const WILDCARD_SEGMENT = /[*?[{<]/;
+const FILE_EXTENSION = /\.[A-Za-z0-9_-]+$/;
+const GITLINK_MODE = '160000';
+
+function reportablePath(value) {
+  return (
+    typeof value === 'string' &&
+    value.length <= MAX_REPORTED_PATH_CHARS &&
+    !UNREPORTABLE_PATH.test(value)
+  );
+}
+
+// The reasons after which a moved base never re-publishes: a rewritten base (or a vanished
+// `fromBaseOid`) is an integrity failure, and a plan of the same issue in the range, or one that may
+// be, is a duplicate rather than a conflict review could reconcile. Every other assessed move
+// re-publishes once; the pass report, autopilot and `publish` all derive the split from this list.
+export const BASE_MOVE_STOPPING_REASONS = Object.freeze([
+  'not-ancestor',
+  'same-issue-plan',
+  'plan-identity',
+]);
+
+export function baseMoveRepublishes(reason) {
+  return !BASE_MOVE_STOPPING_REASONS.includes(reason);
+}
+
+const BASE_MOVE_FLAG_FIELDS = Object.freeze([
+  'fromBaseOid',
+  'toBaseOid',
+  'verdict',
+  'reason',
+  'commitCount',
+  'overlappingPaths',
+]);
+
+// `publish`'s optional `baseMove`: an unresolved, publishable move onto exactly the bound base.
+// A fitting move carries no flag, and a stopping reason never publishes.
+function requireBaseMove(value, expectedBaseOid) {
+  const refuse = (message, details = {}) =>
+    fail('INVALID_INPUT', `baseMove ${message}`, { field: 'baseMove', ...details });
+  if (!value || typeof value !== 'object' || Array.isArray(value)) refuse('must be an object');
+  const unknown = Object.keys(value).filter((key) => !BASE_MOVE_FLAG_FIELDS.includes(key));
+  if (unknown.length > 0) refuse(`has an unknown key: ${unknown.join(', ')}`, { keys: unknown });
+  const missing = BASE_MOVE_FLAG_FIELDS.filter((key) => value[key] === undefined);
+  if (missing.length > 0) refuse(`misses a key: ${missing.join(', ')}`, { keys: missing });
+  const { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths } = value;
+  requireOid(fromBaseOid, 'baseMove.fromBaseOid');
+  requireOid(toBaseOid, 'baseMove.toBaseOid');
+  if (fromBaseOid === toBaseOid) refuse('must name two different bases');
+  if (toBaseOid !== expectedBaseOid) refuse('must move to expectedBaseOid');
+  if (!BASE_MOVE_VERDICTS.includes(verdict) || verdict === 'fits') {
+    refuse('verdict must be overlap or undecidable; a fitting move carries no flag');
+  }
+  if (!BASE_MOVE_REASONS[verdict].includes(reason)) refuse(`reason is not a ${verdict} reason`);
+  if (!baseMoveRepublishes(reason)) refuse(`reason ${reason} stops the publication`);
+  if (!Number.isSafeInteger(commitCount) || commitCount < 1) {
+    refuse('commitCount must be a positive integer');
+  }
+  if (
+    !Array.isArray(overlappingPaths) ||
+    overlappingPaths.length > MAX_BASE_MOVE_PATHS ||
+    !overlappingPaths.every((entry) => reportablePath(entry) && entry !== '')
+  ) {
+    refuse(`overlappingPaths must hold at most ${MAX_BASE_MOVE_PATHS} reportable paths`);
+  }
+  return { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths };
+}
+
+function commitsText(commitCount) {
+  return `${commitCount} commit${commitCount === 1 ? '' : 's'}`;
+}
+
+// The fixed English flag a flagged re-publish carries, so reviewers and agents can search for it.
+// A list of exactly the bound may have been cut by the assessment, so it says so. An optional
+// `furtherBaseMove` (`publish` with `allowNewerBase`) appends one sentence naming the unassessed
+// move past the assessed base.
+export function buildBaseMoveFlag(
+  { fromBaseOid, toBaseOid, reason, commitCount, overlappingPaths },
+  furtherBaseMove = null,
+) {
+  const from = fromBaseOid.slice(0, 7);
+  const to = toBaseOid.slice(0, 7);
+  const truncated = overlappingPaths.length === MAX_BASE_MOVE_PATHS ? ' (list truncated)' : '';
+  const paths =
+    overlappingPaths.length === 0
+      ? ''
+      : ` Overlapping paths: ${overlappingPaths.map((entry) => `\`${entry}\``).join(', ')}${truncated}.`;
+  const further =
+    furtherBaseMove === null
+      ? ''
+      : ` The base moved again to \`${furtherBaseMove.toBaseOid.slice(0, 7)}\` ` +
+        `(${commitsText(furtherBaseMove.commitCount)}) after this assessment; that move was not ` +
+        'assessed.';
+  return (
+    `**Unresolved base move.** The base moved from \`${from}\` to \`${to}\` while this plan was ` +
+    `written (${commitsText(commitCount)}). The plan was published on \`${to}\` without ` +
+    `reconciling it. Reason: \`${reason}\`.${paths} Review must reconcile the plan with the new ` +
+    `base before it is implemented.${further}`
+  );
+}
+
+// The standalone flag of a further move after a fitting assessment, which itself carries no flag.
+export function buildFurtherBaseMoveFlag({ fromBaseOid, toBaseOid, commitCount }) {
+  const from = fromBaseOid.slice(0, 7);
+  return (
+    `**Unresolved base move.** The base moved again from \`${from}\` to ` +
+    `\`${toBaseOid.slice(0, 7)}\` (${commitsText(commitCount)}) after the plan was assessed ` +
+    `against it. The plan was published on \`${from}\` without assessing that move. Review must ` +
+    'reconcile the plan with the new base before it is implemented.'
+  );
+}
+
+// The most literal alternatives one pattern segment may expand to; a segment whose `{a,b}`
+// alternations multiply past this bound makes the token unusable.
+const MAX_SEGMENT_ALTERNATIVES = 64;
+// The items of a compiled pattern segment besides its literal characters: `*` and `<…>` (any run
+// inside one segment), `?` (one character), and a whole-segment `**` (zero or more segments).
+const ANY_RUN = 0;
+const ANY_ONE = 1;
+const ANY_SEGMENTS = null;
+
+// One pattern segment as its expanded alternatives, each a list of literal characters, `ANY_RUN`
+// and `ANY_ONE`. Null when it cannot be built: a `[` class, a stray closer, an unclosed or nested
+// placeholder or alternation, a wildcard inside an alternative, or too many alternatives.
+function compileSegment(segment) {
+  const characters = [...segment];
+  let alternatives = [[]];
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    let options;
+    if (character === '*') options = [[ANY_RUN]];
+    else if (character === '?') options = [[ANY_ONE]];
+    else if (character === '<') {
+      const end = characters.indexOf('>', index + 1);
+      if (end === -1 || characters.slice(index + 1, end).includes('<')) return null;
+      options = [[ANY_RUN]];
+      index = end;
+    } else if (character === '{') {
+      const end = characters.indexOf('}', index + 1);
+      if (end === -1) return null;
+      const parts = characters
+        .slice(index + 1, end)
+        .join('')
+        .split(',');
+      if (parts.some((part) => /[*?[\]{}<>]/.test(part))) return null;
+      options = parts.map((part) => [...part]);
+      index = end;
+    } else if ('[]}>'.includes(character)) return null;
+    else options = [[character]];
+    if (options.length === 1) {
+      for (const alternative of alternatives) alternative.push(...options[0]);
+      continue;
+    }
+    if (alternatives.length * options.length > MAX_SEGMENT_ALTERNATIVES) return null;
+    alternatives = alternatives.flatMap((prefix) =>
+      options.map((option) => [...prefix, ...option]),
+    );
+  }
+  return alternatives;
+}
+
+// Whether one compiled alternative matches one path segment (an array of characters): the
+// two-pointer wildcard match, which backtracks only to the last `ANY_RUN` and so stays within
+// O(items × characters) on any input.
+function segmentMatches(items, characters) {
+  let item = 0;
+  let position = 0;
+  let star = -1;
+  let resume = 0;
+  while (position < characters.length) {
+    const current = items[item];
+    if (current === ANY_ONE || (typeof current === 'string' && current === characters[position])) {
+      item += 1;
+      position += 1;
+    } else if (current === ANY_RUN) {
+      star = item;
+      item += 1;
+      resume = position;
+    } else if (star !== -1) {
+      item = star + 1;
+      resume += 1;
+      position = resume;
+    } else return false;
+  }
+  while (items[item] === ANY_RUN) item += 1;
+  return item === items.length;
+}
+
+// The matcher a token with a wildcard or placeholder in its first segment stands for, applied to a
+// (folded) changed path and matched against its trailing segments: `*` and `<…>` are any text
+// inside one segment, `?` one character, `{a,b}` an alternation of literal alternatives and a
+// whole-segment `**` zero or more segments. With `directory` the matched segments must be a
+// directory on the path. Null when no matcher can be built (see `compileSegment`, or an empty, `.`
+// or `..` segment). Matching runs segment by segment over the reachable end positions, so its cost
+// is bounded by the product of the token and path lengths, never exponential.
+function compileCitedPattern(body, directory, fold = (value) => value) {
+  const segments = [];
+  for (const segment of fold(body).split('/')) {
+    if (segment === '' || segment === '.' || segment === '..') return null;
+    if (segment === '**') {
+      segments.push(ANY_SEGMENTS);
+      continue;
+    }
+    const alternatives = compileSegment(segment);
+    if (alternatives === null) return null;
+    segments.push(alternatives);
+  }
+  return (changedPath) => {
+    const parts = changedPath.split('/').map((part) => [...part]);
+    // reach[end]: the segments so far match parts[start..end) for some start.
+    let reach = new Array(parts.length + 1).fill(true);
+    for (const segment of segments) {
+      const next = new Array(parts.length + 1).fill(false);
+      if (segment === ANY_SEGMENTS) {
+        let reached = false;
+        for (let end = 0; end <= parts.length; end += 1) {
+          reached ||= reach[end];
+          next[end] = reached;
+        }
+      } else {
+        for (let end = 0; end < parts.length; end += 1) {
+          next[end + 1] = reach[end] && segment.some((items) => segmentMatches(items, parts[end]));
+        }
+      }
+      reach = next;
+    }
+    return directory ? reach.slice(0, parts.length).includes(true) : reach[parts.length];
+  };
+}
+
+// One inline-code token of a plan, normalized in the fixed order: strip a `#<anchor>` or
+// `:<line>` suffix; keep only a candidate (no whitespace, and a `/` or a file extension); reduce a
+// wildcard or placeholder segment after the first to the directory before it, or turn a first-
+// segment one into a pattern; mark a trailing `/` as a directory entry; validate the literal with
+// the repository-path rule of `validateLiteralPath`. Returns `{kind: 'ignored'}`,
+// `{kind: 'unusable'}`, `{kind: 'literal', path, directory}` or `{kind: 'pattern', path,
+// directory}`; a token reduced from a wildcard is a directory literal.
+export function normalizeCitedToken(raw) {
+  if (typeof raw !== 'string') return { kind: 'ignored' };
+  const token = raw.replace(/#[^/]*$/, '').replace(/:\d+(?:-\d+)?$/, '');
+  if (token === '' || /\s/.test(token)) return { kind: 'ignored' };
+  const directory = token.endsWith('/');
+  const body = directory ? token.slice(0, -1) : token;
+  if (!token.includes('/') && !FILE_EXTENSION.test(body)) return { kind: 'ignored' };
+  if (!reportablePath(body)) return { kind: 'unusable' };
+  const segments = body.split('/');
+  const wildcard = segments.findIndex((segment) => WILDCARD_SEGMENT.test(segment));
+  if (wildcard === 0) {
+    return compileCitedPattern(body, directory) === null
+      ? { kind: 'unusable' }
+      : { kind: 'pattern', path: body, directory };
+  }
+  const literal = wildcard === -1 ? body : segments.slice(0, wildcard).join('/');
+  try {
+    validateLiteralPath(literal, 'cited path');
+  } catch {
+    return { kind: 'unusable' };
+  }
+  return { kind: 'literal', path: literal, directory: wildcard === -1 ? directory : true };
+}
+
+// The inline code spans of one line or table cell: a run of n backticks opens a span that the next
+// run of exactly n backticks closes, and one space on both sides of a non-blank span is stripped.
+// `rest` is the text outside every span, an escaped or unclosed backtick run included.
+function splitCodeSpans(line) {
+  const spans = [];
+  let rest = '';
+  let outside = 0;
+  let index = 0;
+  while (index < line.length) {
+    if (line[index] === '\\' && line[index + 1] === '`') {
+      index += 2;
+      continue;
+    }
+    if (line[index] !== '`') {
+      index += 1;
+      continue;
+    }
+    let open = index;
+    while (line[open] === '`') open += 1;
+    const length = open - index;
+    let search = open;
+    let close = -1;
+    while (search < line.length) {
+      if (line[search] !== '`') {
+        search += 1;
+        continue;
+      }
+      let end = search;
+      while (line[end] === '`') end += 1;
+      if (end - search === length) {
+        close = search;
+        break;
+      }
+      search = end;
+    }
+    if (close === -1) {
+      index = open;
+      continue;
+    }
+    let content = line.slice(open, close);
+    if (content.length > 1 && content.startsWith(' ') && content.endsWith(' ') && content.trim()) {
+      content = content.slice(1, -1);
+    }
+    spans.push(content);
+    rest += line.slice(outside, index);
+    index = close + length;
+    outside = index;
+  }
+  return { spans, rest: rest + line.slice(outside) };
+}
+
+function codeSpans(line) {
+  return splitCodeSpans(line).spans;
+}
+
+// Whether the text outside a File cell's code spans names a file itself: a leftover backtick (an
+// escaped or unclosed run), a word longer than `MAX_REPORTED_PATH_CHARS`, or a word holding a
+// letter or digit whose raw or trimmed form is a path candidate under the same rule as a code span
+// (`normalizeCitedToken`). Words split on whitespace, `,`, `;`, brackets, arrows, `×` and `<br>`;
+// the trimmed form loses leading `:*_` and quotes and trailing `.:*_`, quotes, `!?…`, dashes and
+// arrows, so a leading `.` (`.gitignore`) is kept. The trim is an index loop, linear in the word.
+const LEADING_WORD_TRIM = /[:*_"'‘-‟«»]/u;
+const TRAILING_WORD_TRIM = /[.:*_"'‘-‟«»!?…–—←-⇿➔-➿⟰-⟿⤀-⥿⬀-⯿]/u;
+
+function trimWord(word) {
+  let start = 0;
+  let end = word.length;
+  while (start < end && LEADING_WORD_TRIM.test(word[start])) start += 1;
+  while (end > start && TRAILING_WORD_TRIM.test(word[end - 1])) end -= 1;
+  return word.slice(start, end);
+}
+
+function namesFileOutsideSpans(text) {
+  if (text.includes('`')) return true;
+  return text
+    .replace(/<br\s*\/?>/gi, ' ')
+    .split(/[\s,;()[\]<>←-⇿⟵-⟿×]+/u)
+    .some(
+      (word) =>
+        word.length > MAX_REPORTED_PATH_CHARS ||
+        (/[\p{L}\p{N}]/u.test(word) &&
+          (normalizeCitedToken(word).kind !== 'ignored' ||
+            normalizeCitedToken(trimWord(word)).kind !== 'ignored')),
+    );
+}
+
+// The cells of a pipe-table row, split on every unescaped `|` (inside code spans too, as GitHub
+// tables do), with `\|` unescaped in the cell text.
+function tableCells(line) {
+  let row = line.trim();
+  if (row.startsWith('|')) row = row.slice(1);
+  if (row.endsWith('|') && !row.endsWith('\\|')) row = row.slice(0, -1);
+  const cells = [];
+  let current = '';
+  for (let index = 0; index < row.length; index += 1) {
+    if (row[index] === '\\' && row[index + 1] === '|') {
+      current += '|';
+      index += 1;
+    } else if (row[index] === '|') {
+      cells.push(current);
+      current = '';
+    } else current += row[index];
+  }
+  cells.push(current);
+  return cells;
+}
+
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+const FENCE_OPENER = /^ {0,3}(`{3,}|~{3,})/;
+
+// The tokens a plan cites, from its exact bytes decoded once: `table` holds every backticked token
+// of the File column of each table under `## Affected files` / `## Betroffene Dateien`, `prose`
+// every other inline code span outside fenced blocks (other table columns included). Each entry is
+// a normalized token (`normalizeCitedToken`) with its `raw` text; ignored tokens are dropped, and
+// so is the plan's own path. A non-empty File cell is also an unusable table entry when it yields no
+// token, or when its text outside code spans names a file (`namesFileOutsideSpans`), so a file named
+// without a code span (`` `src/a.mjs` and src/b.mjs ``) fails closed instead of being skipped, while
+// a note such as `(new)` or an arrow does not. `tableFound` says whether such a table exists.
+export function extractCitedTokens(text, { planPath, folding } = {}) {
+  const fold = pathFold(folding);
+  const ownPath = typeof planPath === 'string' ? fold(planPath) : null;
+  const table = [];
+  const prose = [];
+  let tableFound = false;
+  // Whether `raw` is a path candidate; the plan's own path counts as one but is not kept.
+  const add = (target, raw) => {
+    const token = normalizeCitedToken(raw);
+    if (token.kind === 'ignored') return false;
+    if (token.kind === 'literal' && !token.directory && fold(token.path) === ownPath) return true;
+    target.push({ raw, ...token });
+    return true;
+  };
+  const lines = splitLines(text);
+  let fence = null;
+  let section = false;
+  let rows = false;
+  let fileColumn = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (fence) {
+      const closing = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
+      if (closing && closing[1][0] === fence.character && closing[1].length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    const opener = line.match(FENCE_OPENER);
+    if (opener) {
+      fence = { character: opener[1][0], length: opener[1].length };
+      rows = false;
+      continue;
+    }
+    if (/^ {0,3}#{1,2}(?:\s|$)/.test(line)) {
+      section = AFFECTED_FILES_HEADINGS.includes(line.trim());
+      rows = false;
+    } else if (section && line.trim().startsWith('|')) {
+      if (rows) {
+        tableCells(line).forEach((cell, column) => {
+          if (column !== fileColumn) {
+            for (const span of codeSpans(cell)) add(prose, span);
+            return;
+          }
+          const { spans, rest } = splitCodeSpans(cell);
+          const candidates = spans.filter((span) => add(table, span));
+          if (cell.trim() !== '' && (candidates.length === 0 || namesFileOutsideSpans(rest))) {
+            table.push({ raw: cell.trim(), kind: 'unusable' });
+          }
+        });
+        continue;
+      }
+      if (TABLE_SEPARATOR.test(lines[index + 1] ?? '')) {
+        const header = tableCells(line).map((cell) => cell.trim());
+        const named = header.findIndex((cell) => FILE_COLUMN.test(cell));
+        fileColumn = named === -1 ? 0 : named;
+        tableFound = true;
+        rows = true;
+        for (const cell of header) for (const span of codeSpans(cell)) add(prose, span);
+        index += 1;
+        continue;
+      }
+    } else rows = false;
+    for (const span of codeSpans(line)) add(prose, span);
+  }
+  return { tableFound, table, prose };
+}
+
+// Whether a (folded) changed path is a Markdown file directly under the (folded) plan directory or
+// its `archive/`, the files collection's plan scan reads.
+function planDirectoryMarkdown(changedPath, planDir) {
+  let relative = null;
+  if (planDir === '.') relative = changedPath;
+  else if (changedPath.startsWith(`${planDir}/`)) relative = changedPath.slice(planDir.length + 1);
+  return relative !== null && /^(?:archive\/)?[^/]+\.md$/.test(relative);
+}
+
+// Which issue a plan file the range adds or modifies belongs to, as collection's plan scan
+// identifies it: its `**Issue:**` header, else the `-issue-<N>-` file-name rule or the plan's own
+// basename. Returns `same-issue`, `other`, or `invalid` for undecodable bytes, a malformed header
+// or a header that conflicts with the file name.
+export function planFileIdentity(bytes, filePath, { issue, planPath, folding } = {}) {
+  const fold = pathFold(folding);
+  let header;
+  try {
+    header = parseIssueHeader(decodePlanBytes(bytes));
+  } catch (error) {
+    if (error instanceof PlanPublicationError) return 'invalid';
+    throw error;
+  }
+  const basename = path.posix.basename(filePath);
+  const named = basename.match(UNATTENDED_PLAN_NAME);
+  const ownName =
+    typeof planPath === 'string' && fold(basename) === fold(path.posix.basename(planPath));
+  const fallback = named ? Number(named[1]) : ownName ? issue : null;
+  if (header !== null && fallback !== null && header !== fallback) return 'invalid';
+  return (header ?? fallback) === issue ? 'same-issue' : 'other';
+}
+
+function uniquePaths(values) {
+  return [...new Set(values)];
+}
+
+// The fit verdict of a moved base, deterministic and fail-closed. Input: `ancestor` (whether
+// `fromBaseOid` is an ancestor of the new tip), `changes` (`{path, oldMode, newMode}` per changed
+// path of the range), `cited` (`extractCitedTokens`), `tracked` (the table literals present in the
+// old or new tree), `planFiles` (`{path, identity}` per added or modified plan file of the range),
+// `planDir` and the Git `folding` flags. The checks run in the order not-ancestor, plan identity,
+// same-issue plan (the stopping reasons, which win over every republishing one), gitlink, no
+// affected files, unusable entry, cited path, fits. A changed Markdown file directly under the
+// plan directory or its archive is matched only by an exact-file citation, so archive commits for
+// other issues keep fitting. A table pattern is compiled from its folded body, since it matches
+// folded paths; one that the fold makes uncompilable (such as `<` and a combining U+0338 composing
+// to `≮`) is an unusable entry.
+export function assessBaseMove({
+  ancestor,
+  changes = [],
+  cited,
+  tracked = new Set(),
+  planFiles = [],
+  planDir = '.',
+  folding = {},
+}) {
+  const fold = pathFold(folding);
+  const usable = cited.table.filter((entry) => entry.kind !== 'unusable');
+  const patterns = usable
+    .filter((entry) => entry.kind === 'pattern')
+    .map((entry) => compileCitedPattern(entry.path, entry.directory, fold));
+  const proseFiles = cited.prose.filter((entry) => entry.kind === 'literal' && !entry.directory);
+  const citedPaths = uniquePaths([...usable, ...proseFiles].map((entry) => entry.path));
+  const changedPaths = uniquePaths(changes.map((change) => change.path)).sort();
+  const gitlinks = uniquePaths(
+    changes
+      .filter((change) => change.oldMode === GITLINK_MODE || change.newMode === GITLINK_MODE)
+      .map((change) => change.path),
+  ).sort();
+  const plansOf = (identity) =>
+    planFiles.filter((file) => file.identity === identity).map((file) => file.path);
+  const decide = () => {
+    if (!ancestor) return ['undecidable', 'not-ancestor', []];
+    if (plansOf('invalid').length > 0) return ['undecidable', 'plan-identity', plansOf('invalid')];
+    if (plansOf('same-issue').length > 0) {
+      return ['overlap', 'same-issue-plan', plansOf('same-issue')];
+    }
+    if (gitlinks.length > 0) return ['undecidable', 'gitlink', gitlinks];
+    if (usable.length === 0) return ['undecidable', 'no-affected-files', []];
+    if (usable.length !== cited.table.length || patterns.includes(null)) {
+      return ['undecidable', 'unusable-entry', []];
+    }
+    const overlapping = changedPaths.filter(
+      citedMatcher(usable, patterns, proseFiles, tracked, planDir, folding),
+    );
+    return overlapping.length > 0 ? ['overlap', 'cited-path', overlapping] : ['fits', null, []];
+  };
+  const [verdict, reason, overlappingPaths] = decide();
+  return {
+    verdict,
+    reason,
+    changedPathCount: changedPaths.length,
+    citedPathCount: citedPaths.length,
+    citedPaths: citedPaths.filter(reportablePath).slice(0, MAX_BASE_MOVE_PATHS),
+    overlappingPaths: overlappingPaths.filter(reportablePath).slice(0, MAX_BASE_MOVE_PATHS),
+  };
+}
+
+// Whether a changed path overlaps a citation: tracked table literals through `computeOverlap`,
+// table shorthand by suffix, basename or directory infix, table patterns by their matcher, and
+// exact files (table literals without a trailing `/` and prose files) by full-path equality; the
+// table patterns arrive compiled with the active fold. A literal counts as tracked only when its
+// exact spelling is present; any other spelling, such as a differently cased one on a folding
+// checkout, is shorthand, which compares folded. A file shorthand also matches as a directory
+// shorthand, since an untracked token without a trailing `/` may name a directory.
+function citedMatcher(usable, patterns, proseFiles, tracked, planDir, folding) {
+  const fold = pathFold(folding);
+  const foldedPlanDir = fold(planDir);
+  const literals = usable.filter((entry) => entry.kind === 'literal');
+  const trackedPaths = literals
+    .filter((entry) => tracked.has(entry.path))
+    .map((entry) => entry.path);
+  const shorthands = literals
+    .filter((entry) => !tracked.has(entry.path))
+    .map((entry) => ({
+      value: fold(entry.path),
+      directory: entry.directory,
+      bare: !entry.path.includes('/'),
+    }));
+  const exactFiles = new Set(
+    [...literals, ...proseFiles]
+      .filter((entry) => !entry.directory)
+      .map((entry) => fold(entry.path)),
+  );
+  const shorthandMatches = (folded) => {
+    const basename = path.posix.basename(folded);
+    return shorthands.some(
+      ({ value, directory, bare }) =>
+        folded.startsWith(`${value}/`) ||
+        folded.includes(`/${value}/`) ||
+        (!directory &&
+          (folded === value ||
+            folded.endsWith(`/${value}`) ||
+            (bare && (basename === value || basename.startsWith(`${value}.`))))),
+    );
+  };
+  return (changedPath) => {
+    const folded = fold(changedPath);
+    if (planDirectoryMarkdown(folded, foldedPlanDir)) return exactFiles.has(folded);
+    return (
+      exactFiles.has(folded) ||
+      (trackedPaths.length > 0 &&
+        computeOverlap(trackedPaths, { paths: [changedPath], gitlinks: [] }, folding).length > 0) ||
+      shorthandMatches(folded) ||
+      patterns.some((matches) => matches(folded))
+    );
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Forge (through the remote tracker, in process)
 
 // The tracker runs its forge CLI calls unbounded by default. Here every call that carries no bound
@@ -1533,12 +2185,95 @@ async function pushBranch(git, { remote, branch, commitOid }, network, state) {
   }
 }
 
+// `allowNewerBase`: the assessed re-publish binds to `expectedBaseOid` behind a newer fetched tip.
+// It requires the assessed base to be an ancestor of the tip and runs only the stopping subset on
+// the further range (the plan path tracked on the tip, a same-issue or invalid-identity plan file);
+// it computes no fit verdict. Returns `{fromBaseOid, toBaseOid, commitCount}`.
+async function requireFurtherBaseMove(
+  git,
+  context,
+  { expectedBaseOid, tipOid, issue, planDir, planPath },
+) {
+  const stop = (reason) =>
+    fail('BASE_CHANGED', 'base changed since authorization', {
+      expectedOid: expectedBaseOid,
+      actualOid: tipOid,
+      reason,
+    });
+  // A spawn error or timeout is a failed command; only a numeric non-zero exit means a missing object.
+  const presence = await git.run(['cat-file', '-e', `${expectedBaseOid}^{commit}`]);
+  if (presence?.error || typeof presence?.status !== 'number') {
+    fail('COMMAND_FAILED', 'git cat-file failed', {
+      command: 'git cat-file',
+      status: presence?.status ?? null,
+      stderr: diagnosticText(presence?.stderr ?? presence?.error?.code ?? ''),
+    });
+  }
+  if (presence.status !== 0) stop('not-ancestor');
+  const ancestry = await git.run(['merge-base', '--is-ancestor', expectedBaseOid, tipOid]);
+  if (ancestry?.error || ![0, 1].includes(ancestry?.status)) {
+    fail('COMMAND_FAILED', 'git merge-base failed', {
+      command: 'git merge-base',
+      status: ancestry?.status ?? null,
+      stderr: diagnosticText(ancestry?.stderr ?? ancestry?.error?.code ?? ''),
+    });
+  }
+  if (ancestry.status !== 0) stop('not-ancestor');
+  if ((await git.run(['cat-file', '-e', `${tipOid}:${planPath}`]))?.status === 0) {
+    fail('CHANGESET_INVALID', 'the newer base already tracks the plan path', {
+      violations: [{ violation: 'modification', path: planPath }],
+    });
+  }
+  const changes = parseRawDiff(
+    (
+      await git.checked([
+        'diff-tree',
+        '-r',
+        '-z',
+        '--no-renames',
+        '--no-commit-id',
+        '--ignore-submodules=none',
+        '--raw',
+        expectedBaseOid,
+        tipOid,
+      ])
+    ).stdout,
+  );
+  const folding = await foldingFlags(context.cwd, context.runner);
+  const identities = (
+    await rangePlanFiles(git, changes, { issue, planDir, planPath, folding })
+  ).map((file) => file.identity);
+  if (identities.includes('invalid')) stop('plan-identity');
+  if (identities.includes('same-issue')) stop('same-issue-plan');
+  const commitCount = Number(
+    await git.text(['rev-list', '--count', `${expectedBaseOid}..${tipOid}`]),
+  );
+  return { fromBaseOid: expectedBaseOid, toBaseOid: tipOid, commitCount };
+}
+
 async function publishOperation(input, context) {
   const base = mutatingInput('publish', input);
   const commitMessage = validateCommitMessage(input.commitMessage);
+  const baseMove =
+    input.baseMove === undefined ? null : requireBaseMove(input.baseMove, input.expectedBaseOid);
+  if (input.allowNewerBase !== undefined && typeof input.allowNewerBase !== 'boolean') {
+    fail('INVALID_INPUT', 'allowNewerBase must be a boolean', { field: 'allowNewerBase' });
+  }
+  const allowNewerBase = input.allowNewerBase === true;
+  if (allowNewerBase && input.expectedBaseOid === undefined) {
+    fail('INVALID_INPUT', 'allowNewerBase needs expectedBaseOid', { field: 'allowNewerBase' });
+  }
   const cwdReal = resolveCwd(input.cwd, context.fs);
   const planPath = requirePlanFilePath(input.planFile);
-  const body = buildPullRequestBody(base.body, planPath, base.issue);
+  // A flag joins the caller's prose before the body checks, so it passes them like any prose.
+  const composeBody = (furtherBaseMove) => {
+    const flag = baseMove
+      ? buildBaseMoveFlag(baseMove, furtherBaseMove)
+      : furtherBaseMove && buildFurtherBaseMoveFlag(furtherBaseMove);
+    const prose = flag ? `${base.body.trimEnd()}\n\n${flag}` : base.body;
+    return buildPullRequestBody(prose, planPath, base.issue);
+  };
+  let body = composeBody(null);
   const branch = planBranchName({ branchPrefix: input.branchPrefix, issue: base.issue });
 
   const git = createGit({ ...context, cwd: cwdReal });
@@ -1557,14 +2292,35 @@ async function publishOperation(input, context) {
       violations: [{ violation: nameProblem, path: planPath }],
     });
   }
-  const baseOid = await fetchBase(git, base.remote, base.baseBranch, network);
-  requireExpectedOid(input.expectedBaseOid, baseOid, 'BASE_CHANGED', 'base');
+  const tipOid = await fetchBase(git, base.remote, base.baseBranch, network);
+  // `baseOid` is the plan commit's parent: the fetched tip, or the assessed base behind it.
+  let baseOid = tipOid;
+  let furtherBaseMove = null;
+  if (allowNewerBase && tipOid !== input.expectedBaseOid) {
+    furtherBaseMove = await requireFurtherBaseMove(
+      git,
+      { ...context, cwd: cwdReal },
+      {
+        expectedBaseOid: input.expectedBaseOid,
+        tipOid,
+        issue: base.issue,
+        planDir: base.planDir,
+        planPath,
+      },
+    );
+    baseOid = input.expectedBaseOid;
+    body = composeBody(furtherBaseMove);
+  } else {
+    requireExpectedOid(input.expectedBaseOid, tipOid, 'BASE_CHANGED', 'base');
+  }
   const tracked = await git.run(['cat-file', '-e', `${baseOid}:${planPath}`]);
   if (tracked?.status === 0) {
     fail('CHANGESET_INVALID', 'the base already tracks the plan path', {
       violations: [{ violation: 'modification', path: planPath }],
     });
   }
+  // Only a publish with `allowNewerBase` reports the field, so one without it stays unchanged.
+  const further = allowNewerBase ? { furtherBaseMove } : {};
 
   const scan = scanEntries(
     [
@@ -1603,6 +2359,7 @@ async function publishOperation(input, context) {
       body,
       findings: scan.findings,
       ignoredPullRequests,
+      ...further,
       gitVersion,
       plannedCommands: [
         ['git', 'hash-object', '-w', '--no-filters', '--stdin'],
@@ -1691,6 +2448,7 @@ async function publishOperation(input, context) {
     planFile: planPath,
     pullRequest,
     ignoredPullRequests,
+    ...further,
   };
 }
 
@@ -1828,6 +2586,145 @@ async function inspectBranchOperation(input, context) {
   };
 }
 
+// The table literals present, as a blob or a tree, in the tree of `oid`: one batch read.
+async function presentPaths(git, oid, paths) {
+  if (paths.length === 0) return new Set();
+  const result = await git.checked(['cat-file', '--batch-check=%(objecttype)'], {
+    stdin: `${paths.map((entry) => `${oid}:${entry}`).join('\n')}\n`,
+  });
+  const types = String(result.stdout).split('\n');
+  return new Set(paths.filter((_, index) => ['blob', 'tree'].includes(types[index])));
+}
+
+// The identity of every regular Markdown file the range adds or modifies directly under the plan
+// directory or its archive; a deletion is no duplicate, and a move is a deletion plus an addition.
+async function rangePlanFiles(git, changes, { issue, planDir, planPath, folding }) {
+  const fold = pathFold(folding);
+  const files = [];
+  for (const change of changes) {
+    if (change.status.startsWith('D') || !planDirectoryMarkdown(fold(change.path), fold(planDir))) {
+      continue;
+    }
+    if (!['100644', '100755'].includes(change.newMode)) continue;
+    const size = Number(await git.text(['cat-file', '-s', change.newOid]));
+    const identity =
+      Number.isSafeInteger(size) && size <= MAX_PLAN_BYTES
+        ? planFileIdentity(await readBlob(git, change.newOid), change.path, {
+            issue,
+            planPath,
+            folding,
+          })
+        : 'invalid';
+    files.push({ path: change.path, identity });
+  }
+  return files;
+}
+
+async function foldingFlags(cwd, runner) {
+  try {
+    return await pathFoldingConfig(cwd, runner);
+  } catch (error) {
+    fail('COMMAND_FAILED', 'git config failed', {
+      command: 'git config',
+      stderr: diagnosticText(error?.message ?? ''),
+    });
+  }
+}
+
+// Read-only apart from the base fetch's remote-tracking ref update, which `publish` performs too:
+// no branch, commit, push or forge object. The plan bytes must still hash to `expectedBlobOid`, and
+// the cited tokens come from exactly those bytes.
+async function assessBaseMoveOperation(input, context) {
+  closedSchema('assess-base-move', input);
+  const issue = normalizeIssueNumber(input.issue);
+  const planDir = requireRelativePath(input.planDir, 'planDir');
+  const planPath = requirePlanFilePath(input.planFile);
+  const remote = requireRemoteName(input.remote);
+  const baseBranch = requireRefPath(input.baseBranch, 'baseBranch');
+  const fromBaseOid = requireOid(input.fromBaseOid, 'fromBaseOid');
+  const expectedBlobOid = requireOid(input.expectedBlobOid, 'expectedBlobOid');
+  const cwdReal = resolveCwd(input.cwd, context.fs);
+
+  const git = createGit({ ...context, cwd: cwdReal });
+  await verifyRepositoryRoot(git, cwdReal, context.fs);
+  await requireGitVersion(git);
+  await remoteUrl(git, remote);
+  const network = await networkOptions(git, context);
+  const plan = readPlanFile(context.fs, cwdReal, planPath, planDir);
+  const planText = decodePlanBytes(plan.bytes);
+  agreeingIssue(issue, parseIssueHeader(planText));
+  const blobOid = await git.text(['hash-object', '--no-filters', '--stdin'], {
+    stdin: plan.bytes,
+  });
+  requireExpectedOid(expectedBlobOid, blobOid, 'BLOB_CHANGED', 'plan blob');
+  const folding = await foldingFlags(cwdReal, context.runner);
+
+  const toBaseOid = await fetchBase(git, remote, baseBranch, network);
+  const fromPresent = (await git.run(['cat-file', '-e', `${fromBaseOid}^{commit}`]))?.status === 0;
+  let ancestor = false;
+  let commitCount = 0;
+  let changes = [];
+  if (fromPresent) {
+    const ancestry = await git.run(['merge-base', '--is-ancestor', fromBaseOid, toBaseOid]);
+    if (ancestry?.error || ![0, 1].includes(ancestry?.status)) {
+      fail('COMMAND_FAILED', 'git merge-base failed', {
+        command: 'git merge-base',
+        status: ancestry?.status ?? null,
+        stderr: diagnosticText(ancestry?.stderr ?? ancestry?.error?.code ?? ''),
+      });
+    }
+    ancestor = ancestry.status === 0;
+    commitCount = Number(await git.text(['rev-list', '--count', `${fromBaseOid}..${toBaseOid}`]));
+    changes = parseRawDiff(
+      (
+        await git.checked([
+          'diff-tree',
+          '-r',
+          '-z',
+          '--no-renames',
+          '--no-commit-id',
+          '--ignore-submodules=none',
+          '--raw',
+          fromBaseOid,
+          toBaseOid,
+        ])
+      ).stdout,
+    );
+  }
+
+  const cited = extractCitedTokens(planText, { planPath, folding });
+  const literals = cited.table
+    .filter((entry) => entry.kind === 'literal')
+    .map((entry) => entry.path);
+  const tracked = new Set([
+    ...(fromPresent ? await presentPaths(git, fromBaseOid, literals) : []),
+    ...(await presentPaths(git, toBaseOid, literals)),
+  ]);
+  const planFiles = await rangePlanFiles(git, changes, { issue, planDir, planPath, folding });
+  const assessed = assessBaseMove({
+    ancestor,
+    changes,
+    cited,
+    tracked,
+    planFiles,
+    planDir,
+    folding,
+  });
+  return {
+    state: 'assessed',
+    fromBaseOid,
+    toBaseOid,
+    verdict: assessed.verdict,
+    reason: assessed.reason,
+    republish: baseMoveRepublishes(assessed.reason),
+    commitCount,
+    changedPathCount: assessed.changedPathCount,
+    citedPathCount: assessed.citedPathCount,
+    citedPaths: assessed.citedPaths,
+    overlappingPaths: assessed.overlappingPaths,
+  };
+}
+
 async function completeBranchOperation(input, context) {
   const base = mutatingInput('complete-branch', input);
   requirePlanBranch(input, base.issue);
@@ -1899,6 +2796,7 @@ const HANDLERS = Object.freeze({
   publish: publishOperation,
   'complete-branch': completeBranchOperation,
   'inspect-branch': inspectBranchOperation,
+  'assess-base-move': assessBaseMoveOperation,
 });
 
 // ---------------------------------------------------------------------------------------------

@@ -616,6 +616,7 @@
           "baseCommit": "509ed463e7c31953d777a8f76840eba51d2d3eb0",
           "headSha": "4b74f096b3ac20c587cc25c89fe4990d1fec349a",
           "conflictCount": 1,
+          "conflictedPaths": ["docs/merge-gate-eval.md"],
           "status": "conflict",
           "reason": null
         },

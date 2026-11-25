@@ -4741,6 +4741,31 @@ test('both forge adapters load the shared remote-helper invocation contract', ()
   );
 });
 
+test('PR resolution names the input fields of every helper call it prescribes', () => {
+  const resolution = prose(
+    section(source('src/shared/pr-review-comments.md'), '### PR resolution'),
+  );
+  const spans = [
+    '`{cwd, reference, expectedKind: "pull-request"}`',
+    '`repository-resolve`',
+    '`{cwd, number}`',
+    '`{cwd, head}`',
+    '`sameRepository: true`',
+    '`REFERENCE_REPOSITORY_MISMATCH`',
+  ];
+  for (const span of spans) {
+    assert.ok(
+      resolution.includes(span),
+      `PR resolution must name the input fields of every helper call it prescribes: missing ${span}`,
+    );
+  }
+  assert.equal(
+    resolution.includes('normalized PR read/list operations'),
+    false,
+    'PR resolution must name the input fields of every helper call it prescribes, not point at unnamed "normalized PR read/list operations"',
+  );
+});
+
 // Invariant: no tracker target and no configuration key exempts a publisher from the security
 // disclosure gate or from the AI-attribution ban.
 test('the security disclosure gate binds every publisher on every tracker target', () => {

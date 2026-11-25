@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import { ASK_SCORING, parseAskBlock } from '../build-lib.mjs';
 import {
   BLOCKER_KINDS,
+  LIMITS,
   RUN_OUTCOMES,
   SITE_ID,
   SITE_REQUIRED_KINDS,
@@ -286,6 +287,54 @@ test('autopilot blockers update a rerun draft and record an unchanged plan pull 
       file,
     );
   }
+});
+
+// Invariant: the autopilot Phase 6 report names the base move, from `run-close`'s `baseMove` or a
+// stopping `baseMoves` pass-report entry, so a base that moved during planning is never silent; an
+// unresolved recorded move is reported as left to review.
+test('autopilot Phase 6 reports the base move', () => {
+  const phase6 = read('tools/autopilot.md').split('## Phase 6: Report')[1].replace(/\s+/g, ' ');
+  assert.match(phase6, /the base move: `run-close`'s `baseMove` with its old and new base/);
+  assert.match(phase6, /counts and cited paths/);
+  assert.match(
+    phase6,
+    /for an `overlap` or `undecidable` verdict its reason and overlapping paths as an unresolved move left to review/,
+  );
+  assert.match(
+    phase6,
+    /a stopping `baseMoves` entry's range, reason, overlapping paths and way out/,
+  );
+});
+
+// Invariant (issue #734 follow-up): the autopilot issue source records every base move beside a
+// confirmed pull request for `#<N>` through the literal `base-move-record` call with its exact key
+// list, `verdict`, `reason` and `overlappingPaths` included, before that pull request continues; an
+// unresolved move continues the run, and an entry without that pull request records nothing and
+// stops.
+test('autopilot issue source records a base move beside its pull request and continues', () => {
+  const mapping = read('shared/autopilot-issue-source.md').replace(/\s+/g, ' ');
+  assert.match(
+    mapping,
+    /any entry beside a confirmed pull request for `#<N>` is recorded, with the literal `autopilot\.mjs base-move-record` call `\{cwd, runId, fromBaseOid, toBaseOid, verdict, reason, commitCount, changedPathCount, citedPathCount, citedPaths, overlappingPaths\}` copied from the entry; that pull request then continues below/,
+  );
+  assert.match(
+    mapping,
+    /An `overlap` or `undecidable` entry is an unresolved move the plan pull request already flags: the run continues to build and its draft pull request/,
+  );
+  assert.match(
+    mapping,
+    /An entry without that pull request records nothing; the run stops without a pull request/,
+  );
+  assert.doesNotMatch(mapping, /only verdict `fits` beside/);
+  const record = mapping.indexOf('`autopilot.mjs base-move-record`');
+  const continuation = mapping.indexOf(
+    'in `pullRequestsOpened`: continue under "Restore the plan"',
+  );
+  assert.ok(
+    record !== -1 && continuation !== -1 && record < continuation,
+    'record precedes continuation',
+  );
+  assert.equal(mapping.split('base-move-record').length, 2, 'the record call is stated once');
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -589,7 +638,10 @@ test('pr keeps drafts and merges the appendix after the body check', () => {
   );
   assert.match(before, /A `withheld` or `blocked` result ends the run before any push/);
   // The handback output the Automation caller reads for `delivery-record` and `delivery-confirm`.
-  assert.match(before, /autopilot: architecture fit, `delivery-record`, then `pr-appendix`/);
+  assert.match(
+    before,
+    /autopilot: the delivery base first, then architecture fit, `delivery-record` and `pr-appendix`\)/,
+  );
   assert.match(
     before,
     /beside `Finalize plan draft:`\. The handback output the caller reads is the plan's archive path or `unarchived`, the local changes S-LOC left untouched, and after `pr` its verified pushed head OID; a failed push reports none\./,
@@ -599,6 +651,75 @@ test('pr keeps drafts and merges the appendix after the body check', () => {
     before,
     /ends the run before any push\. Otherwise `pr` also receives the copied control lines/,
   );
+});
+
+// Invariant: autopilot's delivery-base step is the first pre-delivery step and makes exactly one
+// attempt at a textual conflict (merge commit on the unrebased head, `git merge --abort` on any
+// failure, never a rebase, force-push or retry); `off` skips it and `ask` counts as the attempt;
+// an unresolved conflict is no blocker, so the run continues to `pr-appendix` and `pr` and
+// publishes the draft; Phase 6 reports `deliveryBase`; and "Before `pr`" resolves the workflow's
+// final head only after the pre-delivery steps, so a merge commit joins the delivered range.
+test('autopilot makes one delivery conflict attempt and publishes the draft despite an unresolved conflict', () => {
+  const autopilot = flat(tool('autopilot'));
+  const steps = autopilot.slice(autopilot.indexOf('**Pre-delivery steps.**'));
+  const first = steps.indexOf('1. **Delivery base.**');
+  assert.ok(first > 0, 'the delivery base is pre-delivery step 1');
+  assert.ok(first < steps.indexOf('2. **Architecture fit.**'));
+  assert.ok(steps.indexOf('2. **Architecture fit.**') < steps.indexOf('3. **Delivery record.**'));
+  assert.ok(steps.indexOf('3. **Delivery record.**') < steps.indexOf('4. **Appendix.**'));
+  assert.match(
+    steps,
+    /1\. \*\*Delivery base\.\*\* Run `autopilot-delivery-conflict`: at most one merge commit, never a blocker for an unresolved conflict\./,
+  );
+  assert.match(
+    autopilot,
+    /```lazy-include autopilot-delivery-conflict when: the workflow reported its verified handback commit and pre-delivery step 1 starts ```/,
+  );
+
+  const fragment = flat(read('shared/autopilot-delivery-conflict.md'));
+  assert.match(
+    fragment,
+    /makes \*\*exactly one\*\* automatic attempt to resolve a textual conflict/,
+  );
+  assert.match(
+    fragment,
+    /Its only outcomes are no merge commit or one merge commit on the unrebased head\./,
+  );
+  assert.match(fragment, /Never rebase, reset, force-push or retry here\./);
+  assert.match(fragment, /no rounds, one attempt/);
+  assert.match(
+    fragment,
+    /while `git -C <checkout> rev-parse -q --verify MERGE_HEAD` finds a merge in progress, run `git -C <checkout> merge --abort`, leaving the branch at `<head-oid>`\./,
+  );
+  assert.match(
+    fragment,
+    /`off` makes no attempt: step 11 records `unresolved` with `conflict-resolution-off`\. `ask` cannot be posed in this unattended run and counts as the one automatic attempt/,
+  );
+  assert.match(fragment, /the record keeps `conflictResolution: "ask"`/);
+  assert.match(
+    fragment,
+    /An unresolved conflict is \*\*no blocker\*\*: the run continues to the remaining pre-delivery steps, `pr-appendix` and `\{\{SKILL:pr\}\}`, and publishes the draft with the appendix's "Delivery base" flag/,
+  );
+  assert.match(
+    fragment,
+    /resolving it is left to a later session such as `\{\{SKILL:merge-gate\}\}`/,
+  );
+  assert.match(
+    fragment,
+    /From here the remaining pre-delivery steps and the workflow's final head OID use the branch tip/,
+  );
+
+  assert.match(
+    autopilot,
+    /the delivery base: `run-close`'s `deliveryBase` with its range, result, merge commit or unresolved reason and conflicted paths, and the `ask` disclosure\./,
+  );
+
+  const before = flat(FRAGMENT.slice(FRAGMENT.indexOf('**Before `pr`:**')));
+  assert.match(
+    before,
+    /The workflow resolves its verified final head OID only after these steps, so a merge commit of a resolved delivery conflict is part of the delivered range/,
+  );
+  assert.match(before, /an earlier `Verification evidence:` record then reads `stale` in `pr`/);
 });
 
 // Invariant: local state in the invocation checkout blocks only when it matters: precondition 3 of
@@ -757,4 +878,23 @@ test('autopilot wires the delivery-state calls and reads fit sources from the de
   }
   assert.match(source, /never a blocker\.\n {3}<!-- spawn-site:autopilot\/architecture-fit -->\n/);
   assert.match(text, /`\{assessed: false, unavailable: true\}`, or `null` when none was recorded/);
+});
+
+// Invariant: the limit the architecture-fit prompt states for the leaf's `reason` equals
+// `LIMITS.reason` in `autopilot-core.mjs`, which `fit-record` enforces, so the leaf is never told to
+// write a reason the helper rejects.
+test('autopilot architecture-fit prompt states the reason limit that fit-record enforces', () => {
+  const source = tool('autopilot');
+  const start = source.indexOf('**Architecture fit.**');
+  const end = source.indexOf('<!-- spawn-site:autopilot/architecture-fit -->');
+  assert.ok(start !== -1, 'step 2 anchor `**Architecture fit.**` is missing');
+  assert.ok(end > start, 'spawn-site marker autopilot/architecture-fit is missing after step 2');
+  const text = flat(source.slice(start, end));
+  const matches = [...text.matchAll(/"reason": "<one sentence, at most (\d+) characters>"/g)];
+  assert.equal(
+    matches.length,
+    1,
+    'the architecture-fit prompt must state `"reason": "<one sentence, at most N characters>"` exactly once',
+  );
+  assert.equal(Number(matches[0][1]), LIMITS.reason);
 });

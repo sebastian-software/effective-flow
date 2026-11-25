@@ -21,6 +21,7 @@ import { test } from 'node:test';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 import {
   BRANCH_PROOF_REASONS,
+  MAX_CONFLICTED_PATHS,
   MERGE_PROOF_MINIMUM_GIT_VERSION,
   MERGE_PROOF_TIMEOUT_MS,
   PrDeliveryGitError,
@@ -301,6 +302,53 @@ test('localMergeProof reports a conflict with the count of conflicted paths', as
   assert.equal(proof.baseCommit, moved);
 });
 
+// Invariant: `conflictedPaths` is `[]` for a clean proof, null for an unavailable one, and for a
+// conflict the unique reportable names sorted and cut at MAX_CONFLICTED_PATHS, while
+// `conflictCount` keeps counting every unique name.
+test('localMergeProof lists the conflicted paths, bounded', async (t) => {
+  if (!(await realGitMeetsMinimum())) return t.skip('Git older than 2.38');
+  assert.equal(MAX_CONFLICTED_PATHS, 20);
+  const names = Array.from(
+    { length: 25 },
+    (_, i) => `conflict/f${String(24 - i).padStart(2, '0')}.txt`,
+  );
+  const files = Object.fromEntries(names.map((name) => [name, 'one\ntwo\nthree\n']));
+  const { root, base } = repository(t, { files });
+  branchFrom(root, base, 'head');
+  const head = commit(
+    root,
+    'head change',
+    Object.fromEntries(names.map((name) => [name, 'one\nHEAD\nthree\n'])),
+  );
+  git(root, 'checkout', '-q', 'develop');
+  const moved = commit(
+    root,
+    'base change',
+    Object.fromEntries(names.map((name) => [name, 'one\nBASE\nthree\n'])),
+  );
+  git(root, 'update-ref', 'refs/remotes/origin/develop', moved);
+  const proof = await localMergeProof(ROOT_INPUT(root, head), { runner });
+  assert.equal(proof.status, 'conflict');
+  assert.equal(proof.conflictCount, 25);
+  assert.equal(proof.conflictedPaths.length, 20);
+  assert.deepEqual(proof.conflictedPaths, [...names].sort().slice(0, 20));
+
+  const single = conflictingRepository(t);
+  const one = await localMergeProof(ROOT_INPUT(single.root, single.head), { runner });
+  assert.deepEqual(one.conflictedPaths, ['shared.txt']);
+
+  const clean = repository(t);
+  branchFrom(clean.root, clean.base, 'head');
+  const cleanHead = commit(clean.root, 'head change', { 'head.txt': 'h\n' });
+  const cleanProof = await localMergeProof(ROOT_INPUT(clean.root, cleanHead), { runner });
+  assert.equal(cleanProof.status, 'clean');
+  assert.deepEqual(cleanProof.conflictedPaths, []);
+
+  const missing = await localMergeProof(ROOT_INPUT(clean.root, 'f'.repeat(40)), { runner });
+  assert.equal(missing.status, 'unavailable');
+  assert.equal(missing.conflictedPaths, null);
+});
+
 test("localMergeProof leaves the repository's object set, refs and working tree unchanged", async (t) => {
   if (!(await realGitMeetsMinimum())) return t.skip('Git older than 2.38');
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-proof-tmp-')));
@@ -413,6 +461,7 @@ test('localMergeProof reads an unexpected merge-tree outcome as unavailable', as
   });
   assert.equal(conflict.status, 'conflict');
   assert.equal(conflict.conflictCount, 2);
+  assert.deepEqual(conflict.conflictedPaths, ['a.txt', 'b.txt']);
 });
 
 // The real runner's result of a bounded stop, for both of its modes: the merge-tree call is swapped

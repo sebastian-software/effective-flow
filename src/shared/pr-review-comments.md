@@ -73,8 +73,12 @@ head branch, base branch, URL, and state:
 - **From the current branch:** if no PR reference was passed, try to determine the open PR of the
   currently checked-out branch.
 
-Use helper reference parsing followed by the normalized PR read/list operations. For current-
-branch resolution, list open PRs for the exact head branch and require exactly one match.
+Parse an argument with `reference-parse` and `{cwd, reference, expectedKind: "pull-request"}`; for
+a PR URL only, first call `repository-resolve` with `{cwd}` and pass its whole `data` object as
+`repository`, so `REFERENCE_REPOSITORY_MISMATCH` identifies a pull request of another repository.
+Read the PR with `pr-read` and `{cwd, number}`, taking `number` from the parsed item, never the raw
+reference. Without an argument, list open PRs with `pr-list` and `{cwd, head}` for the exact head
+branch and require exactly one match that is `sameRepository: true`.
 
 If the PR is already `merged`/`closed`: report it and perform no write – no commits and no
 comments (for the inbound direction see the error cases in `{{SKILL:iterate}}`).

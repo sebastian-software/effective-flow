@@ -16,7 +16,11 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import nodeFs from 'node:fs';
 
-import { buildPlanPrMarkerLine, executeOperation } from '../src/scripts/plan-publication-core.mjs';
+import {
+  BASE_MOVE_STOPPING_REASONS,
+  buildPlanPrMarkerLine,
+  executeOperation,
+} from '../src/scripts/plan-publication-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 import { UPSTREAM_FETCH_TIMEOUT_MS } from '../src/scripts/delivery-selection-core.mjs';
 import {
@@ -43,6 +47,19 @@ const PLAN_TEXT = [
   '## Requirement',
   '',
   'Ship the demo behind `src/shared/demo.md`.',
+  '',
+].join('\n');
+// PLAN_TEXT plus an Affected files table (a tracked, a glob and a shorthand row), kept apart so the
+// line numbers that existing scan tests assert for PLAN_TEXT stay put.
+const PLAN_TABLE_TEXT = [
+  PLAN_TEXT,
+  '## Affected files',
+  '',
+  '| File | Description |',
+  '|---|---|',
+  '| `README.md` | a tracked file |',
+  '| `src/tools/*.md` | a glob entry |',
+  '| `remote-tracker-github-core.mjs` | a shorthand entry |',
   '',
 ].join('\n');
 const TIMEOUT_RESULT = Object.freeze({ status: null, signal: 'SIGTERM', stdout: '', stderr: '' });
@@ -2679,4 +2696,635 @@ test('complete-branch refuses a branch commit message over the size limit as INP
     assert.equal(envelope.error.details.field, 'commitMessage');
     assert.equal(world.forge.creates.length, 0);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// assess-base-move: a moved base, assessed read-only before the single re-publish
+
+// A plan text with its own Affected files rows and prose, under the same issue header.
+function planWith({ rows = ['`README.md`'], prose = '' } = {}) {
+  return [
+    '# Demo plan',
+    '',
+    '**Plan status:** Not implemented',
+    `**Issue:** #${ISSUE}`,
+    '',
+    '## Requirement',
+    '',
+    prose,
+    '',
+    ...(rows === null
+      ? []
+      : [
+          '## Affected files',
+          '',
+          '| File | Description |',
+          '|---|---|',
+          ...rows.map((row) => `| ${row} | row |`),
+          '',
+        ]),
+  ].join('\n');
+}
+
+function setPlan(world, text) {
+  writeFileSync(world.planAbsolute, text);
+}
+
+// Commits the given files (path -> text, null deletes) and gitlinks (path -> commit OID) to the
+// remote base through the seed clone and returns the new tip. `advanceRemoteBranch` commits the
+// same tree, so it changes no path; this helper does.
+function moveBase(world, { files = {}, gitlinks = {}, message = 'docs: move base' } = {}) {
+  const seed = world.seed;
+  world.gitIn(seed, 'pull', '--quiet', '--ff-only', 'origin', 'main');
+  for (const [file, text] of Object.entries(files)) {
+    if (text === null) world.gitIn(seed, 'rm', '--quiet', '-f', file);
+    else write(seed, file, text);
+  }
+  world.gitIn(seed, 'add', '-A');
+  for (const [file, oid] of Object.entries(gitlinks)) {
+    world.gitIn(seed, 'update-index', '--add', '--cacheinfo', `160000,${oid},${file}`);
+  }
+  world.gitIn(seed, 'commit', '--quiet', '-m', message);
+  world.gitIn(seed, 'push', '--quiet', 'origin', 'main');
+  return world.gitIn(seed, 'rev-parse', 'HEAD');
+}
+
+function trackingTip(world) {
+  return world.git('rev-parse', 'refs/remotes/origin/main');
+}
+
+function assessInput(world, overrides = {}) {
+  return {
+    cwd: world.local,
+    issue: ISSUE,
+    planDir: PLAN_DIR,
+    planFile: PLAN_FILE,
+    remote: 'origin',
+    baseBranch: 'main',
+    fromBaseOid: trackingTip(world),
+    expectedBlobOid: world.git('hash-object', '--no-filters', PLAN_FILE),
+    ...overrides,
+  };
+}
+
+function assessBaseMove(world, overrides = {}, options = {}) {
+  return executeOperation('assess-base-move', assessInput(world, overrides), {
+    runner: world.runner,
+    environment: {},
+    ...options,
+  });
+}
+
+// An assessment is read-only: nothing but the base fetch, no branch or forge object anywhere.
+function assertAssessedNothing(world) {
+  assertNothingWritten(world, { allowFetch: true });
+  assert.equal(remoteRef(world, BRANCH), null, 'no remote plan branch');
+  assert.equal(world.git('for-each-ref', 'refs/heads/effective-flow'), '', 'no local plan branch');
+  assert.equal(gitCalls(world, 'push').length, 0);
+}
+
+async function assessMove(t, { text = PLAN_TABLE_TEXT, move }) {
+  const world = createWorld(t);
+  setPlan(world, text);
+  const fromBaseOid = trackingTip(world);
+  const toBaseOid = moveBase(world, move);
+  const envelope = await assessBaseMove(world, { fromBaseOid });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.operation, 'assess-base-move');
+  assert.equal(envelope.data.state, 'assessed');
+  assert.equal(envelope.data.fromBaseOid, fromBaseOid);
+  assert.equal(envelope.data.toBaseOid, toBaseOid);
+  // The envelope's publish/stop split is the exported stopping-reason list, for every verdict.
+  assert.equal(envelope.data.republish, !BASE_MOVE_STOPPING_REASONS.includes(envelope.data.reason));
+  assertAssessedNothing(world);
+  return { world, data: envelope.data };
+}
+
+const ARCHIVED_OTHER = {
+  'docs/plan/archive/2026-11-20-issue-731-docs-only.md': '# Other\n\n**Issue:** #731\n',
+};
+
+test('assess-base-move: an unrelated move fits, and publish on the new tip puts the plan on it', async (t) => {
+  const { world, data } = await assessMove(t, {
+    move: {
+      files: { 'docs/unrelated.md': 'x\n', 'src/elsewhere/a.mjs': 'a\n', ...ARCHIVED_OTHER },
+    },
+  });
+  assert.equal(data.verdict, 'fits');
+  assert.equal(data.reason, null);
+  assert.equal(data.commitCount, 1);
+  assert.equal(data.changedPathCount, 3);
+  assert.deepEqual(data.citedPaths, [
+    'README.md',
+    'src/tools',
+    'remote-tracker-github-core.mjs',
+    'src/shared/demo.md',
+  ]);
+  assert.equal(data.citedPathCount, 4);
+  assert.deepEqual(data.overlappingPaths, []);
+  assert.notEqual(data.fromBaseOid, data.toBaseOid);
+
+  // The exact base binding stays: the old base is refused before any mutation.
+  const stale = await publish(world, { expectedBaseOid: data.fromBaseOid });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.error.code, 'BASE_CHANGED');
+  assertNothingWritten(world, { allowFetch: true });
+  assert.equal(remoteRef(world, BRANCH), null);
+
+  // The assessed tip publishes: the plan commit's parent is the new tip, and the draft PR opens.
+  const envelope = await publish(world, { expectedBaseOid: data.toBaseOid });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.state, 'pull-request-opened');
+  assert.equal(envelope.data.baseOid, data.toBaseOid);
+  assert.equal(world.gitIn(world.remote, 'rev-parse', `${BRANCH}^`), data.toBaseOid);
+  assert.equal(remoteRef(world, BRANCH), envelope.data.commitOid);
+  assert.equal(world.forge.creates.length, 1);
+  assert.equal(world.forge.creates[0].payload.draft, true);
+  assert.equal(world.forge.creates[0].payload.head, BRANCH);
+});
+
+test('assess-base-move: an empty range fits with commitCount 0', async (t) => {
+  const world = createWorld(t);
+  setPlan(world, PLAN_TABLE_TEXT);
+  const tip = trackingTip(world);
+  const envelope = await assessBaseMove(world);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.verdict, 'fits');
+  assert.equal(envelope.data.commitCount, 0);
+  assert.equal(envelope.data.changedPathCount, 0);
+  assert.equal(envelope.data.fromBaseOid, tip);
+  assert.equal(envelope.data.toBaseOid, tip);
+  assertAssessedNothing(world);
+});
+
+test('assess-base-move: a changed table path overlaps and names the path', async (t) => {
+  const { data } = await assessMove(t, { move: { files: { 'README.md': 'changed\n' } } });
+  assert.equal(data.verdict, 'overlap');
+  assert.equal(data.reason, 'cited-path');
+  assert.deepEqual(data.overlappingPaths, ['README.md']);
+});
+
+// Invariant (issue #734 follow-up): an overlapping move re-publishes on the assessed tip with the
+// helper-rendered flag between the caller's prose and the marker tail; a dry run returns exactly that
+// body, the same input without `baseMove` keeps today's body byte for byte, and the stored draft PR
+// body carries the flag with a marker the shipped parser still reads as valid.
+test('assess-base-move: an overlapping move publishes flagged on the new tip', async (t) => {
+  const { world, data } = await assessMove(t, { move: { files: { 'README.md': 'changed\n' } } });
+  assert.equal(data.verdict, 'overlap');
+  assert.equal(data.republish, true);
+  const { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths } = data;
+  const baseMove = { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths };
+  const prose = publishInput(world).body;
+  const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
+  const flag =
+    `**Unresolved base move.** The base moved from \`${fromBaseOid.slice(0, 7)}\` to ` +
+    `\`${toBaseOid.slice(0, 7)}\` while this plan was written (1 commit). The plan was published ` +
+    `on \`${toBaseOid.slice(0, 7)}\` without reconciling it. Reason: \`cited-path\`. Overlapping ` +
+    'paths: `README.md`. Review must reconcile the plan with the new base before it is implemented.';
+
+  const plain = await publish(world, { expectedBaseOid: toBaseOid }, { apply: false });
+  assert.equal(plain.ok, true, JSON.stringify(plain.error));
+  assert.equal(plain.data.body, `${prose}\n\n${tail}`, 'no flag without baseMove');
+  const dry = await publish(world, { expectedBaseOid: toBaseOid, baseMove }, { apply: false });
+  assert.equal(dry.ok, true, JSON.stringify(dry.error));
+  assert.equal(dry.data.body, `${prose}\n\n${flag}\n\n${tail}`);
+  assert.equal(remoteRef(world, BRANCH), null);
+
+  const envelope = await publish(world, { expectedBaseOid: toBaseOid, baseMove });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.state, 'pull-request-opened');
+  assert.equal(world.gitIn(world.remote, 'rev-parse', `${BRANCH}^`), toBaseOid);
+  assert.equal(world.forge.creates.length, 1);
+  assert.equal(world.forge.creates[0].payload.draft, true);
+  const stored = world.forge.pulls.at(-1).body;
+  assert.ok(stored.includes('**Unresolved base move.**'), stored);
+  assert.deepEqual(inspectPlanPrMarker(stored), { status: 'valid', plan: PLAN_FILE });
+});
+
+// Invariant (issue #734): `allowNewerBase` binds the plan commit to the assessed base behind a newer
+// fetched tip, reports the further move, and renders the fixed text: a standalone paragraph after a
+// fitting assessment, one appended sentence after a flagged one.
+test('publish with allowNewerBase publishes on the assessed base behind a newer tip and flags the further move', async (t) => {
+  const { buildBaseMoveFlag, buildFurtherBaseMoveFlag } =
+    await import('../src/scripts/plan-publication-core.mjs');
+  const world = createWorld(t);
+  const base0 = trackingTip(world);
+  const base1 = moveBase(world, { files: { 'README.md': 'changed\n' }, message: 'docs: first' });
+  const base2 = moveBase(world, { files: { 'docs/more.md': 'x\n' }, message: 'docs: second' });
+  const prose = publishInput(world).body;
+  const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
+
+  // Fits variant: the assessed base is base1 and carries no flag of its own.
+  const fitting = { fromBaseOid: base1, toBaseOid: base2, commitCount: 1 };
+  const further = `**Unresolved base move.** The base moved again from \`${base1.slice(0, 7)}\` to \`${base2.slice(0, 7)}\` (1 commit) after the plan was assessed against it. The plan was published on \`${base1.slice(0, 7)}\` without assessing that move. Review must reconcile the plan with the new base before it is implemented.`;
+  assert.equal(buildFurtherBaseMoveFlag(fitting), further);
+  const dry = await publish(
+    world,
+    { expectedBaseOid: base1, allowNewerBase: true },
+    { apply: false },
+  );
+  assert.equal(dry.ok, true, JSON.stringify(dry.error));
+  assert.equal(dry.data.body, `${prose}\n\n${further}\n\n${tail}`);
+  assert.deepEqual(dry.data.furtherBaseMove, fitting);
+  assert.equal(remoteRef(world, BRANCH), null);
+
+  const envelope = await publish(world, { expectedBaseOid: base1, allowNewerBase: true });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.state, 'pull-request-opened');
+  assert.equal(envelope.data.baseOid, base1);
+  assert.deepEqual(envelope.data.furtherBaseMove, fitting);
+  assert.equal(world.gitIn(world.remote, 'rev-parse', `${BRANCH}^`), base1);
+  assert.equal(world.forge.creates.length, 1);
+  assert.equal(world.forge.creates[0].payload.draft, true);
+  assert.equal(world.forge.creates[0].payload.base, 'main');
+  assert.ok(world.forge.pulls.at(-1).body.includes(further));
+  assert.deepEqual(inspectPlanPrMarker(world.forge.pulls.at(-1).body), {
+    status: 'valid',
+    plan: PLAN_FILE,
+  });
+
+  // Overlap variant: the assessed move base0..base1 keeps its flag and gains one sentence.
+  const second = createWorld(t);
+  const first0 = trackingTip(second);
+  const first1 = moveBase(second, { files: { 'README.md': 'changed\n' } });
+  const first2 = moveBase(second, { files: { 'docs/more.md': 'x\n' } });
+  const baseMove = {
+    fromBaseOid: first0,
+    toBaseOid: first1,
+    verdict: 'overlap',
+    reason: 'cited-path',
+    commitCount: 1,
+    overlappingPaths: ['README.md'],
+  };
+  const flagged = buildBaseMoveFlag(baseMove, {
+    fromBaseOid: first1,
+    toBaseOid: first2,
+    commitCount: 1,
+  });
+  assert.ok(
+    flagged.endsWith(
+      ` The base moved again to \`${first2.slice(0, 7)}\` (1 commit) after this assessment; that move was not assessed.`,
+    ),
+    flagged,
+  );
+  const overlapped = await publish(second, {
+    expectedBaseOid: first1,
+    allowNewerBase: true,
+    baseMove,
+  });
+  assert.equal(overlapped.ok, true, JSON.stringify(overlapped.error));
+  assert.equal(second.gitIn(second.remote, 'rev-parse', `${BRANCH}^`), first1);
+  assert.deepEqual(overlapped.data.furtherBaseMove, {
+    fromBaseOid: first1,
+    toBaseOid: first2,
+    commitCount: 1,
+  });
+  const stored = second.forge.pulls.at(-1).body;
+  assert.ok(stored.includes(flagged), stored);
+  assert.ok(!stored.includes('after the plan was assessed against it'), 'one flag, not two');
+});
+
+// Invariant (issue #734): the further range keeps every integrity stop. A base that is not an
+// ancestor of the tip, a same-issue plan or a plan whose header and file name name different issues
+// in the range stops with BASE_CHANGED before any write.
+test('allowNewerBase stops on a non-ancestor, a same-issue plan or a plan-identity conflict in the further range', async (t) => {
+  const stopped = async (world, overrides, reason) => {
+    const envelope = await publish(world, { allowNewerBase: true, ...overrides });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'BASE_CHANGED', JSON.stringify(envelope.error));
+    assert.equal(envelope.error.details.reason, reason);
+    assertNothingWritten(world, { allowFetch: true });
+    assert.equal(remoteRef(world, BRANCH), null);
+  };
+  const unknown = createWorld(t);
+  moveBase(unknown, { files: { 'docs/a.md': 'a\n' } });
+  await stopped(unknown, { expectedBaseOid: '9'.repeat(40) }, 'not-ancestor');
+
+  const diverged = createWorld(t);
+  const tree = diverged.git('rev-parse', 'HEAD^{tree}');
+  const sideways = diverged.git('commit-tree', tree, '-m', 'side');
+  moveBase(diverged, { files: { 'docs/a.md': 'a\n' } });
+  await stopped(diverged, { expectedBaseOid: sideways }, 'not-ancestor');
+
+  for (const [files, reason] of [
+    [{ 'docs/plan/2026-11-01-issue-12-second.md': '# Second\n' }, 'same-issue-plan'],
+    [
+      { 'docs/plan/2026-11-01-renamed-topic.md': `# R\n\n**Issue:** #${ISSUE}\n` },
+      'same-issue-plan',
+    ],
+    [
+      { 'docs/plan/2026-11-01-issue-9-confused.md': `# Confused\n\n**Issue:** #${ISSUE}\n` },
+      'plan-identity',
+    ],
+  ]) {
+    const world = createWorld(t);
+    const assessed = trackingTip(world);
+    moveBase(world, { files });
+    await stopped(world, { expectedBaseOid: assessed }, reason);
+  }
+
+  const tracked = createWorld(t);
+  const assessed = trackingTip(tracked);
+  moveBase(tracked, { files: { [PLAN_FILE]: PLAN_TEXT } });
+  const refused = await publish(tracked, { expectedBaseOid: assessed, allowNewerBase: true });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'CHANGESET_INVALID', JSON.stringify(refused.error));
+  assertNothingWritten(tracked, { allowFetch: true });
+
+  // Without the flag the moved tip keeps failing the exact base binding.
+  const exact = createWorld(t);
+  const before = trackingTip(exact);
+  moveBase(exact, { files: { 'docs/a.md': 'a\n' } });
+  const plain = await publish(exact, { expectedBaseOid: before });
+  assert.equal(plain.error.code, 'BASE_CHANGED');
+  assert.equal(plain.error.details.reason, undefined);
+});
+
+// Invariant (issue #734): a failed object probe is no base verdict. When `git cat-file` for the
+// assessed base fails to run (spawn error or timeout), the further-move check reports
+// COMMAND_FAILED, never BASE_CHANGED, and writes nothing.
+test('allowNewerBase reports COMMAND_FAILED when the assessed-base probe fails to run', async (t) => {
+  const world = createWorld(t);
+  const assessed = trackingTip(world);
+  moveBase(world, { files: { 'docs/a.md': 'a\n' } });
+  world.intercept = (call) =>
+    call.executable === 'git' &&
+    call.args.includes('cat-file') &&
+    call.args.includes(`${assessed}^{commit}`)
+      ? { status: null, stdout: '', stderr: '', error: { code: 'ETIMEDOUT' } }
+      : undefined;
+  const envelope = await publish(world, { expectedBaseOid: assessed, allowNewerBase: true });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED', JSON.stringify(envelope.error));
+  assert.equal(envelope.error.details.command, 'git cat-file');
+  assertNothingWritten(world, { allowFetch: true });
+  assert.equal(remoteRef(world, BRANCH), null);
+});
+
+// Invariant (issue #734): the flag changes nothing on a tip that did not move; the envelope reports
+// `furtherBaseMove: null`, the body is the plain one, and a publish without the flag has no key.
+test('allowNewerBase on an unmoved tip publishes exactly as before', async (t) => {
+  const world = createWorld(t);
+  const tip = trackingTip(world);
+  const prose = publishInput(world).body;
+  const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
+  const dry = await publish(
+    world,
+    { expectedBaseOid: tip, allowNewerBase: true },
+    { apply: false },
+  );
+  assert.equal(dry.ok, true, JSON.stringify(dry.error));
+  assert.equal(dry.data.body, `${prose}\n\n${tail}`);
+  assert.equal(dry.data.furtherBaseMove, null);
+  const plain = await publish(world, { expectedBaseOid: tip }, { apply: false });
+  assert.equal(plain.data.body, dry.data.body);
+  assert.equal('furtherBaseMove' in plain.data, false);
+
+  const envelope = await publish(world, { expectedBaseOid: tip, allowNewerBase: true });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.furtherBaseMove, null);
+  assert.equal(envelope.data.baseOid, tip);
+  assert.equal(world.gitIn(world.remote, 'rev-parse', `${BRANCH}^`), tip);
+  assert.ok(!world.forge.pulls.at(-1).body.includes('Unresolved base move'));
+});
+
+// Protects the folding rule end to end: the assessing clone's `core.ignorecase`, read from Git and
+// not from the file system, decides whether a citation differing only in case names a changed file.
+test('assess-base-move: core.ignorecase in the assessing clone makes a case-differing citation overlap', async (t) => {
+  const text = planWith({ rows: ['`readme.md`'] });
+  const move = { files: { 'README.md': 'changed\n' } };
+  const exact = await assessMove(t, { text, move });
+  assert.equal(exact.data.verdict, 'fits');
+
+  const world = createWorld(t);
+  world.git('config', 'core.ignorecase', 'true');
+  setPlan(world, text);
+  const fromBaseOid = trackingTip(world);
+  moveBase(world, move);
+  const envelope = await assessBaseMove(world, { fromBaseOid });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.verdict, 'overlap');
+  assert.equal(envelope.data.reason, 'cited-path');
+  assert.deepEqual(envelope.data.overlappingPaths, ['README.md']);
+  assertAssessedNothing(world);
+});
+
+test('assess-base-move: a commit under a glob entry directory overlaps, one elsewhere fits', async (t) => {
+  const hit = await assessMove(t, { move: { files: { 'src/tools/new-tool.md': 'x\n' } } });
+  assert.equal(hit.data.verdict, 'overlap');
+  assert.equal(hit.data.reason, 'cited-path');
+  assert.deepEqual(hit.data.overlappingPaths, ['src/tools/new-tool.md']);
+  const miss = await assessMove(t, { move: { files: { 'src/toolsmith/new-tool.md': 'x\n' } } });
+  assert.equal(miss.data.verdict, 'fits');
+});
+
+test('assess-base-move: a commit that changes the file a shorthand token names overlaps', async (t) => {
+  const { data } = await assessMove(t, {
+    move: { files: { 'src/scripts/remote-tracker-github-core.mjs': 'x\n' } },
+  });
+  assert.equal(data.verdict, 'overlap');
+  assert.equal(data.reason, 'cited-path');
+  assert.deepEqual(data.overlappingPaths, ['src/scripts/remote-tracker-github-core.mjs']);
+});
+
+test('assess-base-move: a changed basename matching a first-segment pattern overlaps', async (t) => {
+  const text = planWith({
+    rows: ['`README.md`', '`remote-tracker-{shared,decomposition}-core.mjs`', '`*.json`'],
+  });
+  const hit = await assessMove(t, {
+    text,
+    move: { files: { 'src/scripts/remote-tracker-shared-core.mjs': 'x\n' } },
+  });
+  assert.equal(hit.data.verdict, 'overlap');
+  assert.deepEqual(hit.data.overlappingPaths, ['src/scripts/remote-tracker-shared-core.mjs']);
+  const basename = await assessMove(t, {
+    text,
+    move: { files: { 'config/settings.json': '{}\n' } },
+  });
+  assert.equal(basename.data.verdict, 'overlap');
+  assert.deepEqual(basename.data.overlappingPaths, ['config/settings.json']);
+  const miss = await assessMove(t, {
+    text,
+    move: { files: { 'src/scripts/remote-tracker-ledger-core.mjs': 'x\n' } },
+  });
+  assert.equal(miss.data.verdict, 'fits');
+});
+
+test('assess-base-move: a dot-path in the table is matched normally', async (t) => {
+  const text = planWith({ rows: ['`.github/workflows/ci.yml`'] });
+  const hit = await assessMove(t, {
+    text,
+    move: { files: { '.github/workflows/ci.yml': 'name: ci\n' } },
+  });
+  assert.equal(hit.data.verdict, 'overlap');
+  assert.deepEqual(hit.data.overlappingPaths, ['.github/workflows/ci.yml']);
+  const miss = await assessMove(t, {
+    text,
+    move: { files: { '.github/workflows/release.yml': 'name: r\n' } },
+  });
+  assert.equal(miss.data.verdict, 'fits');
+});
+
+test('assess-base-move: a same-issue plan added by file name overlaps with same-issue-plan', async (t) => {
+  for (const file of [
+    'docs/plan/2026-11-01-issue-12-second.md',
+    'docs/plan/archive/2026-11-01-issue-12-second.md',
+  ]) {
+    const { data } = await assessMove(t, { move: { files: { [file]: '# Second\n' } } });
+    assert.equal(data.verdict, 'overlap', file);
+    assert.equal(data.reason, 'same-issue-plan', file);
+    assert.deepEqual(data.overlappingPaths, [file]);
+  }
+});
+
+test('assess-base-move: a same-issue plan identified only by its Issue header overlaps', async (t) => {
+  const file = 'docs/plan/2026-11-01-renamed-topic.md';
+  const { data } = await assessMove(t, {
+    move: { files: { [file]: `# Renamed\n\n**Issue:** #${ISSUE}\n` } },
+  });
+  assert.equal(data.verdict, 'overlap');
+  assert.equal(data.reason, 'same-issue-plan');
+  assert.deepEqual(data.overlappingPaths, [file]);
+});
+
+test('assess-base-move: a plan header that conflicts with its file name is undecidable', async (t) => {
+  const { data } = await assessMove(t, {
+    move: {
+      files: {
+        'docs/plan/2026-11-01-issue-9-confused.md': `# Confused\n\n**Issue:** #${ISSUE}\n`,
+      },
+    },
+  });
+  assert.equal(data.verdict, 'undecidable');
+  assert.equal(data.reason, 'plan-identity');
+});
+
+test('assess-base-move: a gitlink change in the range is undecidable', async (t) => {
+  const world = createWorld(t);
+  setPlan(world, PLAN_TABLE_TEXT);
+  const fromBaseOid = trackingTip(world);
+  const submodule = moveBase(world, { files: { 'docs/unrelated.md': 'x\n' } });
+  const toBaseOid = moveBase(world, { gitlinks: { 'vendor/sub': submodule } });
+  const envelope = await assessBaseMove(world, { fromBaseOid });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.verdict, 'undecidable');
+  assert.equal(envelope.data.reason, 'gitlink');
+  assert.equal(envelope.data.toBaseOid, toBaseOid);
+  assert.equal(envelope.data.commitCount, 2);
+  assert.deepEqual(envelope.data.overlappingPaths, ['vendor/sub']);
+  assertAssessedNothing(world);
+});
+
+test('assess-base-move: a plan without an Affected files table is undecidable', async (t) => {
+  const { data } = await assessMove(t, {
+    text: planWith({ rows: null, prose: 'Only `src/shared/demo.md` is cited.' }),
+    move: { files: { 'docs/unrelated.md': 'x\n' } },
+  });
+  assert.equal(data.verdict, 'undecidable');
+  assert.equal(data.reason, 'no-affected-files');
+});
+
+test('assess-base-move: a single unusable table token is undecidable, the same token in prose is not', async (t) => {
+  const table = await assessMove(t, {
+    text: planWith({ rows: ['`README.md`', '`../outside.md`'] }),
+    move: { files: { 'docs/unrelated.md': 'x\n' } },
+  });
+  assert.equal(table.data.verdict, 'undecidable');
+  assert.equal(table.data.reason, 'unusable-entry');
+  const prose = await assessMove(t, {
+    text: planWith({ rows: ['`README.md`'], prose: 'Never touch `../outside.md`.' }),
+    move: { files: { 'docs/unrelated.md': 'x\n' } },
+  });
+  assert.equal(prose.data.verdict, 'fits');
+});
+
+test('assess-base-move: a from base that is no ancestor of the new tip is undecidable', async (t) => {
+  const world = createWorld(t);
+  setPlan(world, PLAN_TABLE_TEXT);
+  const tip = trackingTip(world);
+  // A local commit on the old base that the remote never saw: present, but not an ancestor.
+  const sideways = world.git('commit-tree', `${tip}^{tree}`, '-p', tip, '-m', 'sideways');
+  const toBaseOid = moveBase(world, { files: { 'docs/unrelated.md': 'x\n' } });
+  const envelope = await assessBaseMove(world, { fromBaseOid: sideways });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.verdict, 'undecidable');
+  assert.equal(envelope.data.reason, 'not-ancestor');
+  assert.equal(envelope.data.fromBaseOid, sideways);
+  assert.equal(envelope.data.toBaseOid, toBaseOid);
+  assertAssessedNothing(world);
+
+  // An object the repository does not hold is no ancestor either.
+  const unknown = await assessBaseMove(world, { fromBaseOid: 'f'.repeat(40) });
+  assert.equal(unknown.ok, true, JSON.stringify(unknown.error));
+  assert.equal(unknown.data.reason, 'not-ancestor');
+  assertAssessedNothing(world);
+});
+
+test('assess-base-move: a changed plan blob is BLOB_CHANGED before any fetch', async (t) => {
+  const world = createWorld(t);
+  setPlan(world, PLAN_TABLE_TEXT);
+  const actual = world.git('hash-object', '--no-filters', PLAN_FILE);
+  moveBase(world, { files: { 'docs/unrelated.md': 'x\n' } });
+  const envelope = await assessBaseMove(world, { expectedBlobOid: '0'.repeat(40) });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'BLOB_CHANGED');
+  assert.equal(envelope.error.details.actualOid, actual);
+  assert.equal(gitCalls(world, 'fetch').length, 0);
+  assertAssessedNothing(world);
+});
+
+test('assess-base-move: a rewritten remote base is BASE_REWRITTEN, not an empty range', async (t) => {
+  const world = createWorld(t);
+  setPlan(world, PLAN_TABLE_TEXT);
+  const tip = trackingTip(world);
+  const next = moveBase(world, { files: { 'docs/unrelated.md': 'x\n' } });
+  await assessBaseMove(world, { fromBaseOid: tip });
+  world.gitIn(world.remote, 'update-ref', 'refs/heads/main', tip, next);
+  const envelope = await assessBaseMove(world, { fromBaseOid: tip });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'BASE_REWRITTEN');
+  assert.equal(world.forge.creates.length, 0);
+});
+
+// Protects the 741fd348 case: a docs-only commit (AGENTS.md, a developer-guide page, another
+// issue's archived plan) does not stop a plan that only mentions `docs/` and `docs/plan/` as
+// context, but does stop a plan that cites AGENTS.md as a file.
+test('assess-base-move: a 741fd348-shaped docs-only commit fits a plan citing only directories', async (t) => {
+  const move = {
+    files: {
+      'AGENTS.md': '# changed\n',
+      'docs/developer-guide/build-system.md': '# build\n',
+      ...ARCHIVED_OTHER,
+    },
+  };
+  const fitting = await assessMove(t, {
+    text: planWith({
+      rows: ['`src/tools/*.md`', '`docs/plan/`'],
+      prose: 'Context: the guides live in `docs/` and plans in `docs/plan/`.',
+    }),
+    move,
+  });
+  assert.equal(fitting.data.verdict, 'fits');
+  assert.equal(fitting.data.changedPathCount, 3);
+
+  const citing = await assessMove(t, {
+    text: planWith({
+      rows: ['`src/tools/*.md`'],
+      prose: 'The rules in `AGENTS.md` apply, see also `docs/`.',
+    }),
+    move,
+  });
+  assert.equal(citing.data.verdict, 'overlap');
+  assert.equal(citing.data.reason, 'cited-path');
+  assert.deepEqual(citing.data.overlappingPaths, ['AGENTS.md']);
+});
+
+test('assess-base-move: an overlapping move leaves publish refusing the old base and creating nothing', async (t) => {
+  const { world, data } = await assessMove(t, { move: { files: { 'README.md': 'changed\n' } } });
+  assert.equal(data.verdict, 'overlap');
+  const stale = await publish(world, { expectedBaseOid: data.fromBaseOid });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.error.code, 'BASE_CHANGED');
+  assertNothingWritten(world, { allowFetch: true });
+  assert.equal(remoteRef(world, BRANCH), null);
 });

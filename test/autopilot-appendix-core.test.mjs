@@ -216,3 +216,70 @@ test('neutralizeAppendix bounds the text to the byte limit on a code point and s
   const exact = neutralizeAppendix([block('x'.repeat(10))], { maxBytes: 10 });
   assert.equal(exact.truncated, false);
 });
+
+// Invariant: the base-move section sits outside the blocker section, so its lines (even bullets
+// or a path list) never change the blocker count that gates the appendix.
+test('countAppendixBlockers ignores the base-move section in either language', () => {
+  const move = (heading) => [
+    heading,
+    '',
+    '- not a blocker',
+    'The base moved from `aaaaaaa` to `bbbbbbb` during planning.',
+    '',
+  ];
+  assert.equal(
+    countAppendixBlockers([block(...move('### Base move'), '### Blockers', '', '- a', '- b')]),
+    2,
+  );
+  assert.equal(
+    countAppendixBlockers([block(...move('### Basis-Verschiebung'), '### Blocker', '- a')]),
+    1,
+  );
+  assert.equal(countAppendixBlockers([block(...move('### Base move'))]), 0);
+});
+
+// Invariant: the delivery-base section sits outside the blocker section, so its lines (even bullets
+// or the unresolved-conflict flag) never change the blocker count that gates the appendix.
+test('countAppendixBlockers ignores the delivery-base section in either language', () => {
+  const delivery = (heading, flag) => [
+    heading,
+    '',
+    '- not a blocker',
+    'Conflicted paths: `src/a.mjs`',
+    flag,
+    '',
+  ];
+  const en = delivery(
+    '### Delivery base',
+    'Unresolved delivery conflict: resolving it is left to a later session such as `merge-gate`.',
+  );
+  const de = delivery(
+    '### Basis bei Auslieferung',
+    'Ungelöster Auslieferungskonflikt: ihn zu lösen bleibt einer späteren Sitzung wie `merge-gate` überlassen.',
+  );
+  assert.equal(countAppendixBlockers([block(...en, '### Blockers', '', '- a', '- b')]), 2);
+  assert.equal(countAppendixBlockers([block(...de, '### Blocker', '- a')]), 1);
+  assert.equal(countAppendixBlockers([block(...en)]), 0);
+  assert.equal(countAppendixBlockers([block(...de)]), 0);
+});
+
+// Invariant (issue #734 follow-up): a flagged, unresolved base move is the PR's flag, not a
+// blocker: an appendix whose only section after the decisions is that move counts no blocker in
+// either language, so the draft PR is not gated by it.
+test('countAppendixBlockers counts no blocker for an appendix with only a flagged base move', () => {
+  const flagged = {
+    '### Base move': [
+      'The base moved from `aaaaaaa` to `bbbbbbb` during planning: 1 commit, 1 changed path. The plan was published on the new base.',
+      'The move is unresolved (`cited-path`): reconciling the plan with the new base is left to review.',
+      'Overlapping paths: `src/a.mjs`',
+    ],
+    '### Basis-Verschiebung': [
+      'Die Basis hat sich während der Planung von `aaaaaaa` auf `bbbbbbb` verschoben: 1 Commit, 1 geänderter Pfad. Der Plan wurde auf der neuen Basis veröffentlicht.',
+      'Die Verschiebung ist ungelöst (`cited-path`): den Plan mit der neuen Basis abzugleichen bleibt dem Review überlassen.',
+      'Überschneidende Pfade: `src/a.mjs`',
+    ],
+  };
+  for (const [heading, lines] of Object.entries(flagged)) {
+    assert.equal(countAppendixBlockers([block(heading, '', ...lines, '')]), 0, heading);
+  }
+});

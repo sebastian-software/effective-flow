@@ -8,12 +8,23 @@
 // Operations (one JSON object in, one `{ ok, operation, data | error }` envelope out):
 // - `decision-classify` (pure): validation, classification, tie rule, floor and budget.
 // - `decision-extract` (pure, reads only): the "Decided by score" machine block of a plan file.
-// - `run-init`, `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed`,
-//   `delivery-record`, `delivery-confirm`, `run-close`: the run ledger
+// - `run-init`, `decision-record`, `blocker-record`, `fit-record`, `base-move-record`,
+//   `delivery-base-record`, `plan-reviewed`, `delivery-record`, `delivery-confirm`, `run-close`:
+//   the run ledger
 //   `<cwd>/.effective-flow/autopilot/<run-id>/run.json`, written only through the
 //   `runtime-state-guard.mjs` primitives; `cwd` must be the primary checkout (RUNTIME_STATE_ROOT).
 //   `plan-reviewed` hashes the reviewed plan itself; `delivery-record` stores the archive path (or
-//   an unarchived delivery) and `delivery-confirm` the verified pushed head.
+//   an unarchived delivery) and `delivery-confirm` the verified pushed head, which after a
+//   resolved delivery base must contain its merge commit (MERGE_NOT_DELIVERED). `base-move-record`
+//   keeps at most one base move of an issue source's plan publication: a fitting one, or an
+//   unresolved one published with its flag (never a reason in `BASE_MOVE_STOPPING_REASONS`).
+//   `delivery-base-record` keeps at most one result of the pre-delivery base step on either
+//   source (`none`, `resolved`, `unresolved`, `unchecked`) and verifies a named checkout with Git:
+//   it is on the recorded `branch`, a resolved conflict is exactly one merge commit
+//   `[headOid, baseOid]` at the branch tip, an unresolved one left the branch at `headOid` with no
+//   merge in progress.
+// - `delivery-base-check` (reads only, fetches nothing): whether the fetched `origin/<baseRef>`
+//   moved past the head's merge base, with `localMergeProof` for a moved base.
 // - Planning claim: `run-init` on an issue source first takes the issue's shared planning claim
 //   (`effective-flow-state-planning-claim-core.mjs`, workflow `autopilot`, holder the minted run id)
 //   and only then creates the run directory and ledger; a held claim is ISSUE_CLAIMED with the
@@ -21,15 +32,17 @@
 //   written. The claim token is stored only in the internal ledger field `planningClaim`, which no
 //   operation output and no appendix ever carries. `run-close` writes the closed ledger first and
 //   only then releases the claim, for every outcome, reporting the release as `planningClaim`. A
-//   plan source takes no claim.
+//   plan source takes no claim. `run-close` also reports the recorded `fit`, `baseMove` and
+//   `deliveryBase` (without timestamps, `null` when none was recorded).
 // - `consent-check` (reads only): an open ledger whose recorded source is the given issue and whose
 //   recorded visibility is `private`.
 // - `run-check` (reads only): an open ledger for the run id, or RUN_NOT_OPEN.
 // - `pr-appendix`: renders, sanitizes and scans the appendix, writes it beside the ledger and
 //   records its SHA-256 in the ledger. A `blocked` or `withheld` result and every later
-//   `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed` and `delivery-record`
-//   withdraw that digest, so only a render of the current ledger can be merged. `delivery-confirm`
-//   changes nothing the appendix renders and keeps it.
+//   `decision-record`, `blocker-record`, `fit-record`, `base-move-record`, `delivery-base-record`,
+//   `plan-reviewed` and `delivery-record` withdraw that digest, so only a render of the current
+//   ledger can be merged. `delivery-confirm` changes nothing the appendix renders and keeps it. A
+//   recorded base move and a recorded delivery base each render as their own appendix section.
 // - `plan-copy-restore`: the one project-file write. It replaces the run's own review edit of a
 //   tracked plan in the invocation checkout (`sourceRoot`) with `HEAD`'s working-tree bytes, and
 //   only when every precondition holds; otherwise it reports `kept` or `not-applicable`. It never
@@ -65,14 +78,29 @@ import { constants as fsConstants } from 'node:fs';
 import { link, lstat, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { isDeepStrictEqual } from 'node:util';
 import {
   APPENDIX_BEGIN,
   APPENDIX_BLOCKER_HEADINGS,
   APPENDIX_END,
   MAX_APPENDIX_BYTES,
 } from './autopilot-appendix-core.mjs';
-import { hasClosingKeyword, scanEntries } from './plan-publication-core.mjs';
-import { archivePathFor } from './pr-delivery-git-core.mjs';
+import {
+  BASE_MOVE_REASONS,
+  BASE_MOVE_VERDICTS,
+  MAX_BASE_MOVE_PATHS,
+  baseMoveRepublishes,
+  hasClosingKeyword,
+  scanEntries,
+} from './plan-publication-core.mjs';
+import {
+  MAX_CONFLICTED_PATHS,
+  MERGE_PROOF_UNAVAILABLE_REASONS,
+  PrDeliveryGitError,
+  archivePathFor,
+  localMergeProof,
+  parseRangeInput,
+} from './pr-delivery-git-core.mjs';
 import {
   O_NOFOLLOW,
   RUNTIME_STATE_DIR,
@@ -97,6 +125,7 @@ import {
   planningClaimRelease,
 } from './effective-flow-state-planning-claim-core.mjs';
 import { StateOutcome } from './effective-flow-state-core.mjs';
+import { isSafeBaseRef } from './config-resolve-core.mjs';
 
 export const AUTOPILOT_OPERATIONS = Object.freeze([
   'run-init',
@@ -105,6 +134,9 @@ export const AUTOPILOT_OPERATIONS = Object.freeze([
   'decision-record',
   'blocker-record',
   'fit-record',
+  'base-move-record',
+  'delivery-base-check',
+  'delivery-base-record',
   'plan-reviewed',
   'delivery-record',
   'delivery-confirm',
@@ -1061,6 +1093,420 @@ async function fitRecordOperation(input, deps) {
   return { recorded: true, fit };
 }
 
+function nonNegativeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) invalid(`${label} must be a non-negative integer`);
+  return value;
+}
+
+function objectId(value, label) {
+  if (typeof value !== 'string' || !OBJECT_ID.test(value)) {
+    invalid(`${label} must be a full lowercase Git object id`);
+  }
+  return value;
+}
+
+const BASE_MOVE_FIELDS = Object.freeze([
+  'fromBaseOid',
+  'toBaseOid',
+  'verdict',
+  'reason',
+  'commitCount',
+  'changedPathCount',
+  'citedPathCount',
+  'citedPaths',
+  'overlappingPaths',
+]);
+
+// After a confirmed plan pull request on an issue source: the base move Issue Buddy's
+// `assess-base-move` reported, from the pass report's `baseMoves` entry. Only a re-publishing move
+// sits beside a confirmed PR, so a stopping reason is INVALID_INPUT; a `fits` move has `reason:
+// null` and no overlapping path. A run keeps at most one: an identical repeat returns `recorded:
+// true` without a write, a different one is INVALID_STATE. `citedPaths` holds at most
+// `LIMITS.sources` of the `citedPathCount` cited paths, `overlappingPaths` the assessment's bound.
+async function baseMoveRecordOperation(input, deps) {
+  closed(input, ['cwd', 'runId', ...BASE_MOVE_FIELDS], [], 'input');
+  requireRunId(input.runId);
+  objectId(input.fromBaseOid, 'fromBaseOid');
+  objectId(input.toBaseOid, 'toBaseOid');
+  if (!BASE_MOVE_VERDICTS.includes(input.verdict)) {
+    invalid(`verdict must be one of ${BASE_MOVE_VERDICTS.join(', ')}`);
+  }
+  if (!BASE_MOVE_REASONS[input.verdict].includes(input.reason)) {
+    invalid(`reason does not belong to the ${input.verdict} verdict`);
+  }
+  if (!baseMoveRepublishes(input.reason)) {
+    invalid(`reason ${input.reason} stops the publication, so no pull request carries the move`);
+  }
+  nonNegativeInteger(input.commitCount, 'commitCount');
+  nonNegativeInteger(input.changedPathCount, 'changedPathCount');
+  nonNegativeInteger(input.citedPathCount, 'citedPathCount');
+  if (!Array.isArray(input.citedPaths)) invalid('citedPaths must be an array');
+  if (input.citedPaths.length > LIMITS.sources) {
+    invalid(`citedPaths exceeds ${LIMITS.sources} entries`);
+  }
+  input.citedPaths.forEach((entry, index) => relativePath(entry, `citedPaths[${index}]`));
+  if (input.citedPaths.length > input.citedPathCount) {
+    invalid('citedPaths lists more paths than citedPathCount');
+  }
+  if (!Array.isArray(input.overlappingPaths)) invalid('overlappingPaths must be an array');
+  if (input.overlappingPaths.length > MAX_BASE_MOVE_PATHS) {
+    invalid(`overlappingPaths exceeds ${MAX_BASE_MOVE_PATHS} entries`);
+  }
+  input.overlappingPaths.forEach((entry, index) =>
+    relativePath(entry, `overlappingPaths[${index}]`),
+  );
+  if (input.verdict === 'fits' && input.overlappingPaths.length > 0) {
+    invalid('a fitting base move lists no overlapping path');
+  }
+  const record = Object.fromEntries(BASE_MOVE_FIELDS.map((key) => [key, input[key]]));
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  if (ledger.source?.kind !== 'issue') invalid('base-move-record requires an issue source');
+  const stored = storedBaseMove(ledger);
+  if (stored !== null) {
+    if (!isDeepStrictEqual(stored, record)) {
+      fail('INVALID_STATE', 'this run already recorded a different base move');
+    }
+    return { recorded: true, baseMove: stored };
+  }
+  ledger.baseMove = { ...record, recordedAt: timestamp(deps) };
+  withdrawAppendix(ledger);
+  await writeLedger(ctx, ledger);
+  return { recorded: true, baseMove: record };
+}
+
+// The recorded base move without its timestamp, or `null` when none was recorded.
+function storedBaseMove(ledger) {
+  if (!isObject(ledger.baseMove)) return null;
+  const { recordedAt: _recordedAt, ...baseMove } = ledger.baseMove;
+  return baseMove;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Delivery base: autopilot's one pre-delivery check of the base and its single conflict attempt
+
+// The results a delivery-base record states: no conflict, a conflict resolved by one merge commit,
+// a conflict left unresolved with the branch unchanged, or a merge that could not be checked.
+export const DELIVERY_BASE_RESULTS = Object.freeze(['none', 'resolved', 'unresolved', 'unchecked']);
+// Why a conflict stayed unresolved: `mergeGate.conflictResolution` is `off` (or unreadable), no
+// clean checkout was available, or the one attempt failed at its resolver, verification, review or
+// merge.
+export const DELIVERY_BASE_UNRESOLVED_REASONS = Object.freeze([
+  'conflict-resolution-off',
+  'checkout-unavailable',
+  'resolver-abort',
+  'verification-failed',
+  'review-failed',
+  'merge-failed',
+]);
+export const DELIVERY_CONFLICT_RESOLUTION_MODES = Object.freeze(['off', 'ask', 'auto']);
+export const DELIVERY_VALIDATION_MODES = Object.freeze(['full', 'quick']);
+const DELIVERY_BASE_FIELDS = Object.freeze([
+  'mergeBaseOid',
+  'baseOid',
+  'commitCount',
+  'result',
+  'reason',
+  'conflictResolution',
+  'validationMode',
+  'conflictCount',
+  'conflictedPaths',
+  'headOid',
+  'mergeOid',
+  'checkout',
+  'branch',
+]);
+
+// A Git read for the delivery-base operations: GIT_FAILED instead of GitReadFailure.
+async function deliveryGit(ctx, root, args, options) {
+  try {
+    return await readGit(ctx, root, args, options);
+  } catch (error) {
+    if (error instanceof GitReadFailure) fail('GIT_FAILED', error.message);
+    throw error;
+  }
+}
+
+// The commit `rev` names in `root`, or `null` when it names none.
+async function deliveryCommit(ctx, root, rev) {
+  const result = await deliveryGit(
+    ctx,
+    root,
+    ['--no-replace-objects', 'rev-parse', '--verify', '-q', `${rev}^{commit}`],
+    { allowed: [0, 1] },
+  );
+  const oid = result.stdout.toString('utf8').trim().toLowerCase();
+  if (result.status === 1) return null;
+  if (!OBJECT_ID.test(oid)) fail('GIT_FAILED', 'git rev-parse printed no commit');
+  return oid;
+}
+
+// Reads only, fetches nothing: whether `origin/<baseRef>` (fetched by the caller) moved past the
+// head's merge base, and for a moved base the local merge proof of `pr-delivery-git-core.mjs`.
+// Input `{cwd, runId, headOid, baseRef}` with an open run; `baseRef` is the base branch name.
+// Returns `{moved, mergeBaseOid, baseOid, commitCount, proof, reason, conflictCount,
+// conflictedPaths}`: an unmoved base (`origin/<baseRef>` an ancestor of the head) has
+// `commitCount: 0` and null proof fields; a moved one carries the proof's `status` as `proof`
+// (`clean`, `conflict` or `unavailable`) with its `reason`, `conflictCount` and `conflictedPaths`.
+// A missing base ref or head, no merge base, or a failed Git read is GIT_FAILED.
+async function deliveryBaseCheckOperation(input, deps) {
+  closed(input, ['cwd', 'runId', 'headOid', 'baseRef'], [], 'input');
+  requireRunId(input.runId);
+  objectId(input.headOid, 'headOid');
+  try {
+    parseRangeInput({ cwd: input.cwd, headSha: input.headOid, baseRef: input.baseRef });
+  } catch (error) {
+    if (error instanceof PrDeliveryGitError) invalid(error.message);
+    throw error;
+  }
+  const ctx = await rootContext(input, deps);
+  await openLedger(ctx, input.runId);
+  const root = ctx.cwd;
+  const baseOid = await deliveryCommit(ctx, root, `refs/remotes/origin/${input.baseRef}`);
+  if (baseOid === null) fail('GIT_FAILED', `origin/${input.baseRef} names no commit`);
+  if ((await deliveryCommit(ctx, root, input.headOid)) !== input.headOid) {
+    fail('GIT_FAILED', 'headOid names no commit in the repository');
+  }
+  const base = await deliveryGit(
+    ctx,
+    root,
+    ['--no-replace-objects', 'merge-base', baseOid, input.headOid],
+    { allowed: [0, 1] },
+  );
+  const mergeBaseOid = base.stdout.toString('utf8').trim().toLowerCase();
+  if (base.status === 1) fail('GIT_FAILED', 'the head shares no history with the base');
+  if (!OBJECT_ID.test(mergeBaseOid)) fail('GIT_FAILED', 'git merge-base printed no commit');
+  const unproven = { proof: null, reason: null, conflictCount: null, conflictedPaths: null };
+  if (mergeBaseOid === baseOid) {
+    return { moved: false, mergeBaseOid, baseOid, commitCount: 0, ...unproven };
+  }
+  const count = await deliveryGit(ctx, root, [
+    '--no-replace-objects',
+    'rev-list',
+    '--count',
+    `${mergeBaseOid}..${baseOid}`,
+  ]);
+  const commitCount = Number(count.stdout.toString('utf8').trim());
+  if (!Number.isSafeInteger(commitCount) || commitCount < 1) {
+    fail('GIT_FAILED', 'git rev-list printed no commit count');
+  }
+  const proof = await localMergeProof(
+    { cwd: root, headSha: input.headOid, baseRef: input.baseRef },
+    { runner: deps.runner, env: deps.env, tmpdir: deps.tmpdir },
+  );
+  if (proof.baseCommit !== null && proof.baseCommit !== baseOid) {
+    fail('GIT_FAILED', `origin/${input.baseRef} moved during the check`);
+  }
+  return {
+    moved: true,
+    mergeBaseOid,
+    baseOid,
+    commitCount,
+    proof: proof.status,
+    reason: proof.reason,
+    conflictCount: proof.conflictCount,
+    conflictedPaths: proof.conflictedPaths,
+  };
+}
+
+function nullField(value, label) {
+  if (value !== null) invalid(`${label} must be null for this result`);
+}
+
+function conflictedPathList(value, conflictCount) {
+  if (!Array.isArray(value)) invalid('conflictedPaths must be an array');
+  if (value.length > MAX_CONFLICTED_PATHS) {
+    invalid(`conflictedPaths exceeds ${MAX_CONFLICTED_PATHS} entries`);
+  }
+  value.forEach((entry, index) => relativePath(entry, `conflictedPaths[${index}]`));
+  if (new Set(value).size !== value.length) invalid('conflictedPaths repeats a path');
+  if (value.length > conflictCount) invalid('conflictedPaths lists more paths than conflictCount');
+}
+
+// The closed record schema, per result. Every field is present; a field the result does not use is
+// null. `none`: a clean proof (`conflictCount: 0`, `conflictedPaths: []`). `unchecked`: an
+// unavailable proof, `reason` one of MERGE_PROOF_UNAVAILABLE_REASONS. `resolved`: `ask` or `auto`,
+// a validation mode, `mergeOid` and `checkout`. `unresolved`: a reason of
+// DELIVERY_BASE_UNRESOLVED_REASONS; `conflict-resolution-off` pairs with `off` and no checkout,
+// `checkout-unavailable` names no checkout either, every other reason names the checkout of the
+// attempt.
+// `branch`, the delivery branch, is set exactly when `checkout` is.
+function validateDeliveryBase(input) {
+  objectId(input.mergeBaseOid, 'mergeBaseOid');
+  objectId(input.baseOid, 'baseOid');
+  objectId(input.headOid, 'headOid');
+  if (input.mergeBaseOid === input.baseOid) invalid('a delivery-base record needs a moved base');
+  positiveInteger(input.commitCount, 'commitCount');
+  oneOf(input.result, DELIVERY_BASE_RESULTS, 'result');
+  if (input.result === 'none' || input.result === 'unchecked') {
+    for (const key of ['conflictResolution', 'validationMode', 'mergeOid', 'checkout', 'branch']) {
+      nullField(input[key], key);
+    }
+    if (input.result === 'none') {
+      nullField(input.reason, 'reason');
+      if (input.conflictCount !== 0) invalid('conflictCount must be 0 for result none');
+      if (!Array.isArray(input.conflictedPaths) || input.conflictedPaths.length !== 0) {
+        invalid('conflictedPaths must be [] for result none');
+      }
+    } else {
+      oneOf(input.reason, MERGE_PROOF_UNAVAILABLE_REASONS, 'reason');
+      nullField(input.conflictCount, 'conflictCount');
+      nullField(input.conflictedPaths, 'conflictedPaths');
+    }
+    return;
+  }
+  positiveInteger(input.conflictCount, 'conflictCount');
+  conflictedPathList(input.conflictedPaths, input.conflictCount);
+  oneOf(input.conflictResolution, DELIVERY_CONFLICT_RESOLUTION_MODES, 'conflictResolution');
+  if (input.validationMode !== null) {
+    oneOf(input.validationMode, DELIVERY_VALIDATION_MODES, 'validationMode');
+  }
+  if (input.result === 'resolved') {
+    nullField(input.reason, 'reason');
+    if (input.conflictResolution === 'off') invalid('conflictResolution off resolves nothing');
+    if (input.validationMode === null) invalid('a resolved conflict names its validationMode');
+    objectId(input.mergeOid, 'mergeOid');
+    requireAbsoluteSourceRoot(input.checkout, 'checkout');
+    deliveryBranch(input.branch);
+    return;
+  }
+  oneOf(input.reason, DELIVERY_BASE_UNRESOLVED_REASONS, 'reason');
+  nullField(input.mergeOid, 'mergeOid');
+  const off = input.reason === 'conflict-resolution-off';
+  if (off !== (input.conflictResolution === 'off')) {
+    invalid('reason conflict-resolution-off pairs exactly with conflictResolution off');
+  }
+  if (off || input.reason === 'checkout-unavailable') {
+    nullField(input.checkout, 'checkout');
+    nullField(input.branch, 'branch');
+    if (off) nullField(input.validationMode, 'validationMode');
+    return;
+  }
+  requireAbsoluteSourceRoot(input.checkout, 'checkout');
+  deliveryBranch(input.branch);
+}
+
+// The delivery branch a record with a checkout names: a safe local branch name (`feature/x`, never
+// `refs/heads/feature/x`), so `refs/heads/<branch>` is the one ref the checkout must be on.
+function deliveryBranch(value) {
+  if (!isSafeBaseRef(value)) invalid('branch must be a safe local branch name');
+}
+
+function invariantFailed(invariant, message) {
+  fail('INVARIANT_FAILED', message, { invariant });
+}
+
+// The Git invariants of a record that names a checkout: the checkout is on `refs/heads/<branch>`,
+// no merge is in progress there, no tracked or untracked change survives the commit or abort, and
+// the branch tip is `mergeOid` with exactly the parents
+// `[headOid, baseOid]` (`resolved`) or still `headOid` (`unresolved`).
+async function verifyDeliveryCheckout(ctx, record) {
+  let root;
+  try {
+    root = await requireSourceRoot(ctx, record.checkout, 'checkout');
+  } catch (error) {
+    if (error instanceof GitReadFailure) fail('GIT_FAILED', error.message);
+    throw error;
+  }
+  const branch = await deliveryGit(ctx, root, ['symbolic-ref', '-q', 'HEAD'], {
+    allowed: [0, 1],
+  });
+  if (branch.status !== 0) invariantFailed('detached-head', 'the checkout is not on a branch');
+  if (branch.stdout.toString('utf8').trim() !== `refs/heads/${record.branch}`) {
+    invariantFailed('wrong-branch', `the checkout is not on branch ${record.branch}`);
+  }
+  const merging = await deliveryGit(ctx, root, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], {
+    allowed: [0, 1],
+  });
+  if (merging.status === 0) {
+    invariantFailed('merge-in-progress', 'the checkout still has a merge in progress');
+  }
+  const status = await deliveryGit(ctx, root, [
+    'status',
+    '--porcelain',
+    '-z',
+    '--untracked-files=all',
+  ]);
+  if (status.stdout.length > 0) {
+    invariantFailed('dirty-checkout', 'the checkout has uncommitted or untracked changes');
+  }
+  const tip = await deliveryCommit(ctx, root, 'HEAD');
+  if (record.result === 'unresolved') {
+    if (tip !== record.headOid) {
+      invariantFailed('branch-tip', 'the checkout branch no longer points at headOid');
+    }
+    return;
+  }
+  if (tip !== record.mergeOid) {
+    invariantFailed('branch-tip', 'the checkout branch tip is not mergeOid');
+  }
+  const parents = await deliveryGit(ctx, root, [
+    '--no-replace-objects',
+    'rev-list',
+    '--parents',
+    '-n',
+    '1',
+    record.mergeOid,
+  ]);
+  const listed = parents.stdout.toString('utf8').trim().toLowerCase().split(/\s+/);
+  if (!isDeepStrictEqual(listed, [record.mergeOid, record.headOid, record.baseOid])) {
+    invariantFailed(
+      'merge-parents',
+      'mergeOid is not one merge commit with exactly the parents headOid and baseOid',
+    );
+  }
+}
+
+// After `delivery-base-check` reported a moved base, on either source: the result of the step. A
+// run keeps at most one record; an identical repeat returns `recorded: true` without a write, a
+// different one is INVALID_STATE. A record naming a checkout is verified with Git first; a failed
+// invariant is INVARIANT_FAILED with `details.invariant`. A write withdraws the appendix digest.
+async function deliveryBaseRecordOperation(input, deps) {
+  closed(input, ['cwd', 'runId', ...DELIVERY_BASE_FIELDS], [], 'input');
+  requireRunId(input.runId);
+  validateDeliveryBase(input);
+  const record = Object.fromEntries(DELIVERY_BASE_FIELDS.map((key) => [key, input[key]]));
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  const stored = storedDeliveryBase(ledger);
+  if (stored !== null) {
+    if (!isDeepStrictEqual(stored, record)) {
+      fail('INVALID_STATE', 'this run already recorded a different delivery base');
+    }
+    return { recorded: true, deliveryBase: stored };
+  }
+  if (record.checkout !== null) await verifyDeliveryCheckout(ctx, record);
+  ledger.deliveryBase = { ...record, recordedAt: timestamp(deps) };
+  withdrawAppendix(ledger);
+  await writeLedger(ctx, ledger);
+  return { recorded: true, deliveryBase: record };
+}
+
+// The resolved merge commit `mergeOid` is `headOid` or one of its ancestors in the primary
+// checkout's repository; a head the repository does not hold proves nothing and is refused too.
+async function requireMergeDelivered(ctx, mergeOid, headOid) {
+  const root = ctx.cwd;
+  if ((await deliveryCommit(ctx, root, headOid)) !== headOid) {
+    fail('MERGE_NOT_DELIVERED', 'the pushed head names no commit in the repository');
+  }
+  const ancestor = await deliveryGit(
+    ctx,
+    root,
+    ['--no-replace-objects', 'merge-base', '--is-ancestor', mergeOid, headOid],
+    { allowed: [0, 1] },
+  );
+  if (ancestor.status !== 0) {
+    fail('MERGE_NOT_DELIVERED', 'the pushed head does not contain the resolved merge commit');
+  }
+}
+
+// The recorded delivery base without its timestamp, or `null` when none was recorded.
+function storedDeliveryBase(ledger) {
+  if (!isObject(ledger.deliveryBase)) return null;
+  const { recordedAt: _recordedAt, ...deliveryBase } = ledger.deliveryBase;
+  return deliveryBase;
+}
+
 // The plan file below `root` at a repository-relative path, read with the bounded no-follow
 // regular-file read after proving that every parent component is a real directory. Returns
 // `{ state: 'file', bytes, sha256 }`, `{ state: 'missing' }` or `{ state: 'unsafe', code }`.
@@ -1154,7 +1600,9 @@ async function deliveryRecordOperation(input, deps) {
 }
 
 // After `pr` returned a verified pushed head: records that head. It changes nothing the appendix
-// renders, so it keeps a rendered appendix mergeable.
+// renders, so it keeps a rendered appendix mergeable. After a `resolved` delivery base the pushed
+// head must be the recorded merge commit or a descendant of it, else MERGE_NOT_DELIVERED and nothing
+// is written: a push that dropped the merge commit never counts as delivered.
 async function confirmDeliveryOperation(input, deps) {
   closed(input, ['cwd', 'runId', 'headOid'], [], 'input');
   requireRunId(input.runId);
@@ -1163,6 +1611,9 @@ async function confirmDeliveryOperation(input, deps) {
   }
   const ctx = await rootContext(input, deps);
   const ledger = await openLedger(ctx, input.runId);
+  if (isObject(ledger.deliveryBase) && ledger.deliveryBase.result === 'resolved') {
+    await requireMergeDelivered(ctx, ledger.deliveryBase.mergeOid, input.headOid);
+  }
   ledger.delivery = {
     ...(isObject(ledger.delivery) ? ledger.delivery : {}),
     headOid: input.headOid,
@@ -1254,6 +1705,8 @@ async function runCloseOperation(input, deps) {
     outcome: ledger.outcome,
     counts: counts(ledger),
     fit: storedFit(ledger),
+    baseMove: storedBaseMove(ledger),
+    deliveryBase: storedDeliveryBase(ledger),
     ...(planningClaim === null ? {} : { planningClaim }),
   };
 }
@@ -1508,6 +1961,31 @@ const COPY = Object.freeze({
     fitSources: 'Sources',
     notAssessed: 'Architecture fit: not assessed — no architecture or roadmap sources found',
     unavailable: 'Architecture fit: not assessed — scoring unavailable',
+    baseMove: '### Base move',
+    baseMoveRange: (from, to, commits, changed) =>
+      `The base moved from \`${from}\` to \`${to}\` during planning: ${commits} ${commits === 1 ? 'commit' : 'commits'}, ${changed} changed ${changed === 1 ? 'path' : 'paths'}. The plan was published on the new base.`,
+    baseMoveCited: (cited) =>
+      `No changed path overlaps the ${cited === 1 ? 'path' : `${cited} paths`} the plan cites`,
+    baseMoveUnresolved: (reason) =>
+      `The move is unresolved (\`${reason}\`): reconciling the plan with the new base is left to review.`,
+    baseMoveOverlapping: 'Overlapping paths',
+    deliveryBase: '### Delivery base',
+    deliveryBaseRange: (from, to, commits) =>
+      `The base moved from the merge base \`${from}\` to \`${to}\` before delivery: ${commits} ${commits === 1 ? 'commit' : 'commits'}.`,
+    deliveryBaseNone:
+      'The head merges into the new base without a conflict; the branch carries no merge commit.',
+    deliveryBaseResolved: (count, merge, mode) =>
+      `The conflict in ${count} ${count === 1 ? 'path' : 'paths'} was resolved by merge commit \`${merge}\` (validation mode \`${mode}\`).`,
+    deliveryBaseUnresolved: (count, reason) =>
+      `The conflict in ${count} ${count === 1 ? 'path' : 'paths'} is unresolved (\`${reason}\`); the branch is unchanged.`,
+    deliveryBaseUnchecked: (reason) =>
+      `The merge was not checked (\`${reason}\`); the branch is unchanged.`,
+    deliveryBaseConflicted: 'Conflicted paths',
+    deliveryBaseFlag:
+      'Unresolved delivery conflict: resolving it is left to a later session such as `merge-gate`.',
+    deliveryBaseAsk:
+      '`mergeGate.conflictResolution` is `ask`; this unattended run counted it as its one automatic resolution attempt.',
+    more: (count) => `(+${count} more)`,
   }),
   de: Object.freeze({
     title: '## Autopilot-Protokoll',
@@ -1531,8 +2009,36 @@ const COPY = Object.freeze({
     notAssessed:
       'Architektur-Passung: nicht bewertet — keine Architektur- oder Roadmap-Quellen gefunden',
     unavailable: 'Architektur-Passung: nicht bewertet — Bewertung nicht verfügbar',
+    baseMove: '### Basis-Verschiebung',
+    baseMoveRange: (from, to, commits, changed) =>
+      `Die Basis hat sich während der Planung von \`${from}\` auf \`${to}\` verschoben: ${commits} ${commits === 1 ? 'Commit' : 'Commits'}, ${changed} ${changed === 1 ? 'geänderter Pfad' : 'geänderte Pfade'}. Der Plan wurde auf der neuen Basis veröffentlicht.`,
+    baseMoveCited: (cited) =>
+      `Kein geänderter Pfad überschneidet sich mit ${cited === 1 ? 'dem Pfad' : `den ${cited} Pfaden`}, die der Plan nennt`,
+    baseMoveUnresolved: (reason) =>
+      `Die Verschiebung ist ungelöst (\`${reason}\`): den Plan mit der neuen Basis abzugleichen bleibt dem Review überlassen.`,
+    baseMoveOverlapping: 'Überschneidende Pfade',
+    deliveryBase: '### Basis bei Auslieferung',
+    deliveryBaseRange: (from, to, commits) =>
+      `Die Basis hat sich vor der Auslieferung von der Merge-Basis \`${from}\` auf \`${to}\` verschoben: ${commits} ${commits === 1 ? 'Commit' : 'Commits'}.`,
+    deliveryBaseNone:
+      'Der Head lässt sich ohne Konflikt in die neue Basis mergen; der Branch trägt keinen Merge-Commit.',
+    deliveryBaseResolved: (count, merge, mode) =>
+      `Der Konflikt in ${count} ${count === 1 ? 'Pfad' : 'Pfaden'} wurde durch den Merge-Commit \`${merge}\` gelöst (Validierungsmodus \`${mode}\`).`,
+    deliveryBaseUnresolved: (count, reason) =>
+      `Der Konflikt in ${count} ${count === 1 ? 'Pfad' : 'Pfaden'} ist ungelöst (\`${reason}\`); der Branch ist unverändert.`,
+    deliveryBaseUnchecked: (reason) =>
+      `Der Merge wurde nicht geprüft (\`${reason}\`); der Branch ist unverändert.`,
+    deliveryBaseConflicted: 'Konfliktpfade',
+    deliveryBaseFlag:
+      'Ungelöster Auslieferungskonflikt: ihn zu lösen bleibt einer späteren Sitzung wie `merge-gate` überlassen.',
+    deliveryBaseAsk:
+      '`mergeGate.conflictResolution` steht auf `ask`; dieser unbeaufsichtigte Lauf hat das als seinen einen automatischen Lösungsversuch gezählt.',
+    more: (count) => `(+${count} weitere)`,
   }),
 });
+
+// The abbreviated object id the appendix shows for a base, Git's default short length.
+const SHORT_OID_LENGTH = 7;
 
 function scored(entry, field, sanitized) {
   return `${entry.score}/10 — ${field(entry.reason, sanitized)}`;
@@ -1599,6 +2105,77 @@ export function renderAppendix(ledger, { planPullRequest } = {}) {
     copy.automaticCount(visible.filter((entry) => entry.classification === 'silent').length),
     '',
   );
+
+  // The base move sits before the blocker section, so blocker counting never reads its lines. An
+  // unresolved move is the PR's flag: its line replaces the "no overlap" line of a fitting one.
+  if (isObject(ledger.baseMove)) {
+    const move = ledger.baseMove;
+    const paths = (list, label) => list.map((entry) => `\`${field(entry, label)}\``).join(', ');
+    const moveLines = [
+      copy.baseMoveRange(
+        move.fromBaseOid.slice(0, SHORT_OID_LENGTH),
+        move.toBaseOid.slice(0, SHORT_OID_LENGTH),
+        move.commitCount,
+        move.changedPathCount,
+      ),
+    ];
+    if (move.verdict === 'fits') {
+      const cited = paths(move.citedPaths, 'baseMove.citedPaths');
+      const hidden = move.citedPathCount - move.citedPaths.length;
+      moveLines.push(
+        `${copy.baseMoveCited(move.citedPathCount)}${cited === '' ? '.' : `: ${cited}`}${hidden > 0 ? ` ${copy.more(hidden)}` : ''}`,
+      );
+    } else {
+      moveLines.push(copy.baseMoveUnresolved(move.reason));
+      if (move.overlappingPaths.length > 0) {
+        moveLines.push(
+          `${copy.baseMoveOverlapping}: ${paths(move.overlappingPaths, 'baseMove.overlappingPaths')}`,
+        );
+      }
+    }
+    lines.push(copy.baseMove, '', ...moveLines, '');
+  }
+
+  // The delivery base follows the base move, still before the blocker section, so blocker counting
+  // never reads its lines either. An unresolved conflict is no blocker: its flag sentence is the
+  // PR's notice that resolving it is left to a later session.
+  if (isObject(ledger.deliveryBase)) {
+    const delivery = ledger.deliveryBase;
+    const short = (oid) => oid.slice(0, SHORT_OID_LENGTH);
+    const deliveryLines = [
+      copy.deliveryBaseRange(
+        short(delivery.mergeBaseOid),
+        short(delivery.baseOid),
+        delivery.commitCount,
+      ),
+    ];
+    if (delivery.result === 'none') deliveryLines.push(copy.deliveryBaseNone);
+    else if (delivery.result === 'unchecked') {
+      deliveryLines.push(copy.deliveryBaseUnchecked(delivery.reason));
+    } else if (delivery.result === 'resolved') {
+      deliveryLines.push(
+        copy.deliveryBaseResolved(
+          delivery.conflictCount,
+          short(delivery.mergeOid),
+          delivery.validationMode,
+        ),
+      );
+    } else {
+      deliveryLines.push(copy.deliveryBaseUnresolved(delivery.conflictCount, delivery.reason));
+      const listed = delivery.conflictedPaths
+        .map((entry) => `\`${field(entry, 'deliveryBase.conflictedPaths')}\``)
+        .join(', ');
+      const hidden = delivery.conflictCount - delivery.conflictedPaths.length;
+      if (listed !== '' || hidden > 0) {
+        deliveryLines.push(
+          `${copy.deliveryBaseConflicted}: ${[listed, hidden > 0 ? copy.more(hidden) : ''].filter(Boolean).join(' ')}`,
+        );
+      }
+      deliveryLines.push(copy.deliveryBaseFlag);
+    }
+    if (delivery.conflictResolution === 'ask') deliveryLines.push(copy.deliveryBaseAsk);
+    lines.push(copy.deliveryBase, '', ...deliveryLines, '');
+  }
 
   if (ledger.blockers.length > 0) {
     lines.push(copy.blockers, '');
@@ -1878,9 +2455,9 @@ async function headCommit(ctx, root) {
   return oid;
 }
 
-function requireAbsoluteSourceRoot(value) {
+function requireAbsoluteSourceRoot(value, label = 'sourceRoot') {
   if (typeof value !== 'string' || !path.isAbsolute(value)) {
-    invalid('sourceRoot must be an absolute path');
+    invalid(`${label} must be an absolute path`);
   }
   return value;
 }
@@ -1896,9 +2473,10 @@ async function canonical(value, label) {
 // `sourceRoot` must be its own `--show-toplevel` and belong to the repository `cwd` belongs to; a
 // linked worktree of it is allowed. A directory outside any repository, a `.git`, common or bare
 // repository directory, a subdirectory and another repository are UNSAFE_TARGET; a Git read that fails otherwise (spawn error, timeout, another
-// exit status) throws GitReadFailure.
-async function requireSourceRoot(ctx, value) {
-  const root = await resolveDirectory(requireAbsoluteSourceRoot(value), 'sourceRoot');
+// exit status) throws GitReadFailure. `delivery-base-record` applies the same rule to its
+// `checkout` under that label.
+async function requireSourceRoot(ctx, value, label = 'sourceRoot') {
+  const root = await resolveDirectory(requireAbsoluteSourceRoot(value, label), label);
   const top = await runGit(ctx, root, ['rev-parse', '--show-toplevel']);
   // Outside any repository, or a `.git`, common or bare repository directory: no working tree.
   if (
@@ -1906,7 +2484,7 @@ async function requireSourceRoot(ctx, value) {
     top?.status !== 0 &&
     /not a git repository|must be run in a work tree/i.test(errorDetail(top?.stderr))
   ) {
-    fail('UNSAFE_TARGET', 'sourceRoot is not inside a git working tree');
+    fail('UNSAFE_TARGET', `${label} is not inside a git working tree`);
   }
   if (top?.error || top?.status !== 0) {
     throw new GitReadFailure(
@@ -1914,20 +2492,20 @@ async function requireSourceRoot(ctx, value) {
     );
   }
   const toplevel = asBuffer(top.stdout).toString('utf8').trim();
-  if ((await canonical(toplevel, 'the toplevel of sourceRoot')) !== root) {
-    fail('UNSAFE_TARGET', 'sourceRoot is not the toplevel of its working tree');
+  if ((await canonical(toplevel, `the toplevel of ${label}`)) !== root) {
+    fail('UNSAFE_TARGET', `${label} is not the toplevel of its working tree`);
   }
-  const common = async (where, label) =>
+  const common = async (where, name) =>
     canonical(
       (
         await readGit(ctx, where, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
       ).stdout
         .toString('utf8')
         .trim(),
-      `the git common directory of ${label}`,
+      `the git common directory of ${name}`,
     );
-  if ((await common(root, 'sourceRoot')) !== (await common(ctx.cwd, 'cwd'))) {
-    fail('UNSAFE_TARGET', 'sourceRoot does not belong to the repository of cwd');
+  if ((await common(root, label)) !== (await common(ctx.cwd, 'cwd'))) {
+    fail('UNSAFE_TARGET', `${label} does not belong to the repository of cwd`);
   }
   return root;
 }
@@ -2136,6 +2714,9 @@ const HANDLERS = Object.freeze({
   'decision-record': decisionRecordOperation,
   'blocker-record': blockerRecordOperation,
   'fit-record': fitRecordOperation,
+  'base-move-record': baseMoveRecordOperation,
+  'delivery-base-check': deliveryBaseCheckOperation,
+  'delivery-base-record': deliveryBaseRecordOperation,
   'plan-reviewed': planReviewedOperation,
   'delivery-record': deliveryRecordOperation,
   'delivery-confirm': confirmDeliveryOperation,
