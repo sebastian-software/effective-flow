@@ -328,13 +328,17 @@ test('a resolved record with a rebased or non-merge tip is refused', async (t) =
   await refused(s.head, 'branch-tip', 'stale mergeOid');
   git(s.checkout, 'reset', '-q', '--hard', s.head);
 
-  // A merge with the right second parent but a different first parent.
+  // A merge with the right second parent (the base) but a different first parent (not the head):
+  // parents [side, moved], with feature pointing at it so only `merge-parents` fails.
   git(s.checkout, 'checkout', '-q', '-b', 'side', s.original);
-  const side = commit(s.checkout, 'side', { 'side.txt': 's\n' });
+  commit(s.checkout, 'side', { 'side.txt': 's\n' });
+  git(s.checkout, 'merge', '-q', '--no-ff', '-m', 'wrong first parent', s.moved);
+  const wrongFirst = git(s.checkout, 'rev-parse', 'HEAD');
+  assert.equal(git(s.checkout, 'rev-parse', `${wrongFirst}^2`), s.moved);
+  assert.notEqual(git(s.checkout, 'rev-parse', `${wrongFirst}^1`), s.head);
   git(s.checkout, 'checkout', '-q', 'feature');
-  git(s.checkout, 'reset', '-q', '--hard', s.moved);
-  git(s.checkout, 'merge', '-q', '--no-ff', '-m', 'wrong parents', side);
-  await refused(git(s.checkout, 'rev-parse', 'HEAD'), 'merge-parents', 'wrong parents');
+  git(s.checkout, 'reset', '-q', '--hard', wrongFirst);
+  await refused(wrongFirst, 'merge-parents', 'wrong first parent');
 
   // A rebased head: the commit sits on the new base and has the base as its only parent.
   git(s.checkout, 'reset', '-q', '--hard', s.head);
