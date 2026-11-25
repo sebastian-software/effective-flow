@@ -1328,7 +1328,8 @@ function conflictedPathList(value, conflictCount) {
 // unavailable proof, `reason` one of MERGE_PROOF_UNAVAILABLE_REASONS. `resolved`: `ask` or `auto`,
 // a validation mode, `mergeOid` and `checkout`. `unresolved`: a reason of
 // DELIVERY_BASE_UNRESOLVED_REASONS; `conflict-resolution-off` pairs with `off` and no checkout,
-// `checkout-unavailable` may name none, every other reason names the checkout of the attempt.
+// `checkout-unavailable` names no checkout either, every other reason names the checkout of the
+// attempt.
 // `branch`, the delivery branch, is set exactly when `checkout` is.
 function validateDeliveryBase(input) {
   objectId(input.mergeBaseOid, 'mergeBaseOid');
@@ -1375,7 +1376,7 @@ function validateDeliveryBase(input) {
   if (off !== (input.conflictResolution === 'off')) {
     invalid('reason conflict-resolution-off pairs exactly with conflictResolution off');
   }
-  if (off || (input.reason === 'checkout-unavailable' && input.checkout === null)) {
+  if (off || input.reason === 'checkout-unavailable') {
     nullField(input.checkout, 'checkout');
     nullField(input.branch, 'branch');
     if (off) nullField(input.validationMode, 'validationMode');

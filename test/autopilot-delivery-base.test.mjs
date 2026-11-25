@@ -344,6 +344,29 @@ test('a resolved record with a rebased or non-merge tip is refused', async (t) =
   await refused(rebased, 'merge-parents', 'rebased tip');
 });
 
+// Invariant: a `checkout-unavailable` record names no checkout and no branch: one that sets a
+// checkout (an existing one or a path that does not exist) is refused as invalid input before any
+// Git read of that checkout, never as a Git invariant, and no record is stored.
+test('a checkout-unavailable record naming a checkout is refused as invalid input', async (t) => {
+  const s = await scenario(t);
+  const base = { result: 'unresolved', reason: 'checkout-unavailable', validationMode: null };
+  for (const [label, extra] of [
+    ['existing checkout', {}],
+    ['missing checkout', { checkout: join(s.root, 'missing'), branch: s.branch }],
+    ['branch only', { checkout: null }],
+  ]) {
+    const result = await op('delivery-base-record', recordInput(s, { ...base, ...extra }));
+    assert.equal(result.error?.code, 'INVALID_INPUT', label);
+    assert.equal(Object.hasOwn(ledger(s.root, s.runId), 'deliveryBase'), false, label);
+  }
+  const recorded = await op(
+    'delivery-base-record',
+    recordInput(s, { ...base, checkout: null, branch: null }),
+  );
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  assert.equal(ledger(s.root, s.runId).deliveryBase.reason, 'checkout-unavailable');
+});
+
 // Invariant: the check fails closed on its input before any Git read and on a run that is not
 // open: an unsafe base name, an unknown key, an object id that is no commit and a closed run are
 // each refused, and nothing is recorded.
