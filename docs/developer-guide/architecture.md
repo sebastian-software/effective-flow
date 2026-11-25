@@ -794,7 +794,12 @@ cleanup removes only that actor's record. A `delete-after-integration` branch th
 refuses is kept and the item reports `BRANCH_RETAINED` with the unproven commits, its worktree and
 record already deleted. Only an `apply-review` call carrying `integrationRoot` may then prove every
 component commit by exact patch-id against the branch checked out there and compare-and-delete
-the ref; `cleanup apply` never carries that proof. Foreign locks and claims are never stolen, even
+the ref; `cleanup apply` never carries that proof. Besides the unadvanced `base-validation` and
+`issue-planning` branches it compare-and-deletes at `creationOid` (below), its only other ref
+deletion is a confirmed `branch:` item: the helper proves offline that a local delivery branch landed in
+`origin/<delivery.baseBranch>` (`ancestor`, `tip-tree` or `squash-tree`), re-proves it under the
+apply call and compare-and-deletes it, with no fetch, forge call or remote-ref change
+([`src/shared/cleanup-branches.md`](../../src/shared/cleanup-branches.md)). Foreign locks and claims are never stolen, even
 when they appear old.
 
 Cleanup derives eligibility from the intersection of independent evidence: owned lifecycle,
