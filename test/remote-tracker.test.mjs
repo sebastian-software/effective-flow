@@ -3315,8 +3315,16 @@ for (const operation of ['issue-comment', 'pr-comment']) {
       assert.equal(envelope.ok, false);
       assert.equal(envelope.error.code, 'COMMAND_FAILED');
       assert.equal(envelope.error.details.status, status);
-      assert.equal(envelope.error.retryable, status >= 500);
-      assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+      // A PR comment write that loses its response may already be stored: possibly applied, never
+      // retryable. The issue-comment 5xx path stays the ordinary retryable negative control.
+      const possiblyApplied = operation === 'pr-comment' && status >= 500;
+      if (possiblyApplied) {
+        assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+        assert.equal(envelope.error.retryable, false);
+      } else {
+        assert.equal(envelope.error.retryable, status >= 500);
+        assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+      }
       if (format === 'JSON') {
         assert.equal(envelope.error.details.message, JSON.parse(response.stdout).message);
       } else {
@@ -3372,19 +3380,29 @@ for (const operation of ['issue-comment', 'pr-comment']) {
   });
 
   for (const repository of [githubRepository, forgejoRepository]) {
-    test(`${repository.provider} ${operation} preserves ordinary-comment transport retry semantics`, async () => {
-      const runner = fakeRunner([{ status: 1, stdout: '', stderr: 'connection reset by peer' }]);
-      const envelope = await executeOperation(
-        operation,
-        { repository, number: 17, payload: { body: 'Note' } },
-        { runner, skipProbe: true, apply: true },
-      );
-      assert.equal(envelope.ok, false);
-      assert.equal(envelope.error.code, 'COMMAND_FAILED');
-      assert.equal(envelope.error.retryable, true);
-      assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
-      assert.equal(runner.calls.length, 1);
-    });
+    test(
+      operation === 'issue-comment'
+        ? `${repository.provider} issue-comment preserves ordinary-comment transport retry semantics`
+        : `${repository.provider} pr-comment write that loses its response is reported as possibly applied, never as retryable`,
+      async () => {
+        const runner = fakeRunner([{ status: 1, stdout: '', stderr: 'connection reset by peer' }]);
+        const envelope = await executeOperation(
+          operation,
+          { repository, number: 17, payload: { body: 'Note' } },
+          { runner, skipProbe: true, apply: true },
+        );
+        assert.equal(envelope.ok, false);
+        assert.equal(envelope.error.code, 'COMMAND_FAILED');
+        if (operation === 'pr-comment') {
+          assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+          assert.equal(envelope.error.retryable, false);
+        } else {
+          assert.equal(envelope.error.retryable, true);
+          assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+        }
+        assert.equal(runner.calls.length, 1);
+      },
+    );
   }
 }
 
@@ -10130,6 +10148,107 @@ test('on a forge declaring the reply route, review-thread-reply posts through te
   assert.equal(refused.error.details.status, 403);
   assert.equal(refusedRunner.calls.length, 1);
 });
+
+for (const [status, format, response] of [
+  [500, 'JSON', teaApiResult(500, { message: 'internal server error' })],
+  [502, 'HTML', teaApiRawResult(502, '<html>Bad Gateway</html>')],
+  [503, 'plain text', teaApiRawResult(503, 'Service Unavailable', 'text/plain')],
+]) {
+  test(`a Forgejo review-thread-reply that loses its response (HTTP ${status}, ${format}) is possibly applied, never retryable`, async () => {
+    const { probe } = await threadWriteProbe(giteaSwagger());
+    const runner = fakeRunner([response]);
+    const envelope = await executeOperation(
+      'review-thread-reply',
+      {
+        repository: forgejoRepository,
+        number: 7,
+        commentId: 42,
+        payload: { body: 'Fixed.' },
+        probe,
+      },
+      { runner, skipProbe: true, apply: true },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'COMMAND_FAILED');
+    assert.equal(envelope.error.details.status, status);
+    assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+    assert.equal(envelope.error.retryable, false);
+    assert.doesNotMatch(envelope.error.message, /refused/);
+    assert.equal(runner.calls.length, 1);
+  });
+}
+
+test('a Forgejo review-thread-reply refused with 403 stays a plain non-retryable failure', async () => {
+  const { probe } = await threadWriteProbe(giteaSwagger());
+  const runner = fakeRunner([teaApiResult(403, { message: 'forbidden' })]);
+  const envelope = await executeOperation(
+    'review-thread-reply',
+    {
+      repository: forgejoRepository,
+      number: 7,
+      commentId: 42,
+      payload: { body: 'Fixed.' },
+      probe,
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(envelope.error.retryable, false);
+  assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('a Forgejo review-thread-reply transport failure is possibly applied, never retryable', async () => {
+  const { probe } = await threadWriteProbe(giteaSwagger());
+  const runner = fakeRunner([{ status: 1, stdout: '', stderr: 'connection reset by peer' }]);
+  const envelope = await executeOperation(
+    'review-thread-reply',
+    {
+      repository: forgejoRepository,
+      number: 7,
+      commentId: 42,
+      payload: { body: 'Fixed.' },
+      probe,
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+  assert.equal(envelope.error.retryable, false);
+  assert.equal(runner.calls.length, 1);
+});
+
+for (const [operation, input] of [
+  ['pr-comment', { repository: githubRepository, number: 7, payload: { body: 'Note' } }],
+  [
+    'review-thread-reply',
+    { repository: githubRepository, number: 7, commentId: 42, payload: { body: 'Fixed.' } },
+  ],
+  [
+    'review-create',
+    {
+      repository: githubRepository,
+      number: 7,
+      payload: { body: 'Summary', comments: [{ path: 'src/app.js', line: 3, body: 'Note' }] },
+    },
+  ],
+]) {
+  test(`a GitHub ${operation} that fails with HTTP 502 is possibly applied and is never re-run by the helper`, async () => {
+    const runner = fakeRunner([{ status: 1, stdout: '', stderr: 'HTTP 502: Bad Gateway' }]);
+    const envelope = await executeOperation(operation, input, {
+      runner,
+      skipProbe: true,
+      apply: true,
+    });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'COMMAND_FAILED');
+    assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+    assert.equal(envelope.error.retryable, false);
+    assert.equal(runner.calls.length, 1);
+  });
+}
 
 test('on a forge declaring the resolve route, review-thread-resolve posts the numeric thread id', async () => {
   const { probe } = await threadWriteProbe(giteaSwagger());

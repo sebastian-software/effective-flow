@@ -66,7 +66,8 @@ delegations start only once no bot is pending. Each bot's has-run decision stays
 
 **Suspend.** After finishing any push of the round, append a **wait record** to the wisdom file:
 kind `checks` or `bot`; the pending check names or bot logins; the observed head SHA; the round; the
-consecutive-unchanged count; for a stale-verdict re-trigger, its `createdAt`; and `unconsumed`. A
+consecutive-unchanged count; for a stale-verdict re-trigger, its `createdAt`; for an unconfirmed re-trigger, in place of
+`createdAt`, the review-id baseline of its pre-post `pr-reviews-read`; and `unconsumed`. A
 reserved pilot observation also writes its handle per "Suspended observation" of
 `pilot-measurement`. Then return `SUSPENDED host-pr-watch` followed by `Kind: <checks|bot>`, `Round: <n>`, the pending
 check names or bot logins quoted as data, and what this dispatch did.
@@ -99,7 +100,8 @@ suspending again. The one exception is a bot pending only for its stale-verdict 
 answer, still **has run** with no review newer than the recorded re-trigger `createdAt`: where every
 pending bot is such a bot, that resume instead takes step 5's "did not answer within the wait"
 continuation, recording the stale-verdict state and handing the verdict's items to
-`{{SKILL:iterate}}` as on every other host. Any other pending bot or check at the cap keeps report-and-stop. A changed or progress resume, a suspend of a different kind, and
+`{{SKILL:iterate}}` as on every other host. For an unconfirmed re-trigger that condition reads
+"no review absent from the recorded baseline". Any other pending bot or check at the cap keeps report-and-stop. A changed or progress resume, a suspend of a different kind, and
 any return other than `SUSPENDED host-pr-watch` reset the count to zero. Where a resume under
 `mergeGate.requireAllChecks: true` finds every still-pending check reporting `required: false`, it
 does not suspend again and takes that path, naming them. `mergeGate.maxRounds` bounds changed

@@ -309,6 +309,16 @@ build, `review-create`, `review-thread-reply`, `pr-comment`, and `pr-update-body
 published text name Effective Flow; the helper refuses such text on each of them. A marker is then
 no evidence; `{{SKILL:iterate}}` reads its processed-thread ledger instead.
 
+**A possibly applied write is never re-sent blindly.** A `review-thread-reply`, `pr-comment` or
+`review-create` that fails with `mutationMayHaveSucceeded: true`, other than a
+`{{SKILL:merge-gate}}` trigger post, is re-read on its own target before any repeat, and the last
+read of that target before the write is its recovery baseline.
+
+```lazy-include
+pr-write-recovery
+when: a `review-thread-reply`, `pr-comment` or `review-create` failed with `mutationMayHaveSucceeded: true`, other than a merge-gate trigger post
+```
+
 ### No history rewriting
 
 New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –

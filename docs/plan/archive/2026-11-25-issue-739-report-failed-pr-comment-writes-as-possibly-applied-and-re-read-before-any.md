@@ -1,6 +1,6 @@
 # Report failed PR comment writes as possibly applied and re-read before any repeat
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #739
@@ -52,6 +52,7 @@ writes is made.
   This is verified: the thread reply's operation name and step label are both
   `review-thread-reply` on GitHub (`remote-tracker-github-core.mjs:627`) and on Forgejo
   (`remote-tracker-forgejo-core.mjs:568`).
+
 - **All three writes, not only the reply** (scored decision, see "Decided by score"). The code
   comment beside the set says that membership follows the operation's documented recovery: "never
   re-run after `mutationMayHaveSucceeded: true`; re-read the state instead". Each new member
@@ -74,6 +75,7 @@ writes is made.
   the target keeps a reply that succeeded on thread A from counting as the lost reply to thread B,
   which `iterate` Phase 5 step 2 would otherwise allow, since it posts several replies after one
   read.
+
 - **The recovery is loaded lazily at the failure point, and every write site names it** (scored
   decision). The full rule lives in a new fragment, `src/shared/pr-write-recovery.md`:
   - **One fence.** A ` ```lazy-include ` in `src/shared/pr-review-comments.md`, section
@@ -94,6 +96,7 @@ writes is made.
   `pr-review-comments` is the read surface that every consumer of `pr-review-thread-writes`
   already loads. The rule is therefore stated exactly once, and the pointer sits where a failure
   happens.
+
 - **The review submission takes its own baseline read** (scored decision). The "Idempotency"
   section of `src/shared/pr-review-integration.md` reads exactly two surfaces for signature
   de-duplication. It gets one clause that requires a `pr-reviews-read` immediately before
@@ -123,6 +126,7 @@ writes is made.
 
   `pr-write-recovery.md` only excludes these posts. That keeps its general direction ("an
   unprovable re-read repeats nothing") from contradicting step 3's ("unprovable → post it").
+
 - **4xx semantics stay as they are for each transport.** On `tea api`, a 4xx the forge stated
   stays a non-retryable refusal without the flag. On GitHub, `runChecked` cannot tell a stated 4xx
   from a lost response, so it flags every CLI failure of a set member, as it already does for
@@ -130,20 +134,20 @@ writes is made.
 
 ## Affected files
 
-| File | Description |
-| --- | --- |
-| `src/scripts/remote-tracker-core.mjs` | Add `review-thread-reply`, `pr-comment` and `review-create` to `POSSIBLY_APPLIED_MUTATIONS`. Update the two explanatory comments that name "three" mutations and their documented recovery: the one above the set and the one in `runChecked`. |
-| `src/shared/pr-write-recovery.md` | New, lazily loaded fragment holding the full recovery rule for the three PR writes, with one sentence excluding merge-gate's trigger posts. |
-| `src/shared/pr-review-comments.md` | In "Idempotency via the Effective Flow markers", add the ` ```lazy-include ` for `pr-write-recovery` and one eager sentence: never re-send blindly, and the last read of the target before the write is the baseline. |
-| `src/shared/pr-review-thread-writes.md` | Add one clause each to "Reply to a thread" and "Submit a review with inline comments", naming `shared/pr-write-recovery.md` as the read before any repeat. The reply clause makes a re-read of the thread mandatory before any repeated reply. The review clause also covers the single fallback PR comment. |
-| `src/tools/iterate.md` | Add one clause each to Phase 5 step 2 (replies) and step 3 (summary comment). Each takes its baseline read immediately before the write (`review-threads-read`, `pr-comments-read`). On a failure with `mutationMayHaveSucceeded: true`, it reads `shared/pr-write-recovery.md` before any repeat. |
-| `src/shared/pr-review-integration.md` | Add one clause to "Idempotency": take a `pr-reviews-read` immediately before `review-create` as that write's recovery baseline. The read is no part of signature de-duplication. Add the one-clause pointer to the outside-diff marked PR comment bullet. |
+| File                                           | Description                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/remote-tracker-core.mjs`          | Add `review-thread-reply`, `pr-comment` and `review-create` to `POSSIBLY_APPLIED_MUTATIONS`. Update the two explanatory comments that name "three" mutations and their documented recovery: the one above the set and the one in `runChecked`.                                                                                                          |
+| `src/shared/pr-write-recovery.md`              | New, lazily loaded fragment holding the full recovery rule for the three PR writes, with one sentence excluding merge-gate's trigger posts.                                                                                                                                                                                                             |
+| `src/shared/pr-review-comments.md`             | In "Idempotency via the Effective Flow markers", add the ` ```lazy-include ` for `pr-write-recovery` and one eager sentence: never re-send blindly, and the last read of the target before the write is the baseline.                                                                                                                                   |
+| `src/shared/pr-review-thread-writes.md`        | Add one clause each to "Reply to a thread" and "Submit a review with inline comments", naming `shared/pr-write-recovery.md` as the read before any repeat. The reply clause makes a re-read of the thread mandatory before any repeated reply. The review clause also covers the single fallback PR comment.                                            |
+| `src/tools/iterate.md`                         | Add one clause each to Phase 5 step 2 (replies) and step 3 (summary comment). Each takes its baseline read immediately before the write (`review-threads-read`, `pr-comments-read`). On a failure with `mutationMayHaveSucceeded: true`, it reads `shared/pr-write-recovery.md` before any repeat.                                                      |
+| `src/shared/pr-review-integration.md`          | Add one clause to "Idempotency": take a `pr-reviews-read` immediately before `review-create` as that write's recovery baseline. The read is no part of signature de-duplication. Add the one-clause pointer to the outside-diff marked PR comment bullet.                                                                                               |
 | `src/shared/merge-gate-configured-reviewer.md` | Add the trigger recovery to steps 3 and 5: the step's own check on a fresh read settles a flagged post, a post is repeated at most once, and an unconfirmed post is reported before step 4's single wait. Step 5 gets the review-id answer rule for an unconfirmed re-trigger, and the step 5 running report and the Phase 6 item get matching wording. |
-| `src/shared/host-pr-watch.md` | The wait record stores the review-id baseline instead of `createdAt` for an unconfirmed stale-verdict re-trigger. The Bounds rule reads "no review absent from that baseline" for such a re-trigger. |
-| `test/remote-tracker.test.mjs` | Split the shared `issue-comment`/`pr-comment` loop (around lines 3211–3388) so `issue-comment` stays the retryable negative control. Add possibly-applied tests for the three writes on both providers, modelled on the `issue-close` tests. |
-| `test/workflow-contracts.test.mjs` | Add a prose contract test for the recovery fragment, its lazy pointer, the write-site pointers and the merge-gate recovery, named after the invariant it protects. |
-| `docs/user-guide/remote-tracker.md` | Document the possibly-applied outcome: for `pr-comment` at the comment-transport paragraph (around line 567), and for `review-thread-reply` and `review-create` at the thread-write paragraph (around line 504). |
-| `src/tools/*.md` (`contextBudget:` line only) | Raise the budget of any tool that the `node build.mjs` report shows over budget after the edits. Change no other line of a tool beyond the `iterate.md` clauses above. |
+| `src/shared/host-pr-watch.md`                  | The wait record stores the review-id baseline instead of `createdAt` for an unconfirmed stale-verdict re-trigger. The Bounds rule reads "no review absent from that baseline" for such a re-trigger.                                                                                                                                                    |
+| `test/remote-tracker.test.mjs`                 | Split the shared `issue-comment`/`pr-comment` loop (around lines 3211–3388) so `issue-comment` stays the retryable negative control. Add possibly-applied tests for the three writes on both providers, modelled on the `issue-close` tests.                                                                                                            |
+| `test/workflow-contracts.test.mjs`             | Add a prose contract test for the recovery fragment, its lazy pointer, the write-site pointers and the merge-gate recovery, named after the invariant it protects.                                                                                                                                                                                      |
+| `docs/user-guide/remote-tracker.md`            | Document the possibly-applied outcome: for `pr-comment` at the comment-transport paragraph (around line 567), and for `review-thread-reply` and `review-create` at the thread-write paragraph (around line 504).                                                                                                                                        |
+| `src/tools/*.md` (`contextBudget:` line only)  | Raise the budget of any tool that the `node build.mjs` report shows over budget after the edits. Change no other line of a tool beyond the `iterate.md` clauses above.                                                                                                                                                                                  |
 
 ## Implementation details
 
@@ -184,6 +188,7 @@ writes is made.
      comment, or in the return of a gate-delegated run. An unconfirmed summary comment, review
      submission, fallback comment or outside-diff comment is reported only in the run's chat
      summary or return, never through a new PR write.
+
    - **merge-gate's trigger posts are excluded.** They follow their own recovery in the
      configured-reviewer route.
 3. **Lazy pointer and eager duty** in `src/shared/pr-review-comments.md`, "Idempotency via the
@@ -213,6 +218,7 @@ writes is made.
    - "**Unlike step 3, an unprovable comparison posts nothing here.**";
    - the assertions on `pr-review-comments.md` and `pr-review-integration.md` in the test files
      listed under "Validation plan".
+
 5. **merge-gate recovery** in `src/shared/merge-gate-configured-reviewer.md`:
    - **Step 3:** a trigger post that failed with `mutationMayHaveSucceeded: true` is settled by
      the existing "Idempotency without a marker" check on a fresh read. If that check finds
@@ -328,13 +334,10 @@ writes is made.
       each operation, the evidence (a new id by the authenticated login against the last
       pre-write read of that target), the marker in standard mode, the ledger record in hidden
       mode, the one-repeat limit, the unresolved and manual report, and the merge-gate exclusion.
-- [ ] Pointers name the fragment at every write site:
-      - a lazy pointer and an eager duty sentence in `pr-review-comments.md`, both excepting
-        merge-gate trigger posts;
-      - one-clause pointers in `pr-review-thread-writes.md`, `iterate.md` Phase 5 (with baseline
-        reads) and the `pr-review-integration.md` outside-diff bullet;
-      - in `pr-review-thread-writes.md`, "Reply to a thread" makes the re-read mandatory before any
-        repeated reply.
+- [ ] Pointers name the fragment at every write site: - a lazy pointer and an eager duty sentence in `pr-review-comments.md`, both excepting
+      merge-gate trigger posts; - one-clause pointers in `pr-review-thread-writes.md`, `iterate.md` Phase 5 (with baseline
+      reads) and the `pr-review-integration.md` outside-diff bullet; - in `pr-review-thread-writes.md`, "Reply to a thread" makes the re-read mandatory before any
+      repeated reply.
 - [ ] `pr-review-integration.md` requires a `pr-reviews-read` before `review-create`.
 - [ ] `merge-gate-configured-reviewer.md` states the one-repeat limit and the report-then-wait
       outcome for steps 3 and 5, and the review-id answer rule for an unconfirmed step 5
@@ -384,6 +387,7 @@ writes is made.
 
   They already fail closed as non-retryable. Flagging them would affect every set member and
   reverse existing tests, so it belongs in a separate issue.
+
 - Note: the scored decision on the recovery evidence was first scored on an inaccurate premise:
   that an older marked reply could sit on a thread being answered again. It was re-scored with
   corrected context before being applied. The block below records only the applied decision.
@@ -395,9 +399,11 @@ writes is made.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-CLR","question":"Which non-idempotent PR write mutations should join POSSIBLY_APPLIED_MUTATIONS in this change?","options":["Thread reply only","Thread reply and PR comment","All three","Decide later"],"escape":["Decide later"],"scores":[{"label":"Thread reply only","score":5,"reason":"It fixes the observed duplicate with the smallest prompt cost but leaves the same hazard open for pr-comment and review-create, which the issue asks this change to decide."},{"label":"Thread reply and PR comment","score":6,"reason":"The marker-tagged iterate summary makes a PR-comment re-read cheap to document, but excluding review-create has no principled basis since a duplicated review is the costliest duplicate."},{"label":"All three","score":8,"reason":"It applies the documented-recovery membership rule consistently to every non-idempotent PR write and also covers the most damaging duplicate, a whole review, at the cost of three short re-read recovery sentences in their owning fragments."}]},{"site":"S-CLR","question":"Which evidence in the mandatory re-read makes a thread count as already answered by the failed attempt, so the reply is never sent again?","options":["Viewer reply since pre-write read","Newest viewer reply","Exact body match","Marker anywhere","Decide later"],"escape":["Decide later"],"scores":[{"label":"Viewer reply since pre-write read","score":9,"reason":"A comment id new since the pre-write read and authored by the authenticated login (marked in standard mode) finds the stored reply even after a later reviewer comment or whitespace normalization, and unlike Marker anywhere it also settles hidden mode and records the reply in the ledger."},{"label":"Newest viewer reply","score":3,"reason":"A reviewer or bot comment right after the stored reply makes the check miss it, so the reply is sent twice."},{"label":"Exact body match","score":3,"reason":"Forge whitespace normalization can make a stored reply fail an exact comparison and be sent again."},{"label":"Marker anywhere","score":7,"reason":"Works as well as the id check in standard mode because the pre-write read showed no marked reply, but in hidden mode it only stops for manual verification."}]},{"site":"S-BAT","question":"How does the review-create recovery obtain its baseline?","options":["Pointer in pr-review-integration","Baseline-free review check","Shared rule only","Decide later"],"escape":["Decide later"],"scores":[{"label":"Pointer in pr-review-integration","score":8,"reason":"One clause naming the pr-reviews-read taken just before review-create as the recovery baseline settles the conflict with the fragment two-surfaces text, keeps the shared id-based rule and adds one line; the next-best option leaves the fragments contradicting each other."},{"label":"Baseline-free review check","score":4,"reason":"It breaks the single shared rule: an earlier marked review by the viewer at the same head would be mistaken for the lost write, and hidden mode always falls back to manual verification."},{"label":"Shared rule only","score":5,"reason":"The shared fallback technically closes the gap, but the integration fragment still says only two surfaces are read, so its consumer may skip the baseline read."}]},{"site":"S-BAT","question":"Is the possibly-applied recovery rule eager or lazy-loaded?","options":["Eager in pr-review-comments","Lazy-include at the failure","Decide later"],"escape":["Decide later"],"scores":[{"label":"Eager in pr-review-comments","score":5,"reason":"It works but adds about eight lines to a fragment five tools load eagerly on every run for a branch only a rare structured failure reaches."},{"label":"Lazy-include at the failure","score":8,"reason":"The trigger is one nameable decision point, so it meets the progressive-disclosure test, and an eager never-resend-blindly sentence that also names the pre-write read duty keeps the mandatory re-read visible."}]},{"site":"S-BAT","question":"How wide is the recovery trigger for the three PR writes?","options":["Narrow to the flag","Prose covers any failure","Helper flags INVALID_PAYLOAD too","Decide later"],"escape":["Decide later"],"scores":[{"label":"Narrow to the flag","score":8,"reason":"It keeps one helper-owned trigger matching the issue 5xx scope and the state-contracts-once rule; the unflagged INVALID_PAYLOAD paths already fail closed as non-retryable, so they become a named follow-up."},{"label":"Prose covers any failure","score":5,"reason":"The extra re-read is cheap, but prose would judge from bare error codes whether a request went out, drifting from the helper flag into a second contract."},{"label":"Helper flags INVALID_PAYLOAD too","score":4,"reason":"Structurally complete but reaches into issue-close, pr-merge and issue-sub-issue-create and reverses existing fail-closed tests, so it belongs in a separate follow-up."}]},{"site":"S-BAT","question":"After a second flagged failure or an unconfirmed re-read of a merge-gate trigger or re-trigger post, what does the gate do?","options":["Report and wait","Report and stop","Decide later"],"escape":["Decide later"],"scores":[{"label":"Report and wait","score":8,"reason":"A lost response usually means the comment landed, so one blocking wait turns the likely case into a verdict this run, while step 4 timeout report already covers a trigger that did not land."},{"label":"Report and stop","score":5,"reason":"Safe and deterministic, but it gives up a round in the common case where the trigger landed and blocks the merge without observing the bot."}]},{"site":"S-DEC","question":"How does merge-gate step 5 decide the reviewer has answered when the re-trigger post is unconfirmed?","options":["Recover createdAt, local fallback","Review-id baseline","Decide later"],"escape":["Decide later"],"scores":[{"label":"Recover createdAt, local fallback","score":4,"reason":"Recovering the forge createdAt is sound when the comment landed, but the local-time fallback compares clocks and fails open when the local clock runs behind, while host-pr-watch gains a mixed-clock wait record."},{"label":"Review-id baseline","score":8,"reason":"It reuses the plan id-absent-from-pre-write-read evidence, so no clock skew can fail open, and confirmed re-triggers keep the existing createdAt rule, at the cost of an id-set variant of the host-pr-watch wait record and report wording."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -406,15 +412,15 @@ writes is made.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-| --- | ---: | ---: | ---: |
-| Architecture | 0 | 2 | 1 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 6 | 1 |
-| Testability | 0 | 0 | 3 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 0 | 2 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         2 |    1 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         6 |    1 |
+| Testability     |        0 |         0 |    3 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         0 |    2 |
 
 ### Findings
 

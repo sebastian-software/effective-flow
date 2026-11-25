@@ -2111,14 +2111,24 @@ function teaApiMessage(body) {
     : undefined;
 }
 
-// The three operations whose documented recovery is "never re-run after
-// `mutationMayHaveSucceeded: true`; re-read the state instead". Every failure path that can end one
-// of them has to agree about which three they are, so the membership lives here rather than in each
-// path: `runChecked` reads it when the CLI itself failed, and `teaApiSuccess` reads it when
-// `tea api` exited 0 and the forge answered 5xx, which on that transport is the same ambiguity
-// wearing a status line. Two copies of the rule are what let a Forgejo `issue-close` take the one
-// path neither of them covered.
-const POSSIBLY_APPLIED_MUTATIONS = new Set(['pr-merge', 'issue-sub-issue-create', 'issue-close']);
+// The operations whose documented recovery is "after `mutationMayHaveSucceeded: true`, never
+// re-run without first re-reading the state". Every failure path that can end one of them has to
+// agree about which they are, so the membership lives here rather than in each path: `runChecked`
+// reads it when the CLI itself failed, and `teaApiSuccess` reads it when `tea api` exited 0 and the
+// forge answered 5xx, which on that transport is the same ambiguity wearing a status line. Two
+// copies of the rule are what let a Forgejo `issue-close` take the one path neither of them
+// covered. The three PR comment writes — a thread reply, a PR comment and a review submission —
+// belong for the same reason: the forge may store the comment before the response is lost, a blind
+// repeat posts it twice, and their documented recovery (`shared/pr-write-recovery.md`) re-reads the
+// written target before allowing at most one repeat.
+const POSSIBLY_APPLIED_MUTATIONS = new Set([
+  'pr-merge',
+  'issue-sub-issue-create',
+  'issue-close',
+  'review-thread-reply',
+  'pr-comment',
+  'review-create',
+]);
 
 function mutationMayHaveApplied(label) {
   return POSSIBLY_APPLIED_MUTATIONS.has(label);
@@ -2337,19 +2347,22 @@ async function runChecked(runner, plan, label) {
     if (plan.tolerateAlreadyExists === true && reportsAlreadyExists(result)) {
       return { ...result, status: 0, stdout: '', alreadyExists: true };
     }
-    // A failed merge, a failed parent-aware issue create, or a failed issue close is not safely
-    // retryable: the forge may have accepted it before the connection dropped, so a second attempt
-    // could act on state nobody verified. The caller has to re-read instead — the same discipline
-    // the human-output create normalizers require when a successful command yields no usable result
-    // URL. `issue-close` earns its place for the re-read half rather than the retry half: repeating
-    // the PATCH would be harmless, but the flag is the only thing that tells a caller the forge may
-    // already have acted, and a caller that reads its absence as "nothing happened" leaves the
-    // in-progress label on a closed issue and its container entry open. Membership is therefore
-    // decided by the operation's documented recovery — each of these three is documented as "never
-    // re-run after `mutationMayHaveSucceeded: true`; re-read the state instead" — and not by whether
-    // a repeat would duplicate anything. The membership itself lives beside `teaApiSuccess`, which
-    // applies the same three to a 5xx the forge did state: on the `tea api` transport that failure
-    // exits 0 and never reaches this exit-code path at all.
+    // A failed merge, a failed parent-aware issue create, a failed issue close, or a failed PR
+    // comment write (thread reply, PR comment, review submission) is not safely retryable: the
+    // forge may have accepted it before the connection dropped, so a second attempt could act on
+    // state nobody verified or post the same comment twice. The caller has to re-read instead — the
+    // same discipline the human-output create normalizers require when a successful command yields
+    // no usable result URL. `issue-close` earns its place for the re-read half rather than the
+    // retry half: repeating the PATCH would be harmless, but the flag is the only thing that tells a
+    // caller the forge may already have acted, and a caller that reads its absence as "nothing
+    // happened" leaves the in-progress label on a closed issue and its container entry open.
+    // Membership is therefore decided by the operation's documented recovery — each member is
+    // documented as "after `mutationMayHaveSucceeded: true`, never re-run without first re-reading
+    // the state" — and not by whether a repeat would duplicate anything. The membership itself lives
+    // beside `teaApiSuccess`, which applies the same set to a 5xx the forge did state: on the
+    // `tea api` transport that failure exits 0 and never reaches this exit-code path at all. GitHub's
+    // CLI cannot tell a stated 4xx from a lost response, so every CLI failure of a member is flagged;
+    // that costs one extra re-read and never a duplicate.
     const mayHaveApplied = mutationMayHaveApplied(label);
     fail(
       'COMMAND_FAILED',

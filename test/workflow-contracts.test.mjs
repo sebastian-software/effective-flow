@@ -29443,3 +29443,149 @@ test('the wisdom file records REVIEW_HEAD_SHA and the early-entry records', () =
     near('the early-entry guard', 'early-round report entries of "Early entry"', 40),
   );
 });
+
+// Invariant (#739): a `review-thread-reply`, `pr-comment` or `review-create` that fails with
+// `mutationMayHaveSucceeded: true` may already be stored, so it is re-read on its own target against
+// the last read taken before the write and never re-sent blindly. The rule lives once in a lazily
+// loaded fragment, every write site points at it with its baseline read, and merge-gate's trigger
+// posts keep their own bounded recovery. A dropped pointer, baseline or bound reopens the duplicate
+// replies the issue reported.
+test('a possibly applied PR comment write is re-read on its own target and never re-sent blindly', () => {
+  const flag = '`mutationMayHaveSucceeded: true`';
+  const pointer = 'read `shared/pr-write-recovery.md` before any repeat';
+
+  const recovery = prose(source('src/shared/pr-write-recovery.md'));
+  for (const operation of ['`review-thread-reply`', '`pr-comment`', '`review-create`']) {
+    assert.ok(recovery.includes(operation), `recovery must name ${operation}`);
+  }
+  assert.match(recovery, near(flag, 'never re-sent blindly', 80));
+  assert.match(
+    recovery,
+    near('one thread holding the answered `commentId`', '`review-threads-read`', 80),
+  );
+  assert.match(recovery, near('for a PR comment', '`pr-comments-read`', 20));
+  assert.match(recovery, near('for a review submission', '`pr-reviews-read`', 20));
+  assert.match(
+    recovery,
+    near('equals the one `viewer-read` returned', 'whose `id` was absent', 80),
+  );
+  assert.match(
+    recovery,
+    near('absent from the last read of that target', 'taken before this write', 20),
+  );
+  assert.match(recovery, near('in standard mode', "writer's marker", 80));
+  assert.match(recovery, near('hidden mode', '`pr-thread-ledger`', 80));
+  assert.match(recovery, near('repeat the write at most once', 'not repeated', 120));
+  assert.match(recovery, near('unconfirmed', 'repeat nothing', 40));
+  assert.match(
+    recovery,
+    near("unconfirmed reply's thread unresolved", 'unrecorded in the ledger', 40),
+  );
+  assert.ok(recovery.includes('possibly posted, unconfirmed'));
+  assert.ok(recovery.includes('before writing by hand'));
+  assert.match(recovery, near('never through a new PR write', 'chat summary or return', 80));
+  assert.match(recovery, near('merge-gate', 'trigger posts are excluded', 40));
+
+  const comments = source('src/shared/pr-review-comments.md');
+  const idempotency = section(comments, '### Idempotency via the Effective Flow markers');
+  const lazy = [...idempotency.matchAll(LAZY_INCLUDE_RE)].map((match) => match[0]);
+  const recoveryPointer = lazy.find((fence) => /\npr-write-recovery\n/.test(fence));
+  assert.ok(
+    recoveryPointer,
+    'pr-review-comments must defer pr-write-recovery at its idempotency rule',
+  );
+  assert.match(
+    recoveryPointer,
+    new RegExp(`when: .*${flag}.*other than a merge-gate trigger post`),
+  );
+  const duty = prose(idempotency);
+  assert.match(duty, near('never re-sent blindly', 'other than a', 200));
+  assert.match(duty, near('last read of that target before the write', 'recovery baseline', 40));
+  assert.ok(!collectIncludeNames(comments).eager.has('pr-write-recovery'));
+
+  const writes = prose(source('src/shared/pr-review-thread-writes.md'));
+  const reply = section(writes, '### Reply to a thread', '###');
+  assert.match(reply, near(flag, pointer, 20));
+  assert.ok(reply.includes('a repeated reply always requires a re-read of the thread first'));
+  const submit = section(writes, '### Submit a review with inline comments', '###');
+  assert.match(submit, near('the submission or of that fallback comment', pointer, 80));
+
+  const phase5 = prose(section(source('src/tools/iterate.md'), '### Phase 5', '\n### '));
+  const replies = phase5.slice(phase5.indexOf('2. Reply briefly'), phase5.indexOf('3. Post'));
+  assert.match(
+    replies,
+    near('`review-threads-read` immediately before the replies', 'baseline', 20),
+  );
+  assert.match(replies, near(flag, pointer, 20));
+  const summary = phase5.slice(phase5.indexOf('3. Post'), phase5.indexOf('4. Declare'));
+  assert.match(summary, near('`pr-comments-read` immediately before the comment', 'baseline', 20));
+  assert.match(summary, near(flag, pointer, 20));
+
+  const integration = source('src/shared/pr-review-integration.md');
+  const publication = prose(section(integration, '### Publication'));
+  const outsideDiff = publication.slice(
+    publication.indexOf('- A finding on a line outside the diff'),
+    publication.indexOf('- Every published finding'),
+  );
+  assert.match(outsideDiff, near('On a failure of that comment', pointer, 80));
+  const integrationIdempotency = prose(section(integration, '### Idempotency\n'));
+  assert.match(
+    integrationIdempotency,
+    near('`pr-reviews-read` immediately before `review-create`', 'recovery baseline', 40),
+  );
+  assert.match(
+    integrationIdempotency,
+    near('no part of signature de-duplication', 'serves only', 80),
+  );
+  assert.ok(integrationIdempotency.includes('this check reads those two surfaces only'));
+
+  const round = prose(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
+  const trigger = round.slice(round.indexOf('3. Not started'), round.indexOf('4. The wait'));
+  assert.match(
+    trigger,
+    near(`A trigger post that failed with ${flag}`, 'idempotency check above', 60),
+  );
+  assert.match(trigger, near('repeat the post at most once', 'second flagged failure', 80));
+  assert.match(
+    trigger,
+    near('report the trigger as unconfirmed', "apply step 4's single wait", 40),
+  );
+  const stale = round.slice(round.indexOf('5. When the bot has run'));
+  assert.match(stale, near('Take a `pr-reviews-read` just before posting', flag, 80));
+  assert.match(stale, near('repeated at most once', 'second flagged failure', 40));
+  assert.match(stale, near('report the re-trigger as unconfirmed', 'as if it had been posted', 60));
+  assert.match(
+    stale,
+    near(
+      'While the re-trigger stays unconfirmed',
+      'id was absent from that pre-post `pr-reviews-read`',
+      200,
+    ),
+  );
+  assert.match(stale, near('a confirmed re-trigger keeps the', '`createdAt` rule', 20));
+  assert.match(
+    stale,
+    near(
+      'unconfirmed re-trigger, that report names it as unconfirmed',
+      'in place of its `createdAt`',
+      20,
+    ),
+  );
+  assert.ok(stale.includes('Unlike step 3, an unprovable comparison posts nothing here.'));
+  const phase6 = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
+  assert.match(phase6, near('"re-trigger unconfirmed"', 'in place of its `createdAt`', 20));
+
+  const watch = prose(source('src/shared/host-pr-watch.md'));
+  assert.match(
+    watch,
+    near(
+      'for an unconfirmed re-trigger, in place of `createdAt`',
+      'review-id baseline of its pre-post `pr-reviews-read`',
+      20,
+    ),
+  );
+  assert.match(
+    section(watch, 'Bounds.', 'Report-and-stop'),
+    near('For an unconfirmed re-trigger', 'no review absent from the recorded baseline', 40),
+  );
+});

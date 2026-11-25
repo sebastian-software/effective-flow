@@ -528,6 +528,14 @@ review from the one that opened the thread, submitted after it. A dismissal alon
 The gate stops handing a settled thread to `iterate`, no longer lets it block the merge, and lists it
 in the report with its URL as left unresolved because the provider cannot resolve review threads.
 
+A `review-thread-reply` whose outcome the adapter could not observe reports `retryable: false` and
+`mutationMayHaveSucceeded: true`, as a failed `issue-close` does: the CLI or `tea` transport itself
+failed, or on Gitea the forge answered `5xx`. The forge may already have stored the reply, so a
+repeat would post it twice. The caller re-reads the thread and looks for a new reply by the
+authenticated account before it writes anything again – never a blind retry. On GitHub the same
+holds for `review-create`, whose failed CLI call may already have published the review; the caller
+re-reads the review list first. `tea`-backed forges refuse `review-create` before any request.
+
 **Reading review threads costs one request per review, plus one.** Forgejo exposes no flat
 review-comment listing at any nesting level, so the read enumerates `…/pulls/{index}/reviews` and
 then asks each review for its comments – `ceil(N/50) + N` requests for `N` reviews, the same fan-out
@@ -571,6 +579,14 @@ conversation comments, with the selected login and repository and a JSON body on
 successful applied call returns the raw created-comment JSON object in `data.result`, including
 the provider's comment `id`. Missing transport flags produce `UNSUPPORTED_CAPABILITY` before
 creation; support for the human `tea comment` renderer is not required.
+
+A `pr-comment` whose outcome the adapter could not observe reports `retryable: false` and
+`mutationMayHaveSucceeded: true` on both forges: the CLI or `tea` transport failed, or on Forgejo
+the forge answered `5xx`. The comment may already exist, so the caller re-reads the pull request's
+comments before it posts again and never retries blindly. On Forgejo a refusal the forge stated,
+such as a 403, stays a non-retryable rejection without that flag; GitHub's CLI cannot tell such a
+refusal from a lost response, so it carries the flag and costs one extra re-read. `issue-comment`
+stays retryable on those failures.
 
 What a Forgejo `pr-status-read` does **not** report is worth knowing before you configure the gate
 against it:
