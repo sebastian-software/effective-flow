@@ -1,7 +1,7 @@
 ---
 description: "Feeds review notes from an existing pull request (bots like Greptile and human reviewers) as well as additional free-text instructions back into the same PR as new commits – a mini build on an already delivered change. Classifies each item and delegates to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}, replies to and resolves the addressed review threads. Without a PR it iterates locally on the latest branch change."
 catalogHint: "Feeds PR review notes and instructions back into an existing PR as new commits."
-contextBudget: 1874
+contextBudget: 1894
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -1022,13 +1022,17 @@ when: Phase 4 reports the suite as `SKIPPED (environment: <prerequisite id>)` an
    run the return carries that, since the summary comment is suppressed. The helper stamps the marker
    `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand. In hidden mode it
    stamps none: record each posted reply per the loaded `pr-thread-ledger`, and let no reply name
-   Effective Flow.
+   Effective Flow. Take a `review-threads-read` immediately before the replies as their baseline;
+   on a reply failure with `mutationMayHaveSucceeded: true`, read `shared/pr-write-recovery.md`
+   before any repeat.
 3. Post **one** summary comment on the PR in resolved `language.forge` (marker
    `<!-- effective-flow-iterate -->`; unmarked in hidden mode, never naming Effective Flow or a
    path below `.effective-flow/`, with `visibility: hidden` passed to both the comment build and
    the `pr-comment` mutation): which items
    were implemented or skipped and which pure questions are open/deferred (without a
-   substantive auto-reply). **Skip this step entirely when Phase 0 received
+   substantive auto-reply). Take a `pr-comments-read` immediately before the comment as its
+   baseline; on a failure with `mutationMayHaveSucceeded: true`, read `shared/pr-write-recovery.md`
+   before any repeat. **Skip this step entirely when Phase 0 received
    `Summary comment: suppressed`**: post nothing at all and hand exactly that content back to the
    caller in the Phase 6 summary instead. The **returned outcome record** goes back with it, stated
    as its own complete list above that content per "Returned outcome record" rather than left to be

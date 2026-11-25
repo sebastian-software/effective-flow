@@ -199,7 +199,9 @@ when: a finding is about to be published onto a pull request and its `Signature`
   acceptance-lens finding without a code location goes there too, its `file`
   (`<source>#criterion-<key8>` or `adr#<key8>`) taking the place of `path:line` in its
   `Signature`. The review body stays human-facing prose and carries no idempotency key; on the
-  explicit entry point it carries the acceptance summary when stream 2d ran.
+  explicit entry point it carries the acceptance summary when stream 2d ran. On a failure of that
+  comment with `mutationMayHaveSucceeded: true`, read `shared/pr-write-recovery.md` before any
+  repeat.
 - **Every published finding, inline or outside the diff, carries its key.** Below the stamped
   marker, its body holds the finding's stable ID, its severity, its problem and recommendation
   prose, and — as its last line — the idempotency key in the canonical finding-issue form of
@@ -225,6 +227,9 @@ Parse the `Signature` lines of the marked results with the helper's `signature-p
 compare the normalized values it returns; never hand-roll the normalization. A finding whose
 normalized signature already appears under this fragment's marker is not published again. No new
 persistence is introduced — the pull request itself is the state.
+
+Take a `pr-reviews-read` immediately before `review-create` as that write's recovery baseline. It
+serves only `shared/pr-write-recovery.md` and is no part of signature de-duplication.
 
 ### Automatic trigger after delivery
 

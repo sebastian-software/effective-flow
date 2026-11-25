@@ -319,6 +319,11 @@ entries that denote the same reviewer – two spellings of one account are one r
      unprovable. Treat the trigger as **not yet posted for this head** and post it: a redundant
      mention costs one extra bot run, a wrongly suppressed one costs the merge. This is the same
      direction step 1 fails in.
+   - **A trigger post that failed with `mutationMayHaveSucceeded: true`** is settled by the
+     idempotency check above on a fresh read: a trigger it finds counts as posted. If it finds
+     nothing, repeat the post **at most once**. After a second flagged failure, or an unprovable
+     comparison after a flagged failure, post nothing more, report the trigger as unconfirmed, and
+     apply step 4's single wait as if it had been posted.
    - If no trigger text is configured for that login, post nothing and apply the same single wait for
      the bot's own schedule; report that no trigger is configured.
 4. **The wait is one blocking wait, not a poll.** Both states above end in the same wait. There is no
@@ -335,7 +340,8 @@ entries that denote the same reviewer – two spellings of one account are one r
    - If the bot is still not **has run** after the wait, the run ends with a report naming that bot
      and its observed state as the blocking condition. A timeout here is always a report, never a
      merge – and that holds for **running** exactly as it does for **not started**: a reviewer this
-     run watched working is still a reviewer whose notes nobody has answered.
+     run watched working is still a reviewer whose notes nobody has answered. This report also
+     covers an unconfirmed trigger of step 3 that never landed.
 5. **When the bot has run:** first apply the stop check of "Repair checkpoints" in
    `merge-gate-delegated-run`, then the stale-verdict re-trigger below, never on the path of "Early
    entry", then "Repair evaluation per configured reviewer" – a stop from either ends the run
@@ -379,8 +385,17 @@ entries that denote the same reviewer – two spellings of one account are one r
      suspends per that fragment too. **The reviewer has answered** only when that re-read
      shows a new submitted review at `REVIEW_HEAD_SHA` whose `submittedAt` is later than the
      re-trigger comment's `createdAt`; a reviewer check that was already `COMPLETED` is not an answer.
+     Take a `pr-reviews-read` just before posting. A re-trigger that failed with
+     `mutationMayHaveSucceeded: true` is settled as in step 3, by this step's own check on a fresh
+     read, and repeated **at most once**; after a second flagged failure, or an unprovable check
+     after a flagged failure, post nothing more, report the re-trigger as unconfirmed, and apply the
+     wait as if it had been posted. While the re-trigger stays unconfirmed, **the reviewer has
+     answered** only when the post-wait re-read shows a submitted review at `REVIEW_HEAD_SHA` whose
+     id was absent from that pre-post `pr-reviews-read`; a confirmed re-trigger keeps the
+     `createdAt` rule. No local clock replaces the unknown `createdAt`.
      A re-read that observes the reviewer as **running** ends the run with step 4's report, carrying
      the stale-verdict item and the re-trigger's `createdAt`, and hands nothing to `{{SKILL:iterate}}`.
+     For an unconfirmed re-trigger, that report names it as unconfirmed in place of its `createdAt`.
      Otherwise continue this step on the re-read. A new changes-requested answer is a new verdict,
      re-triggered only when a check other than the reviewer's own is re-run after it and concludes
      `SUCCESS`, so an unmoved head with settled checks cannot loop – given the own-check exclusion
@@ -908,7 +923,8 @@ the residual is accepted and made visible rather than closed.
   or why none was posted – no trigger configured, no `.check` configured to exclude the reviewer's
   own signal, staleness unprovable, already posted for this verdict, or already triggered this
   round – together with a recommendation to re-trigger the reviewer by hand, and to configure
-  `mergeGate.bots.<login>.check` where none is configured;
+  `mergeGate.bots.<login>.check` where none is configured. An unconfirmed re-trigger is named as
+  "re-trigger unconfirmed" in place of its `createdAt`;
 - **every early bot round** of "Early entry", from its report entry, also after a head movement
   and in a run that ended before a green head was verified: the bot, the review id, the verdict's
   `submittedAt`, the dispatch time, one line per finding with its outcome, and its

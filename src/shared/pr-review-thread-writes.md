@@ -21,6 +21,9 @@ second time.
 In hidden mode (`visibility: hidden`), pass that value: nothing is stamped, and
 `{{SKILL:iterate}}`'s processed-thread ledger records the answered thread instead.
 
+On a failure with `mutationMayHaveSucceeded: true`, read `shared/pr-write-recovery.md` before any
+repeat: a repeated reply always requires a re-read of the thread first.
+
 ### Resolve a thread
 
 Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
@@ -49,3 +52,6 @@ references in its text, and report the reduced fidelity; do not improvise a prov
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
 `pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
 `{{SKILL:iterate}}` reads as its own already-processed work.
+
+On a failure of the submission or of that fallback comment with `mutationMayHaveSucceeded: true`,
+read `shared/pr-write-recovery.md` before any repeat.
