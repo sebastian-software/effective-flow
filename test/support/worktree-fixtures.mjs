@@ -8,6 +8,10 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
+import {
+  contentDigest,
+  executeOperation as executeBuildRun,
+} from '../../src/scripts/build-run-core.mjs';
 import { executeOperation } from '../../src/scripts/effective-flow-state-core.mjs';
 import { createProcessRunner } from '../../src/scripts/process-runner.mjs';
 
@@ -195,6 +199,142 @@ export async function initialized(root, options = {}) {
   const record = makeRecord(root, worktree, options);
   expectOk(await call('worktree record-init', { cwd: root, executionRoot: root, record }));
   return { worktree, record };
+}
+
+// Commits `files` (path → content) on `branch`, created from `base` when it does not exist yet,
+// through the main checkout, which is back on `main` afterwards. Returns the new tip.
+export function commitOnBranch(root, branch, files, { base = 'main', message = 'change' } = {}) {
+  const exists = git(root, 'branch', '--list', branch) !== '';
+  git(root, 'checkout', '-q', ...(exists ? [branch] : ['-b', branch, base]));
+  for (const [file, content] of Object.entries(files)) writeFileSync(join(root, file), content);
+  git(root, 'add', '--', ...Object.keys(files));
+  git(root, 'commit', '-q', '-m', message);
+  const tip = git(root, 'rev-parse', 'HEAD');
+  git(root, 'checkout', '-q', 'main');
+  return tip;
+}
+
+// Squash-merges `branch` into `main` as a single commit and returns that commit.
+export function squashIntoMain(root, branch) {
+  git(root, 'checkout', '-q', 'main');
+  git(root, 'merge', '-q', '--squash', branch);
+  git(root, 'commit', '-q', '-m', `squash ${branch}`);
+  return git(root, 'rev-parse', 'HEAD');
+}
+
+// Points `refs/remotes/origin/main` at `main` (no remote is configured: the branch proofs read the
+// remote-tracking ref only, and cleanup never fetches).
+export function publishMain(root) {
+  git(root, 'update-ref', 'refs/remotes/origin/main', git(root, 'rev-parse', 'main'));
+  return git(root, 'rev-parse', 'refs/remotes/origin/main');
+}
+
+// The `items` value `cleanup apply` takes for a planned item: the bare digest, or for a `branch:`
+// item `{itemDigest, proof, proofCommit}`.
+export function applyValue(item) {
+  return item.kind === 'branch'
+    ? { itemDigest: item.itemDigest, proof: item.proof, proofCommit: item.proofCommit }
+    : item.itemDigest;
+}
+
+// Writes a non-terminal build run below `.effective-flow/build-runs/<runId>/` whose request names
+// `branch` as `execution.branch` (only the fields the read-only branch reader checks).
+export function writeBuildRun(root, runId, { branch, head, terminal = false }) {
+  const dir = join(root, '.effective-flow', 'build-runs', runId);
+  mkdirSync(dir, { recursive: true });
+  const execution = { executionRoot: root, branch, head, origin: 'in-place', owner: 'build' };
+  writeFileSync(join(dir, 'request.json'), `${JSON.stringify({ execution })}\n`);
+  if (terminal) writeFileSync(join(dir, 'terminal.json'), '{}\n');
+}
+
+// A non-terminal build run made by `build-run-core.mjs` itself, not a hand-written shape: `create`
+// with the main checkout's `main` as `execution.branch`, then, with `branch`, `authorize-execution`
+// and `transition-execution` into an in-place delivery on `branch`, which writes `execution.json`;
+// the main checkout is back on `main` afterwards. Returns the run directory.
+export async function createBuildRun(root, runId, { branch = null } = {}) {
+  const runtime = join(root, '.effective-flow');
+  mkdirSync(runtime, { recursive: true });
+  writeFileSync(
+    join(runtime, 'memory.json'),
+    JSON.stringify({ runtimeMigration: { directory: { version: 1 } } }),
+  );
+  if (git(root, 'ls-files', '--', 'plan.md') === '') {
+    writeFileSync(join(root, 'plan.md'), '# Approved Feature plan\n');
+    git(root, 'add', 'plan.md');
+    git(root, 'commit', '-q', '-m', 'plan');
+  }
+  const head = git(root, 'rev-parse', 'HEAD');
+  const deps = {
+    runner: (request) => {
+      const result = spawnSync(request.executable, request.args, {
+        cwd: request.cwd,
+        env: GIT_ENV,
+        ...(request.stdoutBuffer ? {} : { encoding: 'utf8' }),
+      });
+      return {
+        status: result.status,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        error: result.error,
+      };
+    },
+  };
+  const run = async (operation, payload) =>
+    (await executeBuildRun(operation, payload, deps)).result;
+  const instruction = 'Implement the approved Feature plan and retain a delivery branch.';
+  const created = await run('create', {
+    runtimeStateRoot: root,
+    repositoryIdentity: commonDir(root),
+    runId,
+    execution: {
+      executionRoot: root,
+      branch: 'main',
+      head,
+      origin: 'current-checkout',
+      owner: 'build',
+    },
+    plan: { root, path: 'plan.md', digest: contentDigest(readFileSync(join(root, 'plan.md'))) },
+    source: { instruction, restrictions: [] },
+    runMode: 'interactive',
+    languages: Object.fromEntries(
+      ['source', 'documentation.user', 'documentation.technical', 'workflow', 'forge', 'git'].map(
+        (key) => [key, 'en'],
+      ),
+    ),
+    completionCondition: 'All required phases and gates pass.',
+    deliveryRestrictions: [],
+    sourceAssociation: 'approved-feature-plan',
+    allowedRoots: [root],
+  });
+  const common = {
+    runtimeStateRoot: root,
+    repositoryIdentity: commonDir(root),
+    runId,
+    requestDigest: created.requestDigest,
+  };
+  const agentHandle = 'original-child-handle';
+  await run('bind-agent', { ...common, agentHandle });
+  if (branch !== null) {
+    const authorization = await run('authorize-execution', {
+      ...common,
+      agentHandle,
+      mode: 'in-place-delivery',
+      executionRoot: root,
+      branch,
+      baseHead: head,
+      authority: { kind: 'source', source: 'instruction', index: null, quote: instruction },
+    });
+    git(root, 'switch', '-q', '-c', branch);
+    await run('transition-execution', {
+      ...common,
+      agentHandle,
+      authorization,
+      execution: { executionRoot: root, branch, head, origin: 'in-place', owner: 'build' },
+      ownership: null,
+    });
+    git(root, 'switch', '-q', 'main');
+  }
+  return join(runtime, 'build-runs', runId);
 }
 
 // Moves a record from `active` to `to` through `worktree transition`.

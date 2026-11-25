@@ -1143,3 +1143,11 @@ log, permission log, result, allow-rules envelopes, settings snapshots, the seed
 | `manifest.sha256.txt` | `0ae5eedac08b60a39eec91e3f5ca0673e257b0f3ecde68175352726a61daee65` |
 
 The measurement cost 1.33 USD in total, the blocked attempt included.
+
+### Note: proven delivery branches in `cleanup`
+
+`cleanup plan` now also offers proven local delivery branches as `branch:` items, and `cleanup apply`
+deletes the confirmed ones in the same single here-string call. The destructive call shape is
+unchanged, so the measured prompt budget (one `cleanup apply` prompt) holds, and no new live
+measurement was taken. `cleanup plan` stays free of repository mutations except that its branch
+proofs write only into a temporary object directory under the system temp dir.

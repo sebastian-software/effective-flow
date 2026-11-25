@@ -1405,15 +1405,17 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   `worktree remove` withdraws the listed records of one session. `cleanup plan` is read-only: it
   classifies every record and returns actionable `items` (`worktree:<RECORD_ID>`,
   `invalid-record:<RECORD_ID>`, `legacy:.firmo`, `legacy:.sf-plugin`,
-  `config:.effective-flow/config.json`) each with an `itemDigest`, the SHA-256 of the item's
-  key-sorted evidence, plus `blocked` and `unrecorded` entries. `cleanup apply` takes the user's
+  `config:.effective-flow/config.json`, `branch:<name>`) each with an `itemDigest`, the SHA-256 of
+  the item's key-sorted evidence, plus `blocked`, `unrecorded` and `retainedBranches` entries. `cleanup apply` takes the user's
   selected `items` with their digests, recomputes each under its lock and answers
   `PREVIEW_MISMATCH` without writing when one differs; it removes
   worktrees through the lifecycle claim and legacy items (guard classes `legacyRuntimeDirectory`
   and `legacyConfigFile`) bottom-up without following a link. Both destructive operations run
   under a 90 s deadline, so the caller sets a 120000 ms Bash timeout and, in Codex, requests
-  sandbox escalation up front (`SANDBOX_DENIED` otherwise). `git branch -d` is the only
-  branch deletion; a call from `apply-review` carrying `integrationRoot` may delete the ref after
+  sandbox escalation up front (`SANDBOX_DENIED` otherwise). Outside the `branch:` items below,
+  `git branch -d` is the only branch deletion; a `branch:` item carries
+  `{itemDigest, proof, proofCommit}` in `cleanup apply`, which re-proves it offline and
+  compare-and-deletes the ref only on that proof (never `git branch -D`); a call from `apply-review` carrying `integrationRoot` may delete the ref after
   an exact `git patch-id --verbatim` proof of every component commit, and otherwise the item
   is `BRANCH_RETAINED`. The `runtimeMigration.directory` marker records the migrated legacy
   directory as `source`; a legacy directory is certified for removal only by a marker naming it,
