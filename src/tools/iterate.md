@@ -1,7 +1,7 @@
 ---
 description: "Feeds review notes from an existing pull request (bots like Greptile and human reviewers) as well as additional free-text instructions back into the same PR as new commits – a mini build on an already delivered change. Classifies each item and delegates to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}, replies to and resolves the addressed review threads. Without a PR it iterates locally on the latest branch change."
 catalogHint: "Feeds PR review notes and instructions back into an existing PR as new commits."
-contextBudget: 1871
+contextBudget: 1874
 ---
 
 <!-- progress-context-receiver:1 -->
