@@ -22,7 +22,7 @@ import {
   mergeGateDelegatedRun,
   mergeGateWithDelegatedRun,
 } from './support/merge-gate-source.mjs';
-import { inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
+import { executeOperation, inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
 import {
   classifySetupStem,
   compareSetupCandidates,
@@ -13031,6 +13031,67 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
     /Keep the marker\s*for every other outcome, `terminal \(cancelled\)` included/,
   );
   assert.match(observation, /Never force-close an issue/);
+});
+
+// Invariant: the post-merge guidance shows an `issue-state-wait` call the helper accepts on the
+// first invocation, so a reader copying it never hits a rejected call and a retry.
+test('merge-gate issue observation shows an issue-state-wait call the helper accepts', async () => {
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const step = boundedSlice(fragment, '2. Give auto-close automation', '3. **Assess completion');
+  const calls = [...step.matchAll(/remote-tracker\.mjs issue-state-wait <<< '([^']*)'/g)];
+  assert.equal(calls.length, 1, 'step 2 must show exactly one issue-state-wait call');
+  assert.equal(
+    calls[0][1],
+    '{"cwd":"<RUNTIME_STATE_ROOT>","issue":<issue number>}',
+    'shown payload',
+  );
+  const parsed = JSON.parse(calls[0][1].replace('<issue number>', '17'));
+  assert.deepEqual(Object.keys(parsed), ['cwd', 'issue']);
+  assert.equal(parsed.cwd, '<RUNTIME_STATE_ROOT>');
+  assert.equal(parsed.issue, 17);
+  assert.match(
+    prose(step),
+    near('no timeout, wait or polling field', '30-second maximum is fixed'),
+  );
+
+  const recorded = [];
+  const runner = async (plan) => {
+    recorded.push(plan);
+    if (plan.executable === 'git' && plan.args[0] === 'rev-parse') {
+      return { status: 0, stdout: 'true\n', stderr: '' };
+    }
+    if (plan.executable === 'git' && plan.args[0] === 'remote') {
+      return { status: 0, stdout: 'https://github.com/example/flow.git\n', stderr: '' };
+    }
+    return {
+      status: 0,
+      stderr: '',
+      stdout:
+        'HTTP/2 200 OK\ncontent-type: application/json\n\n' +
+        JSON.stringify({
+          number: 17,
+          title: 't',
+          body: '',
+          state: 'closed',
+          labels: [],
+          html_url: 'https://github.com/example/flow/issues/17',
+        }),
+    };
+  };
+  const sleeps = [];
+  const sleeper = async (ms) => {
+    sleeps.push(ms);
+  };
+  const result = await executeOperation(
+    'issue-state-wait',
+    { ...parsed, cwd: '/main/checkout' },
+    { runner, skipProbe: true, sleeper },
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.data.result.outcome, 'terminal');
+  assert.equal(recorded.length, 3);
+  for (const plan of recorded) assert.equal(plan.cwd, '/main/checkout');
+  assert.deepEqual(sleeps, []);
 });
 
 test('external started-state configuration is tracker-verified and only setup persists suggestions', () => {
