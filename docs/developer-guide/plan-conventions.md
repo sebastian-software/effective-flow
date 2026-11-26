@@ -156,11 +156,13 @@ Notes: <comma list or none>
 DONE
 ```
 
-The result comes from the final canonical review-result field outside code fences. German
-`Freigegeben`/`Überarbeitung nötig` normalize to `Approved`/`Revision required`; the plan itself
-retains its language. A skipped judgment forces `Revision required`. Invalid input or an
-operational failure returns `ABORT: <reason>`; cleanup belongs to the caller. Session renaming and
-next-step recommendations are suppressed. Without the envelope, interactive behavior is unchanged.
+The result comes from the `reviewResult` that `plan-lint.mjs publication-metadata` returns for the
+final plan; when that check fails because the plan holds duplicate result lines, the run
+consolidates them once and runs the check again. German `Freigegeben`/`Überarbeitung nötig`
+normalize to `Approved`/`Revision required`; the plan itself retains its language. A skipped
+judgment forces `Revision required`. Invalid input or an operational failure returns
+`ABORT: <reason>`; cleanup belongs to the caller. Session renaming and next-step recommendations are
+suppressed. Without the envelope, interactive behavior is unchanged.
 
 ### Planning readiness
 

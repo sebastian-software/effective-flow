@@ -199,6 +199,8 @@ const RUNTIME_SCRIPT_FILES = [
   'conflict-validation-core.mjs',
   'setup-status.mjs',
   'setup-status-core.mjs',
+  'capture.mjs',
+  'capture-core.mjs',
   'triage.mjs',
   'triage-core.mjs',
   'verification-evidence.mjs',
@@ -310,6 +312,11 @@ const FAST_CAPABLE_ROUTE_IDS = Object.freeze([
 // A tool's usage-oriented one-line `catalogHint` (frontmatter) is what the
 // catalog shows per line; see the catalogHint guard below.
 const TOOL_GROUPS = [
+  {
+    title: 'Record work',
+    when: 'turn a described problem or idea into tracker issues',
+    tools: ['capture'],
+  },
   {
     title: 'Understand what to do',
     when: 'Analysis & planning before code',

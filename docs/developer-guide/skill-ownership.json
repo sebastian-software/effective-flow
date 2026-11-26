@@ -8,6 +8,7 @@
     {
       "skill": "effective-delivery",
       "consumers": [
+        { "consumer": "capture", "classification": "route-when-relevant" },
         { "consumer": "maintain", "classification": "delegate" },
         { "consumer": "deliver", "classification": "delegate" },
         {
@@ -93,6 +94,7 @@
     {
       "skill": "effective-writing",
       "consumers": [
+        { "consumer": "capture", "classification": "route-when-relevant" },
         { "consumer": "language-rules", "classification": "delegate" },
         { "consumer": "chat-language", "classification": "delegate" },
         { "consumer": "code-documenter", "classification": "delegate" },

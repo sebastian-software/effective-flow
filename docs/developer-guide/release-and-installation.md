@@ -71,9 +71,11 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 ### Package checks and capability evidence
 
 The [pragmatic test and release policy](../adr/pragmatic-test-release-policy.md) owns package
-acceptance and experimental capability activation. The required `Format, test and build` job
-retains format, the full unit/integration population, build guards and distribution/installation
-smoke. Shellcheck and generated README checks remain required; advisory jobs keep their status.
+acceptance and experimental capability activation. The full unit/integration population runs in
+the three shards of the `unit-tests` matrix job, and the required `Format, test and build` job gates
+on all of them: its first step fails unless every shard succeeded. It then runs format, build guards
+and distribution/installation smoke. Shellcheck and generated README checks remain required;
+advisory jobs keep their status.
 
 Its final `Behavioural eval evidence` step runs `pnpm eval <tool> verify --mode report` for all
 five suites: `merge-gate`, `iterate`, `next-steps`, `build-context` and `focus`. Every suite reports
@@ -297,9 +299,11 @@ The `pull_request` rule requires **zero** approving reviews. What closes the acc
 pull request exists at all, not that someone signed it off; with a single maintainer a required
 review would only mean self-approval. Required status checks are `Format, test and build` and
 `Shellcheck`, without the strict up-to-date policy, which would make every merge invalidate the
-other open pull requests. The managers job is deliberately **not** required: it exercises externally
-published DALO and Skills CLI releases, so requiring it would let an unrelated upstream release
-block every merge, the release pull request included.
+other open pull requests. The sharded `Unit tests (<i>/3)` jobs are not required contexts
+themselves: `Format, test and build` waits for them under `if: always()` and fails unless all of
+them succeeded, so the required checks stay unchanged. The managers job is deliberately **not**
+required: it exercises externally published DALO and Skills CLI releases, so requiring it would let
+an unrelated upstream release block every merge, the release pull request included.
 
 Two constraints follow from that and are easy to trip over later. First, those two required contexts
 are `name:` values of jobs in `.github/workflows/ci.yml`; renaming a job stops the check from
@@ -319,9 +323,10 @@ names. This is accepted residual risk, limited to the CI signal because the toke
 no `ci.yml` job writes anything external; the repository's fork-run approval setting is the trust
 boundary.
 
-The behavioural evidence step sits inside the same required job and carries no condition at job or
-step level. It reports all five suites identically on ordinary and release PRs after the broad
-checks, rejecting integrity/errors while retaining freshness debt. See
+The behavioural evidence step sits inside the same required job and carries no step condition; the
+job's only condition is exactly `if: always()`, so the job is never skipped. It reports all five
+suites identically on ordinary and release PRs after the broad checks, rejecting integrity/errors
+while retaining freshness debt. See
 [Package checks and capability evidence](#package-checks-and-capability-evidence).
 `test/workflow-contracts.test.mjs` protects the placement, all-suite population and error propagation;
 no release branch name or repository variable can waive invalid evidence.

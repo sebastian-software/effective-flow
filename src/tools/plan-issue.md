@@ -129,7 +129,7 @@ when: the run's subject is fixed and a session title is about to be applied or e
 
 ```lazy-include
 plan-contract
-when: the canonical planning comment's compact outcome checkpoint is written or reviewed
+when: the canonical planning comment's compact outcome checkpoint is written or reviewed, or its plan-review section is written
 ```
 
 ```lazy-include

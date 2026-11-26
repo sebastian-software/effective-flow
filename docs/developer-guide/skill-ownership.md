@@ -369,3 +369,9 @@ guards are pure functions in `build-lib.mjs`, covered in `test/build-lib.test.mj
 ## Planned-build ownership
 
 `build-delegated-run` retains the `effective-delivery` relationship previously reached directly from build: repository-native validation and documentation craft remain delegated through the existing workers and documentation-sync contract. Effective Flow owns the single dispatch boundary, phase/gate order, bounded `build-run-contract` transport, trusted question relay, same-agent identity, transient pilot lifetime, worktree ownership, delivery and durable completion evidence. The protocol fragment introduces no domain checklist and therefore no separate domain-owner relationship. `worktree-integration`, `plan-pr-continuation`, `pr-review-integration` and `model-tiers` retain their orchestration roles. Moving these contracts does not duplicate a central skill's playbook.
+
+`capture` is a route-when-relevant consumer of `effective-writing` for Metro English prose
+(typography only for German) and `effective-delivery` for evidence and acceptance criteria.
+Effective Flow retains the fixed issue body schema, reference checks, duplicate matching,
+per-draft approval, disclosure binding and the private write-set lifecycle; neither skill supplies
+a second publication workflow.

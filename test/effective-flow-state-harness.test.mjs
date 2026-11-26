@@ -319,6 +319,7 @@ test('every remote-tracker operation is classified and no listed one mutates or 
     'every tracker operation is either listed or excluded',
   );
   assert.ok(listed.has('thread-ledger-lookup'));
+  assert.ok(listed.has('label-list'));
   assert.ok(excluded.has('thread-ledger-record'));
   assert.deepEqual([...CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS], [...CONFIG_RESOLVE_OPERATIONS]);
   // Every `conflict-validation.mjs` operation only reads, so each one is allowlisted.

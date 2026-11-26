@@ -1,6 +1,6 @@
 ## Host PR watch
 
-Loaded by `{{SKILL:merge-gate}}`, `{{SKILL:iterate}}` and `{{SKILL:pr}}` when the running host may
+Loaded by `{{SKILL:merge-gate}}`, `{{SKILL:iterate}}`, `{{SKILL:pr}}` and `{{SKILL:capture}}` when the running host may
 be T3 Code. This fragment owns how those tools wait for, link and unwatch a pull request on that
 host; their sources only point here. `{{SKILL:deliver}}` publishes through `{{SKILL:pr}}` and needs
 no pointer of its own.
@@ -44,6 +44,13 @@ blocks the run.
   open pull request of this repository, before step 2. A re-dispatch's re-run of step 1 and the
   delegated run's Entry re-read link nothing.
 - Top-level `{{SKILL:iterate}}`: as the next call after the Phase 5 step 1 push, before step 2.
+
+### Issue linking
+
+`{{SKILL:capture}}` calls `link_issue` once per created issue, a recovered create included, with its
+full URL as `url` and no thread or environment override. Discover it by the unqualified name as
+above. Report a failed or unloadable link once, never retry it, and continue the run. Other hosts
+skip this step without a message; comments on existing issues create no link occasion.
 
 ### merge-gate: the T3 path
 

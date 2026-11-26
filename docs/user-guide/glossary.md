@@ -13,6 +13,12 @@ and are never called directly; at most you see them in a tool's intermediate upd
 "delegated to the UI implementer"). Calling a named agent is Effective Flow's default, not an
 optional choice; see [Delegation](#delegation).
 
+## Capture
+
+The interactive entry point that turns a described problem or findings into self-contained forge
+issues. Each draft gets reference checks, deterministic duplicate comparison and its own approval.
+See [Record work](tools-record.md).
+
 ## Delegation
 
 The default way an Effective Flow tool gets work done: invoking a tool is your standing request

@@ -93,6 +93,8 @@ const RUNTIME_SCRIPT_FILES = [
   'conflict-validation-core.mjs',
   'setup-status.mjs',
   'setup-status-core.mjs',
+  'capture.mjs',
+  'capture-core.mjs',
   'triage.mjs',
   'triage-core.mjs',
   'verification-evidence.mjs',

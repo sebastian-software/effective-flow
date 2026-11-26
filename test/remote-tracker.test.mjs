@@ -1306,7 +1306,7 @@ function labelCreate(repository, results, apply = true) {
   ).then((envelope) => ({ envelope, runner }));
 }
 
-test('the internal label list enumerates every label and stays uninvocable as an operation', async () => {
+test('public label-list enumerates repository labels through the existing pagination path', async () => {
   const github = buildCommandPlan('label-list', {}, githubRepository);
   assert.equal(github.executable, 'gh');
   assert.equal(github.args.includes('--paginate'), true);
@@ -1321,14 +1321,20 @@ test('the internal label list enumerates every label and stays uninvocable as an
   assert.equal(forgejo.args.at(forgejo.args.indexOf('--page') + 1), '2');
   assert.equal(forgejo.args.at(forgejo.args.indexOf('--limit') + 1), '100');
 
-  // Constructible by the branch that owns it, refused as a public operation.
+  // Public and read-only; the same list path serves label-create's pre-check.
   const envelope = await executeOperation(
     'label-list',
     { repository: githubRepository },
-    { runner: fakeRunner([]), skipProbe: true },
+    {
+      runner: fakeRunner([{ status: 0, stdout: '[[{"name":"bug"}]]', stderr: '' }]),
+      skipProbe: true,
+    },
   );
-  assert.equal(envelope.ok, false);
-  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map((label) => label.name),
+    ['bug'],
+  );
 });
 
 test('label-create skips the create when the exact name is already present', async () => {
@@ -17256,4 +17262,80 @@ test('the review-thread request bound stops the read before one more request is 
   assert.equal(envelope.error.details.maxRequests, 2);
   assert.equal(envelope.error.details.requestCount, 2);
   assert.equal(runner.calls.length, 2);
+});
+
+test('Forgejo repository visibility shares the normalizer and fails on non-2xx', async () => {
+  for (const [body, visibility] of [
+    [{ private: true }, 'private'],
+    [{ private: false }, 'public'],
+    [{}, 'unknown'],
+  ]) {
+    const runner = fakeRunner([teaApiResult(200, body)]);
+    const envelope = await executeOperation(
+      'repository-visibility-read',
+      {
+        repository: forgejoRepository,
+        probe: { capabilities: { repositoryVisibilityRead: true } },
+      },
+      { runner, skipProbe: true },
+    );
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    assert.equal(envelope.data.result.visibility, visibility);
+    assert.deepEqual(runner.calls[0].args, [
+      'api',
+      'repos/team/flow',
+      '--include',
+      '--login',
+      'work',
+      '--repo',
+      'team/flow',
+    ]);
+  }
+  const envelope = await executeOperation(
+    'repository-visibility-read',
+    { repository: forgejoRepository, probe: { capabilities: { repositoryVisibilityRead: true } } },
+    { runner: fakeRunner([teaApiResult(403, { message: 'forbidden' })]), skipProbe: true },
+  );
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+});
+
+test('Forgejo visibility capability follows the raw API transport rather than the provider name', async () => {
+  for (const enabled of [true, false]) {
+    const results = teaProbeResults(
+      enabled ? {} : { apiInclude: { status: 0, stdout: '', stderr: '' } },
+    );
+    const probe = await probeProvider(forgejoRepository, fakeRunner(results));
+    assert.equal(
+      probe.capabilities.repositoryVisibilityRead,
+      probe.capabilities.collaboratorPermissionRead,
+    );
+    if (!enabled) assert.equal(probe.capabilities.repositoryVisibilityRead, false);
+  }
+});
+
+test('public Forgejo label-list preserves pagination and rejects tea silent label failures', async () => {
+  const labels = Array.from({ length: 100 }, (_, i) => ({ name: `label-${i}` }));
+  const runner = fakeRunner([
+    { status: 0, stdout: JSON.stringify(labels), stderr: '' },
+    { status: 0, stdout: '[{"name":"last"}]', stderr: '' },
+    { status: 0, stdout: '[]', stderr: '' },
+  ]);
+  const result = await executeOperation(
+    'label-list',
+    { repository: forgejoRepository },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.data.result.length, 101);
+  assert.equal(runner.calls.length, 3);
+  assert.ok(runner.calls.every((call) => call.args.includes('--exclude-org')));
+  const failed = await executeOperation(
+    'label-list',
+    { repository: forgejoRepository },
+    {
+      runner: fakeRunner([{ status: 0, stdout: '[]', stderr: 'failed to list repository labels' }]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(failed.error.code, 'COMMAND_FAILED');
 });

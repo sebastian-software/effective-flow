@@ -153,6 +153,7 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'viewer-read',
   'collaborator-permission-read',
   'repository-visibility-read',
+  'label-list',
   'issue-read',
   'issue-state-wait',
   'issue-comments-read',

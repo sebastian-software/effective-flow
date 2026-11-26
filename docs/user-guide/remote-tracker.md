@@ -772,6 +772,12 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 
 ## Issue Buddy and repository visibility
 
+For an `autopilot` plan source, `repository-visibility-read` recognizes private repositories on
+both GitHub and Forgejo. On a private Forgejo repository a security blocker becomes a neutral
+appendix on a draft pull request, just as on private GitHub, instead of withholding the push.
+An unavailable or unknown visibility remains treated as public. The Forgejo capability follows
+the probed `tea api` transport; the shared normalizer reads the boolean `private` field.
+
 `/effective-flow issue-buddy` uses the remote tracker in a controlled, unattended path. Before it
 collects issues, it performs one read-only `repository-visibility-read` operation and records
 `public`, `private`, or `unknown` in the pass report. The operation requires the tracker capability
@@ -1196,3 +1202,17 @@ or tracker access was unavailable.
 - [Troubleshooting](./troubleshooting.md) – missing or unauthenticated CLI, unresolved external
   connection
 - [Glossary](./glossary.md) – finding, tracker target
+
+## Capture
+
+`effective-flow capture` is the interactive issue entry point before triage and planning. It accepts
+one description or up to ten findings on a configured remote GitHub or Forgejo tracker; hidden,
+local, external and unset modes stop before tracker access. See [Record work](tools-record.md) for
+the complete preview, revision, duplicate and disclosure procedure.
+
+The public read-only `label-list` operation has capability `labelList`. It paginates on both forges
+and uses repository labels only on Forgejo (`--exclude-org`); tea's "failed to list repository
+labels" warning fails the read instead of pretending the list is empty. Capture proposes only
+exact existing non-internal names and never calls `label-create`. Comments use `language.forge`
+because this writer never reads the target thread's text. Tracker writes are performed by the
+capture helper itself from the stored, hash-bound preview, with an apply ledger preventing repeats.
