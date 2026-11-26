@@ -50,6 +50,34 @@ jobs:
       - name: Unit tests
         run: pnpm test:shard ${{ matrix.shard }}/3 --test-concurrency=4
 
+  measure-weights:
+    # TEMPORARY (measurement PR only, never merged): times the serial host-driver file alone, three times.
+    name: Measure shard weights
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Measure
+        run: |
+          node scripts/test-capabilities.mjs
+          for i in 1 2 3; do node scripts/shard-tests.mjs --measure --out /tmp/hd-$i.json test/host-driver.test.mjs || echo "measure exit $?"; done
+          echo "=====WEIGHTS-BEGIN====="
+          cat /tmp/hd-1.json /tmp/hd-2.json /tmp/hd-3.json
+          echo "=====WEIGHTS-END====="
+
   checks:
     # The broad package checks need no test result, so they run beside the shards instead of
     # after them. `Format, test and build` gates on this job; it is not a required check itself.
