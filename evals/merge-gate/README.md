@@ -757,12 +757,23 @@ correlated `complete` events are not additional calls.
   longer a measurement of the scenario as composed. Two rounds were discarded for this —
   `pr-checks-wait` and `repository-resolve` — both found by reading logs by hand and once nearly
   waved through because the stray operation looked harmless. It is an assertion rather than a
-  judgement for that reason. `body-hash` is defined in every fixture with an input that exactly
-  matches that fixture's `pr-read` body and an envelope emitted by the real local operation. The
-  merge and post-merge paths call it routinely, and the refusal scenarios may now call the same
-  contract-faithful operation without being diverted onto the stub's unsupported-capability path.
-  This does not weaken contamination detection: every other operation supported by the shipped
-  helper still disqualifies a run when the active fixture leaves it undefined.
+  judgement for that reason. This does not weaken contamination detection: every operation
+  supported by the shipped helper still disqualifies a run when the active fixture leaves it
+  undefined, except the ones the suite always allows, named below.
+- **A run that calls `issue-lifecycle-receipt-parse` or `body-hash` fails with a decisive
+  finding.** Phase 0 and the Phase 5.5 entry read the PR with `pr-read` and `receiptContext: {}`,
+  and the helper returns `bodySha256` and `issueLifecycleReceipt` from the same provider response,
+  so the body never passes through the model to a parser. Every fixture's `pr-read` stub carries
+  `receiptContext` and those two fields, `linked-issue-open-points` with a multiline body holding
+  quotes and backslashes, and no fixture defines either inline-body operation. Both are in the
+  suite's `alwaysAllowedOperations`, so such a call is recorded as the evaluator's finding, also for
+  an aborted run, rather than discarded as a validity problem and retried away. The finding applies
+  only to runs whose stamped fixture digest matches the current fixture: archived runs recorded
+  against the fixtures that still defined both stubs keep their fixture-independent verdict, and
+  their calls stay readable. That archived evidence is freshness debt until the suite is
+  re-recorded. One limit is accepted: the stub selects envelopes by operation name and the call log
+  records no input, so no run can show that the gate actually sent `receiptContext`; the contract
+  assertions in `test/workflow-contracts.test.mjs` cover that wiring instead.
 - **A call to an operation the shipped helper does not support at all passes.** The real helper
   refuses an unknown name with `INVALID_PAYLOAD: unknown operation: <name>`, so a run that guesses
   at an invented capability probe gets an error in the sandbox and would get an error in

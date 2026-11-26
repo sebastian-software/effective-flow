@@ -34,7 +34,6 @@ import {
 } from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
 import { projectDocuments } from '../evals/merge-gate/_scaffold/project-setup.mjs';
 import {
-  bodyHash,
   errorEnvelope,
   executeOperation,
   RemoteTrackerError,
@@ -925,10 +924,12 @@ for (const corpus of CORPORA)
 // defined, and worked around all three. A scenario has to exercise the **normal** path, so those
 // three are required alongside the five reads WP2 names.
 //
-// `reference-parse` and `body-hash` are local operations — the normalizer resolves them without
-// touching the provider, so their fixture entries state a null provider payload the fake runner
-// never delivers. `probe` is piped through `executeOperation` with `skipProbe`, so what the fidelity
-// assertion proves for it is the envelope the operation wraps around a probe result rather than the
+// `reference-parse` is a local operation — the normalizer resolves it without touching the
+// provider, so its fixture entry states a null provider payload the fake runner never delivers.
+// `body-hash` and `issue-lifecycle-receipt-parse` are deliberately not required: Phase 0 takes the
+// body hash and the receipt from its `pr-read` with `receiptContext`, so a gate run calls neither.
+// `probe` is piped through `executeOperation` with `skipProbe`, so what the fidelity assertion
+// proves for it is the envelope the operation wraps around a probe result rather than the
 // capability detection itself; the capabilities are the set this fixture declares at its top
 // level. `repository-resolve` is remote by classification but answers from the stated repository
 // without reaching the runner either, so it likewise carries a null provider payload.
@@ -945,19 +946,12 @@ test('every fixture covers the operations a gate run performs', () => {
     'reference-parse',
     'probe',
     'pr-read',
-    'body-hash',
     'viewer-read',
     'pr-status-read',
     'pr-checks-wait',
     'pr-comments-read',
     'pr-reviews-read',
     'review-threads-read',
-    // Reached only on the post-merge path, and not by every run even there — which is exactly why it
-    // is required rather than left to chance. One archived round had a single run call it while its
-    // four siblings did not; the fixture defined nothing, so that run alone took an improvised
-    // fallback and had to be discarded. Whether a scenario exercises an operation should not be a
-    // lottery decided per run.
-    'issue-lifecycle-receipt-parse',
   ];
   for (const file of fixtureFiles()) {
     const fixture = loadFixture(file);
@@ -970,53 +964,20 @@ test('every fixture covers the operations a gate run performs', () => {
   }
 });
 
-test('every fixture hashes exactly the PR body it read', () => {
+// Phase 0 and the Phase 5.5 entry take the body hash and the lifecycle receipt from the helper's
+// own `pr-read`, so the body never travels through the model to a parser. The invariant protected
+// here: every fixture's `pr-read` stub is the receipt-bearing read a gate run performs. The replay
+// of every stub through `executeOperation` above already proves that its `bodySha256` and
+// `issueLifecycleReceipt` are what the real helper returns for that payload.
+test('every fixture pr-read stub carries receiptContext', () => {
   for (const file of fixtureFiles()) {
-    const fixture = loadFixture(file);
-    const operation = fixture.operations['body-hash'];
-    const pullRequestBody = fixture.operations['pr-read'].envelope.data.result.body;
-    assert.equal(
-      operation.input.body,
-      pullRequestBody,
-      `${file}: body-hash input differs from the normalized pr-read body`,
-    );
-    assert.equal(
-      operation.provider,
-      null,
-      `${file}: body-hash is local and must not invent a provider call`,
-    );
-    assert.deepEqual(
-      operation.envelope,
-      {
-        ok: true,
-        operation: 'body-hash',
-        provider: null,
-        data: { hash: bodyHash(pullRequestBody) },
-        dryRun: false,
-      },
-      `${file}: body-hash envelope was not derived from the normalized pr-read body`,
-    );
-  }
-});
-
-// Phase 0 retains the hash of the normalized PR body it just read. Merely requiring both
-// operations above is insufficient: a fixture can state a perfectly faithful `body-hash` envelope
-// for a different body, and the normalizer replay will validate both entries independently while
-// the scenario exercises a state no real gate run can produce. Bind the local helper input to the
-// normalized `pr-read` output so the two individually faithful envelopes also form one faithful
-// Phase-0 observation.
-test('every fixture hashes the body returned by its normalized PR read', () => {
-  for (const file of fixtureFiles()) {
-    const fixture = loadFixture(file);
-    const bodyHash = fixture.operations['body-hash'];
-    assert.ok(bodyHash, `${file}: fixture defines no body-hash operation`);
-
-    const prRead = fixture.operations['pr-read'];
+    const prRead = loadFixture(file).operations['pr-read'];
     assert.ok(prRead, `${file}: fixture defines no pr-read operation`);
-    assert.equal(
-      bodyHash.input?.body,
-      prRead.envelope?.data?.result?.body,
-      `${file}: body-hash must receive exactly the normalized body returned by pr-read`,
+    assert.ok(
+      prRead.input?.receiptContext !== null &&
+        typeof prRead.input?.receiptContext === 'object' &&
+        !Array.isArray(prRead.input.receiptContext),
+      `${file}: the pr-read stub input carries no receiptContext object`,
     );
   }
 });

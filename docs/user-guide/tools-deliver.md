@@ -540,12 +540,13 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    prefix, and the merge happens only after the forge itself reports the pull request mergeable.
 
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
-   confirmed merge, validates the pull request's lifecycle
-   receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
-   issue as terminal, open, timed out, or unobservable. For every issue still open or timed out it
-   then assesses – without asking – whether the merged pull request completes it, recording
-   `complete`, `incomplete`, or `undetermined`. Only a `complete` verdict, and only in an interactive
-   run, produces an **offer**: one question covering every eligible issue, which on your confirmation
+   confirmed merge, validates the pull request's lifecycle receipt, read through the tracker
+   helper's `pr-read` rather than from a copied body, and gives tracker automation one fixed
+   30-second grace period. It reports each linked issue as terminal, open, timed out, or
+   unobservable. For every issue still open or timed out it then assesses – without asking –
+   whether the merged pull request completes it, recording `complete`, `incomplete`, or
+   `undetermined`. Only a `complete` verdict, and only in an interactive run, produces an **offer**:
+   one question covering every eligible issue, which on your confirmation
    sets those issues to their terminal tracker state. A decline transitions nothing, and neither
    does a non-interactive run. A terminal forge issue loses the `effective-flow-issue-in-progress`
    label, and a recorded native sub-item or checklist entry is

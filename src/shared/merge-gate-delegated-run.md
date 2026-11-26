@@ -581,10 +581,10 @@ gate run inline generates it at the start. Use
 - when a pilot observation was reserved, its three anonymous correction counters; never its
   observation identifier or capability outside the handle `pilot-measurement` keeps across a
   `SUSPENDED host-pr-watch` return
-- the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
-  every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
-  retain that every delegated `{{SKILL:iterate}}` round carried `Summary comment: suppressed`, so it
-  writes no summary onto the pull request
+- the retained `bodySha256` and `issueLifecycleReceipt` of the Phase 0 `pr-read`, observer-only
+  mode when applicable, and every receipted issue's post-merge outcome, closure evidence, and
+  container reconciliation; also retain that every delegated `{{SKILL:iterate}}` round carried
+  `Summary comment: suppressed`, so it writes no summary onto the pull request
 
 Write a summary after each phase and pass it on to later phases. Delete the file at the end, except
 on a `BLOCKED-USER` or `SUSPENDED host-pr-watch` return.
@@ -1443,9 +1443,12 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 ### Phase 5.5: Observe linked issues after merge
 
 Enter this phase only after a fresh PR read proves either that Phase 5 merged the pull request or
-that Phase 0 selected observer-only mode. If the open-PR path did not merge, perform no issue
-observation or container completion. A missing or invalid receipt preserves the merge result and
-ends this phase without heuristic tracker access.
+that Phase 0 selected observer-only mode. That read is a `pr-read` with `receiptContext: {}`. If the
+open-PR path did not merge, perform no issue observation or container completion. A missing or
+invalid receipt, or an entry-read `issueLifecycleReceipt` state other than `valid`, preserves the
+merge result and ends this phase without heuristic tracker access. After a `valid` Phase 0 receipt,
+a non-`valid` entry read makes the Phase 6 result `changed`; without a `valid` Phase 0 receipt, the
+phase ends here whatever the entry read shows, and Phase 6 keeps the Phase 0 result.
 
 ```lazy-include
 merge-gate-issue-observation
@@ -1595,7 +1598,8 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
    - the merge result, or the precise blocking condition – for a stale reviewer verdict, the fragment's stale-verdict item;
    - for a draft, the wisdom record of "Draft ready for review", and after a ready step without a
      merge, that the pull request is ready for review but not merged;
-   - after a confirmed merge, the lifecycle receipt result — absent, invalid, or valid;
+   - after a confirmed merge, the lifecycle receipt result — absent, invalid, unavailable (with its
+     reason), changed (the Phase 5.5 entry read no longer shows the `valid` Phase 0 receipt), or valid;
    - and, where Phase 5.5 observed linked issues, the items listed under
      `### Observation report items` in the loaded `merge-gate-issue-observation` fragment;
    - **as the final conditional summary item, one non-blocking configuration advisory** when the

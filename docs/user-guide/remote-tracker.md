@@ -961,6 +961,22 @@ equals it and omits their `body`, so plan discovery never hands pull-request tex
 `planPath` set, an error envelope carries no excerpt of the listing's stdout or stderr either, only
 each stream's length.
 
+`pr-read` also accepts an optional closed input `receiptContext`, `{}` or an object with the optional
+keys `expectedTarget` (`forge` or `external`) and `expectedExternalTool` (not allowed with `forge`).
+An invalid context fails with `INVALID_PAYLOAD` before any provider or runner call. With it, the
+record adds `issueLifecycleReceipt` and, when the body is stated, `bodySha256`, and nothing else
+changes; without it, the output is unchanged:
+
+- **`bodySha256`**: the SHA-256 of the body exactly as the provider stated it; a `null` or empty body
+  hashes as empty. It is absent when the provider did not state the body.
+- **`issueLifecycleReceipt`**: the lifecycle receipt validated from that same body and always bound
+  to the repository (slug and host) the read ran against. Its `state` is `valid` (with `version` and
+  `receipt`), `absent`, `invalid` (with a stable `code`), or `unavailable` (with
+  `reason: body-not-stated`, and no `bodySha256`).
+
+`merge-gate` takes the receipt from this read and never from a body copied out of another source: a
+host pull request read, such as T3 Code's `pull_request_read`, is never a receipt source.
+
 On Forgejo, `pr-read` now reads the raw pull-request object through `tea api`, the object `pr-list`
 already reads, instead of tea's detail renderer. The renderer shows a fork's head only as
 `owner:branch` and drops the repository name, so it could not state the head repository. The raw

@@ -178,8 +178,14 @@ const suite = {
   instrumentFiles: INSTRUMENT_FILES,
   // Operations a run may legitimately attempt without the fixture answering them. `pr-merge` is the
   // gate's own merge decision: a scenario in which no merge is offered still has to be able to
-  // record the attempt, which is the observation that scenario exists to make.
-  alwaysAllowedOperations: Object.freeze(['pr-merge']),
+  // record the attempt, which is the observation that scenario exists to make. The two inline-body
+  // operations are allowed so a run that calls them is recorded with the evaluator's decisive
+  // finding (`BODY_TRANSCRIPTION_OPERATIONS`) instead of being discarded as invalid and retried.
+  alwaysAllowedOperations: Object.freeze([
+    'pr-merge',
+    'issue-lifecycle-receipt-parse',
+    'body-hash',
+  ]),
   // Where it lands inside a slot's skill tree is not declared here: `TRACKER_STUB_SKILL_PATH` in
   // the shared `scaffold.mjs` owns that, so every suite copies the stub over the same path instead
   // of each choosing one and a run driving whichever of the two declarations won.

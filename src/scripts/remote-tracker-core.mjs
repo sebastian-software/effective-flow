@@ -595,6 +595,72 @@ export function parseIssueLifecycleReceipt(body, context = {}) {
   return { found: true, version: ISSUE_LIFECYCLE_RECEIPT_VERSION, receipt };
 }
 
+const PR_READ_RECEIPT_CONTEXT_KEYS = Object.freeze(['expectedTarget', 'expectedExternalTool']);
+
+// `pr-read`'s opt-in `receiptContext`: closed, every check optional. It is validated before
+// repository resolution, so a malformed context never costs a runner call. The read repository is
+// always bound, whatever the context says, which is why the context has no repository key.
+function validatePrReadReceiptContext(value) {
+  requireObject(value, 'receiptContext');
+  for (const key of Object.keys(value)) {
+    if (!PR_READ_RECEIPT_CONTEXT_KEYS.includes(key)) {
+      fail('INVALID_PAYLOAD', 'receiptContext carries an unknown key', {
+        field: `receiptContext.${key}`,
+      });
+    }
+  }
+  const { expectedTarget, expectedExternalTool } = value;
+  if (expectedTarget !== undefined && !ISSUE_LIFECYCLE_TARGETS.has(expectedTarget)) {
+    fail('INVALID_PAYLOAD', 'receiptContext.expectedTarget must be forge or external', {
+      field: 'receiptContext.expectedTarget',
+    });
+  }
+  if (expectedExternalTool !== undefined) {
+    if (expectedTarget === 'forge') {
+      fail('INVALID_PAYLOAD', 'receiptContext.expectedExternalTool is not allowed for forge', {
+        field: 'receiptContext.expectedExternalTool',
+      });
+    }
+    lifecycleExternalTool(expectedExternalTool, 'receiptContext.expectedExternalTool');
+  }
+}
+
+// The receipt fields a `pr-read` with `receiptContext` adds, taken from the same raw provider
+// object its record was normalized from, so the body never travels through a caller to the parser.
+// Only the raw statement counts: `normalizeIssue` maps a missing body to `''`, which would turn an
+// unstated body into an empty one. A stated `null` (GitHub's empty description) and `""`
+// (Forgejo's) are both empty; a missing or non-string body, including the `output`-flattened
+// shape, is `unavailable` and carries no hash. A parse failure is a receipt state, never a failed
+// read.
+function prReadReceiptFields(raw, repository, receiptContext) {
+  const stated =
+    raw !== null &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    raw.output === undefined &&
+    Object.hasOwn(raw, 'body') &&
+    (raw.body === null || typeof raw.body === 'string');
+  if (!stated) {
+    return { issueLifecycleReceipt: { state: 'unavailable', reason: 'body-not-stated' } };
+  }
+  const text = raw.body ?? '';
+  const bodySha256 = bodyHash(text);
+  let issueLifecycleReceipt;
+  try {
+    const parsed = parseIssueLifecycleReceipt(text, {
+      ...receiptContext,
+      expectedRepository: repository,
+    });
+    issueLifecycleReceipt = parsed.found
+      ? { state: 'valid', version: parsed.version, receipt: parsed.receipt }
+      : { state: 'absent' };
+  } catch (error) {
+    if (!(error instanceof RemoteTrackerError)) throw error;
+    issueLifecycleReceipt = { state: 'invalid', code: error.code };
+  }
+  return { bodySha256, issueLifecycleReceipt };
+}
+
 export function buildIssueLifecycleReceipt(input, context = {}) {
   requireObject(input, 'input');
   const proposed = normalizeIssueLifecycleReceipt(input.receipt ?? input, context);
@@ -7244,6 +7310,9 @@ export async function executeOperation(operation, input = {}, options = {}) {
     // Validated before the first provider call, so a malformed filter never costs a probe or a read
     // and never reaches the list with the filter silently dropped.
     if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
+    if (operation === 'pr-read' && input.receiptContext !== undefined) {
+      validatePrReadReceiptContext(input.receiptContext);
+    }
     if (operation === 'pr-acceptance-sources') validatePrAcceptanceInput(input);
     if (
       operation === 'pr-status-read' &&
@@ -7863,12 +7932,21 @@ export async function executeOperation(operation, input = {}, options = {}) {
     // separately from a clean one: it means the provider ignored SIGTERM, which is worth seeing.
     if (result.timedOut === true) parsed.timedOut = true;
     if (result.forcedKill === true) parsed.forcedKill = true;
+    const normalized = normalizeRemoteData(operation, parsed.raw, activeRepository, input, parsed);
     return {
       ok: true,
       operation,
       provider: activeRepository.provider,
       data: {
-        result: normalizeRemoteData(operation, parsed.raw, activeRepository, input, parsed),
+        // Attached here, not in the shared normalizer, so the internal `pr-read`s of other
+        // operations can never emit or drop receipt fields.
+        result:
+          operation === 'pr-read' && input.receiptContext !== undefined
+            ? {
+                ...normalized,
+                ...prReadReceiptFields(parsed.raw, activeRepository, input.receiptContext),
+              }
+            : normalized,
         command: preview,
         conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
       },

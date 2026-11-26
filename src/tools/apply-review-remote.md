@@ -1,6 +1,6 @@
 ---
 description: "Internal sub-file of apply-review: issue-tracker integration, the external-target contract, and the complete tracker flow. Loaded by tools/apply-review.md whenever the resolved tracker target is not local."
-contextBudget: 390
+contextBudget: 394
 ---
 
 # Effective Flow Apply Review – Remote mode

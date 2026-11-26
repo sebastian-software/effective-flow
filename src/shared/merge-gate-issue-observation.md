@@ -17,8 +17,10 @@ recorded outcome and reported guidance, never in a stop.
 
 ### Observation steps
 
-1. Validate the retained receipt again: a forge receipt's repository must match the fresh canonical
-   PR repository, while an external receipt must carry `repository: null`. Resolve only its declared
+1. Validate the retained receipt again: the entry read's `valid` receipt must equal the one Phase 0
+   retained, otherwise end observation with the Phase 6 result `changed` (the merge stands); a forge
+   receipt's repository must match the fresh canonical PR repository, while an external receipt must
+   carry `repository: null`. Resolve only its declared
    target. Forge issues use the forge helper; external issues load `tracker-target`, require
    `externalTool` to match the current configuration exactly, and select the one configured
    connection through `tracker.externalToolHint`. The receipt never selects a connection. A missing,

@@ -109,7 +109,8 @@
     },
     "pr-read": {
       "input": {
-        "number": 42
+        "number": 42,
+        "receiptContext": {}
       },
       "provider": {
         "number": 42,
@@ -119,7 +120,7 @@
         "merged": true,
         "merged_at": "2026-09-08T11:20:00Z",
         "merge_commit_sha": "0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3",
-        "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n",
+        "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\n> The gate keeps the observation \"report-only\": it stays out of the completion verdict, and it's\n> never a merge blocker.\n\nEscapes stay as written: a Windows path `C:\\flow\\merge-gate`, a doubled `\\\\` and a quoted `\\\"`.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n",
         "html_url": "https://github.com/example/flow/pull/42",
         "labels": [],
         "head": {
@@ -144,7 +145,7 @@
           "result": {
             "number": 42,
             "title": "feat: report the recorded open points of a linked issue after the merge",
-            "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n",
+            "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\n> The gate keeps the observation \"report-only\": it stays out of the completion verdict, and it's\n> never a merge blocker.\n\nEscapes stay as written: a Windows path `C:\\flow\\merge-gate`, a doubled `\\\\` and a quoted `\\\"`.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n",
             "author": {
               "login": "flow-gate",
               "isBot": false,
@@ -159,7 +160,25 @@
             "repository": "example/flow",
             "head": "effective-flow/build/post-merge-issue-open-points",
             "base": "develop",
-            "draft": false
+            "draft": false,
+            "bodySha256": "a0a9f5b0b4f1125cb172263b066ff473a9a1521c49b6eea46860ddb8e3fc6c13",
+            "issueLifecycleReceipt": {
+              "state": "valid",
+              "version": "v1",
+              "receipt": {
+                "target": "forge",
+                "repository": "example/flow",
+                "externalTool": null,
+                "items": [
+                  {
+                    "issue": "#17",
+                    "relationship": "refs",
+                    "container": null,
+                    "containerMechanism": null
+                  }
+                ]
+              }
+            }
           },
           "command": {
             "executable": "gh",
@@ -509,50 +528,6 @@
             }
           ],
           "conditionalWriteAvailable": false
-        },
-        "dryRun": false
-      }
-    },
-    "issue-lifecycle-receipt-parse": {
-      "input": {
-        "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n"
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "issue-lifecycle-receipt-parse",
-        "provider": null,
-        "data": {
-          "found": true,
-          "version": "v1",
-          "receipt": {
-            "target": "forge",
-            "repository": "example/flow",
-            "externalTool": null,
-            "items": [
-              {
-                "issue": "#17",
-                "relationship": "refs",
-                "container": null,
-                "containerMechanism": null
-              }
-            ]
-          }
-        },
-        "dryRun": false
-      }
-    },
-    "body-hash": {
-      "input": {
-        "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n"
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "body-hash",
-        "provider": null,
-        "data": {
-          "hash": "685dc58bd989bd067e54c5fd0101b6db98fd40f5952b8948e0a38ea08903cc98"
         },
         "dryRun": false
       }

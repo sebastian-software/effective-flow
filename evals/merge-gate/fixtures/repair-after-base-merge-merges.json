@@ -146,7 +146,8 @@
     },
     "pr-read": {
       "input": {
-        "number": 42
+        "number": 42,
+        "receiptContext": {}
       },
       "provider": {
         "number": 42,
@@ -192,7 +193,11 @@
             "repository": "example/flow",
             "head": "effective-flow/build/sync-retry-limits",
             "base": "develop",
-            "draft": false
+            "draft": false,
+            "bodySha256": "95cbc7564494099350ad523bd4e6fc5e8ec435da93bab2dcd57e70cc5e1f1c0e",
+            "issueLifecycleReceipt": {
+              "state": "absent"
+            }
           },
           "command": {
             "executable": "gh",
@@ -1892,37 +1897,6 @@
             "expectsJson": false
           },
           "conditionalWriteAvailable": false
-        },
-        "dryRun": false
-      }
-    },
-    "issue-lifecycle-receipt-parse": {
-      "input": {
-        "body": "Retries failed sync requests with a bounded delay."
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "issue-lifecycle-receipt-parse",
-        "provider": null,
-        "data": {
-          "found": false,
-          "receipt": null
-        },
-        "dryRun": false
-      }
-    },
-    "body-hash": {
-      "input": {
-        "body": "Retries failed sync requests with a bounded delay."
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "body-hash",
-        "provider": null,
-        "data": {
-          "hash": "95cbc7564494099350ad523bd4e6fc5e8ec435da93bab2dcd57e70cc5e1f1c0e"
         },
         "dryRun": false
       }

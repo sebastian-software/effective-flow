@@ -1,6 +1,6 @@
 # Validate Merge Gate issue receipts without copying the PR body
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #774
@@ -60,6 +60,7 @@ refactoring because the helper interface grows.
     and records a parse failure as `invalid` without failing the read.
 
   Without `receiptContext` the output is unchanged.
+
 - **The fields are attached in the `pr-read` operation path, not in the shared normalizer.**
   `normalizeRemoteData('pr-read', …)` is also called by the `pr-update-body` precondition
   (`:4668`), `pr-draft-classify` (`:8045`), the acceptance read (`:5971`) and a readback (`:7746`).
@@ -112,6 +113,7 @@ refactoring because the helper interface grows.
   Producer write paths keep their fresh-read-and-hash rule untouched: `issue-lifecycle.md:42-46`,
   `apply-review-remote.md:111`, `pr.md:291` and `pr-automation-lines.md:26`. The inline-body
   operations stay for them.
+
 - **`bodySha256` is kept.** It replaces the "body hash" Merge Gate already retains
   (`merge-gate.md:159`, `merge-gate-delegated-run.md:584`) with a helper-computed value. It is the
   record that binds the observed body to the read. No new guard consumes it.
@@ -145,22 +147,22 @@ refactoring because the helper interface grows.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/remote-tracker-core.mjs` | `pr-read` operation path (near `:4144` and its executor). Validate the closed `receiptContext` before the provider call. With it, attach `bodySha256` and `issueLifecycleReceipt` via `parseIssueLifecycleReceipt` and `bodyHash`, using the raw payload's `body` statement and binding `expectedRepository` to the executed repository object (slug and host). Validate `receiptContext` beside the `pr-list` `planPath` check (`:7242`), before repository resolution (`:7254`), so an invalid context invokes no runner. An `output`-flattened shape (`:4145`) with `receiptContext` gets `unavailable` / `body-not-stated`. Catch only `RemoteTrackerError` into `invalid` with its `code`. Shared `normalizeRemoteData` stays unchanged. |
-| `src/shared/issue-lifecycle-receipt.md` | After the paragraph "For deterministic forge-side construction and parsing", add the observation-scoped consumer rule, two to three lines. Reword the existing "use the helper operations … `issue-lifecycle-receipt-parse`" sentence so it no longer reads as the observation path. It maps `absent` / `invalid` / `unavailable` to "issue observation unavailable", with merge eligibility unchanged and no heuristic tracker access. This fragment is eager in three tools via `issue-lifecycle`. |
-| `src/tools/merge-gate.md` | Phase 0 step 1 (`:157-170`): always end PR resolution in a `pr-read` with `receiptContext: {}`, also after `pr-list` (local override of `pr-review-comments`). Retain the helper's `bodySha256` and `issueLifecycleReceipt`. Require the record's `repository` to equal the canonical slug. Route the three existing outcomes on the state, treating `unavailable` like `invalid`. Update `contextBudget` from the build report. |
-| `src/shared/merge-gate-delegated-run.md` | Phase 5.5 entry (`:1445-1453`): the merge-proving fresh read is a `pr-read` with `receiptContext`. A non-`valid` state there ends the phase before the observation fragment loads. `:584`: the retained hash and parse result are the helper fields. `:1597-1598`: the receipt result lists `absent`, `invalid`, `unavailable` (with reason), `changed` (the entry read's receipt differs from the Phase 0 one, or its state is no longer `valid` after a `valid` Phase 0) or `valid`. |
-| `src/shared/merge-gate-issue-observation.md` | Step 1 (`:20-24`): additionally require the entry read's `valid` receipt to equal the retained receipt. Otherwise end observation with the Phase 6 result `changed` (merge stands). The "must be `valid`" rule stays in the core entry text, because this fragment loads only after it (`:3-11`). This adds no extra `pr-read`. Step 3's "exactly one `pr-read` for the whole run" for title and body (`:92-95`) and step 4's per-issue bound are unchanged. |
-| `docs/user-guide/remote-tracker.md` | `:904-925` `pr-read` field list: document `receiptContext`, `bodySha256`, `issueLifecycleReceipt` and their states. |
-| `test/remote-tracker.test.mjs` | New `pr-read` tests near `:13403` (cases under "Validation plan"). Existing parse tests (`:11960-12200`) are unchanged. |
-| `test/workflow-contracts.test.mjs` | Near `:12729-12755`: assert four invariants, each naming the invariant it protects. (1) The observation-scoped consumer rule is present, including "a host PR read … is never a source". (2) Merge Gate Phase 0 and the Phase 5.5 entry name `receiptContext`. (3) The Phase 5.5 entry in `merge-gate-delegated-run.md` ends the phase on a non-`valid` entry-read state, and observation step 1 requires equality with the retained receipt, reporting `changed` otherwise. (4) No body handoff to `issue-lifecycle-receipt-parse` or `body-hash` in `src/tools/merge-gate.md`, `src/shared/merge-gate-delegated-run.md` and `src/shared/merge-gate-issue-observation.md`. Scope it to those three sources: the producer write paths in `issue-lifecycle-receipt.md` and `issue-lifecycle.md` legitimately name the operations. Also update the assertion at `:13848-13856` that pins "absent, invalid, or valid" to the new result list. |
-| `test/eval-fixture-fidelity.test.mjs` | `:930-961`: drop both `body-hash` (`:948`) and `issue-lifecycle-receipt-parse` from the required list, and rewrite the comment above it, which names `body-hash` as a required local operation. Replace the two body-hash tests (`:972-1022`) with one: every fixture's `pr-read` stub input carries `receiptContext`. The existing replay of every stub through `executeOperation` (`:875-905`) already proves that the receipt fields match the real helper, so no second check is added. |
-| `evals/merge-gate/fixtures/*.json` | All 30 fixtures: add `receiptContext` and the two fields to the `pr-read` stub, and remove the `issue-lifecycle-receipt-parse` and `body-hash` stubs. A receipt-carrying fixture gets the multiline, quote and backslash body. |
-| `evals/merge-gate/suite.config.mjs` | `:182`: add `issue-lifecycle-receipt-parse` and `body-hash` to `alwaysAllowedOperations`. This is a hashed instrument file, so every archived merge-gate round goes stale (evidence debt). |
-| `evals/merge-gate/_scaffold/evaluate.mjs` | `:1152-1240`: emit a decisive finding for any call to either operation, also from aborted runs. Emit it only in `findings` for runs whose stamped fixture digest matches the current fixture, never in `fixtureIndependentFindings`, so archived runs keep being judged by their stamped fixture. |
-| `test/merge-gate-eval.test.mjs` | `:201`: add both operations to `STUB_ANSWERED_OPERATIONS`, or derive that set from the suite's `alwaysAllowedOperations`, so `assertArchivedRunsReadable` (`:1220-1227`, `:1423-1500`) reads the 37 archived runs that call them as clean. Add a unit test for the new finding using the synthetic call-log helpers (`:2702ff`), covering a fixture-compatible run (finding) and an archived, digest-mismatched run (no finding). |
-| `evals/merge-gate/README.md` | `:753-764`: replace the `body-hash` paragraph with the new contract and the no-call finding. Record the evidence debt and the accepted limit that no eval shows `receiptContext` was sent. |
+| File                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/scripts/remote-tracker-core.mjs`        | `pr-read` operation path (near `:4144` and its executor). Validate the closed `receiptContext` before the provider call. With it, attach `bodySha256` and `issueLifecycleReceipt` via `parseIssueLifecycleReceipt` and `bodyHash`, using the raw payload's `body` statement and binding `expectedRepository` to the executed repository object (slug and host). Validate `receiptContext` beside the `pr-list` `planPath` check (`:7242`), before repository resolution (`:7254`), so an invalid context invokes no runner. An `output`-flattened shape (`:4145`) with `receiptContext` gets `unavailable` / `body-not-stated`. Catch only `RemoteTrackerError` into `invalid` with its `code`. Shared `normalizeRemoteData` stays unchanged.                                                                                                                                                                                              |
+| `src/shared/issue-lifecycle-receipt.md`      | After the paragraph "For deterministic forge-side construction and parsing", add the observation-scoped consumer rule, two to three lines. Reword the existing "use the helper operations … `issue-lifecycle-receipt-parse`" sentence so it no longer reads as the observation path. It maps `absent` / `invalid` / `unavailable` to "issue observation unavailable", with merge eligibility unchanged and no heuristic tracker access. This fragment is eager in three tools via `issue-lifecycle`.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `src/tools/merge-gate.md`                    | Phase 0 step 1 (`:157-170`): always end PR resolution in a `pr-read` with `receiptContext: {}`, also after `pr-list` (local override of `pr-review-comments`). Retain the helper's `bodySha256` and `issueLifecycleReceipt`. Require the record's `repository` to equal the canonical slug. Route the three existing outcomes on the state, treating `unavailable` like `invalid`. Update `contextBudget` from the build report.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `src/shared/merge-gate-delegated-run.md`     | Phase 5.5 entry (`:1445-1453`): the merge-proving fresh read is a `pr-read` with `receiptContext`. A non-`valid` state there ends the phase before the observation fragment loads. `:584`: the retained hash and parse result are the helper fields. `:1597-1598`: the receipt result lists `absent`, `invalid`, `unavailable` (with reason), `changed` (the entry read's receipt differs from the Phase 0 one, or its state is no longer `valid` after a `valid` Phase 0) or `valid`.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `src/shared/merge-gate-issue-observation.md` | Step 1 (`:20-24`): additionally require the entry read's `valid` receipt to equal the retained receipt. Otherwise end observation with the Phase 6 result `changed` (merge stands). The "must be `valid`" rule stays in the core entry text, because this fragment loads only after it (`:3-11`). This adds no extra `pr-read`. Step 3's "exactly one `pr-read` for the whole run" for title and body (`:92-95`) and step 4's per-issue bound are unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `docs/user-guide/remote-tracker.md`          | `:904-925` `pr-read` field list: document `receiptContext`, `bodySha256`, `issueLifecycleReceipt` and their states.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `test/remote-tracker.test.mjs`               | New `pr-read` tests near `:13403` (cases under "Validation plan"). Existing parse tests (`:11960-12200`) are unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `test/workflow-contracts.test.mjs`           | Near `:12729-12755`: assert four invariants, each naming the invariant it protects. (1) The observation-scoped consumer rule is present, including "a host PR read … is never a source". (2) Merge Gate Phase 0 and the Phase 5.5 entry name `receiptContext`. (3) The Phase 5.5 entry in `merge-gate-delegated-run.md` ends the phase on a non-`valid` entry-read state, and observation step 1 requires equality with the retained receipt, reporting `changed` otherwise. (4) No body handoff to `issue-lifecycle-receipt-parse` or `body-hash` in `src/tools/merge-gate.md`, `src/shared/merge-gate-delegated-run.md` and `src/shared/merge-gate-issue-observation.md`. Scope it to those three sources: the producer write paths in `issue-lifecycle-receipt.md` and `issue-lifecycle.md` legitimately name the operations. Also update the assertion at `:13848-13856` that pins "absent, invalid, or valid" to the new result list. |
+| `test/eval-fixture-fidelity.test.mjs`        | `:930-961`: drop both `body-hash` (`:948`) and `issue-lifecycle-receipt-parse` from the required list, and rewrite the comment above it, which names `body-hash` as a required local operation. Replace the two body-hash tests (`:972-1022`) with one: every fixture's `pr-read` stub input carries `receiptContext`. The existing replay of every stub through `executeOperation` (`:875-905`) already proves that the receipt fields match the real helper, so no second check is added.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `evals/merge-gate/fixtures/*.json`           | All 30 fixtures: add `receiptContext` and the two fields to the `pr-read` stub, and remove the `issue-lifecycle-receipt-parse` and `body-hash` stubs. A receipt-carrying fixture gets the multiline, quote and backslash body.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `evals/merge-gate/suite.config.mjs`          | `:182`: add `issue-lifecycle-receipt-parse` and `body-hash` to `alwaysAllowedOperations`. This is a hashed instrument file, so every archived merge-gate round goes stale (evidence debt).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `evals/merge-gate/_scaffold/evaluate.mjs`    | `:1152-1240`: emit a decisive finding for any call to either operation, also from aborted runs. Emit it only in `findings` for runs whose stamped fixture digest matches the current fixture, never in `fixtureIndependentFindings`, so archived runs keep being judged by their stamped fixture.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `test/merge-gate-eval.test.mjs`              | `:201`: add both operations to `STUB_ANSWERED_OPERATIONS`, or derive that set from the suite's `alwaysAllowedOperations`, so `assertArchivedRunsReadable` (`:1220-1227`, `:1423-1500`) reads the 37 archived runs that call them as clean. Add a unit test for the new finding using the synthetic call-log helpers (`:2702ff`), covering a fixture-compatible run (finding) and an archived, digest-mismatched run (no finding).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `evals/merge-gate/README.md`                 | `:753-764`: replace the `body-hash` paragraph with the new contract and the no-call finding. Record the evidence debt and the accepted limit that no eval shows `receiptContext` was sent.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Implementation details
 
@@ -181,6 +183,7 @@ refactoring because the helper interface grows.
      - any other error propagates.
 
    The read stays successful in every state.
+
 3. Cover both providers. GitHub reads the REST pulls object
    (`remote-tracker-github-core.mjs:437`). Forgejo reads the raw `structs.PullRequest`
    (`remote-tracker-forgejo-core.mjs:318`), with `merged` mapped to `state: merged`
@@ -266,14 +269,16 @@ refactoring because the helper interface grows.
   - a caller-supplied repository stays allowed, the binding is to the read repository, and Merge Gate checks the canonical slug, because the fidelity replay depends on it;
   - `bodySha256` replaces the hash Merge Gate already retains.
 - Assumption: a provider-stated body string is complete. GitHub and Forgejo return the stored body in their API objects, with no display truncation.
-- Out of scope: the receipt *write* path for an existing PR (`src/shared/issue-lifecycle.md` "Receipt write paths", `pr-update-body`). It is a producer path with its own `STALE_WRITE` hash guard.
+- Out of scope: the receipt _write_ path for an existing PR (`src/shared/issue-lifecycle.md` "Receipt write paths", `pr-update-body`). It is a producer path with its own `STALE_WRITE` hash guard.
 
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-CLR","question":"Which machine-to-machine handoff should carry the fresh pull-request body to the existing lifecycle-receipt parser in Merge Gate?","options":["Extend pr-read","Dedicated read-and-parse operation","Raw-body input file from the T3 read"],"escape":[],"stop":null,"scores":[{"label":"Extend pr-read","score":8,"reason":"Follows the existing planPrMarker pattern in normalizePullRequestRecord and takes receipt result, body sha256, number and repository from the same provider response Merge Gate already reads, so nothing is transcribed and no second read needs reconciling."},{"label":"Dedicated read-and-parse operation","score":6,"reason":"Removes transcription too, but adds a second provider read beside the retained pr-read, so head SHA and body hash must be reconciled across two responses, plus a new operation to dispatch, classify and stub."},{"label":"Raw-body input file from the T3 read","score":2,"reason":"The T3 read returns content only into the model context, so the model would still write the body itself, keeping the escaping, truncation and stale-copy risk, with nothing binding the file to a fresh provider read."}]},{"site":"S-BAT","question":"How should the merge-gate eval fixtures and tests evidence that Merge Gate no longer transcribes the PR body into issue-lifecycle-receipt-parse or body-hash?","options":["Remove stubs and assert no call","Keep stubs and assert no call","Stub enforces receiptContext"],"escape":[],"stop":null,"scores":[{"label":"Remove stubs and assert no call","score":8,"reason":"Matches the plan fidelity rewrite; the merge-gate evaluator already fails runs calling an operation the fixture leaves undefined, so a stray parse or body-hash call fails visibly, and the explicit call-log assertion evidences the no-transcription criterion."},{"label":"Keep stubs and assert no call","score":5,"reason":"Catches a regression too, but the kept stubs and fidelity checks still describe the inline-body transcription path the change removes."},{"label":"Stub enforces receiptContext","score":3,"reason":"Checks receiptContext only, lets a transcribing run pass silently, and changes the shared scaffold instrument for every suite."}]},{"site":"S-BAT","question":"What receiptContext contract should pr-read enforce for the receipt target and external tool?","options":["Optional target checks","Map tracker.mode","Strict context, soft failure"],"escape":[],"stop":null,"scores":[{"label":"Optional target checks","score":8,"reason":"Keeps the current split where the receipt names its target and observation step 1 checks target and tool, so Merge Gate never reads tracker.mode, never triggers the first-run tracker question and cannot block PR resolution."},{"label":"Map tracker.mode","score":5,"reason":"Binds the target earlier and keeps the read non-fatal, but adds new tracker.mode reading to Phase 0, must guard the unset-mode question, and duplicates the step 1 check."},{"label":"Strict context, soft failure","score":3,"reason":"Still forces deriving the target from configuration and turns real caller mistakes into silent receipt unavailability instead of INVALID_PAYLOAD."}]},{"site":"S-BAT","question":"Should the eval layer additionally evidence that Merge Gate actually sends receiptContext on its pr-read?","options":["Accept the limit","Stub gates receipt fields","Log input key names"],"escape":[],"stop":null,"scores":[{"label":"Accept the limit","score":7,"reason":"Fits the plan: the contract test asserts that Phase 0 and the Phase 5.5 entry name receiptContext and the README records the limit, leaving the shared tool-neutral scaffold untouched."},{"label":"Stub gates receipt fields","score":6,"reason":"Only option that shows the behaviour at run time, but makes the shared operation-name-only stub read its input, adding evidence debt to all five suites."},{"label":"Log input key names","score":4,"reason":"Changes the pinned call-log schema every suite reads, yet proves only key presence, not validity."}]},{"site":"S-DEC","question":"How should the change keep pnpm test green against the archived merge-gate evidence?","options":["Remove archived rounds","Digest-scoped finding","Keep stubs, scoped no-call finding","Decide later"],"escape":["Decide later"],"stop":null,"scores":[{"label":"Remove archived rounds","score":3,"reason":"Deletes costly evidence to pass tests and turns accepted freshness debt into a coverage gap."},{"label":"Digest-scoped finding","score":8,"reason":"Removing the stubs changes the fixture digest so archived runs are judged fixture-independently without the new finding, and adding both operations to STUB_ANSWERED_OPERATIONS keeps archived calls readable, preserving earlier decisions and the expected freshness debt."},{"label":"Keep stubs, scoped no-call finding","score":4,"reason":"Unchanged digests keep archived runs fixture-compatible so the finding still hits them, and it reverses the scored stub-removal decision."}]},{"site":"S-DEC","question":"What should Phase 6 report when the receipt state at the Phase 5.5 entry read differs from the Phase 0 state?","options":["Fresh state with changed note","Distinct changed result","Decide later"],"escape":["Decide later"],"stop":null,"scores":[{"label":"Fresh state with changed note","score":5,"reason":"Keeps the fresh diagnostic detail but needs an extra rule and lets a differing fresh valid receipt read as valid although observation ended."},{"label":"Distinct changed result","score":7,"reason":"One added word in the existing single result list states exactly why observation ended and avoids the misleading valid-but-not-observed case."}]},{"site":"S-DEC","question":"Where should the observation-scoped consumer rule live?","options":["Receipt fragment, capped","Merge Gate Phase 0","Decide later"],"escape":["Decide later"],"stop":null,"scores":[{"label":"Receipt fragment, capped","score":8,"reason":"The owning receipt-contract fragment already holds consumer rules and its parse instruction would otherwise contradict the new rule; two to three lines on three eager hosts is worth the state-once guarantee."},{"label":"Merge Gate Phase 0","score":5,"reason":"Saves tokens on producer hosts but splits the contract from its owner, leaves the fragment parse instruction misleading, and misses the Phase 5.5 entry and observation step 1."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -282,15 +287,15 @@ refactoring because the helper interface grows.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 2 | 0 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 0 | 1 |
-| Error cases | 0 | 1 | 1 |
-| Testability | 1 | 2 | 4 |
-| Scope | 0 | 0 | 2 |
-| Maintainability | 0 | 0 | 2 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         2 |    0 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         0 |    1 |
+| Error cases     |        0 |         1 |    1 |
+| Testability     |        1 |         2 |    4 |
+| Scope           |        0 |         0 |    2 |
+| Maintainability |        0 |         0 |    2 |
 
 ### Findings
 
@@ -320,3 +325,89 @@ Deep plan review (Phase 6b):
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-26
+**Workflow:** `effective-flow build` (autopilot run `ap-20261126T151902Z-3f884b6e`, inline Quality, isolation unavailable)
+
+### Requirement
+
+Merge Gate validates the issue-lifecycle receipt from the helper's own provider read, so the
+pull-request body never passes through the model on its way to the parser (issue #774).
+
+### Architecture decisions
+
+- Implemented as planned: `pr-read` takes an opt-in, closed `receiptContext`, validated before
+  repository resolution, and then adds `bodySha256` and `issueLifecycleReceipt` (`valid`, `absent`,
+  `invalid`, `unavailable`) from the raw provider object, bound to the executed repository (slug
+  and host). The attachment lives in the `pr-read` operation path; `normalizeRemoteData` is
+  unchanged.
+- Phase 5.5 names its outcome: after a `valid` Phase 0 receipt, a non-`valid` entry read reports
+  `changed`; without a `valid` Phase 0 receipt the phase ends at the entry and Phase 6 keeps the
+  Phase 0 result (review finding F1).
+- Deviation: archived-run compatibility needed two test-side adjustments the plan did not name.
+  `assertArchivedRunsReadable` in `test/merge-gate-eval.test.mjs` drops the body-transcription
+  finding for runs whose stamped fixture digest differs from the current fixture, and
+  `copyRestampedResults` in `test/support/merge-gate-round-fixtures.mjs` strips the two
+  now-unstubbed operations from archived logs it restamps, so a restamped archive copy is not
+  judged as a fresh transcribing run. Real fixture-compatible runs keep the finding.
+- `STUB_ANSWERED_OPERATIONS` was replaced by the suite's `alwaysAllowedOperations` (the plan's
+  offered alternative).
+
+### Affected files
+
+`src/scripts/remote-tracker-core.mjs`; `src/shared/issue-lifecycle-receipt.md`,
+`src/shared/merge-gate-delegated-run.md`, `src/shared/merge-gate-issue-observation.md`,
+`src/tools/merge-gate.md`, `src/tools/apply-issues.md`, `src/tools/apply-review-remote.md`
+(`contextBudget` 985, 1009, 394); `docs/user-guide/remote-tracker.md`,
+`docs/user-guide/tools-deliver.md`, `docs/user-guide/troubleshooting.md`; all 30
+`evals/merge-gate/fixtures/*.json`, `evals/merge-gate/suite.config.mjs`,
+`evals/merge-gate/_scaffold/evaluate.mjs`, `evals/merge-gate/README.md`;
+`test/remote-tracker.test.mjs`, `test/workflow-contracts.test.mjs`,
+`test/eval-fixture-fidelity.test.mjs`, `test/merge-gate-eval.test.mjs`,
+`test/support/merge-gate-round-fixtures.mjs`.
+
+### Implementation details
+
+- Fixtures: every `pr-read` stub carries `receiptContext: {}` and the helper's two fields; the
+  `issue-lifecycle-receipt-parse` and `body-hash` stubs are gone; `linked-issue-open-points`
+  carries a multiline body with quotes, `\\` and `\"`. The fidelity replay confirms each stub
+  equals the real helper's output.
+- Evaluator: `bodyTranscriptionFinding` is decisive and emitted only for fixture-compatible runs,
+  never in `fixtureIndependentFindings`.
+- The observation-scoped consumer rule is stated once, in three lines, in
+  `issue-lifecycle-receipt.md`; producer write paths are unchanged.
+
+### Test results
+
+- Full `pnpm test` (Phase 5, before the corrections, on a host with load average in the hundreds):
+  6974 tests, 6878 pass, 8 fail, 3 cancelled. A base run at `89587115` proved three failures
+  pre-existing (two host-driver composed-stage tests and the protected-validation-operator history
+  deadline test). One was a regression of this change (round-lifecycle `55 !== 1`) and was fixed in
+  the test helper; with only its timeout raised it passed in 499 s. The remaining failures were
+  timeouts that passed alone at the base and are unrelated to this change.
+- Re-verification after the corrections ran targeted (the affected test files, `pnpm agent:check`,
+  `node build.mjs`, `pnpm test:distribution`): 1321 pass, 0 fail. Two round tests hit only their
+  own timeouts under load (`wall-clock`). `node build.mjs` and `pnpm test:distribution` pass.
+- No local full-suite evidence (environment: wall-clock); the full suite is left to CI.
+- `pnpm eval <suite> verify` for all five suites: no integrity errors; freshness debt as expected,
+  including every archived merge-gate round.
+
+### Review result
+
+One routed reviewer (Node.js) reviewed all severities. One Important and five Notes were fixed in
+one incorporation pass; the floor-hit contract fragments got a full re-pass with no new defect.
+No findings remain open, and no external review report was written.
+
+## Review findings
+
+**Date:** 2026-11-26
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     6 |
+| Open / Not implemented |     0 |
