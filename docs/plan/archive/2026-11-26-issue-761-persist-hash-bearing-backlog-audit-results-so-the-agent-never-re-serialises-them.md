@@ -1,6 +1,6 @@
 # Persist hash-bearing backlog-audit results so the agent never re-serialises them
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #761
@@ -554,3 +554,31 @@ No change to `build.mjs`: `backlog-audit.mjs` and `backlog-audit-core.mjs` are a
 ## Open points
 
 - No open points.
+
+## Build completion
+
+- The backlog-audit helper persists its four hash-bearing results and accepts their returned paths
+  in operation-specific reference fields. Inline inputs remain supported. The helper verifies
+  references and binds them to the audit run before use.
+- Snapshot cleanup and input cleanup validate their groups separately. A bad input entry cannot
+  prevent snapshot cleanup, and a run-scoped cleanup does not remove another run's output files.
+- Updated the backlog-audit tool, external tracker guidance, developer docs and regression tests.
+  The built tool uses 411 of its 412 context-budget lines.
+- The 104 targeted tests passed. The full run reported 6,796 passes, 85 skips and one test cancelled
+  at its own timeout. That test passed on the base and in an independent targeted check of the
+  unchanged candidate. The full suite was not rerun. Format, build and distribution checks passed.
+- The post-release manual check is tracked in #765.
+
+## Review findings
+
+**Date:** 2026-11-26
+**Reviewer:** Node.js reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     0 |
+| Open / Not implemented |     0 |
+
+No findings found.

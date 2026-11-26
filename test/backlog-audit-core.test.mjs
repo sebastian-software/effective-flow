@@ -5,6 +5,9 @@ import {
   mkdirSync,
   symlinkSync,
   mkdtempSync,
+  renameSync,
+  copyFileSync,
+  utimesSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -2501,7 +2504,9 @@ test('the full write set is ordered, stable, allowlisted and applies exactly in 
     assert.ok(WRITE_ACTIONS.includes(entry.action), entry.id);
     assert.equal(entry.status, 'available');
   }
-  // The same inputs rebuild the identical set: stable ids, hashes and set hash.
+  // Invariant: the same inputs rebuild the same set. Entry ids and entry hashes are stable, and the
+  // sets are equal once the persisted output path (`inputFile`) and the hash that covers it
+  // (`setHash`) are set aside, because each build takes the next free output file.
   const again = await ok('write-set-build', {
     inventory: data,
     merged,
@@ -2512,7 +2517,12 @@ test('the full write set is ordered, stable, allowlisted and applies exactly in 
     date: '2026-11-13',
     drafts,
   });
-  assert.deepEqual(again, built.data);
+  assert.deepEqual(
+    again.entries.map(({ id, hash }) => [id, hash]),
+    built.data.entries.map(({ id, hash }) => [id, hash]),
+  );
+  const withoutPath = ({ inputFile: _path, setHash: _hash, ...rest }) => rest;
+  assert.deepEqual(withoutPath(again), withoutPath(built.data));
   const applied = await ok(
     'write-set-apply',
     { cwd: root, target: FORGE, permission, writeSet: built.data, selected: selectAll(built.data) },
@@ -4126,4 +4136,612 @@ test('the repository check compares host, provider and slug', async (t) => {
     { ...github, owner: 'other' },
   ])
     assert.equal((await listed(data)).error?.code, 'REPOSITORY_MISMATCH', JSON.stringify(data));
+});
+
+// --- Persisted outputs and reference fields ---------------------------------------------------
+
+const inputsOf = (root) => join(root, '.effective-flow/backlog-audit/inputs');
+const readOutput = (file) => JSON.parse(readFileSync(file, 'utf8'));
+const seeded = (hex) => ({ randomBytes: () => Buffer.from(hex, 'hex') });
+const EXTERNAL = { kind: 'external', externalTool: 'linear' };
+const EXTERNAL_EPIC_BODY = [
+  'Intro.\r',
+  '<!-- effective-flow-backlog-audit goal=ship-the-portable-build -->\r',
+  '- [ ] ABC-9\r',
+  `${EPIC_END_MARKER}\r`,
+  'Outro.  ',
+].join('\n');
+
+// One forge run driven only by returned paths in reference fields.
+async function persistedRun(root, fake, hex = 'a1b2c3d4') {
+  const deps = { tracker: fake.tracker, ...seeded(hex) };
+  const permission = await ok(
+    'permission-prove',
+    { cwd: root, target: FORGE, runtimeStateRoot: root },
+    deps,
+  );
+  const permissionFile = permission.inputFile;
+  const candidates = await ok(
+    'epic-candidates',
+    { cwd: root, target: FORGE, permissionFile },
+    deps,
+  );
+  const data = await ok(
+    'inventory-build',
+    { cwd: root, runtimeStateRoot: root, target: FORGE, permissionFile, planDir: 'docs/plan' },
+    deps,
+  );
+  const inventoryFile = data.inputFile;
+  const bounds = await ok('bounds-check', {
+    runtimeStateRoot: root,
+    inventoryFile,
+    architectureSummaryPath: data.architectureSummaryPath,
+  });
+  const merged = await ok('verdicts-validate', { cwd: root, inventoryFile, primary: corePrimary });
+  const writeSet = await ok('write-set-build', {
+    inventoryFile,
+    mergedFile: merged.inputFile,
+    permissionFile,
+    goal: 'Ship the portable build',
+    epic: { mode: 'new' },
+    reportFile: '2026-11-13-backlog-audit.md',
+    date: '2026-11-13',
+    drafts: { epic: { title: 'Goal: portable build' } },
+  });
+  return { permission, candidates, inventory: data, bounds, merged, writeSet };
+}
+
+async function forgeRun(t, hex) {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2), issue(3)] });
+  return { root, fake, ...(await persistedRun(root, fake, hex)) };
+}
+
+// An external-target run over a bound epic, again by reference only.
+async function externalRun(root, hex = 'a1b2c3d4') {
+  const deps = { tracker: noTracker, ...seeded(hex) };
+  const actions = Object.fromEntries(WRITE_ACTIONS.map((action) => [action, true]));
+  const permission = await ok(
+    'permission-prove',
+    {
+      cwd: root,
+      target: EXTERNAL,
+      runtimeStateRoot: root,
+      external: { connection: 'mcp:linear', readProven: true, writeProven: true, actions },
+    },
+    deps,
+  );
+  const item = (reference, extra = {}) => ({
+    reference,
+    title: 't',
+    body: `SECRET ${reference}`,
+    labels: [],
+    author: { login: 'a', write: true },
+    comments: [],
+    ...extra,
+  });
+  const data = await ok(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: EXTERNAL,
+      permissionFile: permission.inputFile,
+      planDir: 'docs/plan',
+      epic: { reference: 'ABC-40' },
+      externalIssues: [
+        item('ABC-1'),
+        item('ABC-2'),
+        item('ABC-40', { labels: [LABELS.epic], body: EXTERNAL_EPIC_BODY }),
+      ],
+    },
+    deps,
+  );
+  const merged = await ok('verdicts-validate', {
+    cwd: root,
+    inventoryFile: data.inputFile,
+    primary: {
+      verdicts: [
+        verdict('ABC-1', 'core'),
+        verdict('ABC-2', 'obsolete-architecture', { citations: ['docs/adr/runtime.md'] }),
+      ],
+      path: ['ABC-1'],
+    },
+  });
+  const writeSet = await ok('write-set-build', {
+    inventoryFile: data.inputFile,
+    mergedFile: merged.inputFile,
+    permissionFile: permission.inputFile,
+    goal: 'Ship the portable build',
+    epic: { mode: 'existing', reference: 'ABC-40' },
+    reportFile: 'report.md',
+    date: '2026-11-13',
+    drafts: { obsolete: [{ item: 'ABC-2', body: 'Obsolete.' }] },
+  });
+  return { permission, inventory: data, merged, writeSet };
+}
+
+const externalCheck = (run_) => ({
+  permissionFile: run_.permission.inputFile,
+  writeSetFile: run_.writeSet.inputFile,
+  id: 'epic:update:ABC-40',
+  current: { state: 'open', labels: [], body: EXTERNAL_EPIC_BODY, comments: [] },
+});
+
+// Invariant: every hash-bearing producer persists exactly the object it returns, under the run's
+// name in the guarded inputs directory, so an agent only ever copies a path.
+test('each producer persists its result under the run name and returns that path', async (t) => {
+  const { root, permission, inventory: data, merged, writeSet } = await forgeRun(t, 'a1b2c3d4');
+  const { runId } = data;
+  assert.equal(permission.runId, runId, 'inventory-build adopts the proven run id');
+  for (const [kind, value] of [
+    ['permission', permission],
+    ['inventory', data],
+    ['merged', merged],
+    ['writeset', writeSet],
+  ]) {
+    assert.equal(value.inputFile, join(inputsOf(root), `${kind}-${runId}-1.json`), kind);
+    assert.deepEqual(readOutput(value.inputFile), value, kind);
+  }
+});
+
+// Invariant: a proof without `runtimeStateRoot` is today's object and leaves no file behind.
+test('permission-prove without a runtime root writes nothing and mints no run', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const permission = await proven(root, fake);
+  assert.equal(permission.runId, undefined);
+  assert.equal(permission.inputFile, undefined);
+  assert.equal(typeof permission.proofHash, 'string');
+  assert.equal(existsSync(join(root, '.effective-flow/backlog-audit')), false);
+  // Such a permission stays accepted unbound by every later operation.
+  const data = await ok(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: FORGE,
+      permission,
+      planDir: 'docs/plan',
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(data.stopped, false);
+});
+
+// Invariant: the reference chain works from returned paths alone, and a persisted file serves every
+// consumer: consuming a reference never removes it.
+test('the reference chain runs on returned paths and keeps each file for its consumers', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2), issue(3)] });
+  const deps = { tracker: fake.tracker };
+  const first = await persistedRun(root, fake);
+  const { permission, inventory: data, merged, writeSet } = first;
+  assert.ok(first.candidates && first.bounds.stopped === false);
+  for (const value of [permission, data, merged, writeSet])
+    assert.equal(existsSync(value.inputFile), true, value.inputFile);
+  const applied = await ok(
+    'write-set-apply',
+    {
+      cwd: root,
+      target: FORGE,
+      permissionFile: permission.inputFile,
+      writeSetFile: writeSet.inputFile,
+      selected: selectAll(writeSet),
+    },
+    deps,
+  );
+  assert.ok(applied.applied.length > 0);
+  for (const value of [permission, data, merged, writeSet])
+    assert.equal(existsSync(value.inputFile), true, `${value.inputFile} survives its consumers`);
+  // The same permission and inventory serve a repeated consumer.
+  await ok(
+    'epic-candidates',
+    { cwd: root, target: FORGE, permissionFile: permission.inputFile },
+    deps,
+  );
+  await ok('verdicts-validate', {
+    cwd: root,
+    inventoryFile: data.inputFile,
+    primary: corePrimary,
+  });
+});
+
+test('an external run passes external-call-check and apply by reference', async (t) => {
+  const root = repository(t);
+  const run_ = await externalRun(root);
+  const check = await ok('external-call-check', externalCheck(run_));
+  assert.equal(check.proceed, true);
+  const second = await ok('external-call-check', externalCheck(run_));
+  assert.equal(second.proceed, true, 'the write set file serves every external call');
+  const applied = await ok(
+    'write-set-apply',
+    {
+      cwd: root,
+      target: EXTERNAL,
+      permissionFile: run_.permission.inputFile,
+      writeSetFile: run_.writeSet.inputFile,
+      selected: selectAll(run_.writeSet),
+    },
+    { tracker: noTracker },
+  );
+  assert.equal(applied.mode, 'external');
+  assert.equal(existsSync(run_.writeSet.inputFile), true);
+});
+
+// Invariant: a referenced file is verified with the same tamper check as an inline object, and the
+// path rules refuse anything but the helper's own file in the guarded directory.
+test('a changed value byte in a referenced file is TAMPERED_INPUT, whatever its kind', async (t) => {
+  const { root, permission, inventory: data, merged, writeSet } = await forgeRun(t, 'a1b2c3d4');
+  const calls = {
+    permission: () =>
+      run('epic-candidates', { cwd: root, target: FORGE, permissionFile: permission.inputFile }),
+    inventory: () =>
+      run('bounds-check', {
+        runtimeStateRoot: root,
+        inventoryFile: data.inputFile,
+        architectureSummaryPath: data.architectureSummaryPath,
+      }),
+    merged: () =>
+      run('write-set-build', {
+        inventoryFile: data.inputFile,
+        mergedFile: merged.inputFile,
+        permissionFile: permission.inputFile,
+        goal: 'Ship the portable build',
+        epic: { mode: 'new' },
+        reportFile: 'r.md',
+        date: '2026-11-13',
+        drafts: { epic: { title: 'Goal' } },
+      }),
+    writeSet: () =>
+      run('write-set-apply', {
+        cwd: root,
+        target: FORGE,
+        permissionFile: permission.inputFile,
+        writeSetFile: writeSet.inputFile,
+        selected: [],
+      }),
+  };
+  for (const [field, value] of Object.entries({
+    permission,
+    inventory: data,
+    merged,
+    writeSet,
+  })) {
+    const original = readFileSync(value.inputFile, 'utf8');
+    const changed = readOutput(value.inputFile);
+    changed.tamper = (changed.tamper ?? 0) + 1;
+    writeFileSync(value.inputFile, `${JSON.stringify(changed)}\n`);
+    const envelope = await calls[field]();
+    assert.equal(envelope.error?.code, 'TAMPERED_INPUT', field);
+    writeFileSync(value.inputFile, original);
+  }
+  // Changing a value that is already there, not adding a key, is caught the same way.
+  const changed = readOutput(data.inputFile);
+  changed.measuredBytes += 1;
+  writeFileSync(data.inputFile, `${JSON.stringify(changed)}\n`);
+  assert.equal((await calls.inventory()).error?.code, 'TAMPERED_INPUT');
+});
+
+test('a symlinked file or an out-of-tree path is INVALID_PAYLOAD, a symlinked directory is UNSAFE_RUNTIME_STATE', async (t) => {
+  const { root, inventory: data } = await forgeRun(t, 'a1b2c3d4');
+  const call = (inventoryFile) =>
+    run('bounds-check', {
+      runtimeStateRoot: root,
+      inventoryFile,
+      architectureSummaryPath: data.architectureSummaryPath,
+    });
+  assert.equal((await call(data.inputFile)).ok, true);
+  const outside = join(root, 'docs', basenameOf(data.inputFile));
+  copyFileSync(data.inputFile, outside);
+  assert.equal((await call(outside)).error.code, 'INVALID_PAYLOAD', 'out of tree');
+  assert.equal((await call('relative.json')).error.code, 'INVALID_PAYLOAD');
+  assert.equal(
+    (await call(join(inputsOf(root), 'inventory-missing.json'))).error.code,
+    'INVALID_PAYLOAD',
+  );
+  const aside = `${data.inputFile}.real`;
+  renameSync(data.inputFile, aside);
+  symlinkSync(aside, data.inputFile);
+  assert.equal((await call(data.inputFile)).error.code, 'INVALID_PAYLOAD', 'symlinked file');
+  rmSync(data.inputFile);
+  renameSync(aside, data.inputFile);
+  const real = `${inputsOf(root)}-real`;
+  renameSync(inputsOf(root), real);
+  symlinkSync(real, inputsOf(root));
+  assert.equal((await call(data.inputFile)).error.code, 'UNSAFE_RUNTIME_STATE', 'symlinked dir');
+});
+
+function basenameOf(file) {
+  return file.slice(file.lastIndexOf('/') + 1);
+}
+
+// Invariant: a reference is exactly the helper's output of the kind its field names, used once per
+// field and for an operation that consumes it.
+test('both forms, an unconsumed field, an agent-authored name and a copied file are INVALID_PAYLOAD', async (t) => {
+  const { root, permission, inventory: data } = await forgeRun(t, 'a1b2c3d4');
+  const base = { runtimeStateRoot: root, architectureSummaryPath: data.architectureSummaryPath };
+  const bounds = (extra) => run('bounds-check', { ...base, ...extra });
+  assert.equal((await bounds({ inventoryFile: data.inputFile })).ok, true);
+  const both = await bounds({ inventory: data, inventoryFile: data.inputFile });
+  assert.equal(both.error.code, 'INVALID_PAYLOAD', 'inline and reference');
+  const unconsumed = await bounds({
+    inventoryFile: data.inputFile,
+    permissionFile: permission.inputFile,
+  });
+  assert.equal(unconsumed.error.code, 'INVALID_PAYLOAD', 'unconsumed reference');
+  const authored = join(inputsOf(root), 'inventory-build-1.json');
+  copyFileSync(data.inputFile, authored);
+  assert.equal(
+    (await bounds({ inventoryFile: authored })).error.code,
+    'INVALID_PAYLOAD',
+    'agent-authored name',
+  );
+  const wrongKind = await bounds({ inventoryFile: permission.inputFile });
+  assert.equal(wrongKind.error.code, 'INVALID_PAYLOAD', 'another kind');
+  const copied = join(inputsOf(root), `inventory-${data.runId}-2.json`);
+  copyFileSync(data.inputFile, copied);
+  assert.equal((await bounds({ inventoryFile: copied })).error.code, 'INVALID_PAYLOAD', 'copied');
+  assert.equal(existsSync(data.inputFile), true);
+});
+
+// Invariant: a returned output is never a whole-input file, so it is not removed by a misrouted
+// path that an agent-authored input would consume.
+test('a returned output path sent as a whole input is refused and kept', async (t) => {
+  const { root, permission, inventory: data } = await forgeRun(t, 'a1b2c3d4');
+  for (const file of [permission.inputFile, data.inputFile]) {
+    const envelope = await run('bounds-check', { inputFile: file });
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD', file);
+    assert.equal(existsSync(file), true, 'the refused output stays');
+  }
+  assert.ok(readdirSync(inputsOf(root)).length >= 4);
+});
+
+// Invariant: one proof starts one run and every object stays in its own run and runtime root.
+test('a proof that already started a run refuses a second inventory before any forge read', async (t) => {
+  const { root, fake, permission } = await forgeRun(t, 'a1b2c3d4');
+  const before = fake.calls.length;
+  const second = await run(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: FORGE,
+      permissionFile: permission.inputFile,
+      planDir: 'docs/plan',
+    },
+    { tracker: fake.tracker, ...seeded('0a0b0c0d') },
+  );
+  assert.equal(second.error.code, 'INVALID_PAYLOAD');
+  assert.equal(fake.calls.length, before, 'no forge read happened');
+});
+
+test('an inline permission persisted under another runtime root cannot start an inventory', async (t) => {
+  const root = repository(t);
+  const elsewhere = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const permission = await ok(
+    'permission-prove',
+    { cwd: root, target: FORGE, runtimeStateRoot: elsewhere },
+    { tracker: fake.tracker, ...seeded('a1b2c3d4') },
+  );
+  const before = fake.calls.length;
+  const refused = await run(
+    'inventory-build',
+    { cwd: root, runtimeStateRoot: root, target: FORGE, permission, planDir: 'docs/plan' },
+    { tracker: fake.tracker },
+  );
+  assert.equal(refused.error.code, 'INVALID_PAYLOAD');
+  assert.equal(fake.calls.length, before);
+});
+
+test('objects of another run are refused by write-set-build, write-set-apply and external-call-check', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2), issue(3)] });
+  const a = await persistedRun(root, fake, 'a1b2c3d4');
+  const b = await persistedRun(root, fake, '0a0b0c0d');
+  assert.notEqual(a.inventory.runId, b.inventory.runId);
+  const build = (permission, merged) =>
+    run('write-set-build', {
+      inventoryFile: a.inventory.inputFile,
+      mergedFile: merged.inputFile,
+      permissionFile: permission.inputFile,
+      goal: 'Ship the portable build',
+      epic: { mode: 'new' },
+      reportFile: 'r.md',
+      date: '2026-11-13',
+      drafts: { epic: { title: 'Goal' } },
+    });
+  assert.equal((await build(a.permission, a.merged)).ok, true);
+  assert.equal((await build(b.permission, a.merged)).error.code, 'INVALID_PAYLOAD', 'permission');
+  assert.equal((await build(a.permission, b.merged)).error.code, 'INVALID_PAYLOAD', 'merged');
+  const apply = await run(
+    'write-set-apply',
+    {
+      cwd: root,
+      target: FORGE,
+      permissionFile: a.permission.inputFile,
+      writeSetFile: b.writeSet.inputFile,
+      selected: [],
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(apply.error.code, 'INVALID_PAYLOAD', 'write-set-apply');
+  const first = await externalRun(root, 'c1c2c3c4');
+  const second = await externalRun(root, '0b0c0d0e');
+  const crossed = await run('external-call-check', {
+    ...externalCheck(first),
+    writeSetFile: second.writeSet.inputFile,
+  });
+  assert.equal(crossed.error.code, 'INVALID_PAYLOAD', 'external-call-check');
+});
+
+test('references under two runtime roots are refused by write-set-apply and external-call-check', async (t) => {
+  const first = repository(t);
+  const second = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2), issue(3)] });
+  const a = await persistedRun(first, fake, 'a1b2c3d4');
+  // The same seed gives the same run id, so only the root separates the two files.
+  const b = await persistedRun(second, fake, 'a1b2c3d4');
+  assert.equal(a.inventory.runId, b.inventory.runId);
+  const apply = await run(
+    'write-set-apply',
+    {
+      cwd: first,
+      target: FORGE,
+      permissionFile: a.permission.inputFile,
+      writeSetFile: b.writeSet.inputFile,
+      selected: [],
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(apply.error.code, 'INVALID_PAYLOAD', 'write-set-apply');
+  const x = await externalRun(first, 'b1b2b3b4');
+  const y = await externalRun(second, 'b1b2b3b4');
+  const check = await run('external-call-check', {
+    ...externalCheck(x),
+    writeSetFile: y.writeSet.inputFile,
+  });
+  assert.equal(check.error.code, 'INVALID_PAYLOAD', 'external-call-check');
+});
+
+// Invariant: run-scoped cleanup removes one run's outputs and snapshot and nothing of a concurrent
+// run; the two groups fail closed separately so a stray input never keeps a snapshot on disk.
+test('snapshot-cleanup with a run id removes that run outputs and none of a concurrent run', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2), issue(3)] });
+  const a = await persistedRun(root, fake, 'a1b2c3d4');
+  const b = await persistedRun(root, fake, '0a0b0c0d');
+  const foreign = join(inputsOf(root), '.backlog-audit-output-0123456789abcdef.tmp');
+  writeFileSync(foreign, '{');
+  const now = () => new Date();
+  const cleaned = await ok(
+    'snapshot-cleanup',
+    { runtimeStateRoot: root, runId: a.inventory.runId },
+    { now },
+  );
+  const names = [a.permission, a.inventory, a.merged, a.writeSet].map((value) =>
+    basenameOf(value.inputFile),
+  );
+  assert.deepEqual([...cleaned.removedInputs].sort(), names.sort());
+  assert.deepEqual(cleaned.removed, [a.inventory.runId]);
+  for (const value of [a.permission, a.inventory, a.merged, a.writeSet])
+    assert.equal(existsSync(value.inputFile), false, value.inputFile);
+  assert.equal(existsSync(a.inventory.snapshotDir), false);
+  for (const value of [b.permission, b.inventory, b.merged, b.writeSet])
+    assert.equal(existsSync(value.inputFile), true, value.inputFile);
+  assert.equal(existsSync(b.inventory.snapshotDir), true);
+  assert.equal(existsSync(foreign), true, 'a fresh temporary of a concurrent write is skipped');
+});
+
+test('an unexpected entry in inputs removes no input file, but the run snapshot still goes', async (t) => {
+  const { root, permission, inventory: data, merged } = await forgeRun(t, 'a1b2c3d4');
+  writeFileSync(join(inputsOf(root), 'stray.txt'), 'x');
+  const scoped = await run('snapshot-cleanup', { runtimeStateRoot: root, runId: data.runId });
+  assert.equal(scoped.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(existsSync(data.snapshotDir), false, 'the snapshot group does not depend on inputs');
+  for (const value of [permission, data, merged])
+    assert.equal(existsSync(value.inputFile), true, value.inputFile);
+  assert.equal(existsSync(join(inputsOf(root), 'stray.txt')), true);
+});
+
+test('without a run id, an unexpected entry in inputs still lets stale snapshots go', async (t) => {
+  const { root, permission, inventory: data } = await forgeRun(t, 'a1b2c3d4');
+  writeFileSync(join(inputsOf(root), 'stray.txt'), 'x');
+  const later = () => new Date(Date.now() + STALE_RUNTIME_MS + 60_000);
+  const swept = await run('snapshot-cleanup', { runtimeStateRoot: root }, { now: later });
+  assert.equal(swept.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(existsSync(data.snapshotDir), false, 'the stale snapshot is removed');
+  assert.equal(existsSync(permission.inputFile), true, 'no input file is removed');
+  assert.equal(existsSync(data.inputFile), true);
+});
+
+test('an unexpected entry inside a snapshot directory fails before any input file is removed', async (t) => {
+  const { root, permission, inventory: data } = await forgeRun(t, 'a1b2c3d4');
+  writeFileSync(join(data.snapshotDir, 'extra.txt'), 'x');
+  const scoped = await run('snapshot-cleanup', { runtimeStateRoot: root, runId: data.runId });
+  assert.equal(scoped.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(existsSync(permission.inputFile), true);
+  assert.equal(existsSync(data.inputFile), true);
+  assert.equal(existsSync(data.snapshotDir), true);
+});
+
+// Invariant: a crashed output write leaves a temporary that cleanup removes once it is older than
+// NO_CLOBBER_TEMP_MAX_AGE_MS; a younger one may belong to a concurrent write and stays, in both modes.
+test('output temporaries are removed when old and skipped when young, in both cleanup modes', async (t) => {
+  const { root, inventory: data } = await forgeRun(t, 'a1b2c3d4');
+  const now = new Date();
+  const temp = (hex, ageMs) => {
+    const file = join(inputsOf(root), `.backlog-audit-output-${hex}.tmp`);
+    writeFileSync(file, '{');
+    const when = new Date(now.getTime() - ageMs);
+    utimesSync(file, when, when);
+    return file;
+  };
+  const dueMs = 2 * 60 * 60 * 1000;
+  for (const input of [{ runtimeStateRoot: root, runId: data.runId }, { runtimeStateRoot: root }]) {
+    const old = temp('fedcba9876543210', dueMs);
+    const young = temp('0123456789abcdef', 60_000);
+    const cleaned = await ok('snapshot-cleanup', input, { now: () => now });
+    assert.equal(existsSync(old), false, 'old temporary');
+    assert.equal(existsSync(young), true, 'young temporary');
+    assert.ok(cleaned.removedInputs.includes('.backlog-audit-output-fedcba9876543210.tmp'));
+    rmSync(young);
+  }
+});
+
+// Invariant: a bound stop is never turned into an error by what sits in inputs; the exit rule
+// removes the run's outputs afterwards.
+test('a bound stop returns the stop even when inputs holds an unexpected entry', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1), issue(2)] });
+  const deps = { tracker: fake.tracker, ...seeded('a1b2c3d4') };
+  const permission = await ok(
+    'permission-prove',
+    { cwd: root, target: FORGE, runtimeStateRoot: root },
+    deps,
+  );
+  const data = await ok(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: FORGE,
+      permissionFile: permission.inputFile,
+      planDir: 'docs/plan',
+      scope: { issuesOnly: true },
+      config: { 'backlogAudit.maxSnapshotKiB': 1 },
+    },
+    deps,
+  );
+  writeFileSync(data.architectureSummaryPath, 'x'.repeat(2048));
+  writeFileSync(join(inputsOf(root), 'stray.txt'), 'x');
+  const stopped = await run('bounds-check', {
+    runtimeStateRoot: root,
+    inventoryFile: data.inputFile,
+    architectureSummaryPath: data.architectureSummaryPath,
+  });
+  assert.equal(stopped.ok, true, JSON.stringify(stopped.error));
+  assert.equal(stopped.data.stopped, true);
+  assert.deepEqual(stopped.data.stop.exceeded, ['maxSnapshotKiB']);
+  assert.equal(existsSync(data.snapshotDir), false);
+});
+
+// Invariant: a failed persist after the snapshot was written leaves no orphaned snapshot, which
+// holds quoted third-party issue text.
+test('a persist failure after the snapshot removes the snapshot and reports UNSAFE_RUNTIME_STATE', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const permission = await proven(root, fake);
+  mkdirSync(join(root, '.effective-flow/backlog-audit'), { recursive: true });
+  writeFileSync(join(root, '.effective-flow/backlog-audit/inputs'), 'not a directory');
+  const failed = await run(
+    'inventory-build',
+    { cwd: root, runtimeStateRoot: root, target: FORGE, permission, planDir: 'docs/plan' },
+    { tracker: fake.tracker },
+  );
+  assert.equal(failed.error.code, 'UNSAFE_RUNTIME_STATE');
+  const snapshots = join(root, '.effective-flow/backlog-audit/snapshots');
+  assert.equal(existsSync(snapshots), true);
+  assert.deepEqual(readdirSync(snapshots), []);
 });

@@ -230,12 +230,13 @@ test('apply-issues routes a pending backlog-audit split to plan-issue through th
   );
 });
 
-// Invariant: every exit after a snapshot exists removes that run's snapshot, and only the run's
-// own exit removes a fresh one; entry cleanup leaves a concurrent run's snapshot alone.
+// Invariant: every exit after the permission proof minted a run removes that run's snapshot and
+// persisted outputs, and only the run's own exit removes a fresh one; entry cleanup leaves a
+// concurrent run's files alone.
 test('backlog-audit removes its own snapshot on every exit', () => {
   assert.match(
     prose,
-    /\*\*Exit rule\.\*\* Once `inventory-build` has returned a `runId`, every exit — completion, stop, abort or failure — first calls `snapshot-cleanup` with `\{runtimeStateRoot, runId\}` and reports a failed cleanup\./,
+    /\*\*Exit rule\.\*\* Once `permission-prove` has returned a `runId`, every exit — completion, stop, abort or failure — first calls `snapshot-cleanup` with `\{runtimeStateRoot, runId: permission\.runId\}` and reports a failed cleanup\./,
   );
   assert.match(
     prose,
@@ -248,8 +249,10 @@ test('backlog-audit removes its own snapshot on every exit', () => {
 // external intake runs only for a proven tracker-mode run on a non-hidden external target.
 test('backlog-audit proves the permission before any epic candidate or issue read', () => {
   assert.ok(
-    position(tool, 'Call `permission-prove` with `{cwd, target}` before any content read') <
-      position(tool, 'Only in tracker mode and after that proof, call `epic-candidates`'),
+    position(
+      tool,
+      'Call `permission-prove` with `{cwd, target, runtimeStateRoot}` before any content read',
+    ) < position(tool, 'Only in tracker mode and after that proof, call `epic-candidates`'),
     'the proof precedes the candidate listing',
   );
   assert.ok(
@@ -301,7 +304,7 @@ test('backlog-audit clears every external write through external-call-check', ()
   const external = flat(read('shared/backlog-audit-external.md'));
   assert.match(
     external,
-    /call `external-call-check` with `\{permission, writeSet, id, current, appliedIds\}`: `appliedIds` lists the ids of this run's calls confirmed applied so far/,
+    /call `external-call-check` with `\{permissionFile, writeSetFile, id, current, appliedIds\}`: `appliedIds` lists the ids of this run's calls confirmed applied so far/,
   );
   assert.match(external, /with `state` `open` for an open issue and any other value otherwise/);
   assert.match(external, /the check refuses it unless that call is in `appliedIds`/);
@@ -317,12 +320,18 @@ test('backlog-audit clears every external write through external-call-check', ()
   assert.match(prose, /each one cleared by `external-call-check` first/);
 });
 
-// Invariant: a large input travels as a guarded, no-clobber runtime-state file the helper removes,
-// so no call outgrows the command-line here-string.
-test('backlog-audit sends large inputs as a runtime-state input file', () => {
+// Invariant: a hash-bearing result is passed back by its path, never re-serialised, and the rule is
+// stated once; only the agent-authored inputs travel as a guarded, no-clobber runtime-state file the
+// helper removes, so no call outgrows the command-line here-string.
+test('backlog-audit passes hash-bearing results by reference and sends agent-authored inputs as a file', () => {
+  const rule =
+    /Each hash-bearing result \(`permission`, `inventory`, `merged`, `writeSet`\) holds its absolute path as `inputFile`: pass that path, from the most recent result of its kind, as the matching `<name>File` field and never re-serialise the object; `TAMPERED_INPUT` stops the run\. The helper keeps these files until the exit rule\./;
+  assert.match(prose, rule);
+  assert.equal(prose.split('never re-serialise').length - 1, 1, 'the rule is stated once');
+  assert.doesNotMatch(prose, /back unchanged|`inventory`, `merged` or `writeSet` sends its JSON/);
   assert.match(
     prose,
-    /A call carrying `externalIssues`, `inventory`, `merged` or `writeSet` sends its JSON as a file: apply the runtime guard to `\.effective-flow\/backlog-audit\/inputs\/<operation>-<n>\.json` under `RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there only while it is still absent, and send `\{"inputFile": "<absolute path>"\}`/,
+    /A call carrying `externalIssues`, `primary`, `panel`, `drafts` or `current` sends its JSON, reference fields included, as a file: apply the runtime guard to `\.effective-flow\/backlog-audit\/inputs\/<operation>-<n>\.json` under `RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there only while it is still absent, and send `\{"inputFile": "<absolute path>"\}`\. The helper reads and removes the file\./,
   );
 });
 

@@ -5,7 +5,9 @@
 // verdicts-validate, write-set-build, write-set-apply, external-call-check. Writes exactly one
 // `{ ok, operation, data }` envelope line to stdout and exits non-zero on failure. Input never
 // travels as command-line arguments; only the operation name does. A stdin object whose only key
-// is `inputFile` names a runtime-state input file the core reads and removes instead.
+// is `inputFile` names an agent-authored runtime-state input file the core reads and removes
+// instead. Hash-bearing results (`permission`, `inventory`, `merged`, `writeSet`) are persisted by
+// the core, passed back by the reference fields `<name>File` and retained until `snapshot-cleanup`.
 import { realpathSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';

@@ -23,6 +23,7 @@ import { createIssueIntake, resolveAuthor, trustedAuthor } from './issue-intake-
 import { slugify } from './dated-name-allocation.mjs';
 import { classifyPlanText, listTopLevel, readPlanFile, resolveRoots } from './plan-lint-core.mjs';
 import {
+  NO_CLOBBER_TEMP_MAX_AGE_MS,
   RUNTIME_STATE_DIR,
   RuntimeStateError,
   createNoClobber,
@@ -125,6 +126,31 @@ const SNAPSHOT_TEMP = /^\.backlog-audit-[0-9a-f]{16}\.tmp$/;
 export const STALE_RUNTIME_MS = 24 * 60 * 60 * 1000;
 const INPUT_SEGMENTS = Object.freeze([RUNTIME_STATE_DIR, 'backlog-audit', 'inputs']);
 const INPUT_FILE = /^[a-z0-9][a-z0-9-]{0,78}\.json$/;
+// Hash-bearing results the helper persists itself, keyed by the input field that carries them: the
+// file-name kind and the hash key. A consumer takes each one as the reference field `<field>File`.
+const OUTPUT_KINDS = Object.freeze({
+  permission: Object.freeze({ file: 'permission', hashKey: 'proofHash' }),
+  inventory: Object.freeze({ file: 'inventory', hashKey: 'inventoryHash' }),
+  merged: Object.freeze({ file: 'merged', hashKey: 'mergedHash' }),
+  writeSet: Object.freeze({ file: 'writeset', hashKey: 'setHash' }),
+});
+// `<kind>-<runId>-<n>.json`, a subset of INPUT_FILE: the run id lets `snapshot-cleanup {runId}`
+// match exactly one run's files.
+const OUTPUT_FILE =
+  /^(permission|inventory|merged|writeset)-(\d{4}-\d{2}-\d{2}-[0-9a-f]{8})-([1-9]\d{0,3})\.json$/;
+const MAX_OUTPUT_FILES = 1000;
+const OUTPUT_TEMP_PREFIX = '.backlog-audit-output-';
+const OUTPUT_TEMP = /^\.backlog-audit-output-[0-9a-f]{16}\.tmp$/;
+// The reference fields each operation consumes; any other reference field is refused.
+const REFERENCE_FIELDS = Object.freeze({
+  'epic-candidates': Object.freeze(['permission']),
+  'inventory-build': Object.freeze(['permission']),
+  'bounds-check': Object.freeze(['inventory']),
+  'verdicts-validate': Object.freeze(['inventory']),
+  'write-set-build': Object.freeze(['inventory', 'merged', 'permission']),
+  'write-set-apply': Object.freeze(['permission', 'writeSet']),
+  'external-call-check': Object.freeze(['permission', 'writeSet']),
+});
 // Caller-supplied external issues travel as input, so the bound is generous but finite.
 export const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 export const ARCHITECTURE_SUMMARY_FILE = 'architecture-summary.md';
@@ -253,10 +279,21 @@ function verifyHashed(value, key, label) {
   return value;
 }
 
+// The silent form of `verifyHashed`, for a check that must leave the tamper verdict to the handler.
+function hashVerifies(value, key) {
+  if (!isObject(value) || typeof value[key] !== 'string') return false;
+  const { [key]: claimed, ...rest } = value;
+  return contentHash(rest) === claimed;
+}
+
 function localDate(now) {
   const date = now instanceof Date ? now : new Date(now);
   const pad = (value) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function mintRunId(deps, now = deps.now ? deps.now() : new Date()) {
+  return `${localDate(now)}-${(deps.randomBytes ?? cryptoRandomBytes)(4).toString('hex')}`;
 }
 
 function isoDate(value, label) {
@@ -466,23 +503,59 @@ function externalAttestation(value) {
   return value;
 }
 
+// With `runtimeStateRoot` the proof mints this run's id, carries it as `runId` and is persisted as
+// the run's first output; without it the proof is returned as is and nothing is written.
 async function permissionProve(input, deps) {
-  exactKeys(input, ['cwd', 'target'], ['external'], 'permission-prove input');
+  exactKeys(input, ['cwd', 'target'], ['external', 'runtimeStateRoot'], 'permission-prove input');
   const cwd = absoluteDirectory(input.cwd, 'cwd');
+  const runtimeStateRoot =
+    input.runtimeStateRoot === undefined
+      ? null
+      : absoluteDirectory(input.runtimeStateRoot, 'runtimeStateRoot');
   const target = normalizeTarget(input.target);
   const forced = plansOnlyReason(target);
   if (input.external !== undefined && (target.kind !== 'external' || forced))
     invalid('external is accepted only for a non-hidden external target');
-  return intake.proveRunnerPermission({
+  const proof = await intake.proveRunnerPermission({
     target,
     plansOnlyReason: forced,
     external: input.external === undefined ? undefined : externalAttestation(input.external),
     openSession: () => forgeSession(trackerContext(deps), cwd, target),
   });
+  if (runtimeStateRoot === null) return proof;
+  // The intake's hash covers neither `runId` nor `inputFile`; the persisted proof is hashed anew.
+  const { proofHash: _intakeHash, ...rest } = proof;
+  const runId = mintRunId(deps);
+  return persistOutput(deps, runtimeStateRoot, 'permission', runId, { ...rest, runId });
 }
 
 function requireProof(value) {
   return verifyHashed(value, 'proofHash', 'permission');
+}
+
+// The run a persisted output belongs to, read from its hashed `inputFile` name; `null` for an
+// inline object from before outputs were persisted.
+function outputRunOf(value, field) {
+  if (value.inputFile === undefined) return null;
+  const match =
+    typeof value.inputFile === 'string' ? OUTPUT_FILE.exec(path.basename(value.inputFile)) : null;
+  if (!match || match[1] !== OUTPUT_KINDS[field].file)
+    invalid(`${field}.inputFile names no ${OUTPUT_KINDS[field].file} output`, { field });
+  return match[2];
+}
+
+// A permission that minted a run id binds the later objects to that run; one proven without
+// `runtimeStateRoot` carries no run id and stays accepted unbound.
+function requireSameRun(permission, inventory) {
+  if (permission.runId !== undefined && permission.runId !== inventory.runId)
+    invalid('permission was proven for another run');
+}
+
+function requireRunOf(permission, value, field) {
+  if (permission.runId === undefined) return;
+  const runId = outputRunOf(value, field);
+  if (runId !== null && runId !== permission.runId)
+    invalid(`${field} belongs to another run`, { field });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1063,17 +1136,20 @@ async function removeSnapshot(context, directory, { staleBefore } = {}) {
   return true;
 }
 
-// Removes the snapshot of `runId`, or at entry every snapshot and input file untouched for
-// `STALE_RUNTIME_MS`; a younger one may belong to a concurrent run and is kept. Only the snapshot
-// and input file families are removed; any other entry stops the cleanup and stays in place.
-async function snapshotCleanup(input, deps) {
+// Removes the snapshot and every output file of `runId`, or at entry every snapshot and input
+// file untouched for `STALE_RUNTIME_MS`, outputs included; a younger one may belong to a concurrent
+// run and is kept. Output temporaries older than NO_CLOBBER_TEMP_MAX_AGE_MS go in both modes; a
+// younger one may belong to a concurrent write and is skipped. Snapshots and input files are two
+// fail-closed groups, snapshots first: a snapshot directory is checked before it is removed, and
+// every entry of `inputs/` is checked before the first input file goes, so any unexpected entry
+// stops the cleanup and stays in place, and no stray input keeps a snapshot on disk. The internal
+// `{inputs: false}` of a bound stop leaves `inputs/` to the run's exit.
+async function snapshotCleanup(input, deps, { inputs: withInputs = true } = {}) {
   exactKeys(input, ['runtimeStateRoot'], ['runId'], 'snapshot-cleanup input');
   if (input.runId !== undefined && !RUN_ID.test(input.runId)) invalid('runId is malformed');
   const context = runtimeContext(deps);
-  const staleBefore =
-    input.runId === undefined
-      ? (deps.now ? deps.now() : new Date()).getTime() - STALE_RUNTIME_MS
-      : undefined;
+  const now = (deps.now ? deps.now() : new Date()).getTime();
+  const staleBefore = input.runId === undefined ? now - STALE_RUNTIME_MS : undefined;
   try {
     await resolveRuntimeRoot(
       context,
@@ -1092,16 +1168,91 @@ async function snapshotCleanup(input, deps) {
         else if (lstatOrNull(directory)) kept.push(name);
       }
     }
+    const removedInputs = [];
     const inputs = path.join(context.cwd, ...INPUT_SEGMENTS);
-    if (staleBefore !== undefined && realDirectoryOrNull(inputs, 'the input directory'))
-      for (const name of expectedFiles(inputs, (entry) => INPUT_FILE.test(entry), 'inputs')) {
-        const file = path.join(inputs, name);
-        if (nodeFs.lstatSync(file).mtimeMs < staleBefore) await guardedUnlink(context, file);
+    if (withInputs && realDirectoryOrNull(inputs, 'the input directory')) {
+      const tempBefore = now - NO_CLOBBER_TEMP_MAX_AGE_MS;
+      const doomed = [];
+      for (const name of nodeFs.readdirSync(inputs).sort()) {
+        const info = nodeFs.lstatSync(path.join(inputs, name));
+        const temp = OUTPUT_TEMP.test(name);
+        if (!info.isFile() || (!temp && !INPUT_FILE.test(name)))
+          fail('UNSAFE_RUNTIME_STATE', 'the input directory holds an unexpected entry', { name });
+        const remove = temp
+          ? info.mtimeMs < tempBefore
+          : staleBefore !== undefined
+            ? info.mtimeMs < staleBefore
+            : OUTPUT_FILE.exec(name)?.[2] === input.runId;
+        if (remove) doomed.push(name);
       }
-    return { removed, kept };
+      for (const name of doomed) {
+        await guardedUnlink(context, path.join(inputs, name));
+        removedInputs.push(name);
+      }
+    }
+    return { removed, kept, removedInputs };
   } catch (error) {
     return guardFailure(error);
   }
+}
+
+async function ensureChain(context, segments) {
+  let current = context.cwd;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    await ensureGuardedDirectory(context, current);
+  }
+  return current;
+}
+
+// Persists a hash-bearing result as `inputs/<kind>-<runId>-<n>.json` with the lowest free `<n>`.
+// The absolute path is added as `inputFile` before hashing, so the file, the returned object and an
+// inline pass-back of it all verify; the returned object is the file's parsed content.
+async function persistOutput(deps, runtimeStateRoot, field, runId, value) {
+  const { file, hashKey } = OUTPUT_KINDS[field];
+  const context = runtimeContext(deps);
+  try {
+    await resolveRuntimeRoot(context, runtimeStateRoot);
+    const directory = await ensureChain(context, INPUT_SEGMENTS);
+    for (let n = 1; n <= MAX_OUTPUT_FILES; n += 1) {
+      const inputFile = path.join(directory, `${file}-${runId}-${n}.json`);
+      if (lstatOrNull(inputFile)) continue;
+      const text = `${JSON.stringify(withHash({ ...value, inputFile }, hashKey))}\n`;
+      const written = await createNoClobber(context, inputFile, text, {
+        tempPrefix: OUTPUT_TEMP_PREFIX,
+      });
+      if (written.created) return JSON.parse(text);
+    }
+  } catch (error) {
+    return guardFailure(error);
+  }
+  return fail('UNSAFE_RUNTIME_STATE', 'no free output file name is left for this run', {
+    kind: file,
+    runId,
+  });
+}
+
+// One proof starts one inventory: a run whose snapshot or inventory output already exists refuses
+// it before any forge read. `writeSnapshot`'s exclusive mkdir stays the race backstop.
+async function requireUnusedRun(deps, runtimeStateRoot, runId) {
+  if (typeof runId !== 'string' || !RUN_ID.test(runId)) invalid('permission.runId is malformed');
+  const context = runtimeContext(deps);
+  let started;
+  try {
+    await resolveRuntimeRoot(context, runtimeStateRoot);
+    const inputs = path.join(context.cwd, ...INPUT_SEGMENTS);
+    started =
+      lstatOrNull(path.join(snapshotsRoot(context.cwd), runId)) !== null ||
+      (realDirectoryOrNull(inputs, 'the input directory') !== null &&
+        nodeFs.readdirSync(inputs).some((name) => {
+          const match = OUTPUT_FILE.exec(name);
+          return match?.[1] === 'inventory' && match[2] === runId;
+        }));
+  } catch (error) {
+    return guardFailure(error);
+  }
+  if (started) invalid('the permission already started a run', { runId });
+  return runId;
 }
 
 async function writeSnapshot(deps, runtimeStateRoot, runId, files) {
@@ -1280,6 +1431,10 @@ async function inventoryBuild(input, deps) {
   const runtimeStateRoot = absoluteDirectory(input.runtimeStateRoot, 'runtimeStateRoot');
   const target = normalizeTarget(input.target);
   const permission = requireProof(input.permission);
+  const provenRunId =
+    permission.runId === undefined
+      ? null
+      : await requireUnusedRun(deps, runtimeStateRoot, permission.runId);
   if (canonical(permission.target) !== canonical(target))
     invalid('permission was proven for another target');
   const checkoutRoot = nodeFs.realpathSync(cwd);
@@ -1386,8 +1541,7 @@ async function inventoryBuild(input, deps) {
   const early = boundsResult(config, measure());
   if (early.stop) return { stopped: true, stop: early.stop };
 
-  const now = deps.now ? deps.now() : new Date();
-  const runId = `${localDate(now)}-${(deps.randomBytes ?? cryptoRandomBytes)(4).toString('hex')}`;
+  const runId = provenRunId ?? mintRunId(deps);
   const { directory, root } = await writeSnapshot(
     deps,
     runtimeStateRoot,
@@ -1397,8 +1551,8 @@ async function inventoryBuild(input, deps) {
       return { name: item.snapshotFile, text };
     }),
   );
-  return withHash(
-    {
+  try {
+    return await persistOutput(deps, root, 'inventory', runId, {
       stopped: false,
       runId,
       checkoutRoot,
@@ -1430,9 +1584,14 @@ async function inventoryBuild(input, deps) {
         permissionUnreadable: permissionOf.unreadable?.size ?? 0,
       },
       measuredBytes: measure(),
-    },
-    'inventoryHash',
-  );
+    });
+  } catch (error) {
+    // A failed persist leaves no orphaned snapshot behind; the original failure is reported.
+    await removeSnapshot({ ...runtimeContext(deps), cwd: root }, directory).catch(() => {
+      /* the original failure is reported */
+    });
+    throw error;
+  }
 }
 
 function requireInventory(value) {
@@ -1462,7 +1621,7 @@ async function boundsCheck(input, deps) {
     architectureBytes: summary.bytes,
   });
   if (result.stop) {
-    await snapshotCleanup({ runtimeStateRoot, runId: inventory.runId }, deps);
+    await snapshotCleanup({ runtimeStateRoot, runId: inventory.runId }, deps, { inputs: false });
     return { stopped: true, stop: result.stop };
   }
   return { stopped: false, measured: result.measured };
@@ -1681,7 +1840,7 @@ export function driftSummary(records, inventory) {
   };
 }
 
-async function verdictsValidate(input) {
+async function verdictsValidate(input, deps) {
   exactKeys(
     input,
     ['cwd', 'inventory', 'primary'],
@@ -1789,19 +1948,16 @@ async function verdictsValidate(input) {
     });
   }
   const pathIds = primary.path.filter((id) => records.find((record) => record.item === id)?.onPath);
-  return withHash(
-    {
-      inventoryHash: inventory.inventoryHash,
-      records,
-      path: pathIds,
-      splits: primary.splits,
-      decisionPoints,
-      listedDisagreements: listed,
-      panel: { ran: ran.map(({ member }) => member), skipped },
-      drift: driftSummary(records, inventory),
-    },
-    'mergedHash',
-  );
+  return persistOutput(deps, inventory.runtimeStateRoot, 'merged', inventory.runId, {
+    inventoryHash: inventory.inventoryHash,
+    records,
+    path: pathIds,
+    splits: primary.splits,
+    decisionPoints,
+    listedDisagreements: listed,
+    panel: { ran: ran.map(({ member }) => member), skipped },
+    drift: driftSummary(records, inventory),
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1885,7 +2041,7 @@ function renderSection({
   return out.join('\n');
 }
 
-async function writeSetBuild(input) {
+async function writeSetBuild(input, deps) {
   exactKeys(
     input,
     ['inventory', 'merged', 'permission', 'goal', 'epic', 'reportFile'],
@@ -1897,6 +2053,8 @@ async function writeSetBuild(input) {
   if (merged.inventoryHash !== inventory.inventoryHash)
     invalid('merged verdicts belong to another inventory');
   const permission = requireProof(input.permission);
+  requireSameRun(permission, inventory);
+  requireRunOf(permission, merged, 'merged');
   const goal = goalText(input.goal);
   const date = input.date === undefined ? localDate(new Date()) : isoDate(input.date, 'date');
   const language = input.language ?? 'en';
@@ -1910,8 +2068,10 @@ async function writeSetBuild(input) {
   const drafts = input.drafts ?? {};
   exactKeys(drafts, [], ['epic', 'splits', 'obsolete'], 'drafts');
 
+  const persist = (value) =>
+    persistOutput(deps, inventory.runtimeStateRoot, 'writeSet', inventory.runId, value);
   if (inventory.mode !== 'tracker' || permission.mode !== 'tracker')
-    return withHash({ mode: 'plans-only', entries: [], notices: ['plans-only'] }, 'setHash');
+    return persist({ mode: 'plans-only', entries: [], notices: ['plans-only'] });
   const capabilities = permission.capabilities;
   const external = inventory.target.kind === 'external';
 
@@ -2310,20 +2470,17 @@ async function writeSetBuild(input) {
   for (const entry of entries)
     if (!WRITE_ACTIONS.includes(entry.action))
       fail('INTERNAL_ERROR', 'write action outside the allowlist');
-  return withHash(
-    {
-      mode: external ? 'external' : 'forge',
-      inventoryHash: inventory.inventoryHash,
-      target: inventory.target,
-      goal,
-      date,
-      path: finalPath,
-      userAdded,
-      entries,
-      notices,
-    },
-    'setHash',
-  );
+  return persist({
+    mode: external ? 'external' : 'forge',
+    inventoryHash: inventory.inventoryHash,
+    target: inventory.target,
+    goal,
+    date,
+    path: finalPath,
+    userAdded,
+    entries,
+    notices,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2421,6 +2578,7 @@ async function writeSetApply(input, deps) {
   const target = normalizeTarget(input.target);
   const permission = requireProof(input.permission);
   const set = verifyWriteSet(input.writeSet);
+  requireRunOf(permission, set, 'writeSet');
   if (
     canonical(set.target ?? permission.target) !== canonical(target) ||
     canonical(permission.target) !== canonical(target)
@@ -2653,6 +2811,7 @@ async function externalCallCheck(input) {
   const permission = requireProof(input.permission);
   requireTrackerMode(permission);
   const set = verifyWriteSet(input.writeSet);
+  requireRunOf(permission, set, 'writeSet');
   if (set.mode !== 'external' || permission.target.kind !== 'external')
     invalid('external-call-check serves an external write set only');
   if (canonical(set.target) !== canonical(permission.target))
@@ -2690,17 +2849,19 @@ async function externalCallCheck(input) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Input files
+// Input files and reference fields
 //
-// A large input (external issues, the inventory, merged verdicts, the write set) outgrows a
-// command-line here-string, so the orchestrator writes it to one file below
+// A large agent-authored input (external issues, leaf verdicts, drafts, a re-read target) outgrows
+// a command-line here-string, so the orchestrator writes it to one file below
 // `<RUNTIME_STATE_ROOT>/.effective-flow/backlog-audit/inputs/` and sends only
 // `{"inputFile": "<absolute path>"}`. The file must be a regular file of the input family directly
 // in that directory of a verified runtime root; it is read once and removed before the operation
-// runs, so an input never outlives its call.
+// runs, so an agent-authored input never outlives its call. A hash-bearing helper output in the
+// same directory is never removed on read: later operations take it by its reference field
+// `<field>File` as often as they need it, and only `snapshot-cleanup` removes it.
 // Opens without following a final symlink and reads through the descriptor, so the file checked
 // is the file read even if the path is swapped after the `lstat`.
-function readRegularFile(target, expected) {
+function readRegularFile(target, expected, label = 'inputFile') {
   let descriptor;
   try {
     descriptor = nodeFs.openSync(
@@ -2709,54 +2870,152 @@ function readRegularFile(target, expected) {
     );
   } catch (error) {
     if (error?.code === 'ELOOP' || error?.code === 'ENOENT')
-      invalid('inputFile must be a regular file');
+      invalid(`${label} must be a regular file`);
     throw error;
   }
   try {
     const info = nodeFs.fstatSync(descriptor);
     if (!info.isFile() || info.dev !== expected.dev || info.ino !== expected.ino)
-      invalid('inputFile must be a regular file');
-    if (info.size > MAX_INPUT_BYTES) invalid('inputFile exceeds the input bound');
+      invalid(`${label} must be a regular file`);
+    if (info.size > MAX_INPUT_BYTES) invalid(`${label} exceeds the input bound`);
     const text = nodeFs.readFileSync(descriptor, 'utf8');
-    if (Buffer.byteLength(text) > MAX_INPUT_BYTES) invalid('inputFile exceeds the input bound');
+    if (Buffer.byteLength(text) > MAX_INPUT_BYTES) invalid(`${label} exceeds the input bound`);
     return text;
   } finally {
     nodeFs.closeSync(descriptor);
   }
 }
 
-export async function readInputFile(inputFile, deps = {}) {
-  if (typeof inputFile !== 'string' || !path.isAbsolute(inputFile))
-    invalid('inputFile must be an absolute path');
-  const name = path.basename(inputFile);
-  const directory = path.dirname(inputFile);
-  const root = path.resolve(directory, ...INPUT_SEGMENTS.map(() => '..'));
-  if (!INPUT_FILE.test(name) || path.join(root, ...INPUT_SEGMENTS, name) !== inputFile)
-    invalid('inputFile must name <runtime root>/.effective-flow/backlog-audit/inputs/<name>.json');
+// The checks every read of the inputs directory shares; `remove` unlinks the file after the read.
+// Returns the parsed value and the verified runtime root.
+async function readGuardedInput(file, deps, { remove, label }) {
+  if (typeof file !== 'string' || !path.isAbsolute(file))
+    invalid(`${label} must be an absolute path`);
+  const name = path.basename(file);
+  const root = path.resolve(path.dirname(file), ...INPUT_SEGMENTS.map(() => '..'));
+  if (!INPUT_FILE.test(name) || path.join(root, ...INPUT_SEGMENTS, name) !== file)
+    invalid(`${label} must name <runtime root>/.effective-flow/backlog-audit/inputs/<name>.json`);
   const context = runtimeContext(deps);
   let text;
   try {
     await resolveRuntimeRoot(context, root);
-    const expected = path.join(context.cwd, ...INPUT_SEGMENTS);
     let current = context.cwd;
     for (const segment of INPUT_SEGMENTS) {
       current = path.join(current, segment);
       if (!realDirectoryOrNull(current, 'an input directory component'))
-        invalid('inputFile does not exist');
+        invalid(`${label} does not exist`);
     }
-    const target = path.join(expected, name);
+    const target = path.join(current, name);
     const info = lstatOrNull(target);
-    if (!info || !info.isFile()) invalid('inputFile must be a regular file');
-    text = readRegularFile(target, info);
-    await guardedUnlink(context, target);
+    if (!info || !info.isFile()) invalid(`${label} must be a regular file`);
+    text = readRegularFile(target, info, label);
+    if (remove) await guardedUnlink(context, target);
   } catch (error) {
     return guardFailure(error);
   }
   try {
-    return JSON.parse(text);
+    return { value: JSON.parse(text), root: context.cwd };
   } catch {
-    invalid('inputFile must contain one JSON object');
+    return invalid(`${label} must contain one JSON object`);
   }
+}
+
+// A helper output sent as a whole input is refused before anything is removed, so a misrouted
+// reference never deletes an object later consumers still need.
+export async function readInputFile(inputFile, deps = {}) {
+  if (typeof inputFile === 'string' && OUTPUT_FILE.test(path.basename(inputFile)))
+    invalid('inputFile names a helper output; pass it as its reference field instead');
+  return (await readGuardedInput(inputFile, deps, { remove: true, label: 'inputFile' })).value;
+}
+
+async function canonicalRoot(deps, value) {
+  const context = runtimeContext(deps);
+  try {
+    await resolveRuntimeRoot(context, absoluteDirectory(value, 'runtimeStateRoot'));
+  } catch (error) {
+    guardFailure(error);
+  }
+  return context.cwd;
+}
+
+// A persisted output lies directly in the inputs directory of every runtime root the call knows.
+function requireUnderRoots(file, roots, label) {
+  for (const root of roots)
+    if (path.join(root, ...INPUT_SEGMENTS, path.basename(file)) !== file)
+      invalid(`${label} belongs to another runtime root`, { label });
+}
+
+// Reads one reference field without removing it, verifies the hash exactly as the consuming
+// handler does, and binds the file to its own path and to every runtime root the call knows; the
+// first reference's root binds the later ones.
+async function readReference(field, file, deps, roots) {
+  const label = `${field}File`;
+  const { file: kind, hashKey } = OUTPUT_KINDS[field];
+  if (typeof file !== 'string' || OUTPUT_FILE.exec(path.basename(file))?.[1] !== kind)
+    invalid(`${label} must name this helper's ${kind} output`, { label });
+  const { value, root } = await readGuardedInput(file, deps, { remove: false, label });
+  verifyHashed(value, hashKey, field);
+  if (value.inputFile !== file) invalid(`${label} was copied from another path`, { label });
+  if (!roots.includes(root)) roots.push(root);
+  requireUnderRoots(file, roots, label);
+  return value;
+}
+
+// Substitutes each reference field `<field>File` by the object it names, so the handler's own
+// checks run unchanged on inline and referenced objects alike. The input `runtimeStateRoot`, then
+// the verified inventory's root (from `inventoryFile`, read first, or an inline inventory), then
+// each reference's own root bind the others. An inline object whose hash verifies and that carries
+// `inputFile` is held to the same roots; one whose hash fails is left to the handler's verdict.
+async function resolveReferences(operation, input, deps) {
+  const allowed = REFERENCE_FIELDS[operation] ?? [];
+  const fields = Object.keys(OUTPUT_KINDS).filter((field) => Object.hasOwn(input, `${field}File`));
+  const inline = allowed.filter(
+    (field) =>
+      Object.hasOwn(input, field) &&
+      hashVerifies(input[field], OUTPUT_KINDS[field].hashKey) &&
+      input[field].inputFile !== undefined,
+  );
+  if (fields.length === 0 && inline.length === 0) return input;
+  for (const field of fields) {
+    if (!allowed.includes(field))
+      invalid(`${operation} does not take ${field}File`, { field: `${field}File` });
+    if (Object.hasOwn(input, field))
+      invalid(`pass either ${field} or ${field}File, not both`, { field });
+  }
+  const resolved = { ...input };
+  for (const field of fields) delete resolved[`${field}File`];
+  const roots =
+    input.runtimeStateRoot === undefined ? [] : [await canonicalRoot(deps, input.runtimeStateRoot)];
+  if (fields.includes('inventory'))
+    resolved.inventory = await readReference('inventory', input.inventoryFile, deps, roots);
+  if (allowed.includes('inventory') && resolved.inventory !== undefined) {
+    const inventory =
+      fields.length > 0 || hashVerifies(resolved.inventory, 'inventoryHash')
+        ? requireInventory(resolved.inventory)
+        : null;
+    if (
+      typeof inventory?.runtimeStateRoot === 'string' &&
+      !roots.includes(inventory.runtimeStateRoot)
+    )
+      roots.push(inventory.runtimeStateRoot);
+    if (fields.includes('inventory'))
+      requireUnderRoots(input.inventoryFile, roots, 'inventoryFile');
+  }
+  for (const field of fields)
+    if (field !== 'inventory')
+      resolved[field] = await readReference(field, input[`${field}File`], deps, roots);
+  for (const field of inline) {
+    const file = input[field].inputFile;
+    if (
+      typeof file !== 'string' ||
+      OUTPUT_FILE.exec(path.basename(file))?.[1] !== OUTPUT_KINDS[field].file
+    )
+      invalid(`${field}.inputFile names no ${OUTPUT_KINDS[field].file} output`, { field });
+    if (roots.length === 0)
+      roots.push(path.resolve(path.dirname(file), ...INPUT_SEGMENTS.map(() => '..')));
+    requireUnderRoots(file, roots, `${field}.inputFile`);
+  }
+  return resolved;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2785,7 +3044,10 @@ export async function executeOperation(operation, input = {}, deps = {}) {
         ? await readInputFile(input.inputFile, deps)
         : input;
     if (!isObject(resolved)) invalid('input must be one JSON object');
-    const data = await HANDLERS[operation](resolved, deps);
+    const data = await HANDLERS[operation](
+      await resolveReferences(operation, resolved, deps),
+      deps,
+    );
     return { ok: true, operation, data };
   } catch (error) {
     return errorEnvelope(operation, error);

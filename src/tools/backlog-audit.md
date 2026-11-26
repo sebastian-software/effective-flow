@@ -104,19 +104,21 @@ Call the helper as `node <skill-root>/scripts/backlog-audit.mjs <operation> <<< 
 simple command with `<skill-root>` and every value spelled out literally, no shell variable, pipe,
 trailing or compound command, and every `'` inside the JSON spelled as `'\''`. JSON-encode text as a
 string value. Parse exactly one `{ ok, operation, data }` envelope; an `ok: false` envelope not
-handled below stops the run. Pass every hash-bearing object (`permission`, `inventory`, `merged`,
-`writeSet`) back unchanged: its hash is tamper evidence, not authentication, and `TAMPERED_INPUT`
-stops the run.
+handled below stops the run.
 
-**Input files.** A call carrying `externalIssues`, `inventory`, `merged` or `writeSet` sends its
-JSON as a file: apply the runtime guard to `.effective-flow/backlog-audit/inputs/<operation>-<n>.json`
-under `RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there
-only while it is still absent, and send `{"inputFile": "<absolute path>"}`. The helper reads and
-removes the file.
+**Reference fields.** Each hash-bearing result (`permission`, `inventory`, `merged`, `writeSet`)
+holds its absolute path as `inputFile`: pass that path, from the most recent result of its kind, as
+the matching `<name>File` field and never re-serialise the object; `TAMPERED_INPUT` stops the run.
+The helper keeps these files until the exit rule. A call carrying `externalIssues`, `primary`,
+`panel`, `drafts` or `current` sends its JSON, reference fields included, as a file: apply the
+runtime guard to `.effective-flow/backlog-audit/inputs/<operation>-<n>.json` under
+`RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there only
+while it is still absent, and send `{"inputFile": "<absolute path>"}`. The helper reads and removes
+the file.
 
-**Exit rule.** Once `inventory-build` has returned a `runId`, every exit — completion, stop, abort
-or failure — first calls `snapshot-cleanup` with `{runtimeStateRoot, runId}` and reports a failed
-cleanup.
+**Exit rule.** Once `permission-prove` has returned a `runId`, every exit — completion, stop, abort
+or failure — first calls `snapshot-cleanup` with `{runtimeStateRoot, runId: permission.runId}` and
+reports a failed cleanup.
 
 ## Phase 0: Entry
 
@@ -138,14 +140,14 @@ cleanup.
 
 ## Phase 1: Permission and epic binding
 
-1. Call `permission-prove` with `{cwd, target}` before any content read; only a non-hidden
-   external target adds `external`, per its fragment. Retain `data` as `permission`. In mode
-   `plans-only`, always the case in hidden, local or unset mode, state `reason` once (with
+1. Call `permission-prove` with `{cwd, target, runtimeStateRoot}` before any content read; only a
+   non-hidden external target adds `external`, per its fragment. Retain `data` as `permission`.
+   In mode `plans-only`, always the case in hidden, local or unset mode, state `reason` once (with
    `hint: setup`, point to `{{SKILL:setup}}`), stop with a message naming it if `--issues-only` or
    `--label` was given, and skip to Phase 2. A forge tracker error fails before assessment with the
    helper contract's remediation.
 2. Only in tracker mode and after that proof, call `epic-candidates` with
-   `{cwd, target, permission, goal}`, plus `externalIssues` on an external target. Show each
+   `{cwd, target, permissionFile, goal}`, plus `externalIssues` on an external target. Show each
    candidate's reference, slug and label state, and `newEpicSlug`, the slug a new epic gets
    (`newEpicSlugTaken` when a candidate holds it). The user binds one, creates a new epic, possibly
    under a slug they name (`epic.slug`), or writes no epic this run. Several open epics with one
@@ -171,7 +173,7 @@ options:
 architecture-context
 ```
 
-1. Call `inventory-build` with `{cwd, runtimeStateRoot, target, permission, planDir, config}`,
+1. Call `inventory-build` with `{cwd, runtimeStateRoot, target, permissionFile, planDir, config}`,
    adding `scope` (`label`, `issuesOnly`, `plansOnly`), `baseRef` (the configured base branch when
    set), `epic: {reference}` for a bound epic and `externalIssues` on an external target.
    `stopped: true` is a bound stop: show each
@@ -183,7 +185,7 @@ architecture-context
 2. Apply the runtime guard to `inventory.architectureSummaryPath`, then start one read-only leaf
    with the architecture-context brief, naming that path as its new file.
    <!-- spawn-site:backlog-audit/architecture-context -->
-3. Call `bounds-check` with `{runtimeStateRoot, inventory, architectureSummaryPath}`. A stopped
+3. Call `bounds-check` with `{runtimeStateRoot, inventoryFile, architectureSummaryPath}`. A stopped
    result is the same bound stop; the helper has already removed the snapshot.
 
 ## Phase 3: Assessment
@@ -211,7 +213,7 @@ issue-assessment-criteria
    the report header and the chat summary, and record every panel member as
    `{member, skipped: "host-forced-model"}`; no panel member starts.
    <!-- spawn-site:backlog-audit/assessment -->
-2. Call `verdicts-validate` with `{cwd, inventory, primary, architectureSummaryPath}`. On
+2. Call `verdicts-validate` with `{cwd, inventoryFile, primary, architectureSummaryPath}`. On
    `VERDICTS_INVALID`, retry the leaf once with `details.problems`; a second failure follows the
    completion protocol's escalation. Retain the result as `merged`.
 
@@ -271,10 +273,10 @@ summary from the same data.
 
 ## Phase 7: Write set and gates
 
-1. Call `write-set-build` with `{inventory, merged, permission, goal, epic, reportFile, decisions,
-drafts, language}`: `reportFile` the report name, `drafts` the returned `epic`, `splits` and
-   `obsolete` drafts, `language` the forge language. `epic` is `{mode: "new"}` (adding `slug` when
-   the user named one; a slug changed at the gate rebuilds the set with it),
+1. Call `write-set-build` with `{inventoryFile, mergedFile, permissionFile, goal, epic, reportFile,
+decisions, drafts, language}`: `reportFile` the report name, `drafts` the returned `epic`,
+   `splits` and `obsolete` drafts, `language` the forge language. `epic` is `{mode: "new"}` (adding
+   `slug` when the user named one; a slug changed at the gate rebuilds the set with it),
    `{mode: "existing", reference}` or `null`. `DUPLICATE_EPIC` or `MALFORMED_EPIC` is reported, and
    the set is rebuilt with `epic: null`. Retain `data` as `writeSet`.
 2. Notice `no-goal-relevant-items`: no new epic is written; offer a refined goal for a new run. A
@@ -320,10 +322,10 @@ options:
 
 ## Phase 8: Apply
 
-Call `write-set-apply` with `{cwd, target, permission, writeSet, selected: [{id, hash}]}`, the
-hashes copied from `writeSet` unchanged; an empty selection writes nothing. The helper re-reads each
-target first and skips a changed body, state, label or marker; report every `skipped` reason. On
-`failed`, stop and report what was applied and what `remaining` still holds; a rerun offers only
+Call `write-set-apply` with `{cwd, target, permissionFile, writeSetFile, selected: [{id, hash}]}`,
+the hashes copied from `writeSet` unchanged; an empty selection writes nothing. The helper re-reads
+each target first and skips a changed body, state, label or marker; report every `skipped` reason.
+On `failed`, stop and report what was applied and what `remaining` still holds; a rerun offers only
 the missing steps. An external target executes the returned `calls` per its fragment, each one
 cleared by `external-call-check` first.
 
