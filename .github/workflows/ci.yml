@@ -139,7 +139,7 @@ jobs:
 
   build:
     name: Format, test and build
-    needs: [unit-tests, checks]
+    needs: [unit-tests, checks, measure-weights]
     # The only job condition is `always()`; never let this required job be skipped. A skipped
     # required check counts as passing, so a failed, skipped or cancelled shard or checks job
     # must reach the gate step below and fail there.
