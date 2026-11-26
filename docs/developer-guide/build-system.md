@@ -1058,6 +1058,9 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   a mutation dry run keeps it, and a consuming call removes it after verification. An abandoned
   dry run leaves its file until it is removed by hand. Mutations are dry runs unless `--apply` is present;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
+  The operation reference lives in `src/shared/remote-tracker-operations.md`; adding, removing or
+  re-keying an operation requires a matching row, enforced by
+  `test/remote-tracker-operations-reference.test.mjs`.
 - **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
   with one closed-schema JSON object on standard input. The entry point emits one stable JSON
   envelope and uses nonzero exit codes for structured failures. The core owns guarded local

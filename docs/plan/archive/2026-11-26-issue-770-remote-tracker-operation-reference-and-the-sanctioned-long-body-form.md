@@ -1,6 +1,6 @@
 # Remote-tracker operation reference and the sanctioned long-body form
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #770
@@ -661,3 +661,74 @@ Deep plan review (`plan-review`, 2026-11-26):
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-26
+**Workflow:** `effective-flow build` (autopilot run, inline Quality route)
+
+### Requirement
+
+Delivered as planned: one operation reference for every `REMOTE_TRACKER_OPERATIONS` entry, reached
+lazily from `remote-helper-contract`, held to the code by tests. The input-file form from PR #762
+stays the one sanctioned long-body form; no argv, allow-rule or helper change.
+
+### Architecture decisions
+
+- As planned, with three rows corrected to what the code does:
+  - `decomposition-key-parse` lists `context` as required: `parseDecompositionKey` validates
+    `target` even for an empty body.
+  - `reference-parse` takes `` `reference` or `references` ``; the `expectedKind` rule for a bare
+    `#N` sits in Notes, because conditions may only be capability tokens.
+  - The `pr-create` Forgejo draft rule (`payload.draft` needs `pullRequestDraftCreate`) sits in the
+    notes list, not as a whole-row `Forgejo: needs` marker, and has its own pin.
+- Structured rows point to their schema owners: `issue-tracker-forge`, `issue-lifecycle-receipt`,
+  `pr-thread-ledger`, or the builder functions `buildFindingPayload`, `buildEpicPayload`,
+  `patchMarkedBlock` and `patchChecklistEntry`.
+
+### Affected files
+
+- `src/shared/remote-tracker-operations.md` (new, 69 rows)
+- `src/shared/remote-helper-contract.md` (lazy-include fence with the two-case `when:` line)
+- `src/tools/iterate.md` (`contextBudget` 1908 → 1910), `src/tools/merge-gate.md` (979 → 981)
+- `test/remote-tracker-operations-reference.test.mjs` (new)
+- `test/remote-tracker-input-file.test.mjs` (`apply` in a file payload stays a dry run)
+- `test/execution-location-contract.test.mjs` (fence and `when:` pin)
+- `docs/developer-guide/build-system.md` (Remote-tracker bullet)
+
+### Implementation details
+
+The reference test parses the table and checks set, order and class against the core exports,
+the cell grammar, a per-row omission probe, a kind-specific positive check, an optional-key
+omission check, the positive check under each conditional-capability probe, the Forgejo unsupported,
+capability-gated and positive checks, the `pr-create` draft gate and the set of structured rows.
+Every planned mutation case, plus a required key moved to Optional and an undocumented conditional
+requirement, fails the test.
+
+### Test results
+
+- Phase 5: `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution` and `pnpm eval <suite>
+verify` for all five suites passed (integrity: none; freshness debt only). The full `pnpm test`
+  run ended with four timeouts and one cancellation in unrelated eval and host-driver suites under
+  host load, a `wall-clock` environment signature, so the run holds no local full-suite evidence
+  (environment: wall-clock).
+- Phase 7, targeted over the whole change: 22 affected test files (1928 passed, 0 failed, 61
+  skipped), `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` passed.
+
+### Review result
+
+One routed reviewer (`effective-flow-nodejs-reviewer`) reported one Important and five Note
+findings; all six were fixed in the incorporation pass and the scoped re-check found no new
+finding. No open findings, so no external review report.
+
+## Review findings
+
+**Date:** 2026-11-26
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     6 |
+| Open / Not implemented |     0 |

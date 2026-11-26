@@ -455,3 +455,18 @@ test('remote-tracker input files keep the guarded digest-bound call contract', (
     /```lazy-include\nremote-tracker-input-files\nwhen: a new PR or plan draft finish needs a body too long or quote-heavy for a literal payload, before the helper call\n```/,
   );
 });
+
+// Invariant: the operation reference stays lazy behind the helper contract, reached by one fence
+// with one two-case trigger line, so the 69-row table is paid only where a step needs it.
+test('the remote-tracker operation reference stays a lazy include of the helper contract', () => {
+  const remoteHelper = readShared('remote-helper-contract');
+  const fence =
+    '```lazy-include\nremote-tracker-operations\nwhen: a step must choose a remote-tracker operation or input keys its workflow does not spell out, or a helper call returned `INVALID_PAYLOAD` or `INVALID_REFERENCE` for an unknown operation or input field\n```';
+  assert.equal(remoteHelper.split(fence).length, 2, 'exactly one reference fence');
+  assert.doesNotMatch(remoteHelper, /```include\nremote-tracker-operations\n```/);
+  assert.ok(
+    remoteHelper.indexOf('```include\nremote-tracker-input-files\n```') <
+      remoteHelper.indexOf(fence),
+    'the reference fence follows the input-files include',
+  );
+});
