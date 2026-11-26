@@ -23,6 +23,8 @@ import { listTopLevel, readPlanFile, resolveRoots } from './plan-lint-core.mjs';
 import { parsePlanBranch } from './plan-publication-core.mjs';
 import {
   RUNTIME_STATE_DIR,
+  INPUT_FILE,
+  MAX_INPUT_BYTES,
   RuntimeStateError,
   atomicWrite,
   NO_CLOBBER_TEMP_MAX_AGE_MS,
@@ -33,6 +35,7 @@ import {
   guardedRmdir,
   guardedUnlink,
   resolveRuntimeRoot,
+  readRuntimeInputFile,
 } from './runtime-state-guard.mjs';
 
 export const TRIAGE_OPERATIONS = Object.freeze([
@@ -107,7 +110,7 @@ export const MAX_LISTED_ISSUES = 5000;
 export const MAX_COMMENT_SCANS = 100;
 export const MAX_SNAPSHOT_KIB = 2048;
 export const STALE_RUNTIME_MS = 24 * 60 * 60 * 1000;
-export const MAX_INPUT_BYTES = 16 * 1024 * 1024;
+export { MAX_INPUT_BYTES };
 export const DEFAULT_BRANCH_PREFIX = 'effective-flow';
 export const ARCHITECTURE_SUMMARY_FILE = 'architecture-summary.md';
 export const OVERLAP_INDEX_FILE = 'overlap-index.md';
@@ -156,7 +159,6 @@ const SNAPSHOT_TEMP_PREFIX = '.triage-';
 const SNAPSHOT_TEMP = /^\.triage-[0-9a-f]{16}\.tmp$/;
 const REPORT_FILE = /^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8})\.md$/;
 const REPORT_TEMP = /^\.\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.md\.[0-9a-f]{16}\.tmp$/;
-const INPUT_FILE = /^[a-z0-9][a-z0-9-]{0,78}\.json$/;
 // Hash-bearing results the helper persists itself, keyed by the input field that carries them: the
 // file-name kind and the hash key. A consumer takes each one as the reference field `<field>File`.
 const OUTPUT_KINDS = Object.freeze({
@@ -3106,7 +3108,12 @@ async function readGuardedInput(file, deps, { remove, label }) {
 export async function readInputFile(inputFile, deps = {}) {
   if (typeof inputFile === 'string' && OUTPUT_FILE.test(path.basename(inputFile)))
     invalid('inputFile names a helper output; pass it as its reference field instead');
-  return readGuardedInput(inputFile, deps, { remove: true, label: 'inputFile' });
+  const context = runtimeContext(deps);
+  return readRuntimeInputFile(inputFile, INPUT_SEGMENTS, true, context, (kind, message, cause) => {
+    if (kind === 'guard') return guardFailure(cause);
+    if (kind === 'directory') fail('UNSAFE_RUNTIME_STATE', message);
+    return new TriageError('INVALID_PAYLOAD', message);
+  });
 }
 
 async function canonicalRoot(deps, value) {

@@ -25,10 +25,22 @@
 // a change here stales every suite that runs it and no other.
 
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  appendFileSync,
+  closeSync,
+  constants,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { devNull } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 
 // Resolved from this file's own location rather than from an environment variable, because the gate
@@ -332,6 +344,47 @@ async function readStdin(stream = process.stdin) {
     throw new TypeError('stdin JSON must be an object');
   }
   return parsed;
+}
+
+function resolveInput(input) {
+  if (Object.keys(input).length !== 1 || !Object.hasOwn(input, 'inputFile')) return input;
+  const { inputFile } = input;
+  const invalid = () => new Error('invalid remote-tracker input file in the eval project');
+  if (typeof inputFile !== 'string') throw invalid();
+  const filename = basename(inputFile);
+  const digest = /^[a-z0-9]{1,8}-[1-9][0-9]{0,4}-([a-f0-9]{64})\.json$/.exec(filename)?.[1];
+  const project = join(realpathSync(dirname(FIXTURE_PATH)), 'project');
+  const expected = join(project, '.effective-flow', 'remote-tracker', 'inputs', filename);
+  if (!digest || inputFile !== expected || realpathSync(inputFile) !== expected) throw invalid();
+  const descriptor = openSync(
+    inputFile,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | constants.O_NONBLOCK,
+  );
+  let bytes;
+  try {
+    const stat = fstatSync(descriptor);
+    if (!stat.isFile() || stat.size > 16 * 1024 * 1024) throw invalid();
+    const buffer = Buffer.alloc(stat.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const count = readSync(descriptor, buffer, length, buffer.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+    if (length !== stat.size) throw invalid();
+    bytes = buffer.subarray(0, length);
+  } finally {
+    closeSync(descriptor);
+  }
+  if (createHash('sha256').update(bytes).digest('hex') !== digest) throw invalid();
+  let payload;
+  try {
+    payload = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    throw invalid();
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw invalid();
+  return payload;
 }
 
 function loadFixture() {
@@ -672,7 +725,14 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     } else {
       // Read stdin before anything else, so the caller's write always finds a reader and a refused
       // operation cannot turn into an EPIPE on the gate's side.
-      const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
+      const rawInput = io.input ?? (await readStdin(io.stdin ?? process.stdin));
+      let input = {};
+      let inputError = null;
+      try {
+        input = resolveInput(rawInput);
+      } catch (error) {
+        inputError = error;
+      }
       const callRecord = {
         operation,
         apply,
@@ -695,6 +755,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       let position = null;
       let allocationError = null;
       if (
+        inputError === null &&
         fixture !== null &&
         !REFUSABLE_OPERATIONS.has(operation) &&
         isSequenced(fixture.operations[operation])
@@ -711,6 +772,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       // The fixture is loaded before the refusal decision, because the refusal is now the
       // fixture's to waive. A fixture that cannot be read throws out of here into the catch below,
       // which produces an error envelope rather than a served merge — the fail-closed direction.
+      if (inputError !== null) throw inputError;
       if (fixtureError !== null) throw fixtureError;
       if (allocationError !== null) {
         envelope = errorEnvelope(

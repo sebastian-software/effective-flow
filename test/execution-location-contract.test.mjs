@@ -416,3 +416,42 @@ test('the remote helper contract documents the working directory it runs in', ()
     'the helper contract must document the unusable-directory error',
   );
 });
+
+// Invariant: long remote-tracker payloads use one guarded, digest-bound file form; the file is
+// consumed only by its own call, and the two write guards precede the shared paragraph in both
+// eager and lazy hosts.
+test('remote-tracker input files keep the guarded digest-bound call contract', () => {
+  const fragment = readShared('remote-tracker-input-files');
+  const remoteHelper = readShared('remote-helper-contract');
+  const pr = readSource('tools', 'pr.md');
+
+  assert.match(
+    fragment,
+    /```lazy-include\nruntime-state-safety\n[\s\S]*```lazy-include\neffective-flow-dir-migration\n[\s\S]*\*\*Input files\.\*\*/,
+  );
+  const paragraph = fragment.replace(/\s+/g, ' ');
+  for (const token of [
+    '.effective-flow/remote-tracker/inputs/<run-token>-<n>-<sha256>.json',
+    '1–8',
+    'lowest free positive `n`',
+    'lowercase SHA-256 of the exact UTF-8 file bytes',
+    'separate local Node hashing',
+    'without clobbering',
+    'including `cwd`',
+    'only while absent',
+    'never via shell redirection, heredoc, `echo` or `printf`',
+    'A dry run keeps the file',
+    'repeat that same literal path for `--apply`',
+    'removes its own verified file even if the operation then',
+    'Do not change it between preview and `--apply`',
+    'a new file and a new dry run',
+    '`bash <file>` and every other indirection remain forbidden',
+  ]) {
+    assert.ok(paragraph.includes(token), `input-file contract: ${token}`);
+  }
+  assert.match(remoteHelper, /```include\nremote-tracker-input-files\n```/);
+  assert.match(
+    pr,
+    /```lazy-include\nremote-tracker-input-files\nwhen: a new PR or plan draft finish needs a body too long or quote-heavy for a literal payload, before the helper call\n```/,
+  );
+});

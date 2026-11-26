@@ -3452,6 +3452,45 @@ test('an input file is read once from the inputs directory and removed', async (
   symlinkSync(outside, join(inputs, 'linked.json'));
   await assert.rejects(readInputFile(join(inputs, 'linked.json'), { runner }), /regular file/);
   assert.equal(existsSync(outside), true, 'a symlinked input is never followed or removed');
+
+  const missing = join(
+    repository(t),
+    '.effective-flow/backlog-audit/inputs/permission-prove-2.json',
+  );
+  const missingResult = await run('permission-prove', { inputFile: missing });
+  assert.equal(missingResult.error.code, 'INVALID_PAYLOAD');
+  assert.equal(missingResult.error.message, 'inputFile does not exist');
+
+  const unsafeRoot = repository(t);
+  const unsafeInputs = mkdtempSync(join(tmpdir(), 'backlog-inputs-'));
+  t.after(() => rmSync(unsafeInputs, { recursive: true, force: true }));
+  mkdirSync(join(unsafeInputs, 'inputs'));
+  const unsafeFile = join(unsafeInputs, 'inputs/permission-prove-3.json');
+  writeFileSync(unsafeFile, JSON.stringify({ cwd: unsafeRoot, target: { kind: 'local' } }));
+  mkdirSync(join(unsafeRoot, '.effective-flow'));
+  symlinkSync(unsafeInputs, join(unsafeRoot, '.effective-flow/backlog-audit'));
+  const unsafeResult = await run('permission-prove', {
+    inputFile: join(unsafeRoot, '.effective-flow/backlog-audit/inputs/permission-prove-3.json'),
+  });
+  assert.equal(unsafeResult.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(unsafeResult.error.details.guardCode, undefined);
+
+  const guardedRoot = repository(t);
+  writeFileSync(join(guardedRoot, '.gitignore'), '');
+  const guardedInputs = join(guardedRoot, '.effective-flow/backlog-audit/inputs');
+  mkdirSync(guardedInputs, { recursive: true });
+  const guarded = join(guardedInputs, 'permission-prove-4.json');
+  writeFileSync(guarded, JSON.stringify({ cwd: guardedRoot, target: { kind: 'local' } }));
+  const guardedResult = await run('permission-prove', { inputFile: guarded });
+  assert.equal(guardedResult.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(typeof guardedResult.error.details.guardCode, 'string');
+  assert.equal(existsSync(guarded), true);
+
+  const malformed = join(inputs, 'permission-prove-5.json');
+  writeFileSync(malformed, '{not-json');
+  const malformedResult = await run('permission-prove', { inputFile: malformed });
+  assert.equal(malformedResult.error.code, 'INVALID_PAYLOAD');
+  assert.equal(malformedResult.error.message, 'inputFile must contain one JSON object');
 });
 
 // Invariant: a citation is a repository file: normalization cannot smuggle a runtime-state or

@@ -1,7 +1,7 @@
 ---
 description: "Creates or reuses a pull request on GitHub (via gh) or Forgejo (via tea) from a prepared committed branch. Detects the host from the origin URL, verifies the exact head and base, pushes the branch if needed, derives title and description for a new pull request, and reports the PR URL."
 catalogHint: "Opens a pull request from your branch (GitHub or Forgejo)."
-contextBudget: 516
+contextBudget: 522
 ---
 
 # Effective Flow PR
@@ -258,6 +258,11 @@ when: the running environment identifies T3 Code and step 8 matched exactly one 
 ```lazy-include
 verification-evidence
 when: a returning committed handoff that passed step 2 supplied a `Verification evidence:` record other than `none`, before step 9 derives a body or step 12 reports a reused pull request
+```
+
+```lazy-include
+remote-tracker-input-files
+when: a new PR or plan draft finish needs a body too long or quote-heavy for a literal payload, before the helper call
 ```
 
 8. **Look up an existing open PR:** After the successful push, invoke the helper's

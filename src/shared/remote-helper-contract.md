@@ -25,6 +25,10 @@ is absent the helper inherits the process working directory — but an Effective
 sets it. A `cwd` that is not an existing directory fails with a structured error naming the path,
 never as a missing-CLI error.
 
+```include
+remote-tracker-input-files
+```
+
 Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes
 additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`,
 and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API

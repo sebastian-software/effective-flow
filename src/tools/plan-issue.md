@@ -1,7 +1,7 @@
 ---
 description: "Completes issue planning on the resolved tracker target (GitHub/Forgejo or an external tool) with the same quality baseline and optional deep review as {{SKILL:plan}}, persists the parent plan idempotently in one marked comment, may create an exactly approved set of native child issues, and releases only issues without implementation-blocking open points. Generates no code and no plan file."
 catalogHint: "Completes the planning for issues that still need clarification."
-contextBudget: 882
+contextBudget: 890
 ---
 
 # Effective Flow Plan Issues
@@ -419,6 +419,11 @@ Complete this entire phase for the active issue before starting another issue:
    the `tracker-target` write discipline: preview the payload, re-read the exact comment
    immediately before the update, compare it verbatim, and treat a missing capability, a missing or
    ambiguous comment, or a changed body as the same fail-closed stop.
+
+   If the planning comment is too long or quote-heavy to spell literally, use the remote-helper
+   contract's input-file form for the `planning-comment-build` / `issue-comment` /
+   `issue-comment-update` call.
+
 2. If the freshly persisted baseline contains a proposed decomposition, re-read that exact comment
    and confirm its body hash. Parse the body through `decomposition-records-parse` and reject any
    noncanonical, duplicate, or invalid record before showing the parent and every exact child title,
