@@ -1512,9 +1512,14 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 - **Backlog audit.** Invoke it as `node <skill-root>/scripts/backlog-audit.mjs <operation>` with one
   closed-schema JSON object on standard input; `BACKLOG_AUDIT_OPERATIONS` lists the operations
   (permission proof, epic candidates, inventory, bounds, verdict validation with the panel merge,
-  write-set build and apply, the external call check, snapshot cleanup); a large input instead
-  arrives as `{"inputFile": …}`, a file below `.effective-flow/backlog-audit/inputs/` the helper
-  reads and removes. It emits one `{ ok, operation, data }` envelope and returns no third-party
+  write-set build and apply, the external call check, snapshot cleanup); an agent-authored
+  whole input (external issues, primary or panel verdicts, drafts, current items) instead arrives as
+  `{"inputFile": …}`, a file below `.effective-flow/backlog-audit/inputs/` the helper reads and
+  removes. The four hash-bearing results (permission, inventory, merged verdicts, write set) are
+  persisted there by the helper itself, which returns the absolute path as hashed `inputFile`; later
+  operations take it back by reference (`permissionFile`, `inventoryFile`, `mergedFile`,
+  `writeSetFile`), so the agent never re-serialises them, and `snapshot-cleanup` removes them
+  run-scoped (`removedInputs`). It emits one `{ ok, operation, data }` envelope and returns no third-party
   issue or comment text: that text reaches assessors only as quoted files in a per-run snapshot
   below `.effective-flow/backlog-audit/snapshots/`. Forge access goes through the remote-tracker
   core; an external tracker is never contacted, its items arrive from the caller, its writes leave

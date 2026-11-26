@@ -18,7 +18,8 @@ mode never reaches this fragment, and steps 2 and 3 run only when `permission.mo
    states that permission and `null` otherwise, and each comment as `{id, author, body, createdAt}`.
 3. **Apply.** Execute the returned `calls` in their order under the `tracker-target` write
    discipline. Immediately before each call other than `label-create`, re-read its target with its
-   comments and call `external-call-check` with `{permission, writeSet, id, current, appliedIds}`:
+   comments and call `external-call-check` with
+   `{permissionFile, writeSetFile, id, current, appliedIds}`:
    `appliedIds` lists the ids of this run's calls confirmed applied so far, `current` is
    `{state, labels, body, comments}` with `state` `open` for an open issue and any other value
    otherwise and each comment as `{author, body}`, and for `issue-create` `{issues}`, every open
