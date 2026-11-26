@@ -244,16 +244,7 @@ export function buildGithubCommandPlan(operation, input, repository) {
         ghEndpoint(`collaborators/${login}/permission`),
       ]);
     }
-    // `label-list` is an internal plan, deliberately absent from `REMOTE_OPERATIONS`,
-    // `MUTATIONS`, and `CAPABILITY_BY_OPERATION` in `remote-tracker-core.mjs`. It exists because
-    // the `label-create` pre-check and `executeTeaPaginatedList` there both build every plan
-    // through `buildCommandPlan`, and a name they can construct is the cheapest way to give them
-    // one. Leaving it unregistered is what keeps it internal: `executeOperation` consults
-    // `REMOTE_OPERATIONS` and refuses the name from outside, so the read stays owned by the one
-    // branch whose contract defines it.
-    // The explicit `per_page=100` matches this adapter's other `gh api` list reads; without it
-    // the endpoint pages at 30 and
-    // a target name on page 2 would be read as absent.
+    // Paginate repository labels for public reads and the label-create pre-check.
     case 'label-list':
       return mutationPlan('gh', [
         'api',

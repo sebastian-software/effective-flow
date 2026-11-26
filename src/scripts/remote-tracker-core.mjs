@@ -170,6 +170,7 @@ const REMOTE_OPERATIONS = new Set([
   'viewer-read',
   'collaborator-permission-read',
   'repository-visibility-read',
+  'label-list',
   'label-create',
   'issue-read',
   'issue-state-wait',
@@ -302,6 +303,7 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'viewer-read': 'viewerRead',
   'collaborator-permission-read': 'collaboratorPermissionRead',
   'repository-visibility-read': 'repositoryVisibilityRead',
+  'label-list': 'labelList',
   'label-create': 'labelCreate',
   'issue-read': 'issueRead',
   'issue-state-wait': 'issueRead',
@@ -2763,7 +2765,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       viewerRead: teaApiTransport,
       // A raw-API read on the same `tea api --include` transport, so it needs no probe of its own.
       collaboratorPermissionRead: teaApiTransport,
-      repositoryVisibilityRead: false,
+      repositoryVisibilityRead: teaApiTransport,
       issues,
       issueRead: issues,
       issueCommentsRead: issues && issueComments,
@@ -5222,7 +5224,7 @@ async function executeTeaPaginatedList(operation, input, repository, runner, lab
   });
 }
 
-async function readRepositoryLabels(input, repository, runner) {
+async function readRepositoryLabels(input, repository, runner, step = 'label-create list') {
   if (repository.provider === 'forgejo') {
     // `limit` and `maxPages` are pinned here instead of inherited from the caller's payload, which
     // for this operation is the label to create: a stray `limit` field in it would otherwise shrink
@@ -5232,12 +5234,12 @@ async function readRepositoryLabels(input, repository, runner) {
       { ...input, limit: 100, maxPages: 100 },
       repository,
       runner,
-      'label-create list',
+      step,
     );
     if (TEA_LABEL_LIST_FAILURE.test(paginated.stderr ?? '')) {
       fail(
         'COMMAND_FAILED',
-        'label-create could not read the repository labels',
+        `${step} could not read the repository labels`,
         { step: 'list', stderr: redact(paginated.stderr) },
         true,
       );
@@ -5248,10 +5250,10 @@ async function readRepositoryLabels(input, repository, runner) {
     };
   }
   const plan = buildCommandPlan('label-list', input, repository);
-  const result = await runChecked(runner, plan, 'label-create list');
-  const labels = flattenPages(parseCommandOutput(result, plan, 'label-create list').raw) ?? [];
+  const result = await runChecked(runner, plan, step);
+  const labels = flattenPages(parseCommandOutput(result, plan, step).raw) ?? [];
   if (!Array.isArray(labels)) {
-    fail('INVALID_PAYLOAD', 'label-create list returned a non-list payload');
+    fail('INVALID_PAYLOAD', `${step} returned a non-list payload`);
   }
   return { labels, steps: [{ step: 'list', command: redact(plan) }] };
 }
@@ -7379,6 +7381,21 @@ export async function executeOperation(operation, input = {}, options = {}) {
     }
     // Both branches sit ahead of the generic dry-run return below, because both run more than one
     // command and therefore build their own envelope.
+    if (operation === 'label-list') {
+      const { labels, steps } = await readRepositoryLabels(
+        input,
+        activeRepository,
+        runner,
+        'label-list',
+      );
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: { result: labels.map(normalizeRepositoryLabel).filter(Boolean), steps },
+        dryRun: false,
+      };
+    }
     if (operation === 'label-create') {
       return await executeLabelCreate(input, activeRepository, runner, dryRun, probe);
     }

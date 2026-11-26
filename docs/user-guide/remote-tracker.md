@@ -772,6 +772,12 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 
 ## Issue Buddy and repository visibility
 
+For an `autopilot` plan source, `repository-visibility-read` recognizes private repositories on
+both GitHub and Forgejo. On a private Forgejo repository a security blocker becomes a neutral
+appendix on a draft pull request, just as on private GitHub, instead of withholding the push.
+An unavailable or unknown visibility remains treated as public. The Forgejo capability follows
+the probed `tea api` transport; the shared normalizer reads the boolean `private` field.
+
 `/effective-flow issue-buddy` uses the remote tracker in a controlled, unattended path. Before it
 collects issues, it performs one read-only `repository-visibility-read` operation and records
 `public`, `private`, or `unknown` in the pass report. The operation requires the tracker capability

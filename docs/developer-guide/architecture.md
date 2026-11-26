@@ -505,6 +505,14 @@ worktree without a tracked `.gitignore` line. Standard-mode setup in a linked wo
 entry when the runtime-state root does not yet ignore `.effective-flow/`, because the tracked line
 reaches the main checkout only with the merge.
 
+## Repository visibility
+
+For an `autopilot` plan source, `repository-visibility-read` recognizes private repositories on
+both GitHub and Forgejo. On a private Forgejo repository a security blocker becomes a neutral
+appendix on a draft pull request, just as on private GitHub, instead of withholding the push.
+An unavailable or unknown visibility remains treated as public. The Forgejo capability follows
+the probed `tea api` transport; the shared normalizer reads the boolean `private` field.
+
 ## Delivery orchestration boundaries
 
 ## Issue Buddy runtime boundary
