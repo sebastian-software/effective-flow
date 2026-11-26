@@ -1,6 +1,6 @@
 # Run CI checks beside the shards and balance shards by runtime
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Refactoring (`effective-flow refactor`)
 
