@@ -25,6 +25,8 @@ import { classifyPlanText, listTopLevel, readPlanFile, resolveRoots } from './pl
 import {
   NO_CLOBBER_TEMP_MAX_AGE_MS,
   RUNTIME_STATE_DIR,
+  INPUT_FILE,
+  MAX_INPUT_BYTES,
   RuntimeStateError,
   createNoClobber,
   ensureGuardedDirectory,
@@ -34,6 +36,7 @@ import {
   guardedRmdir,
   guardedUnlink,
   resolveRuntimeRoot,
+  readRuntimeInputFile,
 } from './runtime-state-guard.mjs';
 
 export const BACKLOG_AUDIT_OPERATIONS = Object.freeze([
@@ -125,7 +128,6 @@ const SNAPSHOT_TEMP = /^\.backlog-audit-[0-9a-f]{16}\.tmp$/;
 // run's live snapshot survives another run's start; a run's own exit removes its snapshot at once.
 export const STALE_RUNTIME_MS = 24 * 60 * 60 * 1000;
 const INPUT_SEGMENTS = Object.freeze([RUNTIME_STATE_DIR, 'backlog-audit', 'inputs']);
-const INPUT_FILE = /^[a-z0-9][a-z0-9-]{0,78}\.json$/;
 // Hash-bearing results the helper persists itself, keyed by the input field that carries them: the
 // file-name kind and the hash key. A consumer takes each one as the reference field `<field>File`.
 const OUTPUT_KINDS = Object.freeze({
@@ -152,7 +154,7 @@ const REFERENCE_FIELDS = Object.freeze({
   'external-call-check': Object.freeze(['permission', 'writeSet']),
 });
 // Caller-supplied external issues travel as input, so the bound is generous but finite.
-export const MAX_INPUT_BYTES = 16 * 1024 * 1024;
+export { MAX_INPUT_BYTES };
 export const ARCHITECTURE_SUMMARY_FILE = 'architecture-summary.md';
 const MAX_TEXT = 2000;
 const STRINGS = Object.freeze({
@@ -2925,7 +2927,12 @@ async function readGuardedInput(file, deps, { remove, label }) {
 export async function readInputFile(inputFile, deps = {}) {
   if (typeof inputFile === 'string' && OUTPUT_FILE.test(path.basename(inputFile)))
     invalid('inputFile names a helper output; pass it as its reference field instead');
-  return (await readGuardedInput(inputFile, deps, { remove: true, label: 'inputFile' })).value;
+  const context = runtimeContext(deps);
+  return readRuntimeInputFile(inputFile, INPUT_SEGMENTS, true, context, (kind, message, cause) => {
+    if (kind === 'guard') return guardFailure(cause);
+    if (kind === 'directory') fail('UNSAFE_RUNTIME_STATE', message);
+    return new BacklogAuditError('INVALID_PAYLOAD', message);
+  });
 }
 
 async function canonicalRoot(deps, value) {

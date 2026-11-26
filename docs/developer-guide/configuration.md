@@ -133,7 +133,8 @@ each non-destructive or bounded helper operation: the runtime-state helper opera
 `planning-claim release`, `planning-claim list`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
 `config-resolve.mjs conflict-validation`, `config-resolve.mjs review-fix-validation`, the four read-only `conflict-validation.mjs` operations,
 and the 47 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`;
-`pr-acceptance-sources` also writes its private no-clobber review snapshot below `.effective-flow/`), into
+`pr-acceptance-sources` also writes its private no-clobber review snapshot below `.effective-flow/`; an
+allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
 allow-rules` writes the file, after a preview and an explicit confirmation in the conversation,

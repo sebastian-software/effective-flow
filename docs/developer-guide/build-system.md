@@ -1031,7 +1031,10 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   standard output and uses nonzero exit codes for structured failures. The argv is closed: exactly
   `<operation>`, or `<operation> --apply` for a forge mutation, and anything else, `--apply` on a
   read included, is a usage error before standard input is read, so an allow rule's trailing `*`
-  admits only the here-string. Mutations are dry runs unless `--apply` is present. The core module is pure except for an injected process runner;
+  admits only the here-string. A long payload may instead use `{"inputFile": …}` for a SHA-256-bound
+  file below `.effective-flow/remote-tracker/inputs/`. The CLI verifies the file before dispatch;
+  a mutation dry run keeps it, and a consuming call removes it after verification. An abandoned
+  dry run leaves its file until it is removed by hand. Mutations are dry runs unless `--apply` is present;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
 - **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
   with one closed-schema JSON object on standard input. The entry point emits one stable JSON

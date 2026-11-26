@@ -101,6 +101,7 @@ import {
   gitBaseEnv,
   guardedUnlink,
   resolveRuntimeRoot,
+  readRuntimeInputFile,
   RUNTIME_STATE_DIR,
   RuntimeStateError,
 } from './runtime-state-guard.mjs';
@@ -250,6 +251,51 @@ export const REMOTE_TRACKER_OPERATIONS = Object.freeze([...REMOTE_OPERATIONS, ..
 
 export function isMutationOperation(operation) {
   return MUTATIONS.has(operation);
+}
+
+const REMOTE_INPUT_FILE = /^[a-z0-9]{1,8}-[1-9][0-9]{0,4}-([a-f0-9]{64})\.json$/;
+const REMOTE_INPUT_SEGMENTS = Object.freeze([RUNTIME_STATE_DIR, 'remote-tracker', 'inputs']);
+
+export async function resolveInputFile(input, { operation, apply, runner, env } = {}) {
+  if (
+    input === null ||
+    typeof input !== 'object' ||
+    Array.isArray(input) ||
+    Object.keys(input).length !== 1 ||
+    !Object.hasOwn(input, 'inputFile')
+  ) {
+    return input;
+  }
+  const location = '<runtime root>/.effective-flow/remote-tracker/inputs/<name>.json';
+  const invalid = (message) =>
+    new RemoteTrackerError(
+      'INVALID_PAYLOAD',
+      message.includes(location) ? message : `${message}; expected ${location}`,
+    );
+  try {
+    const parsed = await readRuntimeInputFile(
+      input.inputFile,
+      REMOTE_INPUT_SEGMENTS,
+      apply === true || !isMutationOperation(operation),
+      { runner, env },
+      (_kind, message) => invalid(message),
+      {
+        namePattern: REMOTE_INPUT_FILE,
+        strict: true,
+        verifyBytes: (bytes, name) => {
+          const expected = name.match(REMOTE_INPUT_FILE)?.[1];
+          const actual = createHash('sha256').update(bytes).digest('hex');
+          if (!expected || actual !== expected) throw invalid('inputFile hash does not match');
+        },
+      },
+    );
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw invalid('inputFile must contain one JSON object');
+    return parsed;
+  } catch (error) {
+    if (error instanceof RemoteTrackerError) throw error;
+    throw invalid('inputFile could not be read');
+  }
 }
 
 const CAPABILITY_BY_OPERATION = Object.freeze({

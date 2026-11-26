@@ -3306,3 +3306,61 @@ test('snapshot-remove with a run id removes exactly that run output files', asyn
   );
   assert.equal(existsSync(second.inventory.snapshotDir), true);
 });
+
+// Invariant: triage input files have one guarded read path: valid files are consumed, while
+// missing, symlinked, unsafe and malformed inputs fail with stable helper-level errors.
+test('triage input files pin all guarded read and failure cases', async (t) => {
+  const root = repository(t);
+  const inputs = join(root, '.effective-flow/triage/inputs');
+  mkdirSync(inputs, { recursive: true });
+  const valid = join(inputs, 'permission-prove-1.json');
+  writeFileSync(valid, JSON.stringify({ cwd: root, target: { kind: 'local' } }));
+  const consumed = await run('permission-prove', { inputFile: valid });
+  assert.equal(consumed.ok, true, JSON.stringify(consumed.error));
+  assert.equal(consumed.data.stop.reason, 'local-mode');
+  assert.equal(existsSync(valid), false);
+
+  const missing = join(repository(t), '.effective-flow/triage/inputs/permission-prove-2.json');
+  const missingResult = await run('permission-prove', { inputFile: missing });
+  assert.equal(missingResult.error.code, 'INVALID_PAYLOAD');
+  assert.equal(missingResult.error.message, 'inputFile does not exist');
+
+  const outside = join(root, 'outside.json');
+  writeFileSync(outside, '{}');
+  const linked = join(inputs, 'permission-prove-3.json');
+  symlinkSync(outside, linked);
+  const linkedResult = await run('permission-prove', { inputFile: linked });
+  assert.equal(linkedResult.error.code, 'INVALID_PAYLOAD');
+  assert.equal(existsSync(outside), true);
+
+  const unsafeRoot = repository(t);
+  const unsafeInputs = mkdtempSync(join(tmpdir(), 'triage-inputs-'));
+  t.after(() => rmSync(unsafeInputs, { recursive: true, force: true }));
+  mkdirSync(join(unsafeInputs, 'inputs'));
+  const unsafeFile = join(unsafeInputs, 'inputs/permission-prove-4.json');
+  writeFileSync(unsafeFile, JSON.stringify({ cwd: unsafeRoot, target: { kind: 'local' } }));
+  mkdirSync(join(unsafeRoot, '.effective-flow'));
+  symlinkSync(unsafeInputs, join(unsafeRoot, '.effective-flow/triage'));
+  const unsafeResult = await run('permission-prove', {
+    inputFile: join(unsafeRoot, '.effective-flow/triage/inputs/permission-prove-4.json'),
+  });
+  assert.equal(unsafeResult.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(unsafeResult.error.details.guardCode, undefined);
+
+  const guardedRoot = repository(t);
+  writeFileSync(join(guardedRoot, '.gitignore'), '');
+  const guardedInputs = join(guardedRoot, '.effective-flow/triage/inputs');
+  mkdirSync(guardedInputs, { recursive: true });
+  const guarded = join(guardedInputs, 'permission-prove-5.json');
+  writeFileSync(guarded, JSON.stringify({ cwd: guardedRoot, target: { kind: 'local' } }));
+  const guardedResult = await run('permission-prove', { inputFile: guarded });
+  assert.equal(guardedResult.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(typeof guardedResult.error.details.guardCode, 'string');
+  assert.equal(existsSync(guarded), true);
+
+  const malformed = join(inputs, 'permission-prove-6.json');
+  writeFileSync(malformed, '{not-json');
+  const malformedResult = await run('permission-prove', { inputFile: malformed });
+  assert.equal(malformedResult.error.code, 'INVALID_PAYLOAD');
+  assert.equal(malformedResult.error.message, 'inputFile must contain one JSON object');
+});
