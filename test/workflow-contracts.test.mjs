@@ -29025,6 +29025,19 @@ test('the iterate invocation next-steps recommends after an own published review
     prose(source('src/shared/worktree-integration.md')),
     /published-finding count from "PR review publication", across cleanup and returning delegations/,
   );
+  // The producer owns the count; without it the own-review rows never fire.
+  // The count follows each write's actual outcome, so a failed or unconfirmed write adds nothing.
+  const prReviewIntegration = prose(source('src/shared/pr-review-integration.md'));
+  assert.match(
+    prReviewIntegration,
+    /for the resolved pull request, report to the caller how many findings this run published on it/,
+  );
+  assert.match(prReviewIntegration, /a failed or unconfirmed write adds none/);
+  assert.match(prReviewIntegration, /0 whenever no finding was published/);
+  assert.match(
+    prReviewIntegration,
+    /never counts a withheld finding or one whose normalized signature already appears/,
+  );
 
   const { phase0, phase2 } = ownReviewSources();
   assert.ok(phase0.includes(`exactly \`${OWN_REVIEW_SELECTION}\`, set the own-review switch`));
