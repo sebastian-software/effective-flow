@@ -47,7 +47,7 @@ jobs:
       # No `--` separator: pnpm forwards it to the script, and `node --test -- <flags>` reads
       # the flags as file patterns. Every shard keeps the test preflight of `pnpm test`.
       - name: Unit tests
-        run: pnpm test --test-shard=${{ matrix.shard }}/3
+        run: pnpm test --test-shard=${{ matrix.shard }}/3 --test-concurrency=4
 
   build:
     name: Format, test and build

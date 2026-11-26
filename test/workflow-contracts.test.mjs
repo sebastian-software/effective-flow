@@ -12200,7 +12200,10 @@ test('ci.yml shards the unit suite and gates the required job on every shard', a
   const [testStep] = testSteps;
   // Pinned literally. No `--` separator: pnpm forwards it, and `node --test -- <flags>` reads
   // the flags as file patterns.
-  assert.equal(testStep.get('run'), 'pnpm test --test-shard=${{ matrix.shard }}/3');
+  assert.equal(
+    testStep.get('run'),
+    'pnpm test --test-shard=${{ matrix.shard }}/3 --test-concurrency=4',
+  );
   assert.equal(testStep.has('if'), false);
   assert.equal(testStep.has('continue-on-error'), false);
   // `--test-shard=i/N` runs only shard i of N, so a matrix shorter than N silently drops shards.

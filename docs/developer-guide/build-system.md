@@ -35,8 +35,9 @@ releases of those managers. After every source or installer change, use the same
 `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
 In CI the unit suite runs in the `unit-tests` matrix job as three shards, `Unit tests (1/3)` to
-`Unit tests (3/3)`, each running `pnpm test --test-shard=<i>/3` with its own preflight. The flag
-follows `pnpm test` without a `--` separator: pnpm forwards `--` to the script, and
+`Unit tests (3/3)`, each running `pnpm test --test-shard=<i>/3 --test-concurrency=4` with its own
+preflight. Each shard runs up to four test files concurrently. The flags follow `pnpm test`
+without a `--` separator: pnpm forwards `--` to the script, and
 `node --test -- <flags>` would read the flags as file patterns. `--test-shard` assigns test files
 round-robin over the sorted file list, not by duration, so adding or renaming a test file
 reshuffles every shard. The required job `Format, test and build` declares `needs: unit-tests`,
