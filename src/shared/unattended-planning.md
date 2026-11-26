@@ -243,11 +243,13 @@ delegation and the `plan-review` autopilot file review. Before reporting success
 The agent that owns the run consolidates once, and only when step 2 returns
 `PUBLICATION_METADATA_INVALID` **and** the plan has more than one line outside code fences that
 begins with `**Result:**` / `**Ergebnis:**`: it reduces those lines to one per the single
-review-result rule of `plan-contract`, keeping the value of the last such line in document order
-unless the forced `Revision required` applies, and then runs step 2 again. Any other cause or code
-is a terminal `ABORT: <diagnostic>` with no consolidation: `PUBLICATION_METADATA_INVALID` without
-duplicate result lines, a second failure, `INVALID_PAYLOAD`, `UNSAFE_PATH`, `NOT_FOUND` or
-`COMMAND_FAILED`.
+review-result rule of `plan-contract`, keeping as current the line directly below the plan-review
+heading, set to (1) the forced `Revision required` when it applies; (2) otherwise the value this
+run's final review pass decided; (3) only when this run recorded no decision of its own, that line's
+existing value, or the value of the last such line in document order when no result line sits below
+the heading, and then runs step 2 again. Any other cause or code is a terminal `ABORT: <diagnostic>`
+with no consolidation: `PUBLICATION_METADATA_INVALID` without duplicate result lines, a second
+failure, `INVALID_PAYLOAD`, `UNSAFE_PATH`, `NOT_FOUND` or `COMMAND_FAILED`.
 
 Blocking open points or any skipped judgment force `Revision required` in both the artifact's
 own language and the normalized response. Keep the complete artifact in its own language; no

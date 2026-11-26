@@ -72,7 +72,10 @@ test('a pass never deletes history or adds a second result line, and rewrites du
   const { body } = subsection();
   for (const literal of [
     'never deletes earlier history and never adds a second result line or a subsection with its own result line',
-    'keeps one current line and rewrites each older one into the history form above',
+    'keeps one current line directly below the heading, placing it there when none sits there, set to the value this pass decided',
+    "The line that supplied that value, the one this pass wrote or the one a caller's fallback chose, leaves no history entry",
+    'Every other line moves into the history form above, even when its value equals the kept value',
+    'becomes the opening `Result at that time:` / `Ergebnis damals:` line of the history subsection this pass creates at its first write, never a bare line in the current section',
   ])
     assert.ok(body.includes(literal), `missing literal: ${literal}`);
 });

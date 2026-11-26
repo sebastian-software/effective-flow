@@ -99,7 +99,13 @@ the current Findings, newest first, before the open-points section.
 
 A pass never deletes earlier history and never adds a second result line or a subsection with its
 own result line. When the section already holds more than one result line, the writing pass keeps
-one current line and rewrites each older one into the history form above.
+one current line directly below the heading, placing it there when none sits there, set to the value
+this pass decided. The line that supplied that value, the one this pass wrote or the one a caller's
+fallback chose, leaves no history entry. Every other line moves into the history form above, even
+when its value equals the kept value; when the line directly below the heading did not supply the
+kept value, its earlier value becomes the opening `Result at that time:` / `Ergebnis damals:`
+line of the history subsection this pass creates at its first write, never a bare line in the
+current section.
 
 ### Compact outcome checkpoint
 

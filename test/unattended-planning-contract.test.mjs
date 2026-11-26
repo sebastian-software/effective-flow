@@ -846,12 +846,36 @@ test('all four artifact results normalize only the response and operational fail
     '(`approved` → `Approved`, `revision-required` → `Revision required`)',
     'there is no separate read of the file',
     'consolidates once, and only when step 2 returns `PUBLICATION_METADATA_INVALID` **and** the plan has more than one line outside code fences that begins with `**Result:**` / `**Ergebnis:**`',
-    'keeping the value of the last such line in document order',
+    'keeping as current the line directly below the plan-review heading, set to (1) the forced `Revision required` when it applies;',
+    "(2) otherwise the value this run's final review pass decided;",
+    "(3) only when this run recorded no decision of its own, that line's existing value, or the value of the last such line in document order when no result line sits below the heading",
     'and then runs step 2 again',
     '`PUBLICATION_METADATA_INVALID` without duplicate result lines, a second failure, `INVALID_PAYLOAD`, `UNSAFE_PATH`, `NOT_FOUND` or `COMMAND_FAILED`',
     'After the single consolidation in step 2, a missing/invalid final result or failed final lint is a terminal operational `ABORT: <diagnostic>`',
   ])
     includesLiteral(completion, literal);
+  // Invariant: consolidation precedence is forced result, then this run's decision, then the
+  // existing heading line or the last line in document order, in one sentence.
+  const forcedFirst = completion.indexOf(
+    'set to (1) the forced `Revision required` when it applies;',
+  );
+  const runDecision = completion.indexOf(
+    "(2) otherwise the value this run's final review pass decided;",
+    forcedFirst,
+  );
+  const lastLine = completion.indexOf(
+    "(3) only when this run recorded no decision of its own, that line's existing value, or the value of the last such line in document order when no result line sits below the heading",
+    runDecision,
+  );
+  const rerun = completion.indexOf('and then runs step 2 again', lastLine);
+  assert.ok(
+    forcedFirst !== -1 && forcedFirst < runDecision && runDecision < lastLine && lastLine < rerun,
+    'consolidation precedence out of order',
+  );
+  assert.ok(
+    !completion.slice(forcedFirst, rerun).includes('. '),
+    'consolidation precedence spans more than one sentence',
+  );
   // Invariant: Completion writes the forced result, runs the final mechanical plan-lint, checks
   // publication metadata, then normalizes, in that order.
   const forced = completion.indexOf('Write any forced `Revision required`');
