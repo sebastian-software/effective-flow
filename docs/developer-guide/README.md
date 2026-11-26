@@ -81,4 +81,4 @@ is no runtime application – you edit `src/`, never `dist/`.
   timing, hot spots with their decisions, and the stage-loop wait gate.
 - [T3 acceptance runs](t3-acceptance-runs.md) – how manual acceptance runs that must watch a PR and
   be woken are set up on T3 Code: own top-level thread, announcement, two-way links, host-timestamp
-  durations and evidence.
+  durations, waits for work started during a run and evidence.

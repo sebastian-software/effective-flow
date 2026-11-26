@@ -1,6 +1,6 @@
 # Document native subagent waits in the T3 acceptance guide
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
@@ -54,7 +54,7 @@ target is the existing guide named by the issue; this plan extends it and create
   paragraphs stay above it unchanged: the `t3_thread_wait` paragraph for launched threads and the
   host-timestamp duration rule, which also covers in-run waits.
 - **PR waits stay with their owners.** PR waits keep the rules in `## When a run needs its own
-  thread` (lines 11–29) and the shipped host contract (`src/shared/host-pr-watch.md:21`, which
+thread` (lines 11–29) and the shipped host contract (`src/shared/host-pr-watch.md:21`, which
   forbids `sleep`, polling and `Monitor` for PR waits). The new subsection is limited to tests,
   builds and other work started during a run. It says once that `Monitor` and background waits are
   not PR waits, and it does not restate the PR contract.
@@ -284,9 +284,11 @@ Not relevant: no user interface.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site": "S-CLR", "question": "How is the issue's bounded background verification performed, and where is its evidence recorded?", "options": ["Run in implementing thread, record in plan", "Run in implementing thread, comment on issue", "Separate manual maintainer acceptance", "Embed as worked example in guide", "Decide later"], "escape": ["Decide later"], "scores": [{"label": "Run in implementing thread, record in plan", "score": 8, "reason": "Keeps the verification inside the delivery: evidence ships in the draft PR plan Test results, matching the guide's issue-or-PR rule and the autopilot flow; a delegated run without the wake stops with a blocker instead of polling."}, {"label": "Run in implementing thread, comment on issue", "score": 4, "reason": "Same execution as option 1, but no authority for an unattended autopilot run to post issue comments is established, and the evidence would sit outside the reviewed PR."}, {"label": "Separate manual maintainer acceptance", "score": 6, "reason": "Robust because a top-level T3 thread can actually receive the wake, but it moves the requested verification out of the delivery and leaves the PR without acceptance evidence."}, {"label": "Embed as worked example in guide", "score": 3, "reason": "Puts run-specific task IDs into the guide as history, which the repository's prompt-text rules discourage, while the guide already places evidence on the issue or PR."}]}, {"site": "S-BAT", "question": "Who completes the verification when the bounded background test records a blocker instead of evidence?", "options": ["Maintainer reruns test before ready", "Follow-up verification issue", "Draft without named owner", "Decide later"], "escape": ["Decide later"], "scores": [{"label": "Maintainer reruns test before ready", "score": 8, "reason": "Keeps the verification #788 requires as the condition for marking the PR ready, consistent with the draft-on-blocker rule and the guide's issue-or-PR evidence rule, in a top-level thread that can receive the wake."}, {"label": "Follow-up verification issue", "score": 4, "reason": "Refs keeps #788 open, but the PR could become ready without the required task ID, notification and result, contradicting the draft criterion and splitting verification into a separate tracker item."}, {"label": "Draft without named owner", "score": 2, "reason": "Honors the draft rule but leaves the verification unowned, so the PR can stall indefinitely with nothing closing the evidence gap."}]}, {"site": "S-BAT", "question": "What may a native sub-agent hand back to the owning thread?", "options": ["Only an unstarted command", "Also a started task ID, test extended", "Both, task ID labelled unverified", "Decide later"], "escape": ["Decide later"], "scores": [{"label": "Only an unstarted command", "score": 9, "reason": "The only variant the bounded test covers without an unproven host capability: the owning thread starts, registers and is notified for its own task; its edge over the next option is that it claims nothing about adopting a sub-agent's task."}, {"label": "Also a started task ID, test extended", "score": 4, "reason": "Rests on a capability nothing documents and widens the single bounded test into host investigation, so a failed extension stalls the delivery."}, {"label": "Both, task ID labelled unverified", "score": 3, "reason": "Puts an unverified hand-back path into a maintainer guide, inviting sub-agents to start tasks that may wake no one."}]}, {"site": "S-DEC", "question": "Which threads may run the bounded background test?", "options": ["Top-level or launched T3 thread only", "Keep step 9, evidence names thread kind", "Top-level thread only", "Decide later"], "escape": ["Decide later"], "scores": [{"label": "Top-level or launched T3 thread only", "score": 9, "reason": "Removes the contradiction and matches the evidence: a launched thread is top-level and can receive the wake, while delegate_task children never watch and native Agent sub-agents are not reliably woken; its edge over top-level only is not excluding launched threads."}, {"label": "Keep step 9, evidence names thread kind", "score": 3, "reason": "Lets a delegate_task child attempt the test although nothing shows it receives Claude task-completion wakes, keeping an unproven path."}, {"label": "Top-level thread only", "score": 7, "reason": "Safe and consistent with criterion 7, but excludes a launched thread that is top-level by construction and can receive the same wake."}]}, {"site": "S-DEC", "question": "What keeps the PR from becoming ready, and the plan from shipping as Implemented, when the test records a blocker?", "options": ["Stop before delivery on blocker", "Draft by scored mode, manual stops", "Deliver with blocker recorded", "Decide later"], "escape": ["Decide later"], "scores": [{"label": "Stop before delivery on blocker", "score": 6, "reason": "Simple and covers both run modes, but gives up the decided draft-until-rerun path and adds a new stop that scored mode already provides."}, {"label": "Draft by scored mode, manual stops", "score": 8, "reason": "Scored mode already keeps the PR a draft by construction, so the decided flow needs no new mechanism; its edge over option 1 is that the manual stop applies only where no such guarantee exists."}, {"label": "Deliver with blocker recorded", "score": 2, "reason": "The plan would ship archived as Implemented with an unverified rule and could be made ready, guarded only by a manual move back to draft."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -344,6 +346,49 @@ Not relevant: no user interface.
 - Deep review, Error cases, Note (three items): clearing a wait needs the same `taskIds`; the
   120000 ms Bash default needs an explicit `timeout` for longer bounded commands; the background
   cases apply to the owning thread only. Incorporated in Approach step 4 and the edge cases.
+
+## Test results
+
+- `pnpm agent:check` through `t3-project` (environment `effective-flow-node24`): exit 0, all 1687
+  matched files formatted. The run first formatted the two changed docs and this plan with
+  `pnpm exec oxfmt` through the same runner.
+- `grep '^## ' docs/developer-guide/t3-acceptance-runs.md`: the same seven headings as
+  `origin/develop`, and exactly one new `### Waits for work started during a run` between
+  `## Waiting and timing` and `## Recording evidence`.
+- `git diff` of the guide: 39 added lines, 0 removed. The README index entry changed only by the
+  phrase "waits for work started during a run".
+- `git diff --name-only origin/develop`: only the two docs and this plan.
+- The new subsection contains `t3_background_wait`, `taskIds`, `ToolSearch`, `run_in_background`,
+  `Monitor` and `t3_thread_wait`. Read against acceptance criterion 3: every element is present.
+- `t3_background_wait` schema loaded by the implementing run: required `taskIds` (1–20 strings),
+  optional `waiting`; the description matches the planning session's and adds "Claude/OpenCode
+  only". No difference affects the guide text.
+- `src/shared/host-pr-watch.md` after the base move: the PR-wait rule the plan cites still holds,
+  now at line 22 instead of 21. The guide does not restate it.
+- Bounded background test, run inline by the `docs` orchestrator in its own top-level T3 thread
+  (not a sub-agent):
+  - `t3_background_wait` was loaded with `ToolSearch` before the test.
+  - Marker `bg-788-k7q2`; baseline `pgrep -fc '[b]g-788-k7q2'` = 0.
+  - Command `sleep 60; echo bg-788-k7q2 done` started with Claude Bash `run_in_background`, task
+    ID `bsu4x5iak`; marker count while running = 1.
+  - `t3_background_wait` with `taskIds: ["bsu4x5iak"]` returned `matched: ["bsu4x5iak"]`; the
+    turn then ended with a non-final status.
+  - Host timestamps from `t3_thread_read` on the own thread: the suspended run's `completedAt`
+    2026-11-26T22:51:17.761Z; the woken run's `startedAt` 2026-11-26T22:52:10.806Z, triggered by
+    the task's completion notification. The wake is later than the turn end.
+  - Command result: output `bg-788-k7q2 done`, exit code 0.
+  - Marker count after completion = 0, back to the baseline. Secondary host-wide
+    `pgrep -c -f 'tail -f /dev/null'` count: 1 before and 1 after.
+  - After the wake the thread's `pendingBackgroundTasks` was empty, so the wait cleared on its
+    own; no `waiting: false` call was needed.
+- Not run locally: `pnpm test`, `node build.mjs`, `pnpm test:distribution`; no distribution
+  source changed, and CI runs them on the PR.
+
+## Review findings
+
+The `docs` workflow has no review phase. Validation found no defects in the changed
+documentation. The base move during planning (`a24ce91..fd1e680`, 2 commits, overlapping
+`src/shared/host-pr-watch.md`) was checked: only the cited line number moved.
 
 ## Open points
 
