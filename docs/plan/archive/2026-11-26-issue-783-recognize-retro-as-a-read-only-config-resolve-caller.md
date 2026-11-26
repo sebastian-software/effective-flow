@@ -1,6 +1,6 @@
 # Recognize retro as a read-only config-resolve caller
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #783
