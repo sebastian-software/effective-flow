@@ -669,6 +669,90 @@ function hasPath(target, path) {
   return true;
 }
 
+// Values for required alternative-group members no fixture carries; a member a fixture carries
+// keeps the fixture's value.
+const ALT_MEMBER_VALUES = {
+  'payload.label': 'x',
+  references: ['https://github.com/o/r/issues/1'],
+  body: 'x',
+  comments: ['C1'],
+};
+
+function setPath(target, path, value) {
+  const segments = path.split('.');
+  let node = target;
+  for (const segment of segments.slice(0, -1)) {
+    if (node[segment] === undefined || node[segment] === null) node[segment] = {};
+    node = node[segment];
+  }
+  node[segments.at(-1)] = value;
+}
+
+// Removes the group's members and any parent object the removal leaves empty, so `body` alone is
+// probed without an empty `comment` container shadowing it.
+function omitGroup(input, group) {
+  for (const path of group) {
+    deletePath(input, path);
+    const parent = path.split('.').slice(0, -1).join('.');
+    if (!parent) continue;
+    const node = parent.split('.').reduce((value, key) => value?.[key], input);
+    if (node && typeof node === 'object' && Object.keys(node).length === 0)
+      deletePath(input, parent);
+  }
+  if (group.includes('number')) {
+    deletePath(input, 'issue');
+    deletePath(input, 'pullRequest');
+  }
+}
+
+// Invariant: each member of every documented required alternative group alone (the other members
+// removed) passes the GitHub positive check, so a member the validator no longer accepts fails here
+// while the omission probe above only shows that removing the whole group fails.
+test('each member of a required alternative group alone passes the GitHub positive check', async () => {
+  const problems = [];
+  const covered = [];
+  const expected = [];
+  for (const row of rows) {
+    const base = FIXTURES[row.operation];
+    for (const item of documented(row).required.filter((entry) => entry.kind === 'alt')) {
+      for (const member of item.paths) {
+        expected.push(`${row.operation} ${member}`);
+        const value = hasPath(base, member)
+          ? member.split('.').reduce((node, key) => node[key], base)
+          : ALT_MEMBER_VALUES[member];
+        if (value === undefined) {
+          problems.push(`${row.operation}: no value for alternative member ${member}`);
+          continue;
+        }
+        const input = structuredClone(base);
+        omitGroup(input, item.paths);
+        setPath(input, member, structuredClone(value));
+        covered.push(`${row.operation} ${member}`);
+        const problem = await positiveProblem(row, input, { cwd: checkout() });
+        if (problem) problems.push(`${row.operation}: with only ${member}: ${problem}`);
+      }
+    }
+  }
+  assert.deepEqual(problems, [], problems.join('\n'));
+  // The check is not vacuous: it covers every member of every required alternative group, and the
+  // table still carries the groups this test was written for.
+  assert.deepEqual(covered, expected);
+  for (const label of [
+    'issue-labels payload.labels',
+    'issue-labels payload.label',
+    'issue-label-add payload.label',
+    'reference-parse reference',
+    'reference-parse references',
+    'planning-comment-build comment.body',
+    'planning-comment-build body',
+    'pr-review-comment-build body',
+    'thread-ledger-record threads',
+    'thread-ledger-record comments',
+  ]) {
+    assert.ok(covered.includes(label), `alternative-member check covers ${label}`);
+  }
+});
+
 // Invariant: the full minimal payload of every GitHub row passes validation up to the point its
 // kind reaches (mutation dry run, runner reached, local ok), so a required key the row leaves out
 // fails here whichever key the validator names; the local-write row runs only in a temp checkout
