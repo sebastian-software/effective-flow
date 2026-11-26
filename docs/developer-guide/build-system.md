@@ -46,24 +46,33 @@ and after, and the result. Treat results from a mutable draft as preliminary. If
 changes or the runner reports a source change, do not carry the result forward to the new state.
 
 In CI the unit suite runs in the `unit-tests` matrix job as three shards, `Unit tests (1/3)` to
-`Unit tests (3/3)`, each running `pnpm test --test-shard=<i>/3 --test-concurrency=4` with its own
-preflight. Each shard runs up to four test files concurrently. The flags follow `pnpm test`
-without a `--` separator: pnpm forwards `--` to the script, and
-`node --test -- <flags>` would read the flags as file patterns. `--test-shard` assigns test files
-round-robin over the sorted file list, not by duration, so adding or renaming a test file
-reshuffles every shard. The required job `Format, test and build` declares `needs: unit-tests`,
-runs under `if: always()` and first runs the `Unit test shards` gate, which fails unless every
-shard succeeded; a skipped required check would count as passing, so a failed, skipped or
-cancelled shard turns the required check red instead. Format check, build, distribution smoke
-tests and eval evidence follow the gate, so a format failure is reported only after all shards
-finish. Re-running only `Format, test and build` does not clear a failed shard, because its gate
-reads the same shard result again: re-run the failed shard, or use "Re-run failed jobs". A cancel
-after the gate step has passed lets `Format, test and build` run to the end: GitHub re-evaluates
-`if:` on cancel and `always()` keeps the job running, so only a force-cancel stops it. `always()` is
+`Unit tests (3/3)`, each running `pnpm test:shard <i>/3 --test-concurrency=4` with its own
+preflight. Each shard runs up to four test files concurrently. The flags follow the script without
+a `--` separator: pnpm forwards `--` to the script, and the shard runner rejects every argument
+outside its allowlist (`--test-concurrency`, `--test-reporter`).
+
+`scripts/shard-tests.mjs` discovers the same files as a bare `node --test` on Node 24 and assigns
+them by runtime from the checked-in table `scripts/shard-weights.json` (wall time in seconds per
+file). Because `node --test` starts its files in alphabetical order, the script simulates each
+shard's run on the concurrency slots and places files heaviest first on the shard whose simulated
+finish time is lowest after adding the file; `--list` prints each shard's files, summed weight and simulated duration. A
+file missing from the table gets a default weight, so a new test file never breaks CI; a table
+entry whose file no longer exists fails `test/shard-tests.test.mjs`. Refresh the table with
+`node scripts/shard-tests.mjs --measure` on a CI runner after larger test moves or when the shard
+durations drift apart.
+
+The broad checks (format check, build, distribution smoke tests and eval evidence) run in the
+`Build checks` job beside the shards. The required job `Format, test and build` declares
+`needs: [unit-tests, checks]`, runs under `if: always()` and has one step, the gate, which fails
+unless both results are `success` and names the job that failed; a skipped required check would
+count as passing, so a failed, skipped or cancelled shard or check turns the required check red
+instead. Re-running only `Format, test and build` does not clear a failed job, because its gate
+reads the same result again: re-run the failed job, or use "Re-run failed jobs". `always()` is
 kept deliberately, because `!cancelled()` would turn a cancelled run's required check into a
 passing "skipped". Locally, `pnpm test` still runs the whole suite in one unsharded run.
-On POSIX, the host-driver test file runs up to two Python cases concurrently, each in its own
-process with its own timeout and cancellation signal.
+On POSIX, the host-driver test file runs its Python cases one after another, each in its own
+process with its own timeout and cancellation signal; running two at once did not shorten the
+slowest CI shard.
 
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays

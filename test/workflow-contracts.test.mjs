@@ -12144,47 +12144,70 @@ test('ci.yml keeps the job names the develop ruleset requires', () => {
   }
 });
 
-test('ci.yml shards the unit suite and gates the required job on every shard', async () => {
-  // Invariant: every unit test still runs inside the required status `Format, test and build`.
-  // The suite runs in the `unit-tests` matrix, and the required job fails unless the matrix
-  // aggregate is `success`, which it is only when every shard succeeded. A skipped required check
-  // passes, so nothing may skip the required job, fail a shard quietly or filter tests out of it.
+test('ci.yml gates the required job on every unit-test shard and the build checks', async () => {
+  // Invariant: every unit test and every broad package check still runs inside the required
+  // status `Format, test and build`. The suite runs in the `unit-tests` matrix and the checks in
+  // the parallel `checks` job; the required job fails unless every needed job's result is
+  // `success`, which a matrix reports only when every shard succeeded. A skipped required check
+  // passes, so nothing may skip the required job, fail a shard or a check quietly, or filter
+  // tests out of the suite.
   const { spawnSync } = await import('node:child_process');
   const ci = source('.github/workflows/ci.yml');
   const jobs = parseWorkflowYaml(ci).get('jobs');
   const shards = jobs.get('unit-tests');
+  const checks = jobs.get('checks');
   const build = jobs.get('build');
   assert.ok(shards, 'ci.yml must declare the unit-tests job');
-  assert.ok(
-    ci.indexOf('\n  unit-tests:\n') < ci.indexOf('\n  build:\n'),
-    'unit-tests must precede build so the build job slice stays bounded by shellcheck',
-  );
+  assert.ok(checks, 'ci.yml must declare the checks job');
+  assert.ok(build, 'ci.yml must declare the build job');
+  // The file order bounds the job slices other assertions cut by their neighbor's key.
+  ordered(ci, '\n  unit-tests:\n', '\n  checks:\n', '\n  build:\n', '\n  shellcheck:\n');
 
-  // The required job waits for the shards and runs whatever their result.
-  assert.equal(build.get('needs'), 'unit-tests');
+  // The required job waits for both jobs and runs whatever their result.
+  const needs = build.get('needs');
+  assert.deepEqual(needs, ['unit-tests', 'checks']);
   assert.equal(build.get('if'), 'always()');
   assert.equal(build.has('continue-on-error'), false);
+  // It reads only `needs` results, so it holds no token scope: naming one scope `none` drops
+  // every unnamed one too.
+  assert.deepEqual([...build.get('permissions')], [['contents', 'none']]);
 
-  // Its first step is the gate: unconditional, never tolerated as a failure, reading the result
-  // through `env:` rather than an expression spliced into the script.
-  const gate = build.get('steps')[0];
-  assert.equal(gate.get('name'), 'Unit test shards');
+  // Its only step is the gate: unconditional, never tolerated as a failure, no checkout or
+  // action, and reading one result per needed job through `env:` rather than an expression
+  // spliced into the script.
+  const buildSteps = build.get('steps');
+  assert.equal(buildSteps.length, 1, 'the gate job must run exactly one step');
+  const [gate] = buildSteps;
+  assert.equal(gate.get('name'), 'Unit test shards and build checks');
   assert.equal(gate.has('if'), false);
   assert.equal(gate.has('continue-on-error'), false);
   assert.equal(gate.has('uses'), false);
+  const variable = (job) => `${job.toUpperCase().replace(/-/g, '_')}_RESULT`;
   const variables = [...gate.get('env')];
-  assert.deepEqual(variables, [['UNIT_TESTS_RESULT', '${{ needs.unit-tests.result }}']]);
+  assert.deepEqual(
+    variables,
+    needs.map((job) => [variable(job), `\${{ needs.${job}.result }}`]),
+    'the gate env keys must equal the needs list exactly',
+  );
   const script = gate.get('run');
   assert.doesNotMatch(script, /\$\{\{/);
-  // Exercise the gate body: only `success` passes; every other aggregate fails the job.
-  for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
-    const run = spawnSync('bash', ['-e', '-c', script], {
+  // Exercise the gate body: it passes only when every needed result is `success`; any other
+  // result of any one needed job fails it.
+  const runGate = (results) =>
+    spawnSync('bash', ['-e', '-c', script], {
       encoding: 'utf8',
       timeout: 5_000,
-      env: { ...process.env, UNIT_TESTS_RESULT: result },
+      env: { ...process.env, ...results },
     });
-    if (result === 'success') assert.equal(run.status, 0, run.stderr);
-    else assert.notEqual(run.status, 0, `the gate must fail on "${result}"`);
+  const allSuccess = Object.fromEntries(needs.map((job) => [variable(job), 'success']));
+  const passing = runGate(allSuccess);
+  assert.equal(passing.status, 0, passing.stderr);
+  for (const job of needs) {
+    for (const result of ['failure', 'cancelled', 'skipped', '']) {
+      const run = runGate({ ...allSuccess, [variable(job)]: result });
+      assert.notEqual(run.status, 0, `the gate must fail when ${job} is "${result}"`);
+      assert.match(run.stderr, new RegExp(job), `the gate log must name ${job}`);
+    }
   }
 
   // The shard job: no condition and no tolerated failure, so a red shard reaches the gate.
@@ -12198,35 +12221,48 @@ test('ci.yml shards the unit suite and gates the required job on every shard', a
   const testSteps = shards.get('steps').filter((step) => step.get('name') === 'Unit tests');
   assert.equal(testSteps.length, 1);
   const [testStep] = testSteps;
-  // Pinned literally. No `--` separator: pnpm forwards it, and `node --test -- <flags>` reads
-  // the flags as file patterns.
-  assert.equal(
-    testStep.get('run'),
-    'pnpm test --test-shard=${{ matrix.shard }}/3 --test-concurrency=4',
-  );
+  // Pinned literally. No `--` separator: pnpm forwards it, and the shard runner rejects every
+  // argument outside its allowlist.
+  assert.equal(testStep.get('run'), 'pnpm test:shard ${{ matrix.shard }}/3 --test-concurrency=4');
   assert.equal(testStep.has('if'), false);
   assert.equal(testStep.has('continue-on-error'), false);
-  // `--test-shard=i/N` runs only shard i of N, so a matrix shorter than N silently drops shards.
-  const total = Number(
-    testStep.get('run').match(/--test-shard=\$\{\{ matrix\.shard \}\}\/(\d+)/)[1],
-  );
+  // `i/N` runs only shard i of N, so a matrix shorter than N silently drops shards.
+  const total = Number(testStep.get('run').match(/test:shard \$\{\{ matrix\.shard \}\}\/(\d+)/)[1]);
   assert.equal(matrix.length, total);
   assert.deepEqual(
     matrix.map(Number),
     Array.from({ length: total }, (_, index) => index + 1),
   );
 
-  // The shards check out the same history as the build job (matched without the action ref).
+  // The checks job: no dependency, condition or tolerated failure on the job or any step, so a
+  // red check reaches the gate, and only read access to the checkout.
+  for (const key of ['needs', 'if', 'continue-on-error']) {
+    assert.equal(checks.has(key), false, `the checks job must not declare ${key}`);
+  }
+  assert.deepEqual([...checks.get('permissions')], [['contents', 'read']]);
+  for (const step of checks.get('steps')) {
+    assert.equal(step.has('if'), false, `checks step ${step.get('name') ?? step.get('uses')}`);
+    assert.equal(step.has('continue-on-error'), false);
+  }
+
+  // The shards check out the same history as the checks job (matched without the action ref).
   const checkoutInputs = (job) =>
     job
       .get('steps')
       .filter((step) => /^actions\/checkout@/.test(step.get('uses') ?? ''))
       .map((step) => [...(step.get('with') ?? [])]);
-  assert.deepEqual(checkoutInputs(shards), checkoutInputs(build));
+  assert.deepEqual(checkoutInputs(shards), checkoutInputs(checks));
   assert.deepEqual(checkoutInputs(shards), [[['fetch-depth', '0']]]);
+  assert.deepEqual(checkoutInputs(build), []);
 
-  // No test filter may thin out the suite anywhere in the workflow.
-  assert.doesNotMatch(ci, /--test-name-pattern|--test-skip-pattern|--test-only/);
+  // No test filter may thin out the suite anywhere in the workflow or in the shard script it
+  // runs. The shard runner names these flags to reject them; its behavioural test covers it.
+  const filters = /--test-name-pattern|--test-skip-pattern|--test-only/;
+  assert.doesNotMatch(ci, filters);
+  const shardScript = JSON.parse(source('package.json')).scripts['test:shard'];
+  assert.equal(typeof shardScript, 'string', 'package.json must declare the test:shard script');
+  assert.match(shardScript, /scripts\/shard-tests\.mjs/);
+  assert.doesNotMatch(shardScript, filters);
 });
 
 test('ci.yml cancels a superseded pull-request run only on the first attempt of a new push', () => {
@@ -12247,23 +12283,25 @@ test('package evidence reporting preserves broad checks and identical freshness 
   // Invariant: no branch-name bypass, omitted suite or ignored verifier failure may hide debt or
   // invalid evidence, and reporting must follow every mandatory broad package check.
   const ci = source('.github/workflows/ci.yml');
-  const buildJob = boundedSlice(ci, '  build:\n', '\n  shellcheck:');
-  // The unit suite runs in the `unit-tests` shards that this job gates on; the broad checks
-  // that stay here keep their order.
+  const checksJob = boundedSlice(ci, '  checks:\n', '\n  build:');
+  // The broad checks run in the `checks` job, beside the unit-test shards, and keep their order;
+  // the required `build` job gates on both.
   ordered(
-    buildJob,
-    'name: Unit test shards',
+    checksJob,
     'pnpm agent:check',
     'node build.mjs',
     'pnpm test:distribution',
     'name: Behavioural eval evidence',
   );
-  // Relaxed from "no job condition" to exactly `if: always()`: a skipped required check passes,
-  // so the job must run even when a shard failed or the run was cancelled, and any other
-  // condition could skip it.
-  assert.deepEqual(buildJob.slice(0, buildJob.indexOf('    steps:')).match(/^ {4}if:.*$/gm), [
-    '    if: always()',
-  ]);
+  // The gate job keeps exactly `if: always()`: a skipped required check passes, so the job must
+  // run even when a shard or a check failed or the run was cancelled, and any other condition
+  // could skip it.
+  const buildJob = boundedSlice(ci, '  build:\n', '\n  shellcheck:');
+  assert.deepEqual(buildJob.match(/^ {4}if:.*$/gm), ['    if: always()']);
+  // No job or step condition: the checks job must run on every pull request and report its
+  // result to the gate, so any condition here could hide a check.
+  assert.doesNotMatch(checksJob, /^\s*if:/m);
+  assert.doesNotMatch(checksJob, /continue-on-error/);
   const step = shellCode(workflowStep(ci, 'Behavioural eval evidence'));
   assert.doesNotMatch(
     step,
@@ -12285,6 +12323,7 @@ test('package evidence reporting preserves broad checks and identical freshness 
   assert.match(step, /status=\$suite_status/);
   assert.match(step, /exit "\$status"/);
   assert.match(step, /GITHUB_STEP_SUMMARY/);
+  assert.doesNotMatch(checksJob, /Build-context provisional PR581 release disposition/);
   assert.doesNotMatch(buildJob, /Build-context provisional PR581 release disposition/);
 });
 
