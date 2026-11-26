@@ -10,6 +10,7 @@
     "audit:skill-ownership": "node scripts/audit-skill-ownership.mjs",
     "test": "node scripts/test-capabilities.mjs && node --test",
     "test:contracts": "pnpm test test/setup-allowlist-contract.test.mjs test/subagent-progress-contract.test.mjs",
+    "test:shard": "node scripts/test-capabilities.mjs && node scripts/shard-tests.mjs",
     "test:distribution": "node scripts/distribution-smoke.mjs offline",
     "test:managers": "node scripts/distribution-smoke.mjs managers",
     "eval": "node evals/eval.mjs",

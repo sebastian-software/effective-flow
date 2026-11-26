@@ -89,7 +89,7 @@ shipped helper and writing the call log. The stub is shared with the
 it as its own tracker stub and hashes it among its own instrument files, so a change to it stales
 both suites — see [How the stub works](#how-the-stub-works).
 
-Five test files in the ordinary `pnpm test` suite belong to this layer:
+Eight test files in the ordinary `pnpm test` suite belong to this layer:
 
 - [`test/eval-fixture-fidelity.test.mjs`](../../test/eval-fixture-fidelity.test.mjs) proves every
   canned envelope is one the real `executeOperation` normalizer emits for the same provider payload,
@@ -98,8 +98,13 @@ Five test files in the ordinary `pnpm test` suite belong to this layer:
   assertions over the archived logs.
 - [`test/merge-gate-eval-round-lifecycle.test.mjs`](../../test/merge-gate-eval-round-lifecycle.test.mjs)
   runs one immutable round through provisioning, sealing, retries, slot isolation, publication
-  locking, and crash recovery; [`test/merge-gate-eval-round.test.mjs`](../../test/merge-gate-eval-round.test.mjs)
-  holds the remaining round, receipt-validation, and CLI cases.
+  locking, and crash recovery; [`test/merge-gate-eval-round-publication.test.mjs`](../../test/merge-gate-eval-round-publication.test.mjs)
+  holds the selective and carried-forward publication cases;
+  [`test/merge-gate-eval-round-verify-corruption.test.mjs`](../../test/merge-gate-eval-round-verify-corruption.test.mjs)
+  and [`test/merge-gate-eval-round-verify-corpus.test.mjs`](../../test/merge-gate-eval-round-verify-corpus.test.mjs)
+  hold the `verify` cases for corrupt, short and surplus rounds and for the corpus it reads;
+  [`test/merge-gate-eval-round.test.mjs`](../../test/merge-gate-eval-round.test.mjs) holds the
+  remaining round, receipt-validation, and CLI cases.
 - [`test/merge-gate-eval-repair.test.mjs`](../../test/merge-gate-eval-repair.test.mjs) provisions the
   two repair scenarios' real-commit `origin` and plays both compositions through the stub, the
   echo, a real push and the shipped `repair-attempt.mjs`.

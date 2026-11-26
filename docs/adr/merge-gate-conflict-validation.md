@@ -202,11 +202,11 @@ established check the repository's instructions or CI define for the change is r
 mandated combined gate containing the excluded command is replaced by its remaining established
 subcommands, and where those cannot run separately the effective mode is `full`. This
 repository's own CI is not detected, so its conflict commits stay on `full` (AD4): the sharded
-`unit-tests` job has a templated name and runs `pnpm test` with a shard flag rather than the bare
-command (`templated-name`, `test-command-not-bare`), and the required `Format, test and build` job
-runs no test step and carries a job condition, `if: always()`, because it gates on the shards
-(`job-condition`, `no-test-step`). Deferral to CI covers only the excluded command; any other
-check that cannot run stops the round.
+`unit-tests` job has a templated name and runs `pnpm test:shard`, not the manifest's `test` script
+(`templated-name`, `no-test-step`); the `Build checks` job runs no test step (`no-test-step`); and
+the required `Format, test and build` job runs no test step and carries a job condition,
+`if: always()`, because it gates on both (`job-condition`, `no-test-step`). Deferral to CI covers
+only the excluded command; any other check that cannot run stops the round.
 
 **Environment failures stop cleanly (AD7).** The validator keeps the result states and
 diagnostics of its owner `effective-delivery`; no state is added. The host-neutral environment
