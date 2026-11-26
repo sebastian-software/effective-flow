@@ -27584,13 +27584,20 @@ function hostPrWatchT3Section() {
 }
 
 // Invariant: the T3 PR-watch procedure is a deferred fragment reached only through a lazy pointer in
-// merge-gate, iterate and pr, so no run on another host and no other tool pays for it.
-test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', () => {
+// merge-gate, iterate, pr, apply-issues and apply-review-remote, so no run on another host and no
+// other tool pays for it.
+test('host-pr-watch is lazy in merge-gate, iterate, pr, apply-issues and apply-review-remote and eager nowhere', () => {
   assert.ok(
     existsSync(new URL(HOST_PR_WATCH_PATH, repositoryRoot)),
     `${HOST_PR_WATCH_PATH} must exist`,
   );
-  for (const path of [MERGE_GATE_PATH, 'src/tools/iterate.md', 'src/tools/pr.md']) {
+  for (const path of [
+    MERGE_GATE_PATH,
+    'src/tools/iterate.md',
+    'src/tools/pr.md',
+    'src/tools/apply-issues.md',
+    'src/tools/apply-review-remote.md',
+  ]) {
     const includes = collectIncludeNames(source(path));
     assert.ok(
       includes.lazy.has('host-pr-watch'),
@@ -27619,8 +27626,10 @@ test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', ()
 // Invariant: the iterate and pr pointers load host-pr-watch only at their decision points. iterate
 // loads it on T3 Code only in a top-level run, decided by the absence of both a body delimiter and
 // a `Run state:` line, because a run delegated by merge-gate leaves the watch to the gate; pr loads
-// it on T3 Code. The merge-gate pointer is pinned with the other merge-gate pointers. Exactly these
-// four tools reach the fragment: capture loads it only for issue linking.
+// it on T3 Code; apply-issues and apply-review-remote load it only when the running environment
+// identifies T3 Code and a work item's pull request was created, reused or pushed. The merge-gate
+// pointer is pinned with the other merge-gate pointers. Exactly these six tools reach the fragment:
+// capture loads it only for issue linking.
 test('host-pr-watch pointers keep decision-scoped loading, with capture for issue linking', () => {
   const pointerIn = (path) =>
     [...source(path).matchAll(LAZY_INCLUDE_RE)]
@@ -27638,6 +27647,16 @@ test('host-pr-watch pointers keep decision-scoped loading, with capture for issu
       trigger: /T3 Code/,
       decision: 'the environment identifying T3 Code',
     },
+    {
+      path: 'src/tools/apply-issues.md',
+      trigger: /(?=[\s\S]*T3 Code)(?=[\s\S]*(?:created|reused|push))/,
+      decision: 'T3 Code and a work item pull request that was created, reused or pushed',
+    },
+    {
+      path: 'src/tools/apply-review-remote.md',
+      trigger: /(?=[\s\S]*T3 Code)(?=[\s\S]*(?:created|reused|push))/,
+      decision: 'T3 Code and a work item pull request that was created, reused or pushed',
+    },
   ];
   for (const { path, trigger, decision } of pinned) {
     const when = pointerIn(path);
@@ -27650,7 +27669,14 @@ test('host-pr-watch pointers keep decision-scoped loading, with capture for issu
   }
   assert.deepEqual(includeHostsOf('host-pr-watch'), {
     eager: [],
-    lazy: ['tools/capture.md', 'tools/iterate.md', 'tools/merge-gate.md', 'tools/pr.md'],
+    lazy: [
+      'tools/apply-issues.md',
+      'tools/apply-review-remote.md',
+      'tools/capture.md',
+      'tools/iterate.md',
+      'tools/merge-gate.md',
+      'tools/pr.md',
+    ],
   });
 });
 
@@ -27731,9 +27757,12 @@ test('host-pr-watch names watch, link and unwatch tools unqualified without an m
   assert.doesNotMatch(text, /mcp__[A-Za-z0-9_-]*(?:watch|link)_pull_request/);
 });
 
-// Invariant: the procedure lives only in the fragment; the callers carry no tool name.
-test('watch_pull_request, link_pull_request and unwatch_pull_request appear only in host-pr-watch, not in the merge-gate, iterate or pr sources', () => {
+// Invariant: the procedure lives only in the fragment; the callers, apply-issues and
+// apply-review-remote included, carry no tool name.
+test('watch_pull_request, link_pull_request and unwatch_pull_request appear only in host-pr-watch, not in the merge-gate, iterate, pr, apply-issues or apply-review-remote sources', () => {
   for (const path of [
+    'src/tools/apply-issues.md',
+    'src/tools/apply-review-remote.md',
     MERGE_GATE_PATH,
     'src/shared/merge-gate-delegated-run.md',
     'src/shared/merge-gate-configured-reviewer.md',
@@ -27745,6 +27774,106 @@ test('watch_pull_request, link_pull_request and unwatch_pull_request appear only
       assert.equal(text.includes(tool), false, `${path} must not name ${tool}`);
     }
   }
+});
+
+// Invariant: a delegated `pr` run is linked by its caller. On T3 Code the apply-issues and
+// apply-review tracker-mode orchestrators link each pull request they delivered, through the
+// fragment's "Linking" section; the fragment's `pr` bullet points there, each caller places its
+// one link step after its delivery and before its PR-link comment, and each names the one-line
+// link failure in its summary.
+test('a delegated pr run is linked by its caller, with the link step placed after delivery and the failure named in the summary', () => {
+  const text = hostPrWatchSource();
+  const start = text.indexOf('### Linking');
+  assert.notEqual(start, -1, 'host-pr-watch must carry a "### Linking" section');
+  const after = text.slice(start + 1).search(/\n#{1,6} /);
+  const section = after === -1 ? text.slice(start) : text.slice(start, start + 1 + after);
+  const bullets = section
+    .split(/^- /m)
+    .slice(1)
+    .map((part) => prose(part));
+  const bullet = bullets.find((part) => /apply-issues/.test(part) && /apply-review/.test(part));
+  assert.ok(bullet, 'Linking needs one caller-side bullet naming apply-issues and apply-review');
+  assert.match(bullet, /tracker mode/i, 'the bullet names apply-review tracker mode');
+  assert.match(bullet, /created/, 'the bullet names a created pull request');
+  assert.match(bullet, /reused/, 'the bullet names a reused pull request');
+  assert.match(bullet, /target PR/i, 'the bullet names a pushed target PR');
+  assert.match(bullet, /one call per distinct pull request/i, 'one call per distinct pull request');
+  assert.match(bullet, /`pr-read`/, 'a target PR is linked from the pr-read url');
+  assert.match(bullet, /sameRepository/, 'the target PR link requires sameRepository');
+  assert.match(bullet, /\bopen\b/, 'the target PR link requires an open pull request');
+  assert.match(
+    bullet,
+    /(?:no|not|never)[^.]{0,80}`pr` run[^.]{0,60}(?:in|of) this session/i,
+    'no call after a pr run in this session',
+  );
+  assert.match(
+    bullet,
+    /without T3 running-environment context[^.]{0,80}links nothing/i,
+    'an orchestrator without T3 running-environment context links nothing',
+  );
+  assert.match(
+    bullet,
+    /one line[^.]{0,80}(?:never blocks|does not block|not block)|(?:never blocks|does not block)[^.]{0,80}one line/i,
+    'a link failure is one line and never blocks',
+  );
+
+  const prBullet = bullets.find((part) => part.startsWith('`{{SKILL:pr}}`: right after step 10'));
+  assert.ok(prBullet, 'the pr bullet keeps its opening anchor');
+  assert.match(
+    prBullet,
+    /links nothing[^.]*(?:caller|apply-issues)[^.]*link/i,
+    'the pr bullet points to caller-side linking for a delegated pr run',
+  );
+
+  const issues = source('src/tools/apply-issues.md');
+  const step3 = issues.indexOf('3. Commit the changes using resolved `language.git`');
+  const step4 = issues.indexOf('4. **Immediately after a successful push or PR creation:**');
+  const issuesLink = issues.search(/per `host-pr-watch`/);
+  assert.ok(step3 !== -1 && step4 !== -1, 'apply-issues keeps Phase 4 steps 3 and 4');
+  assert.ok(
+    issuesLink > step3 && issuesLink < step4,
+    'apply-issues places its "per `host-pr-watch`" link step between step 3 and step 4',
+  );
+  assert.equal(
+    issues.match(/per `host-pr-watch`/g)?.length,
+    1,
+    'apply-issues has exactly one link step',
+  );
+  const hostPrWatchFences = (slice) =>
+    [...slice.matchAll(LAZY_INCLUDE_RE)].filter((match) => match[1].trim() === 'host-pr-watch')
+      .length;
+  assert.equal(
+    hostPrWatchFences(issues.slice(step3, step4)),
+    1,
+    'apply-issues has exactly one host-pr-watch pointer between step 3 and step 4',
+  );
+  const issuesPhase5 = prose(
+    issues.slice(issues.indexOf('### Phase 5: Summary'), issues.indexOf('## Rules')),
+  );
+  assert.match(issuesPhase5, /link[^.]{0,80}fail/i, 'apply-issues Phase 5 names the link failure');
+  assert.match(issuesPhase5, /one line/i, 'apply-issues Phase 5 names it as one line');
+
+  const review = source('src/tools/apply-review-remote.md');
+  const phase4 = review.indexOf('### Phase 4 remote');
+  const rStep4 = review.indexOf('4. If a target PR is present:', phase4);
+  const rStep5 = review.indexOf('5. **Immediately after a successful push or PR creation**');
+  const reviewLink = review.search(/per\s+`host-pr-watch`/);
+  assert.ok(
+    phase4 !== -1 && rStep4 > phase4 && rStep5 !== -1,
+    'apply-review-remote keeps Phase 4 remote steps 4 and 5',
+  );
+  assert.ok(
+    reviewLink > rStep4 && reviewLink < rStep5,
+    'apply-review-remote places its link step between Phase 4 remote step 4 and step 5',
+  );
+  assert.equal(
+    hostPrWatchFences(review.slice(rStep4, rStep5)),
+    1,
+    'apply-review-remote has exactly one host-pr-watch pointer between step 4 and step 5',
+  );
+  const reviewPhase78 = prose(review.slice(review.indexOf('### Phase 7/8 remote')));
+  assert.match(reviewPhase78, /link[^.]{0,80}fail/i, 'Phase 7/8 remote names the link failure');
+  assert.match(reviewPhase78, /one line/i, 'Phase 7/8 remote names it as one line');
 });
 
 // Invariant: the non-T3 path is unchanged: Phase 2 step 2 still calls pr-checks-wait with the
