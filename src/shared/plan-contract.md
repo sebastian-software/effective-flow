@@ -92,10 +92,11 @@ run is its own `plan-review` pass, so the internal review becomes history.
 
 A history subsection sits one level below the section (`###` in a file, `####` in a comment) and
 carries its own Summary and Findings one level deeper. Its heading is
-`Review history (<YYYY-MM-DD>, <tool>)`, in German `Review-Verlauf (<YYYY-MM-DD>, <tool>)`. It
-starts with plain history text that never begins with the result label:
-`Result at that time: <value>`, in German `Ergebnis damals: <value>`. History subsections follow
-the current Findings, newest first, before the open-points section.
+`Review history (<YYYY-MM-DD>, <tool>)`, in German `Review-Verlauf (<YYYY-MM-DD>, <tool>)`. The
+heading carries the date and tool of the pass that recorded the moved result, or of the superseding
+pass when that is unknown. The subsection starts with plain history text that never begins with the
+result label: `Result at that time: <value>`, in German `Ergebnis damals: <value>`. History
+subsections follow the current Findings, newest first, before the open-points section.
 
 A pass never deletes earlier history and never adds a second result line or a subsection with its
 own result line. When the section already holds more than one result line, the writing pass keeps

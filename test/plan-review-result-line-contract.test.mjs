@@ -61,6 +61,7 @@ test('history subsections have a result-free form in both languages and a fixed 
     '(`###` in a file, `####` in a comment)',
     '`Review history (<YYYY-MM-DD>, <tool>)`',
     '`Review-Verlauf (<YYYY-MM-DD>, <tool>)`',
+    'The heading carries the date and tool of the pass that recorded the moved result, or of the superseding pass when that is unknown.',
     '`Result at that time: <value>`',
     '`Ergebnis damals: <value>`',
     'newest first, before the open-points section',
