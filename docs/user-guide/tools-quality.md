@@ -210,8 +210,8 @@ says "no acceptance source" in one line. The automatic review after a delivery n
   as `undetermined`; in the review body every `undetermined` criterion reads "not confirmed in this
   review", and the reviewer's own reasons stay in the chat report. The summary also shows the
   autopilot record's decisions, their count and the architecture-fit score; these are shown, never
-  judged. With an `incomplete` criterion, the suggested next step is `iterate <PR>`; otherwise it is
-  `merge-gate <PR>`.
+  judged. With an `incomplete` criterion, the suggested next step is `iterate <PR> own-review findings`, so the
+  run also takes up the review's own published findings; otherwise it is `merge-gate <PR>`.
 
 **Interplay:** Each admitted finding carries a recommendation for the appropriate follow-up action –
 `/effective-flow fix` (defect), `/effective-flow refactor` (structural problem), `/effective-flow build` (missing

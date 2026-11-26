@@ -1,6 +1,6 @@
 # Recommend an iterate invocation that includes Effective Flow own-review threads
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #769
@@ -118,6 +118,7 @@ and `iterate` Phase 0 and Phase 2, with a contract test and doc mirrors
   Phase 2 step 1 excludes marked threads only (`src/tools/iterate.md:703-708`). A marked own review
   body therefore already reaches classification as free text in a bare run, and that behaviour stays
   unchanged.
+
 - **Hidden mode needs no special case.** Hidden mode publishes no marked review
   (`src/shared/pr-thread-ledger.md:30-31`, `src/shared/pr-review-integration.md:61`). The switch then
   has nothing to add, and the run behaves like a bare invocation.
@@ -131,6 +132,7 @@ and `iterate` Phase 0 and Phase 2, with a contract test and doc mirrors
 
   The cell `merge-gate` › blocked by failing checks (`{{SKILL:iterate}} <PR> fix the failing checks`)
   concerns checks, not own-review threads, and stays unchanged.
+
 - **Delivery rows: new publication-conditioned rows** (decided by score). Delivery runs can publish
   own findings through the automatic "PR review publication"
   (`src/shared/worktree-integration.md:487-496`, `src/tools/apply-issues.md:410-420`,
@@ -171,6 +173,7 @@ and `iterate` Phase 0 and Phase 2, with a contract test and doc mirrors
   The trade-off the score accepted: the generic row's Or option (`apply <findings report>`,
   `apply <offloaded report>`, `review <PR>`) is not offered on the specific row. Each row keeps at
   most two `{{SKILL:…}}` references (`build-lib.mjs`).
+
 - **One rule for every selection path** (decided by score). Plan-aware selection
   (`src/shared/next-steps.md:94-121`) can produce an `iterate` option without reading the fallback
   table, which is read "only after the selection above" (`:186-190`). `next-steps.md` therefore gains
@@ -236,6 +239,7 @@ and `iterate` Phase 0 and Phase 2, with a contract test and doc mirrors
      pattern at `src/tools/iterate.md:580-585`.
 
    Review bodies are unchanged. The test's source assertions read that fragment.
+
 4. **`next-steps.md` table.** Change the four existing cells to
    `{{SKILL:iterate}} <PR> own-review findings`. Derive the delivery tool set from the include
    closure of `src/shared/pr-review-integration.md`. Add one
@@ -299,6 +303,7 @@ and `iterate` Phase 0 and Phase 2, with a contract test and doc mirrors
        and the handled-state rule with its author restriction.
 
      It also asserts the reworded `review.md` step 6 sentence.
+
    - The failing-checks cell keeps its existing assertion at line 5457.
 10. **Eval evaluator.** Update the `ambiguous-associated-plans-fallback` expectation in
     `evals/next-steps/_scaffold/evaluate.mjs:43`. Today `normalizedReferenceInvocation`
@@ -392,33 +397,33 @@ Not relevant.
 ## Acceptance criteria
 
 - [ ] The four existing `iterate` cells of `src/shared/next-steps.md` read exactly
-  `{{SKILL:iterate}} <PR> own-review findings`, and the failing-checks cell is unchanged. Every
-  delivery "PR opened" row whose run can execute the automatic PR review publication (the derived
-  set, named in the pull request body) has a directly preceding `…, own review findings published`
-  row with Then `{{SKILL:iterate}} <PR> own-review findings` and Or `{{SKILL:merge-gate}} <PR>`.
-  `iterate` › `PR mode` has the same specific row. A rule outside the table makes every
-  `{{SKILL:iterate}} <PR>` option carry `own-review findings` after published own findings, in
-  plan-aware selection as in the fallback. The pinned-set assertion holds that list. The
-  table-selection sentence states that an extending row wins over its generic row and when the
-  condition holds. An unknown publication result selects the generic row.
+      `{{SKILL:iterate}} <PR> own-review findings`, and the failing-checks cell is unchanged. Every
+      delivery "PR opened" row whose run can execute the automatic PR review publication (the derived
+      set, named in the pull request body) has a directly preceding `…, own review findings published`
+      row with Then `{{SKILL:iterate}} <PR> own-review findings` and Or `{{SKILL:merge-gate}} <PR>`.
+      `iterate` › `PR mode` has the same specific row. A rule outside the table makes every
+      `{{SKILL:iterate}} <PR>` option carry `own-review findings` after published own findings, in
+      plan-aware selection as in the fallback. The pinned-set assertion holds that list. The
+      table-selection sentence states that an extending row wins over its generic row and when the
+      condition holds. An unknown publication result selects the generic row.
 - [ ] `src/tools/iterate.md` Phase 0 recognizes the exact phrase `own-review findings` as the
-  own-review switch, only in a direct invocation without a body delimiter or control line, and
-  removes it from the free text. Phase 2 step 1 names the switch as the explicit selection of marked
-  threads and still states that a bare invocation excludes them. With the switch set, every marked
-  top-level PR comment enters classification, except findings whose `Signature` an earlier iterate
-  summary authored by this run's authenticated login lists. The switched run's summary lists the
-  Signatures it handled. Each finding is one free-text item with author login and URL as provenance,
-  with no reply and no resolve. An invocation that carries `Run state:` never sets the switch.
-  Only a comment whose leading line is the marker counts. A failed comments read is reported.
+      own-review switch, only in a direct invocation without a body delimiter or control line, and
+      removes it from the free text. Phase 2 step 1 names the switch as the explicit selection of marked
+      threads and still states that a bare invocation excludes them. With the switch set, every marked
+      top-level PR comment enters classification, except findings whose `Signature` an earlier iterate
+      summary authored by this run's authenticated login lists. The switched run's summary lists the
+      Signatures it handled. Each finding is one free-text item with author login and URL as provenance,
+      with no reply and no resolve. An invocation that carries `Run state:` never sets the switch.
+      Only a comment whose leading line is the marker counts. A failed comments read is reported.
 - [ ] The new test in `test/workflow-contracts.test.mjs` names its invariant, fails when either side's
-  phrase changes alone, and passes on the changed tree.
+      phrase changes alone, and passes on the changed tree.
 - [ ] `docs/user-guide/tool-flow.md` mirrors the changed rows (the `findNextStepsDocViolations`
-  assertion passes), and `tools-quality.md` and `tools-implement.md` describe the extended
-  invocation.
+      assertion passes), and `tools-quality.md` and `tools-implement.md` describe the extended
+      invocation.
 - [ ] `evals/next-steps/_scaffold/evaluate.mjs` expects the extended second option for
-  `ambiguous-associated-plans-fallback`.
+      `ambiguous-associated-plans-fallback`.
 - [ ] No new model runs are recorded. The pull request body names every suite, out of all five,
-  that `pnpm eval <suite> verify` reports as stale.
+      that `pnpm eval <suite> verify` reports as stale.
 - [ ] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`, `pnpm test:distribution`.
 
 ## Validation plan
@@ -770,3 +775,83 @@ Deep plan review, 2026-11-26 (`plan-review`, file mode, scored decisions):
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-26
+**Workflow:** `effective-flow build`, unattended (autopilot run `ap-20261126T145047Z-17c3aa32`)
+
+### Requirement
+
+Recommend an `iterate` invocation that also processes Effective Flow's own published review
+findings, and make `iterate` able to select them: the phrase `own-review findings` after the pull
+request reference is the explicit switch.
+
+### Architecture decisions
+
+- The switch is recognized in `iterate` Phase 0 step 13 only for a direct invocation without a body
+  delimiter or any control line, so delegated or forged text never sets it and the Phase 2.5
+  approval precedes every item it admits. Local mode and hidden mode add nothing.
+- The top-level comment rules live in the new lazy fragment
+  `src/shared/iterate-own-review-surfaces.md`, loaded at the decision point before Phase 1.
+- Handled state is a fixed `Handled own-review Signatures:` block in a summary authored by the
+  run's own authenticated login. It lists a normalized `signature-parse` value only when every item
+  sharing it reached a terminal outcome. Each line is parsed alone; raw text is never republished.
+- `src/shared/next-steps.md` carries one rule outside the table. The four `iterate` cells read
+  `{{SKILL:iterate}} <PR> own-review findings`, and an extending row wins over its generic row.
+- New `…, own review findings published` rows exist for `apply` (both "PR opened" rows), `build`,
+  `fix`, `refactor`, `docs`, `maintain` and `iterate` › PR mode. `deliver` and `pr` never run the
+  automatic PR review publication and get no row.
+- `src/shared/worktree-integration.md` is the single owner of the retained per-PR published-finding
+  count. `apply-issues` and `apply-review-remote` report their own publications, and an unknown
+  count selects the generic row.
+
+### Affected files
+
+`src/shared/iterate-own-review-surfaces.md` (new), `src/tools/iterate.md`,
+`src/shared/next-steps.md`, `src/shared/worktree-integration.md`, `src/tools/apply.md`,
+`src/tools/apply-issues.md`, `src/tools/apply-plan.md`, `src/tools/apply-review.md`,
+`src/tools/apply-review-remote.md`, `src/tools/review.md`, `evals/next-steps/_scaffold/evaluate.mjs`,
+`test/workflow-contracts.test.mjs`, `test/next-steps-eval.test.mjs`, `docs/user-guide/tool-flow.md`,
+`docs/user-guide/tools-implement.md`, `docs/user-guide/tools-quality.md`.
+
+### Implementation details
+
+- `contextBudget`: `iterate` 1925, `apply-review` 1072, `apply-plan` 568, `apply` 560,
+  `apply-review-remote` 391; `apply-issues` and `review` unchanged.
+- The next-steps evaluator normalizes only the first argument token as the PR reference and compares
+  the trailing text exactly.
+- Documentation sync: `tool-flow.md` mirrors the changed and new rows, `tools-quality.md` and
+  `tools-implement.md` describe the extended invocation. No impact on `README.md`, `AGENTS.md` and
+  `docs/developer-guide/build-system.md` (it lists no individual lazy fragments).
+
+### Test results
+
+- Full suite (Phase 5, before the review corrections): `pnpm agent:check`, `node build.mjs` and
+  `pnpm test:distribution` passed. `pnpm test` had 8 failures, none in a changed path. Four also fail
+  on the base (pre-existing: three host-driver Python cases and the merge-gate eval round lifecycle
+  test). The other four passed on the base and on the candidate when run alone; they are timing
+  tests that failed under host load.
+- Later changes were verified targeted: the 24 test files that read the changed sources,
+  `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution`. All passed except one
+  `merge-gate-eval-round` timeout under host load, which passed again when run alone.
+- `pnpm eval <suite> verify` for `merge-gate`, `iterate`, `next-steps`, `build-context` and `focus`:
+  evidence debt only (stale or absent), no integrity failure. No new model runs were recorded.
+
+### Review result
+
+One Node.js/CLI review with one incorporation pass, a scoped re-check, a full pass on the floor-hit
+paths and two bounded current-scope corrections with their re-checks. All findings are fixed; no
+review report was offloaded.
+
+## Review findings
+
+**Date:** 2026-11-26
+**Reviewer:** `effective-flow-nodejs-reviewer`
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    15 |
+| Open / Not implemented |     0 |

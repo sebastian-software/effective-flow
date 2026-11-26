@@ -1,6 +1,6 @@
 ---
 description: "Internal sub-file of apply-review: issue-tracker integration, the external-target contract, and the complete tracker flow. Loaded by tools/apply-review.md whenever the resolved tracker target is not local."
-contextBudget: 390
+contextBudget: 391
 ---
 
 # Effective Flow Apply Review – Remote mode
@@ -209,7 +209,8 @@ incomplete until merge reconciliation. `wontfix` findings keep their existing de
 ### Phase 7/8 remote
 
 Final validation and summary as in local mode; the summary additionally names the resolved tracker
-target, direct finding references, created PRs, any optional legacy container mechanism/epic, and
-findings retained for post-merge reconciliation.
+target, direct finding references, created PRs with each one's count of findings its PR review
+publication published, any optional legacy container mechanism/epic, and findings retained for
+post-merge reconciliation.
 
 Returning per-finding implementation, PR and review adapters retain the caller's overview. Eligible cross-agent progress uses each hop's own immediate-parent context under `shared/subagent-progress.md`; same-session calls integrate directly. Preserve failed/unassessed outcomes, roots, receipts and terminal joins.

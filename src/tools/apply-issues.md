@@ -442,7 +442,7 @@ Report to the user:
 - container entries retained for post-merge reconciliation, if containers were processed
 
 Then delete the wisdom file and **return** that report plus the run's end state — the created pull
-requests/skipped issues, verified source association, complete basis, checkpoint/decision and observed outcomes — to `{{SKILL:apply}}`, which closes the run with its own
+requests/skipped issues, each pull request's count of findings its PR review publication published, verified source association, complete basis, checkpoint/decision and observed outcomes — to `{{SKILL:apply}}`, which closes the run with its own
 next-step block. Name no follow-up invocation of your own here.
 
 ## Rules
