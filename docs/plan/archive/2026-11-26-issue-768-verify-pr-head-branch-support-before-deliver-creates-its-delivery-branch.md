@@ -1,6 +1,6 @@
 # Verify PR head-branch support before deliver creates its delivery branch
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #768
@@ -64,6 +64,7 @@ transport stays out of scope.
 
   `pr` gains no host-tool transport. A head-capable host integration, or rebinding a thread to the
   delivery branch, is a separate change, as the issue itself states.
+
 - **The regression case is a pure classifier plus tests.** (Decided by score.) A new read-only
   `publication-preflight` operation on `src/scripts/delivery-selection-core.mjs` classifies the
   writer evidence the orchestrator observed. It returns `supported` or `unsupported` with stable
@@ -75,6 +76,7 @@ transport stays out of scope.
 
   The model still observes the evidence, because host tool schemas and host policy are visible
   only to it. The script owns the decision rule, so the rule is stated once and tested.
+
 - **On an unsupported writer, stop with guidance only.** (Decided by score.) There is no
   branch-only handoff, no push, and no new question beyond the provider question below.
 - **Observe early, classify at step 3.3.** (Decided by score.) The writer observation depends on
@@ -90,6 +92,7 @@ transport stays out of scope.
 
   These gates meet the issue's "recheck the exact committed head before publishing". A contract test
   pins them instead of `deliver` repeating them.
+
 - **Ask the provider question once, early, and hand the answer to `pr`.** (Decided by score.)
   `AMBIGUOUS_HOST` from `repository-resolve` gets the same `github`/`forgejo` question as `pr`
   step 5, at the step 1.1 observation. The answer goes to `{{SKILL:pr}}` as its explicit provider
@@ -102,6 +105,7 @@ transport stays out of scope.
   `S-DHST` in `src/shared/scored-decisions.md` beside S-HOST. The row test checks only a unique
   `SITE_ID`, an existing file, a literal anchor and a kind, and S-DLV is a precedent for a `deliver`
   file (`test/scored-decisions-contract.test.mjs:117-131`).
+
 - **The early answer is the committed-range route's provider question.** (Decided by score.) The
   step 1.1 gate runs before the route is known, so it also applies to committed-range runs. When the
   step 1.1 question was asked, its answer counts as that route's single provider question. The route
@@ -118,30 +122,32 @@ transport stays out of scope.
   - the configured `delivery.baseBranch` value verbatim, as a display value and not a recorded
     base-branch result;
   - the head conditionally: "a fresh `<prefix>/deliver/<subject slug>` branch (`deliver/<subject
-    slug>` with an empty prefix) for a selected change, or the current branch `<name>` when commits
+slug>` with an empty prefix) for a selected change, or the current branch `<name>` when commits
     that already exist are published".
 
   This needs no Git read and is route-neutral. Step 3.1 still runs the full base-branch rule,
   unchanged.
+
 - **Use the same context and probe as `pr`.** `deliver` delegates to `{{SKILL:pr}}` in the same
   session, and `pr` runs its helper calls from `RUNTIME_STATE_ROOT` (`src/tools/pr.md`, "Execution
   root"). So the observation makes the same two helper calls as `pr` steps 5–6, `repository-resolve`
   and `probe`, with `RUNTIME_STATE_ROOT` as `cwd`. `deliver` spells out their payloads itself rather
   than pointing at `pr`'s step numbers, because `pr.md` is not loaded at step 1.1. A
   ` ```lazy-include remote-helper-contract ` with `when: the step 1.1 writer observation calls the
-  remote helper` supplies the call-shape rules, following the committed-range precedent
+remote helper` supplies the call-shape rules, following the committed-range precedent
   (`src/shared/deliver-committed-range.md:66-69`). That is the context in which publication will
   actually run. A Git push capability, a checkout path or a generic PR tool is never evidence.
 - **Eager core, one lazy stop fragment.** Every `deliver` run needs only the observation and the
   classifier calls, so those stay eager in step 1.1 and step 3.3. The mode-gated text moves behind
   one ` ```lazy-include deliver-publication-preflight ` with `when: the host policy is restricted or
-  publication-preflight returns unsupported`, shared by step 1.1, step 3.3 and resume:
+publication-preflight returns unsupported`, shared by step 1.1, step 3.3 and resume:
   - the host-tool schema description;
   - the stop report;
   - the alternatives and statements.
 
   This follows AGENTS.md "Writing prompt text", rules 1–3. Each rule is stated once there or in its
   step. The other call sites refer to it and do not repeat it.
+
 - **Insert the classification as step 3.3 and renumber.** The current 3.3 and 3.4 become 3.4 and
   3.5. A repository search found no reference to `deliver` steps 3.3 or 3.4. Tests cite only steps
   3.1 and 3.2 (`test/workflow-contracts.test.mjs:20804`, `:23489`;
@@ -149,21 +155,21 @@ transport stays out of scope.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/delivery-selection-core.mjs` | Add the pure `publication-preflight` operation to `DELIVERY_SELECTION_OPERATIONS` and its dispatch, as a read-only operation, not a dry-run one. It has a closed input schema, writes nothing and runs no Git command. |
-| `src/scripts/delivery-selection.mjs` | Add `publication-preflight` to the usage line (`:102`). |
-| `src/tools/deliver.md` | Add the writer observation and its early stop to step 1.1, after the resume lazy-include and before `upstream-status`, with a `remote-helper-contract` lazy-include and a `deliver-publication-preflight` lazy-include. List the provider question in the approval paragraph. Insert step 3.3 (classification and stop) and renumber 3.3/3.4. List the operation under "Project conventions". Add an abort-boundary bullet. Update `contextBudget` from the build report. |
-| `src/shared/deliver-publication-preflight.md` | New lazy fragment for `deliver` only. It holds the host-tool schema description, the stop report (early and pair scope), the supported alternatives and the "not a delivered pull request" statement. |
-| `src/shared/deliver-partial-diff-resume.md` | Add the observation and classification to "Runs, in this order" after step 1.2, with a controlled-stop rollback. Change the "Skipped" line to "step 3 except the step 3.3 classification". |
-| `src/tools/pr.md` | In step 10, name the payload's `head` as the exact handed-off head branch (on a direct invocation, the checked-out branch). Update `contextBudget` only if the build report requires it. |
-| `src/shared/scored-decisions.md` | Add the `blocker` row `S-DHST` for `deliver`'s step 1.1 provider question, beside S-HOST. |
-| `src/shared/deliver-committed-range.md` | In its provider-question bullet (`:79-83`), add one sentence: an answer to the step 1.1 provider question counts as this question, which is then not asked again. In condition 3 (`:56-58`), pass that answer as the explicit provider override to `repository-resolve`. |
-| `test/delivery-selection.test.mjs` | Pure classifier tests: schema rejection (`INVALID_PAYLOAD`), every reason code in its fixed order, `probe: null`, writer and pair scope, and the same-topology negative/positive regression pair, both through `executeOperation` and through one CLI envelope. |
-| `test/model-tiers-contract.test.mjs` | One distribution assertion, like the committed-range one (`:1543-1557`): every target ships `shared/deliver-publication-preflight.md` behind its `deliver` pointer, and the core does not inline it. |
-| `test/workflow-contracts.test.mjs` | New prose contract tests for the source invariants (see Acceptance criteria), each naming its invariant. Three existing pins are updated deliberately: the helper-operation list regex (`:20471`, `` `reconcile`, and `committed-range` operations``) gains `publication-preflight`; the approval-paragraph token list (`:20034-20050`) gains the provider-question token; the ordered step 1.1 pin (`:20236-20246`, "Unless a record was resumed" → `upstream-status`) admits the observation between them. |
-| `docs/user-guide/tools-deliver.md` | New subsection "When the pull request cannot target the delivery branch". |
-| `docs/developer-guide/architecture.md` | One paragraph next to the `committed-range` description (`:614`) on `publication-preflight`: its payload, reasons and call sites. |
+| File                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/scripts/delivery-selection-core.mjs`     | Add the pure `publication-preflight` operation to `DELIVERY_SELECTION_OPERATIONS` and its dispatch, as a read-only operation, not a dry-run one. It has a closed input schema, writes nothing and runs no Git command.                                                                                                                                                                                                                                                                                       |
+| `src/scripts/delivery-selection.mjs`          | Add `publication-preflight` to the usage line (`:102`).                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `src/tools/deliver.md`                        | Add the writer observation and its early stop to step 1.1, after the resume lazy-include and before `upstream-status`, with a `remote-helper-contract` lazy-include and a `deliver-publication-preflight` lazy-include. List the provider question in the approval paragraph. Insert step 3.3 (classification and stop) and renumber 3.3/3.4. List the operation under "Project conventions". Add an abort-boundary bullet. Update `contextBudget` from the build report.                                    |
+| `src/shared/deliver-publication-preflight.md` | New lazy fragment for `deliver` only. It holds the host-tool schema description, the stop report (early and pair scope), the supported alternatives and the "not a delivered pull request" statement.                                                                                                                                                                                                                                                                                                        |
+| `src/shared/deliver-partial-diff-resume.md`   | Add the observation and classification to "Runs, in this order" after step 1.2, with a controlled-stop rollback. Change the "Skipped" line to "step 3 except the step 3.3 classification".                                                                                                                                                                                                                                                                                                                   |
+| `src/tools/pr.md`                             | In step 10, name the payload's `head` as the exact handed-off head branch (on a direct invocation, the checked-out branch). Update `contextBudget` only if the build report requires it.                                                                                                                                                                                                                                                                                                                     |
+| `src/shared/scored-decisions.md`              | Add the `blocker` row `S-DHST` for `deliver`'s step 1.1 provider question, beside S-HOST.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/shared/deliver-committed-range.md`       | In its provider-question bullet (`:79-83`), add one sentence: an answer to the step 1.1 provider question counts as this question, which is then not asked again. In condition 3 (`:56-58`), pass that answer as the explicit provider override to `repository-resolve`.                                                                                                                                                                                                                                     |
+| `test/delivery-selection.test.mjs`            | Pure classifier tests: schema rejection (`INVALID_PAYLOAD`), every reason code in its fixed order, `probe: null`, writer and pair scope, and the same-topology negative/positive regression pair, both through `executeOperation` and through one CLI envelope.                                                                                                                                                                                                                                              |
+| `test/model-tiers-contract.test.mjs`          | One distribution assertion, like the committed-range one (`:1543-1557`): every target ships `shared/deliver-publication-preflight.md` behind its `deliver` pointer, and the core does not inline it.                                                                                                                                                                                                                                                                                                         |
+| `test/workflow-contracts.test.mjs`            | New prose contract tests for the source invariants (see Acceptance criteria), each naming its invariant. Three existing pins are updated deliberately: the helper-operation list regex (`:20471`, `` `reconcile`, and `committed-range` operations``) gains `publication-preflight`; the approval-paragraph token list (`:20034-20050`) gains the provider-question token; the ordered step 1.1 pin (`:20236-20246`, "Unless a record was resumed" → `upstream-status`) admits the observation between them. |
+| `docs/user-guide/tools-deliver.md`            | New subsection "When the pull request cannot target the delivery branch".                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `docs/developer-guide/architecture.md`        | One paragraph next to the `committed-range` description (`:614`) on `publication-preflight`: its payload, reasons and call sites.                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Implementation details
 
@@ -210,6 +216,7 @@ transport stays out of scope.
 
    A host tool is always unsupported in this change. Malformed input returns the helper's existing
    `INVALID_PAYLOAD` error envelope with exit code 2 (`delivery-selection-core.mjs:36-52`).
+
 2. **CLI.** Add the operation to the usage line. No `--apply` handling is needed.
 3. **`deliver` step 1.1, writer observation.** Unless a record was resumed, observe the writer once,
    after the resume lazy-include and before `upstream-status`:
@@ -259,6 +266,7 @@ transport stays out of scope.
       the branch outside this workflow. It states that nothing was changed, and that a compare URL or manual handoff is not
       a delivered pull request. Never switch, push or publish the source branch, and never use a
       different transport.
+
    3. On `supported`, continue with no question. Hand the step 1.1 provider answer, when there is
       one, to `{{SKILL:pr}}` at step 6 as its explicit provider override. Step 6 itself is
       otherwise unchanged.
@@ -276,6 +284,7 @@ transport stays out of scope.
    `worktree inspect` offers only `aborted` or `failed` records for resume. The ledger keeps its entries, so a later run in a supported context resumes the
    record the same way. Amend the "Skipped" line so step 3 is skipped except the step 3.3
    classification.
+
 6. **`pr` step 10.** Add one clause: the payload's `head` is the exact head branch from the committed
    handoff, or on a direct invocation the checked-out branch of step 1. It is never derived from the
    main checkout.
@@ -296,6 +305,7 @@ transport stays out of scope.
 
    The developer guide describes the operation, its payload, scopes and reasons, and its three call
    sites: step 1.1, step 3.3 and resume.
+
 10. **Budgets.** Run `node build.mjs` and set `contextBudget` for `deliver`, and for `pr` if it
     changed, to the reported built line count plus at most ten lines.
 
@@ -398,6 +408,7 @@ Not relevant.
   - `pr.md` steps 3, 6 and 7 keep the head-OID and probe gates before the push.
 
   Each test names the invariant it protects.
+
 - [ ] **Full order passes.** `pnpm agent:check`, `pnpm test` (including the scored-decisions
       contract with the new row and the `model-tiers-contract` distribution assertion for the new
       fragment), `node build.mjs` (including the `contextBudget` guard) and
@@ -791,15 +802,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 6 | 4 |
-| Testability | 0 | 0 | 2 |
-| Scope | 0 | 2 | 0 |
-| Maintainability | 0 | 0 | 4 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         6 |    4 |
+| Testability     |        0 |         0 |    2 |
+| Scope           |        0 |         2 |    0 |
+| Maintainability |        0 |         0 |    4 |
 
 ### Findings
 

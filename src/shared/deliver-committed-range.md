@@ -54,7 +54,9 @@ is noted and evaluation continues, so a later notice or pointer still wins.
    with `root` the source root, `baseRef` the range base, `baseBranch` the resolved local base
    branch, and `knownOids`. Keep its `branch`, `headOid`, `commits`, and `paths`.
 3. **No existing PR.** Run `repository-resolve`, the probe once, and `pr-list` with
-   `{state: "all", head}`, each with the verified `RUNTIME_STATE_ROOT` as `cwd`. On GitHub, `head`
+   `{state: "all", head}`, each with the verified `RUNTIME_STATE_ROOT` as `cwd`;
+   `repository-resolve` carries step 1.1's provider answer as its explicit provider override when
+   one was given. On GitHub, `head`
    is `<owner>:<head-branch>` with the `origin` owner `repository-resolve` reports; on Forgejo,
    `<head-branch>`. Hydrate every item lacking `head`, `base`, `state`, a URL, or `sameRepository`
    through `pr-read` under `pr` step 8's completeness rules; an item still incomplete is a lookup
@@ -80,7 +82,9 @@ when: condition 3 calls the remote helper
   and repeat the lookup with that answer. It is the route's single question: any noted
   focused-question outcome, whether noted before or after it, then ends the run with one notice
   naming every failed condition, nothing pushed. An unanswered, skipped, or non-interactive
-  provider question ends the run with one notice naming `AMBIGUOUS_HOST`, nothing pushed.
+  provider question ends the run with one notice naming `AMBIGUOUS_HOST`, nothing pushed. An
+  answer to `deliver`'s step 1.1 provider question counts as this question, which is then not
+  asked again.
 - **One notice line, no question,** naming its cause or code: the rule's `unresolvable`, the only
   notice that points to `{{SKILL:setup}}`; no remote-tracking diff base (naming the range-base
   abort); `CLI_MISSING` or `AUTH_FAILED` with the helper's remediation; `upstream-status`

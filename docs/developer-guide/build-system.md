@@ -1807,6 +1807,11 @@ and directive syntax").
   paths included; a dirty checkout never loads it. It nests lazy pointers to
   `base-branch-resolution` (range-base derivation) and `remote-helper-contract` (the existing-PR
   lookup), and holds the route's only `ask` fence, which is unscored.
+  `deliver-publication-preflight` is the single-consumer `deliver` fragment for the publication-path
+  stop: the host-tool writer shape, the stop report, and the supported alternatives. Its one
+  pointer sits at step 1.1, after the host policy is set, and fires when that policy is
+  `restricted` or a `publication-preflight` call (step 1.1, step 3.3, or a resume) returns
+  `unsupported`; a supported unrestricted run never loads it.
   `deliver-partial-diff-resume` (the resume and release entry with its step map) is the single-consumer
   `deliver` fragment lazy from step 1.1, loaded only when `worktree inspect` lists a retained
   `partial-diff` record. `worktree-partial-diff-recovery` (ledger schema, size bound, proofs and call
