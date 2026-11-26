@@ -124,7 +124,8 @@
     },
     "pr-read": {
       "input": {
-        "number": 42
+        "number": 42,
+        "receiptContext": {}
       },
       "provider": {
         "number": 42,
@@ -178,7 +179,11 @@
             "base": "develop",
             "draft": true,
             "headRepository": "example/flow",
-            "sameRepository": true
+            "sameRepository": true,
+            "bodySha256": "8895701c3fe96acd0ee7c2c14d1fdc71b00ea7a584a5c03ab725810a77fcb108",
+            "issueLifecycleReceipt": {
+              "state": "absent"
+            }
           },
           "command": {
             "executable": "gh",
@@ -528,37 +533,6 @@
             }
           ],
           "conditionalWriteAvailable": false
-        },
-        "dryRun": false
-      }
-    },
-    "body-hash": {
-      "input": {
-        "body": "Adds the eval skeleton.\n\n<!-- effective-flow-autopilot-appendix:begin v1 -->\n## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.\n\n<!-- effective-flow-autopilot-appendix:end -->\n"
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "body-hash",
-        "provider": null,
-        "data": {
-          "hash": "8895701c3fe96acd0ee7c2c14d1fdc71b00ea7a584a5c03ab725810a77fcb108"
-        },
-        "dryRun": false
-      }
-    },
-    "issue-lifecycle-receipt-parse": {
-      "input": {
-        "body": "Adds the eval skeleton.\n\n<!-- effective-flow-autopilot-appendix:begin v1 -->\n## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.\n\n<!-- effective-flow-autopilot-appendix:end -->\n"
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "issue-lifecycle-receipt-parse",
-        "provider": null,
-        "data": {
-          "found": false,
-          "receipt": null
         },
         "dryRun": false
       }

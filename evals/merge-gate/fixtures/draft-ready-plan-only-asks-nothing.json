@@ -124,7 +124,8 @@
     },
     "pr-read": {
       "input": {
-        "number": 42
+        "number": 42,
+        "receiptContext": {}
       },
       "provider": {
         "number": 42,
@@ -179,7 +180,11 @@
             "draft": true,
             "headRepository": "example/flow",
             "sameRepository": true,
-            "planPrMarker": "docs/plan/2026-09-01-merge-gate-eval.md"
+            "planPrMarker": "docs/plan/2026-09-01-merge-gate-eval.md",
+            "bodySha256": "d1f526bc08aaee5a59ad4d29e03cddd6ef24a09c812d234318b33c1404bd6a56",
+            "issueLifecycleReceipt": {
+              "state": "absent"
+            }
           },
           "command": {
             "executable": "gh",
@@ -529,37 +534,6 @@
             }
           ],
           "conditionalWriteAvailable": false
-        },
-        "dryRun": false
-      }
-    },
-    "body-hash": {
-      "input": {
-        "body": "Adds the eval skeleton.\n\n<!-- effective-flow-autopilot-appendix:begin v1 -->\n## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.\n\n<!-- effective-flow-autopilot-appendix:end -->\n\n<!-- effective-flow-plan-pr:v1 {\"plan\":\"docs/plan/2026-09-01-merge-gate-eval.md\"} -->\n"
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "body-hash",
-        "provider": null,
-        "data": {
-          "hash": "d1f526bc08aaee5a59ad4d29e03cddd6ef24a09c812d234318b33c1404bd6a56"
-        },
-        "dryRun": false
-      }
-    },
-    "issue-lifecycle-receipt-parse": {
-      "input": {
-        "body": "Adds the eval skeleton.\n\n<!-- effective-flow-autopilot-appendix:begin v1 -->\n## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.\n\n<!-- effective-flow-autopilot-appendix:end -->\n\n<!-- effective-flow-plan-pr:v1 {\"plan\":\"docs/plan/2026-09-01-merge-gate-eval.md\"} -->\n"
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "issue-lifecycle-receipt-parse",
-        "provider": null,
-        "data": {
-          "found": false,
-          "receipt": null
         },
         "dryRun": false
       }

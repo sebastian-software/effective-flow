@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 979
+contextBudget: 985
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -156,18 +156,20 @@ For every remote-helper invocation in every phase, put the verified `RUNTIME_STA
 input object's top-level `cwd`; setting only the process or tool working directory is not a substitute.
 
 1. Resolve the pull request from the argument or the current branch through the PR resolution of the
-   loaded "PR review comment integration" and retain its fresh body, body hash, canonical repository,
-   state, and merge result. A pull request belonging to another repository is reported without mutation and
-   the run ends. A closed-but-unmerged pull request also ends with no wait, delegation, or merge.
-   Parse the body only under "Issue implementation lifecycle":
-   - an open pull request continues through the normal gate and retains any one valid receipt for
+   loaded "PR review comment integration"; here it always ends in a `pr-read` with
+   `receiptContext: {}`, also after `pr-list`. Retain that read's body, `bodySha256`,
+   `issueLifecycleReceipt`, state, and merge result. A record whose `repository` is not the canonical
+   `repository-resolve` slug belongs to another repository: report it without mutation and end the
+   run. A closed-but-unmerged pull request also ends with no wait, delegation, or merge.
+   Route on the receipt state under "Issue implementation lifecycle":
+   - an open pull request continues through the normal gate and retains a `valid` receipt for
      post-merge observation;
    - an already-merged pull request with one valid receipt enters **observer-only mode** and jumps to
      Phase 5.5 after forge preflight; it performs no check wait, delegation, branch provisioning, or
      merge;
-   - an already-merged legacy PR with no receipt, or one with an invalid receipt, keeps the former
-     non-mutating ending and reports why issue observation is unavailable. Never heuristically parse
-     arbitrary identifiers from its prose.
+   - an already-merged pull request whose receipt is `absent`, `invalid`, or `unavailable` keeps the
+     former non-mutating ending and reports why issue observation is unavailable. Never
+     heuristically parse arbitrary identifiers from its prose.
 
    That path is a closed allowlist, and an action absent from it is out of scope by construction.
    **A merged PR is re-entered:** run only receipt validation, bounded tracker observation, the

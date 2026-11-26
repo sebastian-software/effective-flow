@@ -12756,6 +12756,74 @@ test('issue lifecycle receipt propagation is exact and existing PR writes stay g
   );
 });
 
+// Issue observation validates an existing PR's receipt from the helper's own `pr-read` result, so
+// no model copies a PR body into the parser. Each assertion below names the invariant it protects.
+test('issue observation takes the receipt and body hash only from a pr-read with receiptContext', () => {
+  const receipt = prose(source('src/shared/issue-lifecycle-receipt.md'));
+  const gate = source(MERGE_GATE_PATH);
+  const run = source('src/shared/merge-gate-delegated-run.md');
+  const observation = prose(source('src/shared/merge-gate-issue-observation.md'));
+
+  // Invariant 1: the observation-scoped consumer rule lives once, in its owning fragment, and
+  // excludes a host PR read as a receipt or hash source; a non-`valid` state reads as the absent
+  // receipt the fragment already reports as "issue observation unavailable".
+  const rule = /Issue observation takes the receipt and body hash only from/g;
+  assert.equal(receipt.match(rule)?.length, 1);
+  assert.match(
+    receipt,
+    /only from `issueLifecycleReceipt` and `bodySha256` of a `pr-read` with `receiptContext`, never from a read body passed to `issue-lifecycle-receipt-parse` or `body-hash` or a host PR read/,
+  );
+  assert.match(receipt, /non-`valid` counts as no receipt\./);
+  assert.match(
+    receipt,
+    /without a receipt keeps the previous merge behavior, with issue observation reported as unavailable/,
+  );
+
+  // Invariant 2: both reads that feed observation ask the helper for the receipt, Phase 0 and the
+  // Phase 5.5 entry, so neither falls back to a body copied from another read.
+  const phase0 = prose(section(gate, '### Phase 0: Resolve', '\n### '));
+  assert.match(
+    phase0,
+    /always ends in a `pr-read` with `receiptContext: \{\}`, also after `pr-list`/,
+  );
+  assert.match(phase0, /Retain that read's body, `bodySha256`, `issueLifecycleReceipt`/);
+  const entry = prose(section(run, '### Phase 5.5', '\n### '));
+  assert.match(entry, /That read is a `pr-read` with `receiptContext: \{\}`/);
+
+  // Invariant 3: a receipt that is not `valid` at the entry read ends the phase before the
+  // observation fragment loads and, after a `valid` Phase 0 receipt, reports `changed`; without a
+  // `valid` Phase 0 receipt the Phase 0 result stands. A differing `valid` receipt ends observation
+  // as `changed`, and absent, invalid and unavailable all read as "issue observation unavailable"
+  // at Phase 0.
+  assert.match(
+    entry,
+    /entry-read `issueLifecycleReceipt` state other than `valid`, preserves the merge result and ends this phase without heuristic tracker access/,
+  );
+  assert.match(
+    entry,
+    /After a `valid` Phase 0 receipt, a non-`valid` entry read makes the Phase 6 result `changed`; without a `valid` Phase 0 receipt, the phase ends here whatever the entry read shows, and Phase 6 keeps the Phase 0 result\./,
+  );
+  assert.ok(entry.indexOf('result `changed`') < entry.indexOf('merge-gate-issue-observation'));
+  assert.ok(
+    entry.indexOf('state other than `valid`') < entry.indexOf('merge-gate-issue-observation'),
+  );
+  assert.match(
+    observation,
+    /entry read's `valid` receipt must equal the one Phase 0 retained, otherwise end observation with the Phase 6 result `changed` \(the merge stands\)/,
+  );
+  assert.match(
+    phase0,
+    /receipt is `absent`, `invalid`, or `unavailable` keeps the former non-mutating ending and reports why issue observation is unavailable/,
+  );
+
+  // Invariant 4: the three merge-gate sources hand no body to the inline-body operations. The
+  // producer write paths (issue-lifecycle-receipt.md, issue-lifecycle.md) legitimately name them,
+  // so the scope is exactly these sources.
+  for (const text of [gate, run, source('src/shared/merge-gate-issue-observation.md')]) {
+    assert.doesNotMatch(text, /issue-lifecycle-receipt-parse|body-hash/);
+  }
+});
+
 test('receipt-only producers pass a receipt to pr without started transition or closing keyword', () => {
   const receipt = prose(source('src/shared/issue-lifecycle-receipt.md'));
   const continuation = prose(source('src/shared/plan-pr-continuation.md'));
@@ -13911,9 +13979,11 @@ test('the Phase-6 receipt result stays inline and the per-issue report items fol
   // fragment loads, yet still owes the receipt result. That item therefore stays in the core, and
   // only the per-issue items a run can owe after reaching the pointer are read from the fragment.
   const phase6 = prose(section(mergeGateSource(), '### Phase 6: Summary', '\n## '));
+  // The receipt result names every state the helper's receipt-bearing `pr-read` can report, plus
+  // `changed` for a Phase 0 receipt the Phase 5.5 entry read no longer shows.
   assert.match(
     phase6,
-    /after a confirmed merge, the lifecycle receipt result — absent, invalid, or valid;/,
+    /after a confirmed merge, the lifecycle receipt result — absent, invalid, unavailable \(with its reason\), changed \(the Phase 5\.5 entry read no longer shows the `valid` Phase 0 receipt\), or valid;/,
   );
   assert.match(
     phase6,

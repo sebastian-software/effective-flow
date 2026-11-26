@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -13521,6 +13522,229 @@ test('Forgejo pr-read reads the raw API object, which states the head repository
   assert.equal(missing.ok, false);
   assert.equal(missing.error.code, 'COMMAND_FAILED');
   assert.equal(missing.error.details.status, 404);
+});
+
+// `pr-read` with `receiptContext` (issue observation): the helper parses the receipt from the same
+// raw provider object its record comes from, so no model ever copies the PR body into the parser.
+const RECEIPT_READ_PROVIDERS = [
+  {
+    name: 'GitHub',
+    repository: githubRepository,
+    slug: 'example/flow',
+    otherHostUrl: 'https://code.example.test/example/flow/issues/17',
+    pull: githubPlanPull,
+    stderr: '',
+    emptyBody: null,
+  },
+  {
+    name: 'Forgejo',
+    repository: forgejoRepository,
+    slug: 'team/flow',
+    otherHostUrl: 'https://github.com/team/flow/issues/17',
+    pull: forgejoPlanPull,
+    stderr: TEA_OK,
+    emptyBody: '',
+  },
+];
+
+function receiptFor(slug, issue = '#17') {
+  return {
+    target: 'forge',
+    repository: slug,
+    externalTool: null,
+    items: [lifecycleItem(issue, 'refs')],
+  };
+}
+
+// Multiline Markdown, double and single quotes and backslashes (including `\\` and `\"`): the
+// characters a model transcription mangles, around one complete receipt line.
+function specialCharacterBody(marker) {
+  return [
+    '## Summary',
+    '',
+    'Quotes "double" and \'single\', a path C:\\temp\\x, an escaped \\\\ and an escaped \\" here.',
+    '',
+    '```json',
+    '{"a": "b\\"c", "d": "e\\\\f"}',
+    '```',
+    '',
+    marker,
+    '',
+    'Trailing text.',
+  ].join('\n');
+}
+
+function omitKey(pull, key) {
+  const { [key]: _omitted, ...rest } = pull;
+  return rest;
+}
+
+async function readWithReceipt(provider, pull, extra = {}) {
+  const runner = fakeRunner([{ status: 0, stdout: JSON.stringify(pull), stderr: provider.stderr }]);
+  const envelope = await executeOperation(
+    'pr-read',
+    { repository: provider.repository, number: 7, ...extra },
+    { runner, skipProbe: true },
+  );
+  return { envelope, runner };
+}
+
+for (const provider of RECEIPT_READ_PROVIDERS) {
+  test(`${provider.name} pr-read with receiptContext returns the valid receipt and the hash of the exact payload body`, async () => {
+    const built = buildIssueLifecycleReceipt(receiptFor(provider.slug));
+    const body = specialCharacterBody(built.marker);
+    const { envelope } = await readWithReceipt(provider, provider.pull({ body }), {
+      receiptContext: {},
+    });
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.data.result.bodySha256, createHash('sha256').update(body).digest('hex'));
+    assert.equal(envelope.data.result.issueLifecycleReceipt.state, 'valid');
+    assert.equal(envelope.data.result.issueLifecycleReceipt.version, 'v1');
+    assert.deepEqual(envelope.data.result.issueLifecycleReceipt.receipt, built.receipt);
+  });
+
+  test(`${provider.name} pr-read with receiptContext reports an empty stated body as absent with the hash of the empty string`, async () => {
+    const { envelope } = await readWithReceipt(
+      provider,
+      provider.pull({ body: provider.emptyBody }),
+      { receiptContext: {} },
+    );
+    assert.equal(envelope.ok, true);
+    assert.deepEqual(envelope.data.result.issueLifecycleReceipt, { state: 'absent' });
+    assert.equal(envelope.data.result.bodySha256, createHash('sha256').update('').digest('hex'));
+  });
+
+  test(`${provider.name} pr-read with receiptContext treats a payload without a body key as unavailable and carries no hash`, async () => {
+    const { envelope } = await readWithReceipt(provider, omitKey(provider.pull(), 'body'), {
+      receiptContext: {},
+    });
+    assert.equal(envelope.ok, true);
+    assert.deepEqual(envelope.data.result.issueLifecycleReceipt, {
+      state: 'unavailable',
+      reason: 'body-not-stated',
+    });
+    assert.equal(Object.hasOwn(envelope.data.result, 'bodySha256'), false);
+  });
+
+  test(`${provider.name} pr-read with receiptContext reports a rejected receipt as a state, never as a failed read`, async () => {
+    const marker = buildIssueLifecycleReceipt(receiptFor(provider.slug)).marker;
+    const foreign = buildIssueLifecycleReceipt(receiptFor('other/repo')).marker;
+    // A URL item cannot be built without its host, so the marker is edited after the build.
+    const crossHost = marker.replace('"#17"', JSON.stringify(provider.otherHostUrl));
+    assert.notEqual(crossHost, marker);
+    const cases = [
+      ['duplicate receipt lines', `${marker}\n${marker}`, 'INVALID_PAYLOAD'],
+      ['a receipt for another repository', foreign, 'REFERENCE_REPOSITORY_MISMATCH'],
+      ['the same slug on another host', crossHost, 'REFERENCE_REPOSITORY_MISMATCH'],
+    ];
+    for (const [label, body, code] of cases) {
+      const { envelope } = await readWithReceipt(provider, provider.pull({ body }), {
+        receiptContext: {},
+      });
+      assert.equal(envelope.ok, true, label);
+      assert.deepEqual(
+        envelope.data.result.issueLifecycleReceipt,
+        { state: 'invalid', code },
+        label,
+      );
+      assert.equal(
+        envelope.data.result.bodySha256,
+        createHash('sha256').update(body).digest('hex'),
+      );
+    }
+  });
+
+  test(`${provider.name} pr-read binds the read repository whatever a stray top-level expectedRepository says`, async () => {
+    const foreign = buildIssueLifecycleReceipt(receiptFor('other/repo')).marker;
+    const { envelope } = await readWithReceipt(provider, provider.pull({ body: foreign }), {
+      receiptContext: {},
+      expectedRepository: 'other/repo',
+    });
+    assert.deepEqual(envelope.data.result.issueLifecycleReceipt, {
+      state: 'invalid',
+      code: 'REFERENCE_REPOSITORY_MISMATCH',
+    });
+  });
+
+  test(`${provider.name} pr-read with receiptContext reports an output-flattened payload as unavailable`, async () => {
+    const { envelope } = await readWithReceipt(
+      provider,
+      { output: 'rendered text' },
+      { receiptContext: {} },
+    );
+    assert.equal(envelope.ok, true);
+    assert.deepEqual(envelope.data.result.issueLifecycleReceipt, {
+      state: 'unavailable',
+      reason: 'body-not-stated',
+    });
+    assert.equal(Object.hasOwn(envelope.data.result, 'bodySha256'), false);
+  });
+
+  test(`${provider.name} pr-read without receiptContext carries no receipt field and is otherwise unchanged`, async () => {
+    const pull = provider.pull({
+      body: buildIssueLifecycleReceipt(receiptFor(provider.slug)).marker,
+    });
+    const { envelope: plain } = await readWithReceipt(provider, pull);
+    const { envelope: withContext } = await readWithReceipt(provider, pull, {
+      receiptContext: {},
+    });
+    assert.equal(Object.hasOwn(plain.data.result, 'bodySha256'), false);
+    assert.equal(Object.hasOwn(plain.data.result, 'issueLifecycleReceipt'), false);
+    const { bodySha256: _hash, issueLifecycleReceipt: _receipt, ...rest } = withContext.data.result;
+    assert.deepEqual(rest, plain.data.result);
+  });
+}
+
+test('pr-read applies a given expectedExternalTool and accepts an empty receiptContext', async () => {
+  const provider = RECEIPT_READ_PROVIDERS[0];
+  const external = buildIssueLifecycleReceipt(externalLifecycleReceipt('ENG-17'));
+  const body = `Intro\n\n${external.marker}\n`;
+  const pull = provider.pull({ body });
+
+  const open = await readWithReceipt(provider, pull, { receiptContext: {} });
+  assert.equal(open.envelope.data.result.issueLifecycleReceipt.state, 'valid');
+  assert.deepEqual(open.envelope.data.result.issueLifecycleReceipt.receipt, external.receipt);
+
+  const same = await readWithReceipt(provider, pull, {
+    receiptContext: { expectedTarget: 'external', expectedExternalTool: 'linear' },
+  });
+  assert.equal(same.envelope.data.result.issueLifecycleReceipt.state, 'valid');
+
+  const other = await readWithReceipt(provider, pull, {
+    receiptContext: { expectedExternalTool: 'jira' },
+  });
+  assert.equal(other.envelope.ok, true);
+  assert.deepEqual(other.envelope.data.result.issueLifecycleReceipt, {
+    state: 'invalid',
+    code: 'INVALID_PAYLOAD',
+  });
+});
+
+test('pr-read rejects an invalid receiptContext before any runner call, without a caller-supplied repository', async () => {
+  const invalidContexts = [
+    'forge',
+    ['forge'],
+    null,
+    { unknown: true },
+    { repository: 'example/flow' },
+    { expectedTarget: 'bogus' },
+    { expectedTarget: 7 },
+    { expectedExternalTool: '' },
+    { expectedExternalTool: 'not a tool!' },
+    { expectedExternalTool: 7 },
+    { expectedTarget: 'forge', expectedExternalTool: 'linear' },
+  ];
+  for (const receiptContext of invalidContexts) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      'pr-read',
+      { number: 7, receiptContext },
+      { runner, skipProbe: true },
+    );
+    assert.equal(envelope.ok, false, JSON.stringify(receiptContext));
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD', JSON.stringify(receiptContext));
+    assert.equal(runner.calls.length, 0, JSON.stringify(receiptContext));
+  }
 });
 
 test('the Forgejo pr-update-body guard reads the raw pull request through its status line', async () => {

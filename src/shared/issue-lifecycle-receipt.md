@@ -35,10 +35,14 @@ mismatch, and invalid references. A rejected or absent receipt never changes mer
 never authorizes heuristic tracker access. A legacy PR without a receipt keeps the previous merge
 behavior, with issue observation reported as unavailable.
 
-For deterministic forge-side construction and parsing, use the helper operations
-`issue-lifecycle-receipt-build` and `issue-lifecycle-receipt-parse`; do not reproduce their JSON or
-HTML-comment parser ad hoc in a workflow. Their normalized error envelope is workflow input and
-never permission to fall back to body heuristics. A receipt-only producer builds without `body`, with `cwd` `RUNTIME_STATE_ROOT`, `receipt`
+For deterministic forge-side construction, and for parsing a body a producer is about to write, use
+the helper operations `issue-lifecycle-receipt-build` and `issue-lifecycle-receipt-parse`; do not
+reproduce their JSON or HTML-comment parser ad hoc in a workflow. Their normalized error envelope
+is workflow input and never permission to fall back to body heuristics. A receipt-only producer builds without `body`, with `cwd` `RUNTIME_STATE_ROOT`, `receipt`
 `{"target":"forge","repository":"<owner/repo>","externalTool":null,"items":[{"issue":"#<N>","relationship":"refs","container":null,"containerMechanism":null}]}`
 and `context` `{"expectedTarget":"forge","expectedRepository":"<owner/repo>"}`, where `<owner/repo>`
 is the `slug` of a fresh `repository-resolve`, and uses `data.marker` as the line.
+
+Issue observation takes the receipt and body hash only from `issueLifecycleReceipt` and `bodySha256`
+of a `pr-read` with `receiptContext`, never from a read body passed to `issue-lifecycle-receipt-parse`
+or `body-hash` or a host PR read (T3 Code's `pull_request_read`); non-`valid` counts as no receipt.

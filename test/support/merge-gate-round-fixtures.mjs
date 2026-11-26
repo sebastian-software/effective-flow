@@ -20,7 +20,10 @@ import {
   pristineScenarioBuildIdentity,
 } from '../../evals/_scaffold/build-identity.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../../evals/_scaffold/suite.mjs';
-import { LINE_REQUEST_SENTENCE } from '../../evals/merge-gate/_scaffold/evaluate.mjs';
+import {
+  BODY_TRANSCRIPTION_OPERATIONS,
+  LINE_REQUEST_SENTENCE,
+} from '../../evals/merge-gate/_scaffold/evaluate.mjs';
 import suite from '../../evals/merge-gate/suite.config.mjs';
 import {
   PRESENCE_NOTICE_SCENARIO,
@@ -110,8 +113,10 @@ export const REPOSITORY_RESULTS = resolve(REPOSITORY_ROOT, 'evals', 'merge-gate'
 //
 // These lifecycle fixtures use current stamps to keep locking, journalling and promotion checks
 // independent of corpus freshness. Only temporary stamp/metadata bindings are rewritten; the
-// recorded behavioral logs remain unchanged. The selective-publication regression below instead
-// constructs one coherent stale unit and proves its provenance survives publication byte-for-byte.
+// recorded behavioral logs remain unchanged, except that a run re-bound from an older fixture loses
+// its calls to the inline-body operations (`withoutBodyTranscriptionCalls`). The
+// selective-publication regression below instead constructs one coherent stale unit and proves its
+// provenance survives publication byte-for-byte.
 //
 // A scenario the repository corpus does not hold yet — one that landed before its first recorded
 // round — is filled in with synthetic runs (`synthesizeUnrecordedScenario`), because publication and
@@ -157,8 +162,13 @@ export function copyRestampedResults(resultsDir) {
         // bind the same fixture digest as its stamp. Left at the archived digest, any fixture edit
         // in the working tree turns every re-stamped run of that scenario into invalid evidence,
         // which is not what these tests are about.
-        metadata.fixtureDigest =
+        const fixtureDigest =
           identity.scenario_inputs.files[`evals/merge-gate/fixtures/${scenario}.json`];
+        if (metadata.fixtureDigest !== fixtureDigest) {
+          const logPath = stampPath.replace(/\.build\.json$/, '.jsonl');
+          writeFileSync(logPath, withoutBodyTranscriptionCalls(readFileSync(logPath, 'utf8')));
+        }
+        metadata.fixtureDigest = fixtureDigest;
         // The archive was recorded under whatever profile the suite pinned at the time, and the
         // publication path holds every carried-forward slot to the current pin. Rewriting both
         // copies — sealing keeps them equal — keeps these tests about the stamps they re-point.
@@ -170,6 +180,35 @@ export function copyRestampedResults(resultsDir) {
   } finally {
     rmSync(outputRoot, { recursive: true, force: true });
   }
+}
+
+// An archived run recorded against an older fixture that still stubbed the inline-body operations
+// called them, and those calls were answered. Re-bound to the current fixture, which no longer
+// stubs them, the same calls become the evaluator's decisive body-transcription finding: the copy
+// would then claim the archived run deviated from a fixture it never ran against. The copy therefore
+// drops those calls (a lifecycle log's start and its completion) and renumbers `seq`, leaving the
+// run the current fixture would have recorded. A run already recorded against the current fixture is
+// never passed here, so its calls stay findings.
+export function withoutBodyTranscriptionCalls(logText) {
+  const records = logText
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  const dropped = new Set(
+    records
+      .filter(
+        (record) =>
+          record.event === 'start' && BODY_TRANSCRIPTION_OPERATIONS.includes(record.operation),
+      )
+      .map((record) => record.callId),
+  );
+  const kept = records.filter((record) =>
+    record.event === undefined
+      ? !BODY_TRANSCRIPTION_OPERATIONS.includes(record.operation)
+      : !dropped.has(record.callId),
+  );
+  if (kept.length === records.length) return logText;
+  return `${kept.map((record, index) => JSON.stringify({ ...record, seq: index + 1 })).join('\n')}\n`;
 }
 
 // The smallest call log each not-yet-recorded scenario's evaluator passes, keyed by scenario. Every

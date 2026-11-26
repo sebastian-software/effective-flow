@@ -17,6 +17,7 @@ import { ASK_SCORING } from '../build-lib.mjs';
 import {
   buildPortableSkill,
   builtSkillIdentity,
+  digestFile,
   freshnessVerdict,
   instrumentIdentity,
   isCompatibleLegacyInstrumentPredecessor,
@@ -65,7 +66,10 @@ import {
 } from '../evals/iterate/_scaffold/evaluate.mjs';
 import { reportRecord } from '../evals/iterate/_scaffold/report-channel.mjs';
 import {
+  BODY_TRANSCRIPTION_OPERATIONS,
+  bodyTranscriptionFinding,
   decisiveFindings,
+  fixtureIndependentFindings,
   greenStatusPosition,
   LINE_REQUEST_SENTENCE,
 } from '../evals/merge-gate/_scaffold/evaluate.mjs';
@@ -192,13 +196,6 @@ function startRecords(records) {
 function operationStarts(records, operation) {
   return startRecords(records).filter((record) => record.operation === operation);
 }
-
-// The one operation the stub answers without a fixture lookup: it records every `pr-merge` and then
-// either refuses it or serves the fixture's canned success, depending on that fixture's `servesMerge`
-// flag. So a `pr-merge` record in a log is never evidence of an undefined operation, whatever the
-// fixture defines. Whether it belongs in a given scenario's log is the question each scenario's own
-// assertion answers, and it is answered in both directions below.
-const STUB_ANSWERED_OPERATIONS = ['pr-merge'];
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
 // itself rather than of a list kept here. A list kept here is wrong the day an operation is added,
@@ -1213,17 +1210,18 @@ test('archived runtime roots must be the exact scenario project root', () => {
   );
 });
 
-// For the gate, the fixture's operations plus the one the stub answers itself. Another suite
-// declares what its runs may attempt unanswered through `alwaysAllowedOperations`, and the
-// contamination check has to honour that declaration: the iterate suite judges every call a Phase-0
-// run makes as a finding, so treating one as contamination here would contradict its evaluator.
+// The fixture's operations plus those the suite declares a run may attempt unanswered through
+// `alwaysAllowedOperations`, and the contamination check has to honour that declaration. For the
+// gate that is `pr-merge`, which the stub records and answers itself, and the two inline-body
+// operations, whose calls the evaluator judges as a decisive finding; the iterate suite judges every
+// call a Phase-0 run makes as a finding, so treating one as contamination here would contradict its
+// evaluator.
 function answerableOperations(scenario, archive = MERGE_GATE_ARCHIVE) {
   const fixture = JSON.parse(readFileSync(join(archive.fixtures, `${scenario}.json`), 'utf8'));
-  const unanswered =
-    archive === MERGE_GATE_ARCHIVE
-      ? STUB_ANSWERED_OPERATIONS
-      : alwaysAllowedOperations(archive.suite, scenario);
-  return new Set([...Object.keys(fixture.operations), ...unanswered]);
+  return new Set([
+    ...Object.keys(fixture.operations),
+    ...alwaysAllowedOperations(archive.suite, scenario),
+  ]);
 }
 
 // No archived runs is **not** a pass, and it is not a failure either. Skipping is the honest report:
@@ -1442,10 +1440,13 @@ async function assertArchivedRunsReadable(archive, scenario, runs) {
       assertRuntimeRoot(scenario, run, records);
     }
 
-    const fixture = JSON.parse(readFileSync(join(archive.fixtures, `${scenario}.json`), 'utf8'));
-    const projectRoot = existsSync(run.metadataPath)
-      ? JSON.parse(readFileSync(run.metadataPath, 'utf8')).projectRoot
-      : `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
+    const fixturePath = join(archive.fixtures, `${scenario}.json`);
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+    const metadata = existsSync(run.metadataPath)
+      ? JSON.parse(readFileSync(run.metadataPath, 'utf8'))
+      : null;
+    const projectRoot =
+      metadata?.projectRoot ?? `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
     const evaluated = evaluateEvidence(archive.suite, {
       scenario,
       logText: readFileSync(run.path, 'utf8'),
@@ -1467,8 +1468,16 @@ async function assertArchivedRunsReadable(archive, scenario, runs) {
       [],
       `${run.name}: shared evaluator rejected the archived evidence`,
     );
+    // The body-transcription finding is scoped by fixture digest, as `verify` scopes it: a run
+    // recorded against a fixture that still defined `issue-lifecycle-receipt-parse` and `body-hash`
+    // was answered by those stubs, so its calls to them are no deviation of that run. Every other
+    // finding still holds the archived run to the current fixture.
+    const fixtureScoped =
+      archive === MERGE_GATE_ARCHIVE && metadata?.fixtureDigest !== digestFile(fixturePath)
+        ? new Set(BODY_TRANSCRIPTION_OPERATIONS.map(bodyTranscriptionFinding))
+        : new Set();
     assert.deepEqual(
-      evaluated.findings,
+      evaluated.findings.filter((finding) => !fixtureScoped.has(finding)),
       [],
       `${run.name}: shared evaluator found a behavioural deviation`,
     );
@@ -2763,6 +2772,49 @@ test('fixture drift retains merge-gate call-only violations without current fixt
     assert.deepEqual(result.validityProblems, [], scenario);
     assert.equal(result.findings.length, 1, scenario);
     assert.match(result.findings[0], expected, scenario);
+  }
+});
+
+// Invariant: a gate run that hands a transcribed body to `issue-lifecycle-receipt-parse` or
+// `body-hash` is a decisive finding of the run, never a validity problem (the suite always allows
+// both, so the regression is recorded instead of retried away), and it is judged only against a
+// fixture that no longer defines those stubs: a run archived against a digest-mismatched fixture was
+// answered by them and keeps its fixture-independent verdict, which never contains the finding.
+test('a fixture-compatible gate run that calls an inline-body operation gets a decisive finding, an archived one does not', () => {
+  assert.deepEqual(
+    [...BODY_TRANSCRIPTION_OPERATIONS],
+    ['issue-lifecycle-receipt-parse', 'body-hash'],
+  );
+  const scenario = 'merge-proceeds';
+  for (const operation of BODY_TRANSCRIPTION_OPERATIONS) {
+    const finding = bodyTranscriptionFinding(operation);
+    const operations = [...CALLER_PHASE_ZERO, operation];
+
+    const current = evaluateSynthetic(scenario, operations);
+    assert.deepEqual(current.validityProblems, [], operation);
+    assert.ok(current.findings.includes(finding), `${operation}: ${current.findings}`);
+
+    const clean = evaluateSynthetic(scenario, CALLER_PHASE_ZERO);
+    assert.equal(clean.findings.includes(finding), false, operation);
+
+    // An aborted run that made the call counts too.
+    assert.ok(
+      decisiveSynthetic(scenario, operations).decisiveFindings.includes(finding),
+      operation,
+    );
+
+    const archived = evaluateSynthetic(scenario, operations, {
+      fixtureCompatible: false,
+      fixture: {},
+    });
+    assert.deepEqual(archived.validityProblems, [], operation);
+    assert.equal(archived.findings.includes(finding), false, operation);
+
+    const records = syntheticLegacyLog(operations)
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.equal(fixtureIndependentFindings({ scenario, records }).includes(finding), false);
   }
 });
 

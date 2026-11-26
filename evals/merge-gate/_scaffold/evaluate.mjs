@@ -871,6 +871,27 @@ function appliedMutationFindings(records) {
   return applied.length > 0 ? ['the observer-only run performed an applied mutation'] : [];
 }
 
+// The inline-body operations a gate run never calls: Phase 0 and the Phase 5.5 entry take the body
+// hash and the lifecycle receipt from the helper's own `pr-read` with `receiptContext`, so a call to
+// either means the run handed a transcribed body to the parser. The suite always allows both, so
+// such a call is recorded as this finding instead of being retried away as a validity problem. It
+// is judged only against the current fixture (`findings`, `decisiveFindings`): archived runs whose
+// stamped fixture still defined these stubs keep their fixture-independent verdict.
+export const BODY_TRANSCRIPTION_OPERATIONS = Object.freeze([
+  'issue-lifecycle-receipt-parse',
+  'body-hash',
+]);
+
+export function bodyTranscriptionFinding(operation) {
+  return `the gate called ${operation} instead of using the receipt fields of its pr-read`;
+}
+
+function bodyTranscriptionFindings(records) {
+  return BODY_TRANSCRIPTION_OPERATIONS.filter(
+    (operation) => operationStarts(records, operation).length > 0,
+  ).map(bodyTranscriptionFinding);
+}
+
 function outcomeFindings(scenario, records, fixture, sealedEvidence = null) {
   const findings = [];
   const merges = operationStarts(records, 'pr-merge');
@@ -1159,6 +1180,7 @@ export function findings({
 }) {
   return [
     ...outcomeFindings(scenario, records, fixture, sealedEvidence),
+    ...bodyTranscriptionFindings(records),
     ...(requiresAuxiliary ? traceFindings(scenario, records, auxiliaryRecords, fixture) : []),
   ];
 }
@@ -1220,6 +1242,7 @@ export function decisiveFindings({
   if (DISPATCH_SCENARIOS.includes(scenario)) findings.push(...redispatchFindings(records));
   if (scenario === QUICK_COMMIT_SCENARIO) findings.push(...pushFindings(sealedEvidence, fixture));
   findings.push(...irreversibleDraftFindings(scenario, records));
+  findings.push(...bodyTranscriptionFindings(records));
   if (requiresAuxiliary && auxiliaryRecords.length > 0) {
     findings.push(
       ...(REPAIR_SCENARIOS.includes(scenario)

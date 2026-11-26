@@ -152,7 +152,11 @@ and use the same re-entry command. If it says the lifecycle receipt is missing, 
 malformed, or mismatched, the pull request still remains merged, but Effective Flow will not infer
 issue identities from its prose. Restore the single valid receipt through the issue-owning workflow
 or verify and close the issue manually. A native sub-item or checklist entry remains open until its
-linked issue is freshly observed terminal.
+linked issue is freshly observed terminal. A receipt result of `unavailable (body-not-stated)` means
+the forge read stated no body to validate, and `changed` means the read after the merge no longer
+showed the receipt the run started with. The merge stands in both cases: run
+`/effective-flow merge-gate <PR>` again on the merged pull request, and observer-only mode observes
+its issues through the current receipt, provided that receipt reads as valid.
 
 A report of a missing receipt is also expected for two kinds of pull request. One is a pull request
 created before `autopilot` and the plan-pull-request continuation began to write a receipt. The other
