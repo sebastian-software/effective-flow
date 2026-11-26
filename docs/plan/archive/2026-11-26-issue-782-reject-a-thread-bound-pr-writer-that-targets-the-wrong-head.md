@@ -1,6 +1,6 @@
 # Reject a thread-bound PR writer that targets the wrong head
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #782
@@ -53,7 +53,7 @@ writer.
 
 - **A defensive guard in its own fragment; writer selection does not change.** Both points were
   decided by score; see "Decided by score". The guard lives in the new lazy-included fragment
-  `src/shared/pr-thread-bound-writer.md`. The fragment defines a *thread-bound writer*: a host
+  `src/shared/pr-thread-bound-writer.md`. The fragment defines a _thread-bound writer_: a host
   PR-create operation that takes no explicit head and acts on the calling thread's branch, such as
   T3 Code's `pull_request_create`. The guard binds every call to such an operation, wherever it
   occurs. `pr` keeps the helper's `pr-create` as its only routine writer, and step 10's "do not
@@ -178,6 +178,7 @@ writer.
      prepared branch locally and remotely, then stop the run. Do not switch, push, reset or rename
      any branch, pass no extra writer parameter, and call neither the helper nor any other writer
      in this run.
+
    - **Matching call.** Where a call is otherwise authorized, make it at most once. Find the writer
      by its unqualified name and call it without `environmentId` or any thread override, so it
      acts for the same calling thread whose binding was checked. Pass the same final title and
@@ -294,16 +295,16 @@ Not relevant: there is no UI.
 
 - [ ] `src/shared/pr-thread-bound-writer.md` exists. Before any thread-bound PR-create call, it
       requires all of these to match:
-      - the bound repository: an equal `realpath` Git common directory;
-      - the bound branch: equal to the handoff head after removing one `refs/heads/`, with the
-        bound checkout's `HEAD` agreeing;
-      - the pushed ref: exactly `refs/heads/<head-branch>`, with an OID equal to the step 3 OID;
-      - the upstream: none, or `refs/remotes/origin/<head-branch>`.
+  - the bound repository: an equal `realpath` Git common directory;
+  - the bound branch: equal to the handoff head after removing one `refs/heads/`, with the bound
+    checkout's `HEAD` agreeing;
+  - the pushed ref: exactly `refs/heads/<head-branch>`, with an OID equal to the step 3 OID;
+  - the upstream: none, or `refs/remotes/origin/<head-branch>`.
 
-      It also requires the publication-text check to pass (the attribution rule in every mode,
-      and the disclosure rule in hidden mode). It also requires that no competing open pull
-      request exists for the head branch. Inside `pr`, a full match continues with step 10's
-      helper `pr-create`.
+  It also requires the publication-text check to pass (the attribution rule in every mode, and the
+  disclosure rule in hidden mode). It also requires that no competing open pull request exists for
+  the head branch. Inside `pr`, a full match continues with step 10's helper `pr-create`.
+
 - [ ] On a mismatch or on any value that cannot be established, the fragment makes no PR-create
       call. It reports the expected and observed targets and keeps the prepared branch. It forbids
       a branch switch, any added writer parameter and any fallback writer.
@@ -357,9 +358,11 @@ Not relevant: there is no UI.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-CLR","question":"How should the implementation plan scope the thread-bound writer in `pr`?","options":["Guard-only fragment","Add host writer selection","Forbid thread-bound writers"],"escape":[],"stop":[],"scores":[{"label":"Guard-only fragment","score":8,"reason":"It matches the issue's smallest change: a lazy-included guard that blocks a mismatched repository, branch or SHA, with the helper unchanged, though the guard only runs if some host allows a thread-bound writer."},{"label":"Add host writer selection","score":5,"reason":"It makes the guard reachable for the T3-only case in #768, but it changes writer selection beyond what the issue scopes, adds to the prompt on every run, and conflicts with step 10's ban on improvised transports."},{"label":"Forbid thread-bound writers","score":3,"reason":"It is short and safe, but it drops the repository, branch and SHA guard the issue asks for and leaves T3 runs whose only allowed PR-create operation is thread-bound with no path forward."}]},{"site":"S-BAT","question":"How should the plan word the guard's reachability?","options":["Defensive guard wording","Assumption pending #768","Step 10 sentence"],"escape":[],"stop":[],"scores":[{"label":"Defensive guard wording","score":9,"reason":"It drops the unreachable 'instead of the helper's pr-create' trigger that could read as permission, binds any headless writer call wherever it occurs, and leaves always-loaded step 10 unchanged, which option 3 does not."},{"label":"Assumption pending #768","score":3,"reason":"It keeps the when: line the gap review flagged as permission-like, and it ties the guard's meaning to an issue that may never define a path, so the stray-call case #782 targets stays loosely worded."},{"label":"Step 10 sentence","score":5,"reason":"It closes the reachability question explicitly, but it adds host-specific text to always-loaded step 10 against AGENTS.md points 1 and 3, and naming such a writer there could suggest that calling one is allowed."}]},{"site":"S-BAT","question":"What should the plan's validation say about behavioural (manual) acceptance?","options":["Prose contract only","Explicit simulation run","Defer to #768"],"escape":[],"stop":[],"scores":[{"label":"Prose contract only","score":7,"reason":"This is honest and matches the policy, because compliant `pr` runs never reach the guard, but it stays silent on the issue's behavioural acceptance, which is never verified."},{"label":"Explicit simulation run","score":5,"reason":"It gives some evidence for the fragment's stop and create branches, but the operator has to override step 10's ban on improvised transports, so it does not show how a real run behaves."},{"label":"Defer to #768","score":8,"reason":"It drops the run that cannot happen, as option 1 does, and also records that the issue's behavioural acceptance is still open until #768 lets a run reach the guard, which keeps the gap traceable."}]},{"site":"S-BAT","question":"How should the thread-bound writer path handle hidden mode?","options":["Accept documented gap","Re-check disclosure rule","Refuse in hidden mode"],"escape":[],"stop":[],"scores":[{"label":"Accept documented gap","score":3,"reason":"Step 9 checks only derived bodies, and a supplied description or restored footers can still reach the writer unchecked, so hidden mode loses its last defence on this path."},{"label":"Re-check disclosure rule","score":9,"reason":"It restores the helper's final title/body/head refusal on the writer path with a small fail-closed check and no new T3 parameter, and unlike refusing outright it keeps hidden-mode PRs working."},{"label":"Refuse in hidden mode","score":5,"reason":"It is safe and simple, but it blocks hidden-mode PRs on hosts where the thread-bound writer is the approved path, and that goes beyond the binding guard the issue asks for."}]},{"site":"S-BAT","question":"How should the plan treat the upstream check?","options":["Strict upstream check","Stop on a different upstream only","Drop the upstream check"],"escape":[],"stop":[],"scores":[{"label":"Strict upstream check","score":6,"reason":"It fails closed when it is not known which ref the writer reads, but it stops an already-pushed head whose repository, branch and SHA all match, so it breaks the issue's acceptance and has to be recorded as a deviation."},{"label":"Stop on a different upstream only","score":8,"reason":"It still catches a conflicting tracking ref that the undocumented writer might follow, and lets a head pushed without -u through once check 3 proves the origin ref matches, so it meets acceptance without the deviation option 1 needs."},{"label":"Drop the upstream check","score":4,"reason":"It meets the acceptance wording, but it gives up the only signal that the undocumented writer could resolve the head through a different tracking ref, which weakens the final guard the issue asks for."}]},{"site":"S-DEC","question":"What does a `pr` run do after the guard fully matches?","options":["Return to the helper path","Stop on a full match too","Dormant until #768","Decide later"],"escape":["Decide later"],"stop":[],"scores":[{"label":"Return to the helper path","score":9,"reason":"Its edge over option 3 is that it gives a full match a defined next step (step 10's helper pr-create, or stop on its error) and keeps 'authorizes none', without tying the fragment to #768, which an earlier score rejected."},{"label":"Stop on a full match too","score":4,"reason":"It is safe, but it stops a run whose repository, branch and SHA all match before the helper ever runs, against #782's acceptance that a match proceeds, and it would conflict with any path #768 authorizes later."},{"label":"Dormant until #768","score":6,"reason":"It ends in the same helper-path result as option 1, but marking the text dormant ties the fragment to #768, an earlier score marked that down (3), and the extra state adds prompt text with no change in behavior."}]},{"site":"S-DEC","question":"Where and how should the guard's load trigger sit?","options":["Lazy fence directly before step 10","Eager stop sentence at step 10","Keep the planned placement","Decide later"],"escape":["Decide later"],"stop":[],"scores":[{"label":"Lazy fence directly before step 10","score":8,"reason":"It puts the eager trigger line right next to the writer call, where a model would swap writers, keeps the earlier lazy and no-step-10-prose decisions, adds about the same core cost as the planned fence, and lets the rationale answer the delegation-mandate precedent."},{"label":"Eager stop sentence at step 10","score":5,"reason":"It gives the strongest in-place stop, but it edits step 10 prose against an earlier scored decision, puts host-specific text in every routine run, and uses the 4 units of headroom left in the 522 budget, while a fence next to step 10 gives almost the same reach."},{"label":"Keep the planned placement","score":3,"reason":"It leaves the trigger two long steps away from step 10, which is the gap the review pointed out, and writing the risk under Assumptions records the weakness without reducing it, even though moving the fence costs nothing."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
