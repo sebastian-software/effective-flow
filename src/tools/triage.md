@@ -99,19 +99,19 @@ another repository or end the run.
 Call the helper as `node <skill-root>/scripts/triage.mjs <operation> <<< '<json>'`: one simple
 command with `<skill-root>` and every value spelled out literally, no shell variable, pipe,
 trailing or compound command, and every `'` inside the JSON spelled as `'\''`. Parse exactly one
-`{ ok, operation, data }` envelope; an `ok: false` envelope not handled below stops the run. Pass
-every hash-bearing object (`permission`, `inventory`, `validated`, `writeSet`) back unchanged: its
-hash is tamper evidence, not authentication, and `TAMPERED_INPUT` stops the run.
+`{ ok, operation, data }` envelope; an `ok: false` envelope not handled below stops the run.
 
-**Input files.** A call carrying `inventory`, `validated` or `writeSet` sends its JSON as a file:
-apply the runtime guard to `.effective-flow/triage/inputs/<operation>-<n>.json` under
-`RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there only
-while it is still absent, and send `{"inputFile": "<absolute path>"}`. The helper reads and removes
-the file.
+**Reference fields.** Each hash-bearing result (`permission`, `inventory`, `validated`, `writeSet`)
+holds its absolute path as `inputFile`: pass that path as the matching `<name>File` field and never
+re-serialise the object; `TAMPERED_INPUT` stops the run. The helper keeps these files until the
+exit rule. A call carrying `assessments` or `drafts` sends its JSON, reference fields included, as
+a file: apply the runtime guard to `.effective-flow/triage/inputs/<operation>-<n>.json` under
+`RUNTIME_STATE_ROOT` with the lowest absent `<n>` from 1, write it only while absent, and send
+`{"inputFile": "<absolute path>"}`, which the helper reads and removes.
 
-**Exit rule.** Once `inventory-build` has returned a `runId`, every exit — completion, stop, abort
-or failure — first calls `snapshot-remove` with `{runtimeStateRoot, runId}` and reports a failed
-removal. The report stays; `{{SKILL:cleanup}}` lists finished reports as removable.
+**Exit rule.** Once `permission-prove` has returned a `runId`, every exit — completion, stop, abort
+or failure — first calls `snapshot-remove` with `{runtimeStateRoot, runId: permission.runId}` and
+reports a failed removal. The report stays; `{{SKILL:cleanup}}` lists finished reports as removable.
 
 ## Phase 1: Entry
 
@@ -132,12 +132,12 @@ removal. The report stays; `{{SKILL:cleanup}}` lists finished reports as removab
 
 ## Phase 2: Permission and inventory
 
-1. Call `permission-prove` with `{cwd, target}` before any content read and retain `data` as
-   `permission`. `stopped: true` ends the run before any read: `local-mode` or `unset-mode` points
-   to `{{SKILL:setup}}`, `external-unsupported` says v1 supports GitHub and Forgejo only. A
-   `runMode: "report-only"` run states its `reportOnlyReason` once (hidden mode, or the runner's
-   write permission is not proven), assesses and reports, and offers no tracker write.
-2. Call `inventory-build` with `{cwd, runtimeStateRoot, target, permission, planDir}` plus
+1. Call `permission-prove` with `{cwd, target, runtimeStateRoot}` before any content read; retain
+   `data` as `permission`. `stopped: true` ends the run before any read: `local-mode` or
+   `unset-mode` points to `{{SKILL:setup}}`, `external-unsupported` says v1 supports GitHub and
+   Forgejo only. A `runMode: "report-only"` run states its `reportOnlyReason` once (hidden mode, or
+   the runner's write permission is not proven), assesses and reports, and offers no tracker write.
+2. Call `inventory-build` with `{cwd, runtimeStateRoot, target, permissionFile, planDir}` plus
    `branchPrefix` and `selection`, either `{references: [...]}` or `{untriaged: true, max}`.
    `BOUNDS_EXCEEDED` or `stopped: true` with `reason: "bounds"` shows the bound and ends.
    Retain `data` as `inventory`. Show its counts and every `skipped` reference (`pull-request`,
@@ -188,7 +188,7 @@ the actual model where the host exposes it, for the report and the chat summary.
 
 ## Phase 5: Validation
 
-Call `verdicts-validate` with `{cwd, inventory, assessments}`. On `VERDICTS_INVALID`, retry once
+Call `verdicts-validate` with `{cwd, inventoryFile, assessments}`. On `VERDICTS_INVALID`, retry once
 only the leaves of `details.invalidItems` (missing items included), each with its own
 `details.problems` entries, then resubmit the complete assessment set; a second failure follows
 the completion protocol's escalation. Retain `data` as `validated`; it carries no
@@ -196,7 +196,7 @@ issue text.
 
 ## Phase 6: Report and chat summary
 
-Call `report-write` with `{runtimeStateRoot, inventory, validated, language}` (`language` is
+Call `report-write` with `{runtimeStateRoot, inventoryFile, validatedFile, language}` (`language` is
 `language.workflow` as `en` or `de`) and retain `reportPath`. Show a chat summary from `validated`
 and `inventory` only, per item: reference, verdict, A1 summary, A2–A7 ratings with their cited
 rationale, readiness, grounds, questions by addressee, `flagged` authors without proven write
@@ -219,8 +219,8 @@ or generation footer.
 
 ## Phase 8: Write set and gate
 
-1. Call `write-set-build` with `{inventory, validated, permission, drafts, language}` (`language`
-   the forge language). `DRAFT_REJECTED` names the item and problem: redraft that item once, then
+1. Call `write-set-build` with `{inventoryFile, validatedFile, permissionFile, drafts, language}`
+   (`language` the forge language). `DRAFT_REJECTED` names the item and problem: redraft that item once, then
    drop its draft. Retain `data` as `writeSet`.
 2. **Per-issue gate, before any write.** Show every `writeSet.notices` entry. For each `previews`
    entry, show the verdict, the exact comment (the helper adds a recency stamp to its marker line when it
@@ -250,8 +250,8 @@ options:
 
 ## Phase 9: Apply
 
-Call `write-set-apply` with `{cwd, target, permission, inventory, writeSet, selected: [{id, hash}]}`,
-the hashes copied from `writeSet` unchanged; an empty selection skips the call. The helper creates
+Call `write-set-apply` with `{cwd, target, permissionFile, inventoryFile, writeSetFile, selected:
+[{id, hash}]}`, the hashes copied from `writeSet` unchanged; an empty selection skips the call. The helper creates
 only the labels a selected entry needs, re-reads each issue once before its group of writes, and
 reports per issue `applied`, `partial`, `stale` (content, triage labels or managed comments
 changed, or closed, since the assessment; nothing written), `failed` or `skipped`. For a `failed`

@@ -25,6 +25,7 @@ import {
   RUNTIME_STATE_DIR,
   RuntimeStateError,
   atomicWrite,
+  NO_CLOBBER_TEMP_MAX_AGE_MS,
   createNoClobber,
   ensureGuardedDirectory,
   gitBaseEnv,
@@ -156,6 +157,28 @@ const SNAPSHOT_TEMP = /^\.triage-[0-9a-f]{16}\.tmp$/;
 const REPORT_FILE = /^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8})\.md$/;
 const REPORT_TEMP = /^\.\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.md\.[0-9a-f]{16}\.tmp$/;
 const INPUT_FILE = /^[a-z0-9][a-z0-9-]{0,78}\.json$/;
+// Hash-bearing results the helper persists itself, keyed by the input field that carries them: the
+// file-name kind and the hash key. A consumer takes each one as the reference field `<field>File`.
+const OUTPUT_KINDS = Object.freeze({
+  permission: Object.freeze({ file: 'permission', hashKey: 'proofHash' }),
+  inventory: Object.freeze({ file: 'inventory', hashKey: 'inventoryHash' }),
+  validated: Object.freeze({ file: 'validated', hashKey: 'validatedHash' }),
+  writeSet: Object.freeze({ file: 'writeset', hashKey: 'setHash' }),
+});
+// `<kind>-<runId>-<n>.json`: the run id lets `snapshot-remove {runId}` match exactly one run's files.
+const OUTPUT_FILE =
+  /^(permission|inventory|validated|writeset)-(\d{4}-\d{2}-\d{2}-[0-9a-f]{8})-([1-9]\d{0,3})\.json$/;
+const MAX_OUTPUT_FILES = 1000;
+const OUTPUT_TEMP_PREFIX = '.triage-output-';
+const OUTPUT_TEMP = /^\.triage-output-[0-9a-f]{16}\.tmp$/;
+// The reference fields each operation consumes; any other reference field is refused.
+const REFERENCE_FIELDS = Object.freeze({
+  'inventory-build': Object.freeze(['permission']),
+  'verdicts-validate': Object.freeze(['inventory']),
+  'report-write': Object.freeze(['inventory', 'validated']),
+  'write-set-build': Object.freeze(['inventory', 'validated', 'permission']),
+  'write-set-apply': Object.freeze(['permission', 'inventory', 'writeSet']),
+});
 const MAX_TEXT = 2000;
 const MAX_DRAFT = 4000;
 // Model-written comments must not read as generated, and must not carry a session link.
@@ -511,10 +534,15 @@ const intake = createIssueIntake({
 
 // The mode matrix: a local or unset tracker stops with the setup hint, an external tracker stops
 // in v1, and a forge run is `write` only with proven write permission outside hidden mode.
-// Everything else is `report-only`: it reads, assesses and reports, and never writes.
+// Everything else is `report-only`: it reads, assesses and reports, and never writes. With a
+// `runtimeStateRoot`, the proof mints the run id and is persisted as that run's permission file.
 async function permissionProve(input, deps) {
-  exactKeys(input, ['cwd', 'target'], [], 'permission-prove input');
+  exactKeys(input, ['cwd', 'target'], ['runtimeStateRoot'], 'permission-prove input');
   const cwd = absoluteDirectory(input.cwd, 'cwd');
+  const runtimeStateRoot =
+    input.runtimeStateRoot === undefined
+      ? null
+      : absoluteDirectory(input.runtimeStateRoot, 'runtimeStateRoot');
   const target = normalizeTarget(input.target);
   if (target.kind === 'local' || target.kind === 'unset')
     return { stopped: true, stop: { reason: `${target.kind}-mode`, hint: 'setup' } };
@@ -529,16 +557,20 @@ async function permissionProve(input, deps) {
   const writable = proof.mode === 'tracker' && proof.proven === true;
   const reportOnlyReason =
     target.visibility === 'hidden' ? 'hidden-mode' : writable ? null : proof.reason;
-  return withHash(
-    {
-      ...rest,
-      stopped: false,
-      runMode: reportOnlyReason ? 'report-only' : 'write',
-      reportOnlyReason,
-      writeOffer: reportOnlyReason === null,
-    },
-    'proofHash',
-  );
+  const permission = {
+    ...rest,
+    stopped: false,
+    runMode: reportOnlyReason ? 'report-only' : 'write',
+    reportOnlyReason,
+    writeOffer: reportOnlyReason === null,
+  };
+  if (runtimeStateRoot === null) return withHash(permission, 'proofHash');
+  const runId = mintRunId(deps);
+  return persistOutput(deps, runtimeStateRoot, 'permission', runId, { ...permission, runId });
+}
+
+function mintRunId(deps, now = nowOf(deps)) {
+  return `${localDate(now)}-${(deps.randomBytes ?? cryptoRandomBytes)(4).toString('hex')}`;
 }
 
 function requireProof(value, target) {
@@ -547,6 +579,13 @@ function requireProof(value, target) {
   if (target && canonical(proof.target) !== canonical(target))
     invalid('permission was proven for another target');
   return proof;
+}
+
+// A permission that minted a run id binds the write steps to that run's inventory; one proven
+// without `runtimeStateRoot` carries no run id and stays accepted.
+function requireSameRun(permission, inventory) {
+  if (permission.runId !== undefined && permission.runId !== inventory.runId)
+    invalid('permission was proven for another run');
 }
 
 // The login whose own markers this run trusts: the proven viewer only.
@@ -1044,12 +1083,20 @@ const isSnapshotEntry = (name) =>
   name === ARCHITECTURE_SUMMARY_FILE ||
   name === OVERLAP_INDEX_FILE;
 
-async function removeSnapshotDirectory(context, directory, { staleBefore } = {}) {
-  if (!realDirectoryOrNull(directory, 'a snapshot entry')) return false;
+// Returns the entry names of a snapshot directory, or null when it is absent, and fails closed on
+// any entry a snapshot never holds. It changes nothing.
+function snapshotDirectoryEntries(directory) {
+  if (!realDirectoryOrNull(directory, 'a snapshot entry')) return null;
   const names = nodeFs.readdirSync(directory).sort();
   for (const name of names)
     if (!nodeFs.lstatSync(path.join(directory, name)).isFile() || !isSnapshotEntry(name))
       fail('UNSAFE_RUNTIME_STATE', 'a snapshot directory holds an unexpected entry', { name });
+  return names;
+}
+
+async function removeSnapshotDirectory(context, directory, { staleBefore } = {}) {
+  const names = snapshotDirectoryEntries(directory);
+  if (!names) return false;
   if (staleBefore !== undefined) {
     const newest = names.reduce(
       (value, name) => Math.max(value, nodeFs.lstatSync(path.join(directory, name)).mtimeMs),
@@ -1087,8 +1134,38 @@ async function writeSnapshot(deps, runtimeStateRoot, runId, files) {
   }
 }
 
-// Removes the snapshot, overlap index and architecture summary of `runId`, or without one every
-// snapshot and input file untouched for STALE_RUNTIME_MS. Reports are never touched here.
+// Persists a hash-bearing result as `inputs/<kind>-<runId>-<n>.json` with the lowest free `<n>`.
+// The absolute path is added as `inputFile` before hashing, so the file, the returned object and an
+// inline pass-back of it all verify; the returned object is the file's parsed content.
+async function persistOutput(deps, runtimeStateRoot, field, runId, value) {
+  const { file, hashKey } = OUTPUT_KINDS[field];
+  const context = runtimeContext(deps);
+  try {
+    await resolveRuntimeRoot(context, runtimeStateRoot);
+    const directory = await ensureChain(context, INPUT_SEGMENTS);
+    for (let n = 1; n <= MAX_OUTPUT_FILES; n += 1) {
+      const inputFile = path.join(directory, `${file}-${runId}-${n}.json`);
+      if (lstatOrNull(inputFile)) continue;
+      const text = `${JSON.stringify(withHash({ ...value, inputFile }, hashKey))}\n`;
+      const written = await createNoClobber(context, inputFile, text, {
+        tempPrefix: OUTPUT_TEMP_PREFIX,
+      });
+      if (written.created) return JSON.parse(text);
+    }
+  } catch (error) {
+    return guardFailure(error);
+  }
+  return fail('UNSAFE_RUNTIME_STATE', 'no free output file name is left for this run', {
+    kind: file,
+    runId,
+  });
+}
+
+// Removes the snapshot, overlap index and architecture summary of `runId` and every output file
+// of that run, or without one every snapshot and input file untouched for STALE_RUNTIME_MS. Output
+// temporaries older than NO_CLOBBER_TEMP_MAX_AGE_MS go in both modes; a younger one may belong to
+// a concurrent write and is skipped. Reports are never touched here. Every entry is validated
+// before the first removal, so an unexpected one fails closed with the runtime state untouched.
 async function snapshotRemove(input, deps) {
   exactKeys(input, ['runtimeStateRoot'], ['runId'], 'snapshot-remove input');
   if (input.runId !== undefined && !RUN_ID.test(input.runId)) invalid('runId is malformed');
@@ -1100,28 +1177,48 @@ async function snapshotRemove(input, deps) {
       context,
       absoluteDirectory(input.runtimeStateRoot, 'runtimeStateRoot'),
     );
-    const removed = [];
-    const kept = [];
+    const snapshotNames = [];
     const root = path.join(context.cwd, ...SNAPSHOT_SEGMENTS);
     if (realDirectoryOrNull(root, 'the snapshot root')) {
       const names = input.runId ? [input.runId] : nodeFs.readdirSync(root).sort();
       for (const name of names) {
         if (!RUN_ID.test(name))
           fail('UNSAFE_RUNTIME_STATE', 'the snapshot root holds an unexpected entry', { name });
-        const directory = path.join(root, name);
-        if (await removeSnapshotDirectory(context, directory, { staleBefore })) removed.push(name);
-        else if (lstatOrNull(directory)) kept.push(name);
+        snapshotDirectoryEntries(path.join(root, name));
+        snapshotNames.push(name);
       }
     }
+    const inputNames = [];
     const inputs = path.join(context.cwd, ...INPUT_SEGMENTS);
-    if (staleBefore !== undefined && realDirectoryOrNull(inputs, 'the input directory'))
+    if (realDirectoryOrNull(inputs, 'the input directory')) {
+      const tempBefore = nowOf(deps).getTime() - NO_CLOBBER_TEMP_MAX_AGE_MS;
       for (const name of nodeFs.readdirSync(inputs).sort()) {
-        const file = path.join(inputs, name);
-        if (!INPUT_FILE.test(name) || !nodeFs.lstatSync(file).isFile())
+        const info = nodeFs.lstatSync(path.join(inputs, name));
+        const temp = OUTPUT_TEMP.test(name);
+        if (!info.isFile() || (!temp && !INPUT_FILE.test(name)))
           fail('UNSAFE_RUNTIME_STATE', 'the input directory holds an unexpected entry', { name });
-        if (nodeFs.lstatSync(file).mtimeMs < staleBefore) await guardedUnlink(context, file);
+        const remove = temp
+          ? info.mtimeMs < tempBefore
+          : staleBefore !== undefined
+            ? info.mtimeMs < staleBefore
+            : OUTPUT_FILE.exec(name)?.[2] === input.runId;
+        if (remove) inputNames.push(name);
       }
-    return { removed, kept };
+    }
+
+    const removed = [];
+    const kept = [];
+    for (const name of snapshotNames) {
+      const directory = path.join(root, name);
+      if (await removeSnapshotDirectory(context, directory, { staleBefore })) removed.push(name);
+      else if (lstatOrNull(directory)) kept.push(name);
+    }
+    const removedInputs = [];
+    for (const name of inputNames) {
+      await guardedUnlink(context, path.join(inputs, name));
+      removedInputs.push(name);
+    }
+    return { removed, kept, removedInputs };
   } catch (error) {
     return guardFailure(error);
   }
@@ -1235,6 +1332,10 @@ async function inventoryBuild(input, deps) {
   const runtimeStateRoot = absoluteDirectory(input.runtimeStateRoot, 'runtimeStateRoot');
   const target = normalizeTarget(input.target);
   const permission = requireProof(input.permission, target);
+  const provenRunId =
+    permission.runId === undefined
+      ? null
+      : await requireUnusedRun(deps, runtimeStateRoot, permission.runId);
   const selection = normalizeSelection(input.selection);
   const branchPrefix = input.branchPrefix ?? DEFAULT_BRANCH_PREFIX;
   if (
@@ -1389,16 +1490,16 @@ async function inventoryBuild(input, deps) {
       },
     };
   files.push({ name: OVERLAP_INDEX_FILE, text: overlap.text });
-  if (nextFrom !== null) await writeScanCursor(deps, runtimeStateRoot, nextFrom);
 
-  const runId = `${localDate(now)}-${(deps.randomBytes ?? cryptoRandomBytes)(4).toString('hex')}`;
+  const runId = provenRunId ?? mintRunId(deps, now);
   const { directory, root } = await writeSnapshot(deps, runtimeStateRoot, runId, files);
   const notices = [];
   if (overlap.summary.cut || open.cut || closed.cut) notices.push('overlap-index-cut');
   if (unscanned > 0) notices.push('scan-bound');
   if (permissionOf.unreadable?.size) notices.push('permission-unreadable');
-  return withHash(
-    {
+  let output = null;
+  try {
+    output = await persistOutput(deps, root, 'inventory', runId, {
       stopped: false,
       runId,
       checkoutRoot,
@@ -1430,9 +1531,43 @@ async function inventoryBuild(input, deps) {
         closed: closedReferences.length,
         cutOff: cutOff.length,
       },
-    },
-    'inventoryHash',
-  );
+    });
+    // The scan cursor moves only once the snapshot and its output exist, so a failed run rescans
+    // the same window.
+    if (nextFrom !== null) await writeScanCursor(deps, runtimeStateRoot, nextFrom);
+    return output;
+  } catch (error) {
+    // A failed persist or scan-cursor write leaves neither an orphaned snapshot nor an inventory
+    // output whose `snapshotDir` dangles: the snapshot goes, and so does exactly the output file this
+    // run persisted, if any (`writeSnapshot` cleans up on its own failure).
+    const context = { ...runtimeContext(deps), cwd: root };
+    await removeSnapshotDirectory(context, directory).catch(() => {
+      /* the original failure is reported */
+    });
+    if (output)
+      await guardedUnlink(context, output.inputFile).catch(() => {
+        /* the original failure is reported */
+      });
+    throw error;
+  }
+}
+
+// One proof starts one inventory: a run whose snapshot or report already exists refuses it before
+// any forge read or scan-cursor write. `writeSnapshot`'s exclusive mkdir stays the race backstop.
+async function requireUnusedRun(deps, runtimeStateRoot, runId) {
+  if (typeof runId !== 'string' || !RUN_ID.test(runId)) invalid('permission.runId is malformed');
+  const context = runtimeContext(deps);
+  try {
+    await resolveRuntimeRoot(context, runtimeStateRoot);
+  } catch (error) {
+    guardFailure(error);
+  }
+  if (
+    lstatOrNull(path.join(context.cwd, ...SNAPSHOT_SEGMENTS, runId)) ||
+    lstatOrNull(path.join(context.cwd, ...REPORT_SEGMENTS, `${runId}.md`))
+  )
+    invalid('the permission already started a run', { runId });
+  return runId;
 }
 
 function requireInventory(value) {
@@ -1786,7 +1921,7 @@ function validateAssessment(entry, item, context) {
   };
 }
 
-async function verdictsValidate(input) {
+async function verdictsValidate(input, deps) {
   exactKeys(input, ['cwd', 'inventory', 'assessments'], [], 'verdicts-validate input');
   const cwd = absoluteDirectory(input.cwd, 'cwd');
   const inventory = requireInventory(input.inventory);
@@ -1843,16 +1978,13 @@ async function verdictsValidate(input) {
         ),
       ],
     });
-  return withHash(
-    {
-      inventoryHash: inventory.inventoryHash,
-      records: inventory.items.map((item) => ({
-        ...records.get(item.id),
-        flagged: item.flagged,
-      })),
-    },
-    'validatedHash',
-  );
+  return persistOutput(deps, inventory.runtimeStateRoot, 'validated', inventory.runId, {
+    inventoryHash: inventory.inventoryHash,
+    records: inventory.items.map((item) => ({
+      ...records.get(item.id),
+      flagged: item.flagged,
+    })),
+  });
 }
 
 function requireValidated(value, inventory) {
@@ -2064,7 +2196,7 @@ function triageLabelsOn(item) {
   return TRIAGE_LABELS.filter((name) => item.labels.includes(name));
 }
 
-async function writeSetBuild(input) {
+async function writeSetBuild(input, deps) {
   exactKeys(
     input,
     ['inventory', 'validated', 'permission'],
@@ -2074,19 +2206,19 @@ async function writeSetBuild(input) {
   const inventory = requireInventory(input.inventory);
   const validated = requireValidated(input.validated, inventory);
   const permission = requireProof(input.permission, inventory.target);
+  requireSameRun(permission, inventory);
   const language = languageOf(input.language);
+  const persist = (value) =>
+    persistOutput(deps, inventory.runtimeStateRoot, 'writeSet', inventory.runId, value);
   if (permission.runMode !== 'write' || inventory.runMode !== 'write')
-    return withHash(
-      {
-        mode: 'report-only',
-        inventoryHash: inventory.inventoryHash,
-        reason: permission.reportOnlyReason ?? inventory.reportOnlyReason,
-        entries: [],
-        previews: [],
-        notices: ['report-only'],
-      },
-      'setHash',
-    );
+    return persist({
+      mode: 'report-only',
+      inventoryHash: inventory.inventoryHash,
+      reason: permission.reportOnlyReason ?? inventory.reportOnlyReason,
+      entries: [],
+      previews: [],
+      notices: ['report-only'],
+    });
   const capabilities = permission.capabilities ?? {};
   const records = new Map(validated.records.map((record) => [record.item, record]));
   const items = new Map(inventory.items.map((item) => [item.id, item]));
@@ -2228,18 +2360,15 @@ async function writeSetBuild(input) {
   for (const entry of entries)
     if (!ENTRY_ACTIONS.includes(entry.action))
       fail('INTERNAL_ERROR', 'write action outside the allowlist');
-  return withHash(
-    {
-      mode: 'forge',
-      inventoryHash: inventory.inventoryHash,
-      target: inventory.target,
-      privateChannel: channel,
-      entries,
-      previews,
-      notices,
-    },
-    'setHash',
-  );
+  return persist({
+    mode: 'forge',
+    inventoryHash: inventory.inventoryHash,
+    target: inventory.target,
+    privateChannel: channel,
+    entries,
+    previews,
+    notices,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2586,6 +2715,7 @@ async function writeSetApply(input, deps) {
   const target = normalizeTarget(input.target);
   const permission = requireProof(input.permission, target);
   const inventory = requireInventory(input.inventory);
+  requireSameRun(permission, inventory);
   const set = verifyWriteSet(input.writeSet, inventory);
   verifyDerivation(set, inventory);
   if (!Array.isArray(input.selected)) invalid('selected must be an array');
@@ -2907,11 +3037,13 @@ async function writeSetApply(input, deps) {
 // ---------------------------------------------------------------------------------------------
 // Input files
 //
-// A large input (the inventory, validated verdicts, the write set) may travel as one file below
-// `<RUNTIME_STATE_ROOT>/.effective-flow/triage/inputs/`, named by `{"inputFile": "<absolute path>"}`;
-// it is read once through a descriptor and removed before the operation runs.
+// Every file below `<RUNTIME_STATE_ROOT>/.effective-flow/triage/inputs/` is read once through a
+// descriptor. An agent-authored whole input, named by `{"inputFile": "<absolute path>"}`, is removed
+// before the operation runs. A helper-persisted result (`OUTPUT_FILE`) is named by its reference
+// field `<field>File`, read without removal because it may have several consumers, and removed by
+// its run's `snapshot-remove`.
 
-function readRegularFile(target, expected) {
+function readRegularFile(target, expected, label = 'inputFile') {
   let descriptor;
   try {
     descriptor = nodeFs.openSync(
@@ -2920,30 +3052,30 @@ function readRegularFile(target, expected) {
     );
   } catch (error) {
     if (error?.code === 'ELOOP' || error?.code === 'ENOENT')
-      invalid('inputFile must be a regular file');
+      invalid(`${label} must be a regular file`);
     throw error;
   }
   try {
     const info = nodeFs.fstatSync(descriptor);
     if (!info.isFile() || info.dev !== expected.dev || info.ino !== expected.ino)
-      invalid('inputFile must be a regular file');
-    if (info.size > MAX_INPUT_BYTES) invalid('inputFile exceeds the input bound');
+      invalid(`${label} must be a regular file`);
+    if (info.size > MAX_INPUT_BYTES) invalid(`${label} exceeds the input bound`);
     // The file may grow between fstat and read; the bound holds for what was actually read.
     const text = nodeFs.readFileSync(descriptor, 'utf8');
-    if (Buffer.byteLength(text) > MAX_INPUT_BYTES) invalid('inputFile exceeds the input bound');
+    if (Buffer.byteLength(text) > MAX_INPUT_BYTES) invalid(`${label} exceeds the input bound`);
     return text;
   } finally {
     nodeFs.closeSync(descriptor);
   }
 }
 
-export async function readInputFile(inputFile, deps = {}) {
-  if (typeof inputFile !== 'string' || !path.isAbsolute(inputFile))
-    invalid('inputFile must be an absolute path');
-  const name = path.basename(inputFile);
-  const root = path.resolve(path.dirname(inputFile), ...INPUT_SEGMENTS.map(() => '..'));
-  if (!INPUT_FILE.test(name) || path.join(root, ...INPUT_SEGMENTS, name) !== inputFile)
-    invalid('inputFile must name <runtime root>/.effective-flow/triage/inputs/<name>.json');
+async function readGuardedInput(file, deps, { remove, label }) {
+  if (typeof file !== 'string' || !path.isAbsolute(file))
+    invalid(`${label} must be an absolute path`);
+  const name = path.basename(file);
+  const root = path.resolve(path.dirname(file), ...INPUT_SEGMENTS.map(() => '..'));
+  if (!INPUT_FILE.test(name) || path.join(root, ...INPUT_SEGMENTS, name) !== file)
+    invalid(`${label} must name <runtime root>/.effective-flow/triage/inputs/<name>.json`);
   const context = runtimeContext(deps);
   let text;
   try {
@@ -2952,21 +3084,89 @@ export async function readInputFile(inputFile, deps = {}) {
     for (const segment of INPUT_SEGMENTS) {
       current = path.join(current, segment);
       if (!realDirectoryOrNull(current, 'an input directory component'))
-        invalid('inputFile does not exist');
+        invalid(`${label} does not exist`);
     }
     const target = path.join(current, name);
     const info = lstatOrNull(target);
-    if (!info || !info.isFile()) invalid('inputFile must be a regular file');
-    text = readRegularFile(target, info);
-    await guardedUnlink(context, target);
+    if (!info || !info.isFile()) invalid(`${label} must be a regular file`);
+    text = readRegularFile(target, info, label);
+    if (remove) await guardedUnlink(context, target);
   } catch (error) {
     return guardFailure(error);
   }
   try {
     return JSON.parse(text);
   } catch {
-    invalid('inputFile must contain one JSON object');
+    invalid(`${label} must contain one JSON object`);
   }
+}
+
+// A helper output sent as a whole input is refused before anything is removed, so a misrouted
+// reference never deletes an object later consumers still need.
+export async function readInputFile(inputFile, deps = {}) {
+  if (typeof inputFile === 'string' && OUTPUT_FILE.test(path.basename(inputFile)))
+    invalid('inputFile names a helper output; pass it as its reference field instead');
+  return readGuardedInput(inputFile, deps, { remove: true, label: 'inputFile' });
+}
+
+async function canonicalRoot(deps, value) {
+  const context = runtimeContext(deps);
+  try {
+    await resolveRuntimeRoot(context, absoluteDirectory(value, 'runtimeStateRoot'));
+  } catch (error) {
+    guardFailure(error);
+  }
+  return context.cwd;
+}
+
+// Reads one reference field, verifies the hash exactly as the consuming handler does, and binds
+// the file to its own path and to every runtime root the operation knows.
+async function readReference(field, file, deps, roots) {
+  const label = `${field}File`;
+  const { file: kind, hashKey } = OUTPUT_KINDS[field];
+  if (typeof file !== 'string' || OUTPUT_FILE.exec(path.basename(file))?.[1] !== kind)
+    invalid(`${label} must name this helper's ${kind} output`, { label });
+  const value = await readGuardedInput(file, deps, { remove: false, label });
+  verifyHashed(value, hashKey, field);
+  if (value.inputFile !== file) invalid(`${label} was copied from another path`, { label });
+  for (const root of roots)
+    if (path.join(root, ...INPUT_SEGMENTS, path.basename(file)) !== file)
+      invalid(`${label} belongs to another runtime root`, { label });
+  return value;
+}
+
+// Substitutes each reference field `<field>File` by the object it names, so the handler's own
+// checks run unchanged on inline and referenced objects alike. `inventoryFile` is verified first;
+// its verified runtime root, or that of an inline inventory, binds the other references.
+async function resolveReferences(operation, input, deps) {
+  const fields = Object.keys(OUTPUT_KINDS).filter((field) => Object.hasOwn(input, `${field}File`));
+  if (fields.length === 0) return input;
+  const allowed = REFERENCE_FIELDS[operation] ?? [];
+  for (const field of fields) {
+    if (!allowed.includes(field))
+      invalid(`${operation} does not take ${field}File`, { field: `${field}File` });
+    if (Object.hasOwn(input, field))
+      invalid(`pass either ${field} or ${field}File, not both`, { field });
+  }
+  const resolved = { ...input };
+  for (const field of fields) delete resolved[`${field}File`];
+  const roots =
+    input.runtimeStateRoot === undefined ? [] : [await canonicalRoot(deps, input.runtimeStateRoot)];
+  if (fields.includes('inventory'))
+    resolved.inventory = await readReference('inventory', input.inventoryFile, deps, roots);
+  if (resolved.inventory !== undefined) {
+    const root = requireInventory(resolved.inventory).runtimeStateRoot;
+    if (!roots.includes(root)) roots.push(root);
+    if (
+      fields.includes('inventory') &&
+      path.join(root, ...INPUT_SEGMENTS, path.basename(input.inventoryFile)) !== input.inventoryFile
+    )
+      invalid('inventoryFile belongs to another runtime root', { label: 'inventoryFile' });
+  }
+  for (const field of fields)
+    if (field !== 'inventory')
+      resolved[field] = await readReference(field, input[`${field}File`], deps, roots);
+  return resolved;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2995,7 +3195,10 @@ export async function executeOperation(operation, input = {}, deps = {}) {
         ? await readInputFile(input.inputFile, deps)
         : input;
     if (!isObject(resolved)) invalid('input must be one JSON object');
-    const data = await HANDLERS[operation](resolved, deps);
+    const data = await HANDLERS[operation](
+      await resolveReferences(operation, resolved, deps),
+      deps,
+    );
     return { ok: true, operation, data };
   } catch (error) {
     return errorEnvelope(operation, error);
