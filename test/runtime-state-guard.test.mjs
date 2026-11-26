@@ -69,12 +69,14 @@ test('the shared module exports exactly the runtime-state surface', () => {
   assert.deepEqual(Object.keys(guard).sort(), [
     'HARNESS_SETTINGS_DIR',
     'HARNESS_SETTINGS_FILE',
+    'INPUT_FILE',
     'LEGACY_CONFIG_DECISIONS',
     'LEGACY_CONFIG_ENTRY',
     'LEGACY_MEMORY_ENTRY',
     'LEGACY_MEMORY_FILE',
     'LEGACY_RUNTIME_DIRS',
     'LEGACY_WORKTREES_ENTRY',
+    'MAX_INPUT_BYTES',
     'NON_LIVE_LOCATOR_STEPS',
     'NO_CLOBBER_TEMP_MAX_AGE_MS',
     'O_NOFOLLOW',
@@ -107,6 +109,7 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'hashRegularFile',
     'isLegacyMigrationMarker',
     'listLegacyTree',
+    'readRuntimeInputFile',
     'relativeToRoot',
     'removeLegacyListing',
     'requireToplevel',
@@ -117,6 +120,44 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'walkLegacySource',
   ]);
   assert.equal(guard.RUNTIME_STATE_DIR, '.effective-flow');
+});
+
+test('the shared input reader reports fault kinds and guards both consumption modes', async (context) => {
+  const segments = ['.effective-flow', 'reader', 'inputs'];
+  const root = repository(context);
+  const directory = join(root, ...segments);
+  mkdirSync(directory, { recursive: true });
+  const file = join(directory, 'one.json');
+  writeFileSync(file, '{"value":42}');
+  const errorFactory = (kind, message, cause) =>
+    Object.assign(new Error(message, { cause }), { kind });
+  const read = (input, remove, strict = false) =>
+    guard.readRuntimeInputFile(input, segments, remove, legacyContext(null), errorFactory, {
+      strict,
+    });
+
+  await assert.rejects(read('one.json', true), { kind: 'path' });
+  const source = join(root, 'outside');
+  const symlinkRoot = repository(context);
+  mkdirSync(join(symlinkRoot, '.effective-flow'));
+  mkdirSync(source);
+  symlinkSync(source, join(symlinkRoot, '.effective-flow/reader'), 'dir');
+  await assert.rejects(read(join(symlinkRoot, ...segments, 'one.json'), true), {
+    kind: 'directory',
+  });
+
+  writeFileSync(join(root, '.gitignore'), '');
+  await assert.rejects(read(file, false, true), (error) => {
+    assert.equal(error.kind, 'guard');
+    assert.equal(error.cause.code, 'RUNTIME_STATE_UNSAFE');
+    return true;
+  });
+  assert.equal(existsSync(file), true);
+  writeFileSync(join(root, '.gitignore'), '.effective-flow/\n');
+  assert.deepEqual(await read(file, false, true), { value: 42 });
+  assert.equal(existsSync(file), true);
+  assert.deepEqual(await read(file, true), { value: 42 });
+  assert.equal(existsSync(file), false);
 });
 
 // Invariant: diff-baseline keeps one guard instead of a copy, and every symbol it exported before

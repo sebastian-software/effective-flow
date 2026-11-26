@@ -5,7 +5,16 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -146,4 +155,41 @@ test('the eval stub process refuses a bad argv before recording anything', () =>
   } finally {
     rmSync(logDir, { recursive: true, force: true });
   }
+});
+
+test('the eval stub records a file payload cwd and does not consume the input', (context) => {
+  const sandbox = realpathSync(mkdtempSync(join(tmpdir(), 'ef-eval-stub-input-')));
+  context.after(() => rmSync(sandbox, { recursive: true, force: true }));
+  const cwd = join(sandbox, 'project');
+  const inputs = join(cwd, '.effective-flow', 'remote-tracker', 'inputs');
+  mkdirSync(inputs, { recursive: true });
+  const payload = JSON.stringify({ cwd, body: "l'équipe\n" });
+  const digest = createHash('sha256').update(payload).digest('hex');
+  const inputFile = join(inputs, `test-1-${digest}.json`);
+  const fixture = join(sandbox, 'fixture.json');
+  const log = join(sandbox, 'calls.jsonl');
+  const envelope = { ok: true, operation: 'body-hash', provider: null, data: {}, dryRun: false };
+  writeFileSync(inputFile, payload);
+  writeFileSync(fixture, JSON.stringify({ operations: { 'body-hash': { envelope } } }));
+  const invoke = () =>
+    spawnSync(process.execPath, [STUB, 'body-hash'], {
+      input: JSON.stringify({ inputFile }),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        EVAL_TRACKER_NO_MAIN: '0',
+        EVAL_TRACKER_FIXTURE: fixture,
+        EVAL_TRACKER_LOG: log,
+      },
+    });
+  const valid = invoke();
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.deepEqual(JSON.parse(valid.stdout), envelope);
+  assert.equal(JSON.parse(readFileSync(log, 'utf8')).cwd, cwd);
+  assert.equal(readFileSync(inputFile, 'utf8'), payload);
+  writeFileSync(inputFile, `${payload}\n`);
+  const changed = invoke();
+  assert.equal(changed.status, 1, changed.stderr);
+  assert.equal(JSON.parse(changed.stdout).error.code, 'INVALID_PAYLOAD');
+  assert.equal(JSON.parse(readFileSync(log, 'utf8').trim().split('\n').at(-1)).cwd, null);
 });

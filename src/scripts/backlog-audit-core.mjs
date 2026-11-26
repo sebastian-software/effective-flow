@@ -24,6 +24,8 @@ import { slugify } from './dated-name-allocation.mjs';
 import { classifyPlanText, listTopLevel, readPlanFile, resolveRoots } from './plan-lint-core.mjs';
 import {
   RUNTIME_STATE_DIR,
+  INPUT_FILE,
+  MAX_INPUT_BYTES,
   RuntimeStateError,
   createNoClobber,
   ensureGuardedDirectory,
@@ -33,6 +35,7 @@ import {
   guardedRmdir,
   guardedUnlink,
   resolveRuntimeRoot,
+  readRuntimeInputFile,
 } from './runtime-state-guard.mjs';
 
 export const BACKLOG_AUDIT_OPERATIONS = Object.freeze([
@@ -124,9 +127,8 @@ const SNAPSHOT_TEMP = /^\.backlog-audit-[0-9a-f]{16}\.tmp$/;
 // run's live snapshot survives another run's start; a run's own exit removes its snapshot at once.
 export const STALE_RUNTIME_MS = 24 * 60 * 60 * 1000;
 const INPUT_SEGMENTS = Object.freeze([RUNTIME_STATE_DIR, 'backlog-audit', 'inputs']);
-const INPUT_FILE = /^[a-z0-9][a-z0-9-]{0,78}\.json$/;
 // Caller-supplied external issues travel as input, so the bound is generous but finite.
-export const MAX_INPUT_BYTES = 16 * 1024 * 1024;
+export { MAX_INPUT_BYTES };
 export const ARCHITECTURE_SUMMARY_FILE = 'architecture-summary.md';
 const MAX_TEXT = 2000;
 const STRINGS = Object.freeze({
@@ -2700,63 +2702,13 @@ async function externalCallCheck(input) {
 // runs, so an input never outlives its call.
 // Opens without following a final symlink and reads through the descriptor, so the file checked
 // is the file read even if the path is swapped after the `lstat`.
-function readRegularFile(target, expected) {
-  let descriptor;
-  try {
-    descriptor = nodeFs.openSync(
-      target,
-      nodeFs.constants.O_RDONLY | (nodeFs.constants.O_NOFOLLOW ?? 0),
-    );
-  } catch (error) {
-    if (error?.code === 'ELOOP' || error?.code === 'ENOENT')
-      invalid('inputFile must be a regular file');
-    throw error;
-  }
-  try {
-    const info = nodeFs.fstatSync(descriptor);
-    if (!info.isFile() || info.dev !== expected.dev || info.ino !== expected.ino)
-      invalid('inputFile must be a regular file');
-    if (info.size > MAX_INPUT_BYTES) invalid('inputFile exceeds the input bound');
-    const text = nodeFs.readFileSync(descriptor, 'utf8');
-    if (Buffer.byteLength(text) > MAX_INPUT_BYTES) invalid('inputFile exceeds the input bound');
-    return text;
-  } finally {
-    nodeFs.closeSync(descriptor);
-  }
-}
-
 export async function readInputFile(inputFile, deps = {}) {
-  if (typeof inputFile !== 'string' || !path.isAbsolute(inputFile))
-    invalid('inputFile must be an absolute path');
-  const name = path.basename(inputFile);
-  const directory = path.dirname(inputFile);
-  const root = path.resolve(directory, ...INPUT_SEGMENTS.map(() => '..'));
-  if (!INPUT_FILE.test(name) || path.join(root, ...INPUT_SEGMENTS, name) !== inputFile)
-    invalid('inputFile must name <runtime root>/.effective-flow/backlog-audit/inputs/<name>.json');
   const context = runtimeContext(deps);
-  let text;
-  try {
-    await resolveRuntimeRoot(context, root);
-    const expected = path.join(context.cwd, ...INPUT_SEGMENTS);
-    let current = context.cwd;
-    for (const segment of INPUT_SEGMENTS) {
-      current = path.join(current, segment);
-      if (!realDirectoryOrNull(current, 'an input directory component'))
-        invalid('inputFile does not exist');
-    }
-    const target = path.join(expected, name);
-    const info = lstatOrNull(target);
-    if (!info || !info.isFile()) invalid('inputFile must be a regular file');
-    text = readRegularFile(target, info);
-    await guardedUnlink(context, target);
-  } catch (error) {
-    return guardFailure(error);
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    invalid('inputFile must contain one JSON object');
-  }
+  return readRuntimeInputFile(inputFile, INPUT_SEGMENTS, true, context, (kind, message, cause) => {
+    if (kind === 'guard') return guardFailure(cause);
+    if (kind === 'directory') fail('UNSAFE_RUNTIME_STATE', message);
+    return new BacklogAuditError('INVALID_PAYLOAD', message);
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
