@@ -291,6 +291,14 @@ const QUESTION_INVENTORY = Object.freeze(
     ],
     'shared/security-disclosure-gate.md': [
       [
+        'not-a-site: the capture-only scope exempts its drafts from the publication offer; planning never invokes capture',
+        'Publication offer `ask`, and Pre-commit use do not apply: the session retains the source and a',
+      ],
+      [
+        'not-a-site: points to the capture-only per-draft confirmation, not a question in planning',
+        'skipped flagged draft is repeated in full in chat. The separate per-draft disclosure confirmation',
+      ],
+      [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
         'severity, and short title, then ask. Keeping them local is the default: an unanswered, skipped, or',
       ],

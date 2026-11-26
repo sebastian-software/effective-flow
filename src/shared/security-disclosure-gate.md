@@ -30,6 +30,14 @@ The classification is a judgment, not a taxonomy: it rests on the reviewer signa
 text. The conservative default is the safeguard, at the price of occasionally withholding a
 harmless finding.
 
+### Capture drafts
+
+For `{{SKILL:capture}}`, apply conservative and escalate-only classification (`local-only` means
+`flagged`) and "Silence in public artifacts". Local dedup, Local-first persistence, the
+Publication offer `ask`, and Pre-commit use do not apply: the session retains the source and a
+skipped flagged draft is repeated in full in chat. The separate per-draft disclosure confirmation
+for both creating an issue and commenting lives in `capture.md`.
+
 ### Local dedup
 
 A withheld finding was never published, so remote dedup cannot see it and a re-run would mint a

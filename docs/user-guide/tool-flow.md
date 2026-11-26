@@ -185,6 +185,7 @@ that does not suppress a valid candidate from the associated plan or issue.
 | `open-plans`    | no open plan, status-unclear plan                                               | `/effective-flow plan <status-unclear plan>`          | —                                                                  |
 | `plan-issue`    | released                                                                        | `/effective-flow apply #<issue>`                      | `/effective-flow plan-issue <issue>`                               |
 | `plan-issue`    | retained for planning                                                           | `/effective-flow plan-issue <issue>`                  | —                                                                  |
+| `capture`       | created issue                                                                   | `/effective-flow triage #<N>`                         | `/effective-flow plan-issue #<N>`                                  |
 | `triage`        | implement verdict                                                               | `/effective-flow plan-issue #<issue>`                 | `/effective-flow apply #<issue>`                                   |
 | `triage`        | needs-work verdict, questions to the author or maintainer open                  | `/effective-flow triage #<issue>`                     | `/effective-flow triage --untriaged`                               |
 | `issue-buddy`   | dry run; would-publish issue in public repository                               | `/effective-flow issue-buddy --publish`               | `/effective-flow plan-issue <not-ready or readiness-failed issue>` |
@@ -263,3 +264,5 @@ changes entry point: after it opens the confirmed multi-commit pull request, it 
 `implement` verdict points to `plan-issue` or `apply` on the same issue; a `needs-work` verdict
 points to a re-run on that issue, or to `triage --untriaged`, once its questions are answered; a
 `reject` verdict is final and ends without a recommendation.
+
+A `capture` run that created no issue gives no fallback recommendation.

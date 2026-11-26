@@ -505,6 +505,18 @@ worktree without a tracked `.gitignore` line. Standard-mode setup in a linked wo
 entry when the runtime-state root does not yet ignore `.effective-flow/`, because the tracked line
 reaches the main checkout only with the merge.
 
+## Capture runtime boundary
+
+`capture-core` owns context reads, deterministic comparison, draft checks and the approved writes.
+The orchestrator receives labels and candidate metadata, never third-party issue prose. Runtime
+files live under the guarded main checkout's `.effective-flow/capture/inputs/`: a hash-bearing
+context and write sets, the current revision state and a once-only apply ledger per draft. Apply
+re-derives the entry, checks references at the fetched base and binds disclosure and scanner
+acknowledgements to its hash. A pending or unknown outcome blocks another apply; recovery requires
+an exact title, the current viewer and creation time within the stated skew allowance. Exit cleanup
+removes each run's text; the entry sweep spares recently touched runs and live operation locks.
+Hashes provide tamper evidence, not authentication or proof of a user's answer.
+
 ## Repository visibility
 
 For an `autopilot` plan source, `repository-visibility-read` recognizes private repositories on

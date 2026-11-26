@@ -1202,3 +1202,17 @@ or tracker access was unavailable.
 - [Troubleshooting](./troubleshooting.md) – missing or unauthenticated CLI, unresolved external
   connection
 - [Glossary](./glossary.md) – finding, tracker target
+
+## Capture
+
+`effective-flow capture` is the interactive issue entry point before triage and planning. It accepts
+one description or up to ten findings on a configured remote GitHub or Forgejo tracker; hidden,
+local, external and unset modes stop before tracker access. See [Record work](tools-record.md) for
+the complete preview, revision, duplicate and disclosure procedure.
+
+The public read-only `label-list` operation has capability `labelList`. It paginates on both forges
+and uses repository labels only on Forgejo (`--exclude-org`); tea's "failed to list repository
+labels" warning fails the read instead of pretending the list is empty. Capture proposes only
+exact existing non-internal names and never calls `label-create`. Comments use `language.forge`
+because this writer never reads the target thread's text. Tracker writes are performed by the
+capture helper itself from the stored, hash-bound preview, with an apply ledger preventing repeats.
