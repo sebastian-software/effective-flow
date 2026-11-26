@@ -34,6 +34,23 @@ exercises the documented DALO and Skills CLI consumer paths against externally p
 releases of those managers. After every source or installer change, use the same order as CI:
 `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
+In CI the unit suite runs in the `unit-tests` matrix job as three shards, `Unit tests (1/3)` to
+`Unit tests (3/3)`, each running `pnpm test --test-shard=<i>/3` with its own preflight. The flag
+follows `pnpm test` without a `--` separator: pnpm forwards `--` to the script, and
+`node --test -- <flags>` would read the flags as file patterns. `--test-shard` assigns test files
+round-robin over the sorted file list, not by duration, so adding or renaming a test file
+reshuffles every shard. The required job `Format, test and build` declares `needs: unit-tests`,
+runs under `if: always()` and first runs the `Unit test shards` gate, which fails unless every
+shard succeeded; a skipped required check would count as passing, so a failed, skipped or
+cancelled shard turns the required check red instead. Format check, build, distribution smoke
+tests and eval evidence follow the gate, so a format failure is reported only after all shards
+finish. Re-running only `Format, test and build` does not clear a failed shard, because its gate
+reads the same shard result again: re-run the failed shard, or use "Re-run failed jobs". A cancel
+after the gate step has passed lets `Format, test and build` run to the end: GitHub re-evaluates
+`if:` on cancel and `always()` keeps the job running, so only a force-cancel stops it. `always()` is
+kept deliberately, because `!cancelled()` would turn a cancelled run's required check into a
+passing "skipped". Locally, `pnpm test` still runs the whole suite in one unsharded run.
+
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
 untouched.
@@ -43,8 +60,9 @@ create and clean a temporary fixture, bind an ephemeral loopback TCP listener, a
 apply a distinct nested Seatbelt policy that proves a real write is denied. It also proves that Git
 can read the checkout (`git rev-parse --is-inside-work-tree` in the repository root, so a missing
 binary or a hidden `.git` stops here) and that `os.tmpdir()` offers at least
-`MIN_TEMPORARY_FREE_BYTES` of free space (92,748 KiB: the measured peak of a full `node --test` run,
-74,198 KiB, plus 25 %; the derivation sits beside the constant in `scripts/test-capabilities.mjs`).
+`MIN_TEMPORARY_FREE_BYTES` of free space (150 MiB: twice the measured peak of a full `node --test`
+run, 74,198 KiB, rounded up, because that measurement is only a lower bound; the derivation sits
+beside the constant in `scripts/test-capabilities.mjs`).
 A failing run names the directory and the free space, and the fix is a `TMPDIR` with more room.
 `pnpm test` runs this
 guard first, but a passing guard is prerequisite evidence only, not proof that the full suite is
@@ -905,8 +923,9 @@ tool, mode?, baseRef }` input and share one key-parameterized implementation: ea
   or `bun install --frozen-lockfile --ignore-scripts`. Each carries only its listed step keys and
   inputs, without expressions or an inherited `env` (`step-before-test`, `action-before-test`,
   `env-before-test`), and the test step only `name`, `id`, `run`, `timeout-minutes`,
-  `working-directory` and `shell`, without a step `env` (`test-step-env`, `test-step-key`), so
-  this repository's own `Format, test and build` job stays undetected. A job `container` or
+  `working-directory` and `shell`, without a step `env` (`test-step-env`, `test-step-key`); why
+  this repository's own CI stays undetected is recorded under AD4 of the
+  [conflict-validation ADR](../adr/merge-gate-conflict-validation.md). A job `container` or
   `services` entry is never provable (`job-container`, `job-services`).
   `ci-integrity` (`{ cwd, baseRef, commit?, tree }`, `tree` a full commit or tree id or `index`)
   compares, between that base or pinned commit and `tree`, the `mode type oid` entries of

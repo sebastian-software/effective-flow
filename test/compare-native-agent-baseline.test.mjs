@@ -672,3 +672,81 @@ test('only declared added workers may extend the base worker membership', () => 
     );
   }
 });
+
+function bodyDeltaIds(baselineBody, workingBody, body) {
+  return compareNativeSidecar(
+    'claude',
+    'effective-flow-rust-reviewer',
+    claude({ effort: 'xhigh', body: baselineBody }),
+    claude({ effort: 'xhigh', body: workingBody }),
+    { configuration: [], body },
+  );
+}
+
+// Invariant: when several delta combinations yield the working body, the one with the numerically
+// smallest mask (bit i for delta i) wins, whichever a depth-first walk reaches first: {3} (mask 8)
+// beats {0,3} (mask 9), and {0,1} (mask 3) beats {2} (mask 4).
+test('an ambiguous body delta match resolves to the smallest delta mask', () => {
+  assert.deepEqual(
+    bodyDeltaIds('a', 'c', [
+      { id: 'd0', edits: [{ from: 'a', to: 'b' }] },
+      { id: 'd1', edits: [{ from: 'x', to: 'y' }] },
+      { id: 'd2', edits: [{ from: 'z', to: 'w' }] },
+      { id: 'd3', edits: [{ pattern: /[ab]/g, replacement: 'c' }] },
+    ]),
+    ['d3'],
+  );
+  assert.deepEqual(
+    bodyDeltaIds('p', 'r', [
+      { id: 'd0', edits: [{ from: 'p', to: 'q' }] },
+      { id: 'd1', edits: [{ from: 'q', to: 'r' }] },
+      { id: 'd2', edits: [{ pattern: /p/g, replacement: 'r' }] },
+    ]),
+    ['d0', 'd1'],
+  );
+});
+
+// node:test cannot stop or fail a synchronous test on its timeout, so the bound is asserted on the
+// measured duration and the test timeout stays only as a backstop.
+function timedBodyDeltaIds(baselineBody, workingBody, body) {
+  const started = performance.now();
+  let error;
+  try {
+    bodyDeltaIds(baselineBody, workingBody, body);
+  } catch (caught) {
+    error = caught;
+  }
+  return { error, elapsed: performance.now() - started };
+}
+
+// Invariant: inapplicable body deltas are pruned, so a no-match over them stays linear instead of
+// trying all 2^n delta masks. With 24 deltas the former mask loop took about 9 s locally and the
+// whole test about 2 ms, so the 250 ms bound separates the two by more than 20x either way.
+test('a no-match over twenty-four inapplicable body deltas fails fast', { timeout: 5_000 }, () => {
+  const body = Array.from({ length: 24 }, (_, index) => ({
+    id: `missing-${index}`,
+    edits: [{ from: `missing-${index}`, to: `present-${index}` }],
+  }));
+  const { error, elapsed } = timedBodyDeltaIds('base body\n', 'working body\n', body);
+  assert.match(error?.message ?? '', /body drift outside the expected deltas/);
+  assert.ok(elapsed < 250, `24 inapplicable deltas took ${elapsed.toFixed(1)} ms, bound 250 ms`);
+});
+
+// Invariant: k independently applicable body deltas span 2^k combinations without a match, and
+// twelve of them (4,096 leaves) stay inside a fixed cost bound. Both the pruned walk and the former
+// mask loop must visit every leaf here, so this bounds the exhaustive case without telling the two
+// algorithms apart; it took 3-8 ms locally against the 500 ms bound.
+test('a no-match over twelve applicable body deltas stays bounded', { timeout: 10_000 }, () => {
+  const tokens = Array.from({ length: 12 }, (_, index) => `token-${index}`);
+  const body = tokens.map((token) => ({
+    id: token,
+    edits: [{ from: `<${token}>`, to: `[${token}]` }],
+  }));
+  const { error, elapsed } = timedBodyDeltaIds(
+    tokens.map((token) => `<${token}>`).join('\n'),
+    'unrelated working body\n',
+    body,
+  );
+  assert.match(error?.message ?? '', /body drift outside the expected deltas/);
+  assert.ok(elapsed < 500, `12 applicable deltas took ${elapsed.toFixed(1)} ms, bound 500 ms`);
+});
