@@ -179,9 +179,10 @@ deliver-publication-preflight
 when: the host policy is restricted or publication-preflight returns unsupported
 ```
 
-Only under an `unrestricted` policy, call the remote helper's `repository-resolve` with
-`{cwd: <RUNTIME_STATE_ROOT>}`, plus `provider` when `tracker.remoteToolOverride` is not `auto`, and
-then its `probe` with `{cwd: <RUNTIME_STATE_ROOT>}`, the context in which `{{SKILL:pr}}` publishes.
+Only under an `unrestricted` policy, call the remote helper's `repository-resolve` and then its
+`probe`, each with `{cwd: <RUNTIME_STATE_ROOT>}`, the context in which `{{SKILL:pr}}` publishes, and
+each with `provider` when `tracker.remoteToolOverride` is not `auto`: the provider override is that
+configured value, else the answer below, and it is carried on every helper call of this delivery.
 On `AMBIGUOUS_HOST`, ask once for `github` or `forgejo` and repeat the call with that answer; an
 unanswered, skipped, or non-interactive answer ends the run with one notice naming `AMBIGUOUS_HOST`,
 with nothing changed by this delivery. The writer is `{kind: "provider-helper", probe}`: a successful
@@ -195,7 +196,7 @@ when: the step 1.1 writer observation calls the remote helper
 ```
 
 Call `publication-preflight {hostPolicy, writer, source: {branch}}` in writer scope, `branch` the
-current branch or `null` when detached. Retain the evidence and any provider answer for step 3.3,
+current branch or `null` when detached. Retain the evidence and the provider override for step 3.3,
 `{{SKILL:pr}}`, and the committed-range route's provider question. On `unsupported`, stop with the
 early report before any fast-forward, selection, branch, worktree, index, commit, push, or forge
 mutation.
@@ -346,8 +347,8 @@ any not-`ok` item or failed call takes the lifecycle denial fallback to `cleanup
 
 Delegate to `{{SKILL:pr}}` from the verified `RUNTIME_STATE_ROOT` with the exact head branch, base
 branch, final verified head OID, successful committed-handoff evidence, strongest type/effect hint,
-the `Verification evidence:` line built per `verification-evidence`, step 1.1's provider answer as
-its explicit provider override when one was given, and this literal line:
+the `Verification evidence:` line built per `verification-evidence`, step 1.1's provider override as
+its explicit provider override when one exists, and this literal line:
 
 `Next steps: suppressed`
 

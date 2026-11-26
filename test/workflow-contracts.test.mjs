@@ -20504,8 +20504,7 @@ test('deliver step 1.1 observes the publication writer before upstream-status', 
     'Unless a record was resumed, observe the pull-request writer before any source or delivery mutation',
     'Read `tracker.remoteToolOverride`, `delivery.baseBranch`, and `delivery.branchPrefix`',
     'Set `hostPolicy` first, from explicit running-environment evidence only',
-    "Only under an `unrestricted` policy, call the remote helper's `repository-resolve` with `{cwd: <RUNTIME_STATE_ROOT>}`",
-    'then its `probe` with `{cwd: <RUNTIME_STATE_ROOT>}`',
+    "Only under an `unrestricted` policy, call the remote helper's `repository-resolve` and then its `probe`, each with `{cwd: <RUNTIME_STATE_ROOT>}`",
     'On `AMBIGUOUS_HOST`, ask once for `github` or `forgejo`',
     'Call `publication-preflight {hostPolicy, writer, source: {branch}}` in writer scope',
     'On `unsupported`, stop with the early report before any fast-forward, selection, branch, worktree, index, commit, push, or forge mutation',
@@ -20518,7 +20517,8 @@ test('deliver step 1.1 observes the publication writer before upstream-status', 
     'a Git push capability, a checkout path, or a generic PR tool is never evidence',
     'an unanswered, skipped, or non-interactive answer ends the run with one notice naming `AMBIGUOUS_HOST`, with nothing changed by this delivery',
     'any other error envelope from either call gives `{ok: false, code, pullRequestCreate: null}`',
-    "Retain the evidence and any provider answer for step 3.3, `{{SKILL:pr}}`, and the committed-range route's provider question",
+    'each with `provider` when `tracker.remoteToolOverride` is not `auto`: the provider override is that configured value, else the answer below, and it is carried on every helper call of this delivery',
+    "Retain the evidence and the provider override for step 3.3, `{{SKILL:pr}}`, and the committed-range route's provider question",
   ]) {
     assert.ok(step1.includes(token), `step 1.1 writer observation: ${token}`);
   }
@@ -20557,8 +20557,8 @@ test('deliver step 3.3 classifies the head/base pair before creating the branch'
   );
   assert.match(
     prose(section(deliver, '### 6. Publish only the verified commits', '\n### ')),
-    /step 1\.1's provider answer as its explicit provider override when one was given/,
-    'the early provider answer reaches pr, so the run asks no more often than before',
+    /step 1\.1's provider override as its explicit provider override when one exists/,
+    'the early provider override reaches pr, so the run asks no more often than before',
   );
 });
 
@@ -20645,7 +20645,7 @@ test('the resume entry classifies the publication path before step 4.3 with an a
   ordered(
     runs,
     'Step 1.2, with hidden mode',
-    "Step 1.1's writer observation, then the step 3.3 classification with `head` the record's branch, `base` `resume.base.branch`, and `source` that fresh observation",
+    "Step 1.1's writer observation, carrying the provider override on every helper call, then the step 3.3 classification with `head` the record's branch, `base` `resume.base.branch`, and `source` that fresh observation",
     'Every stop of either, an `unsupported` result, an unanswered provider question, or a helper or `publication-preflight` error envelope, is a controlled stop before step 4.3',
     'move the adopted record back to `aborted` with one `worktree transition`, never leaving it `active`',
     'A fresh delivery execution-location receipt',
@@ -20655,16 +20655,16 @@ test('the resume entry classifies the publication path before step 4.3 with an a
 
 // Invariant (issue #768): the early step 1.1 provider answer is the committed-range route's single
 // provider question, so the route never asks a second one, and it is passed to condition 3's
-// repository-resolve so that call cannot return AMBIGUOUS_HOST again.
+// repository-resolve, probe and pr-list so none can return AMBIGUOUS_HOST again.
 test('committed-range counts the step 1.1 provider answer as its provider question', () => {
   const fragment = source('src/shared/deliver-committed-range.md');
   assert.ok(
     prose(
       boundedSlice(fragment, '3. **No existing PR.**', '4. **No uncertain attempt.**'),
     ).includes(
-      "`repository-resolve` carries step 1.1's provider answer as its explicit provider override when one was given",
+      "all three carry step 1.1's provider override, the configured `tracker.remoteToolOverride` when not `auto`, else its provider answer, as their explicit `provider` when there is one",
     ),
-    'condition 3 passes the early answer as the provider override',
+    'condition 3 passes the provider override to resolve, probe and pr-list',
   );
   assert.ok(
     prose(boundedSlice(fragment, '### Outcomes', '### Handoff')).includes(

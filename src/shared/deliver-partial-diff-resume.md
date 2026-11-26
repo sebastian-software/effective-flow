@@ -89,7 +89,7 @@ From the `resume` result the run continues without asking for the selection agai
 - **Runs, in this order:**
   1. Step 1.1's source evidence, recorded fresh; steps 4.5, 5 and 7 compare against it.
   2. Step 1.2, with hidden mode when the current visibility or `resume.visibility` is hidden.
-  3. Step 1.1's writer observation, then the step 3.3 classification with `head` the record's
+  3. Step 1.1's writer observation, carrying the provider override on every helper call, then the step 3.3 classification with `head` the record's
      branch, `base` `resume.base.branch`, and `source` that fresh observation. Every stop of
      either, an `unsupported` result, an unanswered provider question, or a helper or
      `publication-preflight` error envelope, is a controlled stop before step 4.3: move the

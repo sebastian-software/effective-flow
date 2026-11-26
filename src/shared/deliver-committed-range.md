@@ -55,8 +55,8 @@ is noted and evaluation continues, so a later notice or pointer still wins.
    branch, and `knownOids`. Keep its `branch`, `headOid`, `commits`, and `paths`.
 3. **No existing PR.** Run `repository-resolve`, the probe once, and `pr-list` with
    `{state: "all", head}`, each with the verified `RUNTIME_STATE_ROOT` as `cwd`;
-   `repository-resolve` carries step 1.1's provider answer as its explicit provider override when
-   one was given. On GitHub, `head`
+   all three carry step 1.1's provider override, the configured `tracker.remoteToolOverride` when
+   not `auto`, else its provider answer, as their explicit `provider` when there is one. On GitHub, `head`
    is `<owner>:<head-branch>` with the `origin` owner `repository-resolve` reports; on Forgejo,
    `<head-branch>`. Hydrate every item lacking `head`, `base`, `state`, a URL, or `sameRepository`
    through `pr-read` under `pr` step 8's completeness rules; an item still incomplete is a lookup
@@ -122,6 +122,6 @@ Before calling `pr`, re-check that the source `HEAD` equals `headOid` and that t
 are still clean, untracked paths included; otherwise end with one notice. Then call
 `{{SKILL:pr}}` as a plain direct invocation from the source checkout: no `Next steps: suppressed`
 line and no committed-handoff receipt, but the literal line `Verification evidence: none` (this
-route carries no trusted verification evidence), with the explicit provider when the provider
-question was answered. Print nothing afterwards: `pr` owns the final report and the next-step
+route carries no trusted verification evidence), with the explicit provider when step 1.1's provider override
+or a provider answer exists. Print nothing afterwards: `pr` owns the final report and the next-step
 block, and its hidden-mode rules apply unchanged.
