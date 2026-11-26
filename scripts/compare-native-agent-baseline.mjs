@@ -607,19 +607,48 @@ function applyEdits(text, edits) {
   return result;
 }
 
-// The ids of the one combination of body deltas that turns the base body into the working body,
-// trying combinations in declared order; null when none does.
-function matchBodyDeltas(baselineBody, workingBody, bodyDeltas) {
-  for (let mask = 1; mask < 2 ** bodyDeltas.length; mask += 1) {
-    const chosen = bodyDeltas.filter((_, index) => mask & (1 << index));
-    let text = baselineBody;
-    for (const { edits } of chosen) {
-      text = applyEdits(text, edits);
-      if (text === null) break;
-    }
-    if (text === workingBody) return chosen.map(({ id }) => id);
+// Whether the ascending index set `a` stands for a numerically smaller delta mask than `b`: compared
+// from the highest index down, the lower index at the first difference wins, and a set that runs
+// out of indices first wins ({3}, mask 8, precedes {0,3}, mask 9).
+function precedesByMask(a, b) {
+  for (let i = a.length - 1, j = b.length - 1; ; i -= 1, j -= 1) {
+    if (i < 0) return j >= 0;
+    if (j < 0) return false;
+    if (a[i] !== b[j]) return a[i] < b[j];
   }
-  return null;
+}
+
+// The ids of the one combination of body deltas that turns the base body into the working body,
+// in declared order; null when none does. The winner is the non-empty combination with the
+// numerically smallest delta mask (bit i for delta i), each applied in ascending index order.
+// An include/skip walk applies each included delta to its prefix text once and prunes a branch as
+// soon as an edit does not apply, so inapplicable deltas cost linear time instead of 2^n masks.
+// The walk does not reach the smallest mask first, so it collects every match and keeps the
+// smallest by precedesByMask.
+function matchBodyDeltas(baselineBody, workingBody, bodyDeltas) {
+  const included = [];
+  let best = null;
+  const visit = (index, text) => {
+    if (index === bodyDeltas.length) {
+      if (
+        included.length > 0 &&
+        text === workingBody &&
+        (best === null || precedesByMask(included, best))
+      ) {
+        best = [...included];
+      }
+      return;
+    }
+    const next = applyEdits(text, bodyDeltas[index].edits);
+    if (next !== null) {
+      included.push(index);
+      visit(index + 1, next);
+      included.pop();
+    }
+    visit(index + 1, text);
+  };
+  visit(0, baselineBody);
+  return best === null ? null : best.map((index) => bodyDeltas[index].id);
 }
 
 function configurationDrift(harness, file, baseline, working) {

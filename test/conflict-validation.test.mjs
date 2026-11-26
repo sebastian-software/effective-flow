@@ -274,11 +274,14 @@ test('detect: without a manifest test command nothing is detected', () => {
 // ---------------------------------------------------------------------------------------------
 // Detection conditions
 
-// Invariant: a pre-test step counts only when it is on the allowlist, so this repository's own test
-// job, whose unnamed `pnpm install --frozen-lockfile` keeps lifecycle scripts enabled and whose
-// `Format check` runs the package script `pnpm agent:check`, falls back to full validation; the
-// test names both blocking steps, so a change to either is a deliberate decision.
-test("detect: this repository's own ci.yml job is undetected behind its install and format check", () => {
+// Invariant: this repository's own CI is not recognized by the quick detector, so it falls back to
+// full validation. The test pins the exact per-job reasons, so a change that makes either job
+// detectable, or undetected for a different reason, is a deliberate decision. The sharded
+// `unit-tests` job carries a templated matrix name and runs `pnpm test` with a shard flag instead
+// of the bare command; the YAML subset reads the matrix values as strings, so `dynamic-matrix`
+// does not fire. The required `build` job gates on the shards under `if: always()` and no longer
+// runs the suite itself. The `step-before-test` path stays covered by the synthetic cases below.
+test("detect: this repository's own ci.yml jobs are undetected, so it falls back to full validation", () => {
   const text = readFileSync(new URL('.github/workflows/ci.yml', ROOT), 'utf8');
   const files = { 'package.json': readFileSync(new URL('package.json', ROOT), 'utf8') };
   const result = evaluateWorkflow('.github/workflows/ci.yml', text, {
@@ -286,20 +289,16 @@ test("detect: this repository's own ci.yml job is undetected behind its install 
     base: 'develop',
   });
   assert.equal(result.status, 'undetected', JSON.stringify(result));
+  const shards = jobOf(result, 'unit-tests');
+  assert.equal(shards.status, 'undetected');
+  assert.deepEqual(shards.reasons, ['templated-name', 'test-command-not-bare']);
+  assert.equal(shards.step, null);
+  assert.deepEqual(shards.expectedInstances, []);
   const build = jobOf(result, 'build');
   assert.equal(build.jobName, 'Format, test and build');
-  assert.equal(build.step.name, 'Unit tests');
-  assert.equal(build.step.normalizedCommand, 'pnpm test');
-  assert.deepEqual(build.reasons, ['step-before-test']);
-  const steps = parseWorkflowYaml(text).get('jobs').get('build').get('steps');
-  const blocking = steps
-    .slice(0, build.step.index)
-    .filter((step) => step.has('run'))
-    .map((step) => [step.get('name') ?? null, step.get('run')]);
-  assert.deepEqual(blocking, [
-    [null, 'pnpm install --frozen-lockfile'],
-    ['Format check', 'pnpm agent:check'],
-  ]);
+  assert.equal(build.status, 'undetected');
+  assert.deepEqual(build.reasons, ['job-condition', 'no-test-step']);
+  assert.equal(build.step, null);
   assert.deepEqual(build.expectedInstances, []);
   assert.equal(jobOf(result, 'shellcheck').status, 'undetected');
 });
