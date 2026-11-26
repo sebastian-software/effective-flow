@@ -1,6 +1,6 @@
 # Show the exact post-merge issue-state-wait invocation
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #773
@@ -120,6 +120,7 @@ guide under `docs/`.
    connections, `src/shared/merge-gate-issue-observation.md:25`), and this plan changes no outcome
    rule. Keep the external-issue sentence, "Never model-poll." and "Record each issue as terminal,
    open, timed out, or unobservable." verbatim.
+
 2. Keep the wording compact: about five to eight added lines. The fragment is lazy-loaded behind
    `src/shared/merge-gate-delegated-run.md:1451`, so it does not count toward an always-loaded core
    budget. Confirm with the `Always-loaded core (lines/budget)` report of `node build.mjs` that no
@@ -132,7 +133,7 @@ guide under `docs/`.
    - It reads step 2 alone, not the whole `### Observation steps` section, which spans steps 1 to 7
      (`src/shared/merge-gate-issue-observation.md:18-385`). It uses the file's existing
      `boundedSlice` helper (`test/workflow-contracts.test.mjs:100`) from `2. Give auto-close
-     automation` to `3. **Assess completion`.
+automation` to `3. **Assess completion`.
    - It checks that this slice contains exactly one `remote-tracker.mjs issue-state-wait <<< '…'`
      call.
    - It replaces only `<issue number>` with `17`; the bare placeholder is not valid JSON, while
@@ -166,6 +167,7 @@ guide under `docs/`.
    - It names the invariant: the documented call is accepted without a second invocation.
 
    Do not add a `repository` key to the payload: the test proves exactly the documented shape.
+
 5. Leave `src/shared/issue-post-merge-observation.md`, `src/scripts/remote-tracker-core.mjs`,
    `src/scripts/remote-tracker-shared-core.mjs`, `docs/user-guide/remote-tracker.md` (whose
    `issue-state-wait` row at `:435` already states the fixed grace period) and the eval fixtures
@@ -267,6 +269,7 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -293,6 +296,7 @@ Not relevant.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
