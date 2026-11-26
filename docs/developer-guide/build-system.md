@@ -51,6 +51,8 @@ after the gate step has passed lets `Format, test and build` run to the end: Git
 `if:` on cancel and `always()` keeps the job running, so only a force-cancel stops it. `always()` is
 kept deliberately, because `!cancelled()` would turn a cancelled run's required check into a
 passing "skipped". Locally, `pnpm test` still runs the whole suite in one unsharded run.
+On POSIX, the host-driver test file runs up to two Python cases concurrently, each in its own
+process with its own timeout and cancellation signal.
 
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
@@ -61,9 +63,9 @@ create and clean a temporary fixture, bind an ephemeral loopback TCP listener, a
 apply a distinct nested Seatbelt policy that proves a real write is denied. It also proves that Git
 can read the checkout (`git rev-parse --is-inside-work-tree` in the repository root, so a missing
 binary or a hidden `.git` stops here) and that `os.tmpdir()` offers at least
-`MIN_TEMPORARY_FREE_BYTES` of free space (150 MiB: twice the measured peak of a full `node --test`
-run, 74,198 KiB, rounded up, because that measurement is only a lower bound; the derivation sits
-beside the constant in `scripts/test-capabilities.mjs`).
+`MIN_TEMPORARY_FREE_BYTES` of free space (150 MiB; see the historical derivation in
+`scripts/test-capabilities.mjs`). This minimum is not a bound on actual use: an unsharded Linux run
+with Git visible and `--test-concurrency=4` peaked at a sampled 340.1 MiB.
 A failing run names the directory and the free space, and the fix is a `TMPDIR` with more room.
 `pnpm test` runs this
 guard first, but a passing guard is prerequisite evidence only, not proof that the full suite is
