@@ -80,6 +80,34 @@ and Target path fields.
 - A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
   not automatically rewritten. A requested translation converts the complete plan contract.
 
+### Single review-result line
+
+The plan-review section, `##` in a plan file and `###` in a planning comment, holds exactly one
+review-result line, directly below its heading and followed by the current summary and findings.
+A pass is one run of `plan` (its Phase 6 review or a re-planning) or of `plan-review`, interactive
+or delegated. At its first write of the section, a pass moves any previous summary and findings
+into one history subsection; later writes in the same pass update the current result, summary and
+findings in place. The unattended deep review that follows the internal review in the same `plan`
+run is its own `plan-review` pass, so the internal review becomes history.
+
+A history subsection sits one level below the section (`###` in a file, `####` in a comment) and
+carries its own Summary and Findings one level deeper. Its heading is
+`Review history (<YYYY-MM-DD>, <tool>)`, in German `Review-Verlauf (<YYYY-MM-DD>, <tool>)`. The
+heading carries the date and tool of the pass that recorded the moved result, or of the superseding
+pass when that is unknown. The subsection starts with plain history text that never begins with the
+result label: `Result at that time: <value>`, in German `Ergebnis damals: <value>`. History
+subsections follow the current Findings, newest first, before the open-points section.
+
+A pass never deletes earlier history and never adds a second result line or a subsection with its
+own result line. When the section already holds more than one result line, the writing pass keeps
+one current line directly below the heading, placing it there when none sits there, set to the value
+this pass decided. The line that supplied that value, the one this pass wrote or the one a caller's
+fallback chose, leaves no history entry. Every other line moves into the history form above, even
+when its value equals the kept value; when the line directly below the heading did not supply the
+kept value, its earlier value becomes the opening `Result at that time:` / `Ergebnis damals:`
+line of the history subsection this pass creates at its first write, never a bare line in the
+current section.
+
 ### Compact outcome checkpoint
 
 New local plans and canonical planning comments include this short section after Requirement

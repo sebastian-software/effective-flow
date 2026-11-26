@@ -846,6 +846,54 @@ test('all four artifact results normalize only the response and operational fail
     completion,
     /missing\/invalid final result or failed final lint is a terminal operational `ABORT: <diagnostic>`/,
   );
+  for (const literal of [
+    'applies to every entry that ends in `DONE`: `plan`, the `plan-review` file delegation and the `plan-review` autopilot file review',
+    'cwd: <retained verified EXECUTION_ROOT>',
+    'planDir: <resolved plan.dir, relative to EXECUTION_ROOT>, files: [<plan path relative to EXECUTION_ROOT>]',
+    'expectedLanguage: <workflow= value of the received Language context: control line>',
+    '(`approved` → `Approved`, `revision-required` → `Revision required`)',
+    'there is no separate read of the file',
+    'consolidates once, and only when step 2 returns `PUBLICATION_METADATA_INVALID` **and** the plan has more than one line outside code fences that begins with `**Result:**` / `**Ergebnis:**`',
+    'keeping as current the line directly below the plan-review heading, set to (1) the forced `Revision required` when it applies;',
+    "(2) otherwise the value this run's final review pass decided;",
+    "(3) only when this run recorded no decision of its own, that line's existing value, or the value of the last such line in document order when no result line sits below the heading",
+    'and then runs step 2 again',
+    '`PUBLICATION_METADATA_INVALID` without duplicate result lines, a second failure, `INVALID_PAYLOAD`, `UNSAFE_PATH`, `NOT_FOUND` or `COMMAND_FAILED`',
+    'After the single consolidation in step 2, a missing/invalid final result or failed final lint is a terminal operational `ABORT: <diagnostic>`',
+  ])
+    includesLiteral(completion, literal);
+  // Invariant: consolidation precedence is forced result, then this run's decision, then the
+  // existing heading line or the last line in document order, in one sentence.
+  const forcedFirst = completion.indexOf(
+    'set to (1) the forced `Revision required` when it applies;',
+  );
+  const runDecision = completion.indexOf(
+    "(2) otherwise the value this run's final review pass decided;",
+    forcedFirst,
+  );
+  const lastLine = completion.indexOf(
+    "(3) only when this run recorded no decision of its own, that line's existing value, or the value of the last such line in document order when no result line sits below the heading",
+    runDecision,
+  );
+  const rerun = completion.indexOf('and then runs step 2 again', lastLine);
+  assert.ok(
+    forcedFirst !== -1 && forcedFirst < runDecision && runDecision < lastLine && lastLine < rerun,
+    'consolidation precedence out of order',
+  );
+  assert.ok(
+    !completion.slice(forcedFirst, rerun).includes('. '),
+    'consolidation precedence spans more than one sentence',
+  );
+  // Invariant: Completion writes the forced result, runs the final mechanical plan-lint, checks
+  // publication metadata, then normalizes, in that order.
+  const forced = completion.indexOf('Write any forced `Revision required`');
+  const finalLint = completion.indexOf('then run the final mechanical plan-lint', forced);
+  const lint = completion.indexOf('`node <skill-root>/scripts/plan-lint.mjs publication-metadata`');
+  const normalize = completion.indexOf("Normalize `Review result` from step 2's `reviewResult`");
+  assert.ok(
+    forced !== -1 && forced < finalLint && finalLint < lint && lint < normalize,
+    'Completion steps out of order',
+  );
   const planning = contractSection(unattended, '### Entry: `plan`', '### Entry: `plan-review`');
   assert.match(
     planning,
@@ -994,5 +1042,38 @@ test('unattended planning defines and validates the Execution root control line'
   const buddy = source('tools', 'issue-buddy.md');
   assert.ok(
     buddy.includes('Execution root: <absolute PLANNING_ROOT>\n--- end of control lines ---'),
+  );
+});
+
+// Invariant: the publication-metadata cwd of the autopilot file review is the checkout that holds
+// the plan: its EXECUTION_ROOT is the deepest registered worktree of the same Git common directory
+// containing the supplied plan path, validated like the plan entry's `Execution root:`, and
+// otherwise the review input is invalid.
+test('the autopilot file review resolves its execution root from the checkout that holds the plan', () => {
+  const unattended = shared('unattended-planning');
+  const section = contractSection(
+    unattended,
+    '### Entry: `plan-review` autopilot file review',
+    '### Question-site outcomes',
+  );
+  const root =
+    "This entry's `EXECUTION_ROOT` is the registered worktree of `RUNTIME_STATE_ROOT`'s Git common directory that contains the supplied plan path";
+  includesLiteral(section, root);
+  includesLiteral(section, 'the worktree record with the longest such physical path');
+  includesLiteral(
+    section,
+    'validated as step 4 of Entry `plan` validates an `Execution root:` path; otherwise return `ABORT: unattended review input invalid`',
+  );
+  const at = section.indexOf(root);
+  assert.ok(
+    at >
+      section.indexOf(
+        'The caller has already verified both roots, the canonical open status and that identity.',
+      ),
+    'execution root resolution follows the caller verification',
+  );
+  assert.ok(
+    at < section.indexOf("Before normalization, recompute the file's SHA-256"),
+    'execution root resolution precedes the digest recomputation',
   );
 });

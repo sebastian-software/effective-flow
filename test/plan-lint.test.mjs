@@ -1050,6 +1050,111 @@ test('publication-metadata binds one canonical file to review metadata and its G
   });
 });
 
+// Characterization of the unchanged lint for the single review-result line rule (issue #733):
+// duplicate result lines are rejected, the prescribed history form is accepted.
+const EN_HISTORY_PLAN = ENGLISH_PLAN.replace(
+  '## Open points',
+  `### Review history (2026-11-20, plan-review)
+
+Result at that time: Revision required
+
+#### Summary
+
+Earlier pass.
+
+#### Findings
+
+- An earlier finding.
+
+## Open points`,
+);
+
+const DE_OPEN_PLAN = GERMAN_PLAN.replace('Umgesetzt', 'Nicht umgesetzt').replace(
+  '**Ergebnis:** Freigegeben\n',
+  `**Ergebnis:** Freigegeben
+
+### Zusammenfassung
+
+### Befunde
+
+- Keine Befunde.
+
+### Review-Verlauf (2026-11-20, plan-review)
+
+Ergebnis damals: Überarbeitung nötig
+
+#### Zusammenfassung
+
+Früherer Durchgang.
+
+#### Befunde
+
+- Ein früherer Befund.
+`,
+);
+
+test('a plan with two result lines in one plan-review section has no review result and fails publication metadata', async () => {
+  const duplicated = ENGLISH_PLAN.replace(
+    '## Open points',
+    `### Deep review (2026-11-20)
+
+**Result:** Revision required
+
+## Open points`,
+  );
+  assert.notEqual(duplicated, ENGLISH_PLAN);
+  assert.equal(classifyPlanText(duplicated).reviewResult, null);
+  await withTempDirAsync(async (root) => {
+    write(root, 'docs/plan/dup.md', duplicated);
+    const envelope = await executeOperation(
+      'publication-metadata',
+      { cwd: root, planDir: 'docs/plan', files: ['docs/plan/dup.md'] },
+      { runner: async () => ({ status: 0, stdout: 'sha1\n', stderr: '' }) },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'PUBLICATION_METADATA_INVALID');
+  });
+});
+
+test('one current English result line plus a result-free history subsection is accepted', async () => {
+  assert.notEqual(EN_HISTORY_PLAN, ENGLISH_PLAN);
+  const classified = classifyPlanText(EN_HISTORY_PLAN);
+  assert.equal(classified.reviewResult, 'approved');
+  assert.equal(classified.language, 'en');
+  await withTempDirAsync(async (root) => {
+    write(root, 'docs/plan/history.md', EN_HISTORY_PLAN);
+    const envelope = await executeOperation(
+      'publication-metadata',
+      { cwd: root, planDir: 'docs/plan', files: ['docs/plan/history.md'] },
+      { runner: async () => ({ status: 0, stdout: 'sha1\n', stderr: '' }) },
+    );
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    assert.equal(envelope.data.reviewResult, 'approved');
+  });
+});
+
+test('one current German result line plus a result-free Review-Verlauf subsection is accepted', async () => {
+  assert.notEqual(DE_OPEN_PLAN, GERMAN_PLAN);
+  const classified = classifyPlanText(DE_OPEN_PLAN);
+  assert.equal(classified.reviewResult, 'approved');
+  assert.equal(classified.language, 'de');
+  await withTempDirAsync(async (root) => {
+    write(root, 'docs/plan/verlauf.md', DE_OPEN_PLAN);
+    const envelope = await executeOperation(
+      'publication-metadata',
+      {
+        cwd: root,
+        planDir: 'docs/plan',
+        files: ['docs/plan/verlauf.md'],
+        expectedLanguage: 'de',
+      },
+      { runner: async () => ({ status: 0, stdout: 'sha1\n', stderr: '' }) },
+    );
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    assert.equal(envelope.data.reviewResult, 'approved');
+  });
+});
+
 test('publication-metadata refuses ambiguous review/open-point metadata and multiple files', async () => {
   await withTempDirAsync(async (root) => {
     write(root, 'docs/plan/a.md', '# A\n\n**Plan status:** Not implemented\n');
