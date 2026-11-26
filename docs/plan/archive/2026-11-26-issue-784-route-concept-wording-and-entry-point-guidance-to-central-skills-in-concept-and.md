@@ -1,6 +1,6 @@
 # Route concept wording and entry-point guidance to central skills in concept and concept-review
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #784
@@ -231,13 +231,13 @@ and all `plan*` tools.
     - each tool's paragraph before the include names `effective-writing` in its handoff clause;
     - each tool's `## Recommended skills` section holds a bullet starting with
       `` `effective-writing` ``.
-    Never anchor on a bare `effective-engineering`: it already appears in both places
-    (`src/tools/concept.md:112`, `src/tools/concept-review.md:132`) and would pass after removal.
-    Assert on bounded slices, never the whole file, because `effective-writing` and the trigger
-    phrase each appear in more than one place: the file's existing helpers
-    (`boundedSlice`, `section`) cut Phase 3 to Phase 4 of `concept`, Phase 2 to Phase 3 of
-    `concept-review`, the paragraph before the `central-reasoning-delegation` include, and the
-    `## Recommended skills` section. Match short stable phrases, not whole sentences.
+      Never anchor on a bare `effective-engineering`: it already appears in both places
+      (`src/tools/concept.md:112`, `src/tools/concept-review.md:132`) and would pass after removal.
+      Assert on bounded slices, never the whole file, because `effective-writing` and the trigger
+      phrase each appear in more than one place: the file's existing helpers
+      (`boundedSlice`, `section`) cut Phase 3 to Phase 4 of `concept`, Phase 2 to Phase 3 of
+      `concept-review`, the paragraph before the `central-reasoning-delegation` include, and the
+      `## Recommended skills` section. Match short stable phrases, not whole sentences.
 11. **Context budget.** Run `node build.mjs`, read the `Always-loaded core (lines/budget)` report
     for `concept` and `concept-review`, and set each `contextBudget` line to the reported count plus
     up to ten lines of headroom. A raise is expected for both: the delivered v1.80.0 build has
@@ -708,3 +708,42 @@ and acceptance criteria):
 ## Open points
 
 - No open points.
+
+## Build completion
+
+- **Requirement:** `concept` and `concept-review` route concept wording to `effective-writing`
+  (route-when-relevant) and name the second-entry-point or new-runtime-component trigger for
+  `effective-engineering`, as pointers only, per issue #784.
+- **Architecture decisions:** implemented as planned and as decided by score: tool-local
+  route-when-relevant declarations with one-line fallbacks, no change to the shared relevance-gate
+  marker or `relevanceGateOwners`, no new build guard, no change to `plan*` tools. The decided/open
+  marker is written in the artifact language (German: `entschieden`/`offen`).
+- **Affected files:** `src/tools/concept.md`, `src/tools/concept-review.md`,
+  `test/workflow-contracts.test.mjs`, `docs/developer-guide/skill-ownership.json`,
+  `docs/developer-guide/skill-ownership.md`, plus `docs/user-guide/tools-understand.md`, which the
+  mandatory documentation sync gate found stale and updated (a short "Second entry points"
+  paragraph).
+- **Implementation details:** `contextBudget` is 430 for `concept` (428 measured) and 433 for
+  `concept-review` (431 measured). The `concept-review` Phase 2 sorting rule is split into separate
+  sentences with explicit subjects. The new contract test asserts on bounded slices and also pins
+  the style-only-Notes rule and the combined Risks entry.
+- **Test results:** the Phase 5 full run passed `node build.mjs` and `pnpm test:distribution`. 33
+  process, signal and timeout tests in ten unrelated files failed under heavy parallel host load;
+  the same ten files passed on the base (735/735) and again on the candidate (735/735), so they are
+  load-induced and were re-verified by identity. `pnpm agent:check` flagged only this plan file
+  (pre-existing on the base, fixed by the completion formatting). The final targeted check passed
+  1134/1134 affected tests, `node build.mjs` and `pnpm test:distribution`.
+- **Review result:** one Node.js review with one incorporation pass and one re-check; all findings
+  fixed, none offloaded.
+
+## Review findings
+
+**Date:** 2026-11-26
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     7 |
+| Open / Not implemented |     0 |
