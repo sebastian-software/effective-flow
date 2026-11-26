@@ -80,6 +80,27 @@ and Target path fields.
 - A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
   not automatically rewritten. A requested translation converts the complete plan contract.
 
+### Single review-result line
+
+The plan-review section, `##` in a plan file and `###` in a planning comment, holds exactly one
+review-result line, directly below its heading and followed by the current summary and findings.
+A pass is one run of `plan` (its Phase 6 review or a re-planning) or of `plan-review`, interactive
+or delegated. At its first write of the section, a pass moves any previous summary and findings
+into one history subsection; later writes in the same pass update the current result, summary and
+findings in place. The unattended deep review that follows the internal review in the same `plan`
+run is its own `plan-review` pass, so the internal review becomes history.
+
+A history subsection sits one level below the section (`###` in a file, `####` in a comment) and
+carries its own Summary and Findings one level deeper. Its heading is
+`Review history (<YYYY-MM-DD>, <tool>)`, in German `Review-Verlauf (<YYYY-MM-DD>, <tool>)`. It
+starts with plain history text that never begins with the result label:
+`Result at that time: <value>`, in German `Ergebnis damals: <value>`. History subsections follow
+the current Findings, newest first, before the open-points section.
+
+A pass never deletes earlier history and never adds a second result line or a subsection with its
+own result line. When the section already holds more than one result line, the writing pass keeps
+one current line and rewrites each older one into the history form above.
+
 ### Compact outcome checkpoint
 
 New local plans and canonical planning comments include this short section after Requirement

@@ -157,8 +157,9 @@ your context, shown as `n/10 – <reason>`, instead of marking one option as rec
 later" stays unscored, and the scores stay in the dialog and are never written into the plan.
 
 **Revising an existing plan:** `/effective-flow plan <plan-file>` on a plan file it already
-wrote does not start a new dated file — it revises that file in place. The earlier plan review
-stays intact as a dated subsection; a new one is appended, not overwritten. On an implemented or
+wrote does not start a new dated file — it revises that file in place. The plan keeps a single
+review-result line, which each review pass updates in place; earlier passes stay readable as dated
+history subsections without a result line. On an implemented or
 archived plan, `plan` asks once whether to revise it in place (which moves an archived file back
 to `<plan.dir>/` and resets its status), start a new plan instead, or abort. If the revision
 would change the `**Recommended workflow:**` value, `plan` reports the new classification and asks

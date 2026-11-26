@@ -264,8 +264,8 @@ On a revision run:
   left without a valid status.
 - Preserve a legacy `# NNNN: <title>` H1 verbatim; the `# <title>` rule of Phase 3 covers newly
   created plans only.
-- Append this run's review to `## Plan review` / `## Plan-Review` as a **dated subsection**; never
-  overwrite the existing section, so earlier passes stay readable.
+- Record this run's review per the single review-result rule of `plan-contract`; never delete
+  earlier passes.
 - Report a changed classification and obtain explicit confirmation before rewriting
   `**Recommended workflow:**`. `{{SKILL:apply-plan}}` and `{{SKILL:open-plans}}` both route on that
   field, so it never flips silently.

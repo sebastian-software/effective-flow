@@ -219,9 +219,16 @@ P-DPR stays Yes, so the deep review always runs. Every other site keeps its outc
 
 ### Completion
 
-Finish formatting and final mechanical plan-lint before reporting success. Read the final
-canonical review-result field outside code fences in the preserved artifact language and
-normalize only the response value:
+This Completion applies to every entry that ends in `DONE`: `plan`, the `plan-review` file
+delegation and the `plan-review` autopilot file review. Before reporting success, in this order:
+
+1. Write any forced `Revision required` (blocking open points, a skipped judgment) into the
+   artifact, finish formatting, then run the final mechanical plan-lint.
+2. Run `node <skill-root>/scripts/plan-lint.mjs publication-metadata` with
+   `{cwd: <retained verified EXECUTION_ROOT>, planDir: <resolved plan.dir, relative to EXECUTION_ROOT>, files: [<plan path relative to EXECUTION_ROOT>], expectedLanguage: <workflow= value of the received Language context: control line>}`.
+3. Normalize `Review result` from step 2's `reviewResult` (`approved` → `Approved`,
+   `revision-required` → `Revision required`); there is no separate read of the file. The table
+   documents the artifact forms that `reviewResult` classifies:
 
 | Artifact field                      | Response value      |
 | ----------------------------------- | ------------------- |
@@ -230,10 +237,20 @@ normalize only the response value:
 | `**Ergebnis:** Freigegeben`         | `Approved`          |
 | `**Ergebnis:** Überarbeitung nötig` | `Revision required` |
 
+The agent that owns the run consolidates once, and only when step 2 returns
+`PUBLICATION_METADATA_INVALID` **and** the plan has more than one line outside code fences that
+begins with `**Result:**` / `**Ergebnis:**`: it reduces those lines to one per the single
+review-result rule of `plan-contract`, keeping the value of the last such line in document order
+unless the forced `Revision required` applies, and then runs step 2 again. Any other cause or code
+is a terminal `ABORT: <diagnostic>` with no consolidation: `PUBLICATION_METADATA_INVALID` without
+duplicate result lines, a second failure, `INVALID_PAYLOAD`, `UNSAFE_PATH`, `NOT_FOUND` or
+`COMMAND_FAILED`.
+
 Blocking open points or any skipped judgment force `Revision required` in both the artifact's
 own language and the normalized response. Keep the complete artifact in its own language; no
-translation of labels, headings or review prose for this response. A missing/invalid final result
-or failed final lint is a terminal operational `ABORT: <diagnostic>`.
+translation of labels, headings or review prose for this response. After the single
+consolidation in step 2, a missing/invalid final result or failed final lint is a terminal
+operational `ABORT: <diagnostic>`.
 
 Return these machine-stable lines and terminate with `DONE` per `completion-protocol`:
 

@@ -838,6 +838,30 @@ test('all four artifact results normalize only the response and operational fail
     completion,
     /missing\/invalid final result or failed final lint is a terminal operational `ABORT: <diagnostic>`/,
   );
+  for (const literal of [
+    'applies to every entry that ends in `DONE`: `plan`, the `plan-review` file delegation and the `plan-review` autopilot file review',
+    'cwd: <retained verified EXECUTION_ROOT>',
+    'planDir: <resolved plan.dir, relative to EXECUTION_ROOT>, files: [<plan path relative to EXECUTION_ROOT>]',
+    'expectedLanguage: <workflow= value of the received Language context: control line>',
+    '(`approved` → `Approved`, `revision-required` → `Revision required`)',
+    'there is no separate read of the file',
+    'consolidates once, and only when step 2 returns `PUBLICATION_METADATA_INVALID` **and** the plan has more than one line outside code fences that begins with `**Result:**` / `**Ergebnis:**`',
+    'keeping the value of the last such line in document order',
+    'and then runs step 2 again',
+    '`PUBLICATION_METADATA_INVALID` without duplicate result lines, a second failure, `INVALID_PAYLOAD`, `UNSAFE_PATH`, `NOT_FOUND` or `COMMAND_FAILED`',
+    'After the single consolidation in step 2, a missing/invalid final result or failed final lint is a terminal operational `ABORT: <diagnostic>`',
+  ])
+    includesLiteral(completion, literal);
+  // Invariant: Completion writes the forced result, runs the final mechanical plan-lint, checks
+  // publication metadata, then normalizes, in that order.
+  const forced = completion.indexOf('Write any forced `Revision required`');
+  const finalLint = completion.indexOf('then run the final mechanical plan-lint', forced);
+  const lint = completion.indexOf('`node <skill-root>/scripts/plan-lint.mjs publication-metadata`');
+  const normalize = completion.indexOf("Normalize `Review result` from step 2's `reviewResult`");
+  assert.ok(
+    forced !== -1 && forced < finalLint && finalLint < lint && lint < normalize,
+    'Completion steps out of order',
+  );
   const planning = contractSection(unattended, '### Entry: `plan`', '### Entry: `plan-review`');
   assert.match(
     planning,
