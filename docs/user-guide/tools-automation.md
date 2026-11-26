@@ -188,8 +188,10 @@ pull request discloses. `mergeGate.conflictValidation` sets the validation mode.
 the step itself – a failed fetch or base check, a failed `merge --abort`, an unverified quick
 marker – is a blocker, handled as above without an implementation pull request.
 
-On a private repository a security blocker is listed in the pull request with neutral wording that
-does not mention security.
+For a plan source, visibility is read for both GitHub and Forgejo. On a private Forgejo repository
+a security blocker becomes a neutral appendix on a draft pull request instead of withholding the
+push, just as on private GitHub. The wording does not mention security; unavailable or unknown
+visibility is treated as public.
 
 ### The pull-request record
 

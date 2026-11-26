@@ -12,6 +12,7 @@ New to Effective Flow? Read in this order:
 1. [Getting started](getting-started.md) – installation, profile-first setup, first invocation,
    and the typical flow from planning to pull request.
 2. Tool reference, grouped by intent:
+   - [Record work](tools-record.md) – `capture`, from a description to approved tracker issues.
    - [Understand what needs doing](tools-understand.md) – `concept`, `investigate`,
      `plan`, `open-plans`, `plan-issue`, `issue-buddy`, `backlog-audit`.
    - [Implement a change](tools-implement.md) – `apply`, `build`, `fix`,
@@ -46,6 +47,7 @@ New to Effective Flow? Read in this order:
 | ---------------------------------------------------- | ------------------------------------------------------- |
 | [getting-started.md](getting-started.md)             | Installation, workflow profiles, typical flow, recipes  |
 | [tool-flow.md](tool-flow.md)                         | Next-step recommendations after a completed run         |
+| [tools-record.md](tools-record.md) | Tool reference: capture tracker issues |
 | [tools-understand.md](tools-understand.md)           | Tool reference: analysis & planning                     |
 | [tools-implement.md](tools-implement.md)             | Tool reference: implementation                          |
 | [tools-quality.md](tools-quality.md)                 | Tool reference: review, retro, and focus                 |

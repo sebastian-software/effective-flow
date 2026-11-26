@@ -70,6 +70,7 @@ Rules for every publisher, on whichever tracker target the run resolved:
 - **Local first:** the withheld findings are persisted in a local report below
   `.effective-flow/review/` before any tracker mutation. That report is the authoritative record
   for them; it stays in the gitignored runtime state of the main checkout and is never committed.
+  Capture drafts use the exemption in `security-disclosure-gate`, "Capture drafts".
 - **Confirmation before publication:** publication happens only after an explicit user decision in
   that run, taken with knowledge of the disclosure consequence. Keeping them local is the default;
   an unanswered, skipped, or non-interactive run publishes nothing from the withheld set.
@@ -80,7 +81,7 @@ Rules for every publisher, on whichever tracker target the run resolved:
   relevant and stays local.
 - **Scope:** the gate covers the publication of review findings. It does not sanitize branch names,
   commit subjects, or pull request bodies of a later fix; that disclosure decision belongs to the
-  delivering workflow and its user.
+  delivering workflow and its user. Capture drafts follow the scope in `security-disclosure-gate`.
 
 Durable-work admission runs before this disclosure gate. The gate governs only the destination of
 an already admitted finding. It never removes a finding, changes its
@@ -91,6 +92,8 @@ severity, or narrows the active finding scope.
 Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not. This binds every publisher on every tracker target, the forge and an external tool alike.
 
 ### Remote prose language
+
+A writer whose run never reads the target thread's text (`triage`, `capture`) uses `language.forge`.
 
 Resolve `language.forge` once per remote run and pass it to all issue/comment writers. Preserve
 the clear language of an existing issue or thread when editing/replying; otherwise use the

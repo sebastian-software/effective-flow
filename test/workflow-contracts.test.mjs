@@ -27520,8 +27520,8 @@ test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', ()
 // loads it on T3 Code only in a top-level run, decided by the absence of both a body delimiter and
 // a `Run state:` line, because a run delegated by merge-gate leaves the watch to the gate; pr loads
 // it on T3 Code. The merge-gate pointer is pinned with the other merge-gate pointers. Exactly these
-// three tools reach the fragment, so no other tool pays for it.
-test('host-pr-watch pointers in iterate and pr name their decision points and are its only other hosts', () => {
+// four tools reach the fragment: capture loads it only for issue linking.
+test('host-pr-watch pointers keep decision-scoped loading, with capture for issue linking', () => {
   const pointerIn = (path) =>
     [...source(path).matchAll(LAZY_INCLUDE_RE)]
       .find((match) => match[1].trim() === 'host-pr-watch')?.[2]
@@ -27550,7 +27550,7 @@ test('host-pr-watch pointers in iterate and pr name their decision points and ar
   }
   assert.deepEqual(includeHostsOf('host-pr-watch'), {
     eager: [],
-    lazy: ['tools/iterate.md', 'tools/merge-gate.md', 'tools/pr.md'],
+    lazy: ['tools/capture.md', 'tools/iterate.md', 'tools/merge-gate.md', 'tools/pr.md'],
   });
 });
 

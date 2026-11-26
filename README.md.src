@@ -20,6 +20,9 @@ the plan of its one issue on a private repository. See the [Issue Buddy guide](d
 draft pull request: it resolves every question by recorded option scores, always runs the deep plan
 review, and documents close decisions, blockers and architecture fit in the draft for a person to
 review. See the [Automation guide](docs/user-guide/tools-automation.md).
+`capture` turns a described problem or a list of findings into self-contained GitHub or Forgejo
+issues, with checked references, existing labels, duplicate comparison and approval per issue.
+See [Record work](docs/user-guide/tools-record.md).
 `triage` decides on single issues from any author – reject, implement or needs-work, each with cited
 reasons and the open questions – and, after a preview you confirm per issue, posts one managed comment
 and one verdict label; it closes nothing. See the [Triage guide](docs/user-guide/tools-understand.md#effective-flow-triage).

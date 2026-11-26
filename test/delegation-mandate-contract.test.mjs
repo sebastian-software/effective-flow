@@ -40,6 +40,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'autopilot',
   'backlog-audit',
   'triage',
+  'capture',
   'plan',
   'plan-issue',
   'investigate',
