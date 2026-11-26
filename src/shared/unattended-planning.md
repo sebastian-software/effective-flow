@@ -151,13 +151,16 @@ terminate as `ABORT: <diagnostic>` without a fallback question or write elsewher
 
 ### Entry: `plan-review` autopilot file review
 
-Only under the three scored control lines, an Automation caller may also delegate one existing
-plan: an absolute path below `<plan.dir>/` (never the archive), its SHA-256, and the three base
-controls plus the three scored lines, each exactly once. The caller has already verified both
-roots, the canonical open status and that identity. Before normalization, recompute the file's
-SHA-256 and require it to equal the supplied value and the status to be open; otherwise return
-`ABORT: unattended review input invalid` or, for an implemented plan,
-`ABORT: unattended implemented plan`. In-place revision of exactly that file is allowed; every
+Only under the three scored control lines, an Automation caller may also delegate one existing plan:
+an absolute path below `<plan.dir>/` (never the archive), its SHA-256, and the three base controls
+plus the three scored lines, each exactly once. The caller has already verified both roots, the
+canonical open status and that identity. This entry's `EXECUTION_ROOT` is the registered worktree of
+`RUNTIME_STATE_ROOT`'s Git common directory that contains the supplied plan path, the worktree
+record with the longest such physical path, validated as step 4 of Entry `plan` validates an
+`Execution root:` path; otherwise return `ABORT: unattended review input invalid`. Before
+normalization, recompute the file's SHA-256 and require it to equal the supplied value and the
+status to be open; otherwise return `ABORT: unattended review input invalid` or, for an implemented
+plan, `ABORT: unattended implemented plan`. In-place revision of exactly that file is allowed; every
 other rule of the file-review entry above applies unchanged. Without the scored lines an existing
 plan stays invalid input.
 

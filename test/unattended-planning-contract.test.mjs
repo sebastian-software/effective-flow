@@ -1012,3 +1012,36 @@ test('unattended planning defines and validates the Execution root control line'
     buddy.includes('Execution root: <absolute PLANNING_ROOT>\n--- end of control lines ---'),
   );
 });
+
+// Invariant: the publication-metadata cwd of the autopilot file review is the checkout that holds
+// the plan: its EXECUTION_ROOT is the deepest registered worktree of the same Git common directory
+// containing the supplied plan path, validated like the plan entry's `Execution root:`, and
+// otherwise the review input is invalid.
+test('the autopilot file review resolves its execution root from the checkout that holds the plan', () => {
+  const unattended = shared('unattended-planning');
+  const section = contractSection(
+    unattended,
+    '### Entry: `plan-review` autopilot file review',
+    '### Question-site outcomes',
+  );
+  const root =
+    "This entry's `EXECUTION_ROOT` is the registered worktree of `RUNTIME_STATE_ROOT`'s Git common directory that contains the supplied plan path";
+  includesLiteral(section, root);
+  includesLiteral(section, 'the worktree record with the longest such physical path');
+  includesLiteral(
+    section,
+    'validated as step 4 of Entry `plan` validates an `Execution root:` path; otherwise return `ABORT: unattended review input invalid`',
+  );
+  const at = section.indexOf(root);
+  assert.ok(
+    at >
+      section.indexOf(
+        'The caller has already verified both roots, the canonical open status and that identity.',
+      ),
+    'execution root resolution follows the caller verification',
+  );
+  assert.ok(
+    at < section.indexOf("Before normalization, recompute the file's SHA-256"),
+    'execution root resolution precedes the digest recomputation',
+  );
+});
