@@ -37,6 +37,7 @@ import {
   buildPlanPrMarkerLine,
   buildPullRequestBody,
   decodePlanBytes,
+  deriveForgeText,
   errorEnvelope,
   executeOperation,
   exitCodeFor,
@@ -47,8 +48,11 @@ import {
   parsePlanBranch,
   planBranchName,
   planFileIdentity,
+  sanitizeDerivedText,
   scanEntries,
   scanText,
+  truncateSummary,
+  truncateTitleDescription,
   validateCommitMessage,
   validateTitle,
 } from '../src/scripts/plan-publication-core.mjs';
@@ -1133,15 +1137,14 @@ function publishInput(overrides = {}) {
     branchPrefix: 'effective-flow',
     remote: 'origin',
     baseBranch: 'main',
-    title: 'docs: plan demo',
-    body: 'Adds the plan for the demo.\n\nRequirement: ship the demo.',
-    commitMessage: 'docs: plan demo',
+    languageGit: 'en',
+    languageForge: 'en',
     ...overrides,
   };
 }
 
 function completeBranchInput(overrides = {}) {
-  const { planFile: _planFile, commitMessage: _commitMessage, ...rest } = publishInput();
+  const { planFile: _planFile, ...rest } = publishInput();
   return { ...rest, branch: 'effective-flow/plan/issue-12', ...overrides };
 }
 
@@ -1182,9 +1185,13 @@ for (const [operation, makeInput] of MUTATING) {
       ['missing baseBranch', { baseBranch: undefined }, 'INVALID_INPUT'],
       ['baseBranch with dots', { baseBranch: 'a..b' }, 'INVALID_INPUT'],
       ['baseBranch with a space', { baseBranch: 'my branch' }, 'INVALID_INPUT'],
-      ['missing title', { title: undefined }, 'INVALID_INPUT'],
-      ['missing body', { body: undefined }, 'INVALID_INPUT'],
-      ['empty body', { body: '   ' }, 'INVALID_INPUT'],
+      // The helper derives every forge text; a caller-supplied text key is an unknown key.
+      ['caller title', { title: 'docs: plan demo' }, 'INVALID_INPUT'],
+      ['caller body', { body: 'Adds the plan.' }, 'INVALID_INPUT'],
+      ['missing languageGit', { languageGit: undefined }, 'INVALID_INPUT'],
+      ['missing languageForge', { languageForge: undefined }, 'INVALID_INPUT'],
+      ['languageGit other', { languageGit: 'fr' }, 'INVALID_INPUT'],
+      ['languageForge other', { languageForge: 'EN' }, 'INVALID_INPUT'],
       ['absolute planDir', { planDir: '/etc' }, 'UNSAFE_PATH'],
       ['planDir with ..', { planDir: '../x' }, 'UNSAFE_PATH'],
     ];
@@ -1222,7 +1229,7 @@ for (const [operation, makeInput] of MUTATING) {
   });
 }
 
-test('publish: the title rule refuses a multi-line or non-docs title with zero runner calls', async () => {
+test('the title and commit-message rules refuse a multi-line or non-docs subject', () => {
   const refusals = [
     'feat: plan demo',
     'fix: plan demo',
@@ -1241,25 +1248,21 @@ test('publish: the title rule refuses a multi-line or non-docs title with zero r
     'docs:',
   ];
   for (const title of refusals) {
-    const runner = recordingRunner();
-    const envelope = await executeOperation('publish', publishInput({ title }), {
-      apply: true,
-      runner,
-    });
-    assert.equal(envelope.error.code, 'INVALID_TITLE', JSON.stringify(title));
-    assert.equal(runner.calls.length, 0, JSON.stringify(title));
+    assert.throws(
+      () => validateTitle(title),
+      (error) => error.code === 'INVALID_TITLE',
+      JSON.stringify(title),
+    );
   }
   assert.equal(validateTitle('docs: plan demo'), 'docs: plan demo');
   assert.equal(validateTitle('docs(plan): demo'), 'docs(plan): demo');
 
   for (const commitMessage of ['feat: x', 'docs x', '\ndocs: x', 'docs:x']) {
-    const runner = recordingRunner();
-    const envelope = await executeOperation('publish', publishInput({ commitMessage }), {
-      apply: true,
-      runner,
-    });
-    assert.equal(envelope.error.code, 'INVALID_COMMIT_MESSAGE', JSON.stringify(commitMessage));
-    assert.equal(runner.calls.length, 0);
+    assert.throws(
+      () => validateCommitMessage(commitMessage),
+      (error) => error.code === 'INVALID_COMMIT_MESSAGE',
+      JSON.stringify(commitMessage),
+    );
   }
   assert.equal(validateCommitMessage('docs: demo\n\nbody\n'), 'docs: demo\n\nbody\n');
 });
@@ -1306,31 +1309,16 @@ test('closing keywords: all nine, any case, with and without a colon, in all thr
   assert.equal(count, 9 * 4 * 4 * 3);
 });
 
-test('closing keywords: publish refuses them in the title, the commit message and the body with zero runner calls', async () => {
-  const fieldOverrides = {
-    title: (text) => ({ title: `docs: plan ${text}` }),
-    commitMessage: (text) => ({ commitMessage: `docs: plan demo\n\n${text}\n` }),
-    body: (text) => ({ body: `Adds the plan.\n\n${text}\n\nMore prose.` }),
-  };
+// Invariant: derived forge text never carries a closing keyword, because the sanitizer removes
+// every reference form the keyword needs.
+test('closing keywords: no sanitized text keeps one, in any casing, separator or reference form', () => {
   let checked = 0;
-  // The full matrix runs through the validators above; the operation sees every keyword in two
-  // casings, with and without a colon, and all three reference forms.
-  const sample = closingTexts({ casings: [CASINGS[0], CASINGS[1]], separators: [' ', ': ', ':'] });
-  for (const text of sample) {
-    for (const [field, make] of Object.entries(fieldOverrides)) {
-      const runner = recordingRunner();
-      const envelope = await executeOperation('publish', publishInput(make(text)), {
-        apply: true,
-        runner,
-      });
-      assert.equal(envelope.ok, false, `${field}: ${text}`);
-      assert.equal(envelope.error.code, 'CLOSING_KEYWORD', `${field}: ${text}`);
-      assert.equal(envelope.error.details.field, field);
-      assert.equal(runner.calls.length, 0, `${field}: ${text}`);
-      checked += 1;
-    }
+  for (const text of closingTexts()) {
+    const sanitized = sanitizeDerivedText(`Adds the plan. ${text} More prose.`, 'summary');
+    assert.equal(hasClosingKeyword(sanitized), false, `${text} => ${sanitized}`);
+    checked += 1;
   }
-  assert.equal(checked, 9 * 2 * 3 * 3 * 3);
+  assert.equal(checked, 9 * 4 * 4 * 3);
 });
 
 test('closing keywords: non-closing references and unrelated words pass', () => {
@@ -1424,21 +1412,7 @@ test('a caller body with a marker line or marker comment is MARKER_INVALID', () 
   }
 });
 
-test('publish: a caller body holding a marker is MARKER_INVALID with zero runner calls', async () => {
-  const marker = buildPlanPrMarkerLine(PLAN_PATH);
-  for (const body of [
-    `Prose.\n\n${marker}`,
-    'Prose <!-- effective-flow-plan-pr:v1 {"plan":"x.md"} --> trailing',
-  ]) {
-    const runner = recordingRunner();
-    const envelope = await executeOperation('publish', publishInput({ body }), {
-      apply: true,
-      runner,
-    });
-    assert.equal(envelope.ok, false);
-    assert.equal(envelope.error.code, 'MARKER_INVALID');
-    assert.equal(runner.calls.length, 0);
-  }
+test('publish: a plan path the marker grammar refuses is MARKER_INVALID with zero runner calls', async () => {
   const runner = recordingRunner();
   const unsafe = await executeOperation(
     'publish',
@@ -1704,7 +1678,7 @@ function assertFast(label, action) {
   return value;
 }
 
-test('size limits: title, body and commit message are INPUT_TOO_LARGE before any scan or runner call', async (t) => {
+test('size limits: scan refuses an oversized title, body or commit message before any scan', async (t) => {
   const cwd = tempDirectory(t);
   write(cwd, 'plan.md', '# Plan\n');
   const base = { cwd, runState: 'interactive', planFile: 'plan.md' };
@@ -1718,13 +1692,6 @@ test('size limits: title, body and commit message are INPUT_TOO_LARGE before any
     const scanned = await run('scan', { ...base, [field]: value });
     assert.equal(scanned.error.code, 'INPUT_TOO_LARGE', field);
     assert.equal(scanned.error.details.field, field);
-    const runner = recordingRunner();
-    const published = await executeOperation('publish', publishInput({ [field]: value }), {
-      apply: true,
-      runner,
-    });
-    assert.equal(published.error.code, 'INPUT_TOO_LARGE', field);
-    assert.equal(runner.calls.length, 0, `${field}: zero runner calls`);
   }
   const atLimit = await run('scan', {
     ...base,
@@ -1735,10 +1702,9 @@ test('size limits: title, body and commit message are INPUT_TOO_LARGE before any
   assert.equal(atLimit.ok, true, JSON.stringify(atLimit.error));
 });
 
-// GitHub's limit applies to the body the forge receives: the caller's prose plus the marker line and
-// `Refs #<N>`. A body that fits only without that tail is refused before any Git call, not after the
-// push.
-test('size limits: the final pull-request body with marker and Refs #<N> is bounded, at the exact boundary', async () => {
+// GitHub's limit applies to the body the forge receives: the prose plus the marker line and
+// `Refs #<N>`. Derived prose stays far below it by construction; the bound itself is exact.
+test('size limits: the final pull-request body with marker and Refs #<N> is bounded, at the exact boundary', () => {
   const tailLength = buildPullRequestBody('x', PLAN_PATH, 12).length - 1;
   const fitting = 'x'.repeat(MAX_BODY_CHARS - tailLength);
   assert.equal(buildPullRequestBody(fitting, PLAN_PATH, 12).length, MAX_BODY_CHARS);
@@ -1752,49 +1718,6 @@ test('size limits: the final pull-request body with marker and Refs #<N> is boun
       error.details.limit === MAX_BODY_CHARS &&
       error.details.length === MAX_BODY_CHARS + 1,
   );
-
-  const refused = recordingRunner();
-  const published = await executeOperation(
-    'publish',
-    publishInput({ planFile: PLAN_PATH, body: over }),
-    { apply: true, runner: refused },
-  );
-  assert.equal(published.error.code, 'INPUT_TOO_LARGE');
-  assert.equal(published.error.details.field, 'body');
-  assert.equal(refused.calls.length, 0, 'zero runner calls');
-
-  const accepted = recordingRunner();
-  const atLimit = await executeOperation(
-    'publish',
-    publishInput({ planFile: PLAN_PATH, body: fitting }),
-    { apply: true, runner: accepted },
-  );
-  assert.notEqual(atLimit.error.code, 'INPUT_TOO_LARGE', 'the boundary itself passes');
-  assert.ok(accepted.calls.length > 0, 'the length check let the run go on');
-
-  // complete-branch learns the plan path from the branch; a body that cannot fit with even the
-  // shortest tail is refused before any Git call.
-  const shortestTail = buildPullRequestBody('x', 'a.md', 12).length - 1 - '"a.md"'.length + 2;
-  const hopeless = 'x'.repeat(MAX_BODY_CHARS - shortestTail + 1);
-  const completing = recordingRunner();
-  const completed = await executeOperation(
-    'complete-branch',
-    completeBranchInput({ body: hopeless }),
-    {
-      apply: true,
-      runner: completing,
-    },
-  );
-  assert.equal(completed.error.code, 'INPUT_TOO_LARGE');
-  assert.equal(completed.error.details.field, 'body');
-  assert.equal(completing.calls.length, 0, 'zero runner calls');
-  const possible = recordingRunner();
-  const notYet = await executeOperation(
-    'complete-branch',
-    completeBranchInput({ body: hopeless.slice(1) }),
-    { apply: true, runner: possible },
-  );
-  assert.notEqual(notYet.error.code, 'INPUT_TOO_LARGE', 'the lower bound itself passes');
 });
 
 test('scan: the plan size is judged from fstat before reading, and the read itself stays bounded', async (t) => {
@@ -3076,4 +2999,412 @@ test('extractCitedTokens marks a non-empty File cell without a usable code span 
   );
   const result = assess({ cited, tracked: new Set(['src/a.mjs']) });
   assert.deepEqual([result.verdict, result.reason], ['undecidable', 'unusable-entry']);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Derived forge text
+
+const REVIEWED_PLAN_EN = `# Name helper input fields
+
+**Plan status:** Not implemented
+**Source:** effective-flow plan
+**Recommended workflow:** Bugfix (\`effective-flow fix\`)
+
+## Requirement
+
+Helpers accept the field names they document.
+
+## Acceptance criteria
+
+- [ ] The helper accepts the names.
+
+## Assumptions and open points
+
+- The names stay small.
+
+## Plan review
+
+**Result:** Approved
+
+### Summary
+
+### Findings
+
+- No findings.
+
+## Open points
+
+- No open points.
+`;
+
+const REVIEWED_PLAN_DE = `# Name helper input fields
+
+**Planungsstatus:** Nicht umgesetzt
+**Quelle:** effective-flow plan
+**Empfohlener Workflow:** Feature (\`effective-flow build\`)
+
+## Anforderung
+
+Helfer akzeptieren die dokumentierten Feldnamen.
+
+## Akzeptanzkriterien
+
+- [ ] Der Helfer akzeptiert die Namen.
+
+## Annahmen und offene Punkte
+
+- Die Namen bleiben klein.
+
+## Plan-Review
+
+**Ergebnis:** Freigegeben
+
+## Offene Punkte
+
+- Keine offenen Punkte.
+`;
+
+const DERIVE_OPTIONS = { planPath: PLAN_PATH, issue: 12, languageGit: 'en', languageForge: 'en' };
+
+// Invariant: the sanitizer removes every token a forge or a release tool would act on (reference,
+// mention, URL, image, markup, footer), at the exact outputs the plan fixes.
+test('sanitizeDerivedText: the fixed outputs for references, mentions, footers, markup and URLs', () => {
+  const cases = [
+    ['Fixes #12 for @someone', 'Fixes 12 for someone'],
+    ['#<!-- -->12', '12'],
+    ['Release-As: 2.0.0', 'Release-As 2.0.0'],
+    ['release-as: 2.0.0', 'release-as 2.0.0'],
+    ['BREAKING CHANGE: drops it', 'BREAKING CHANGE drops it'],
+    ['BREAKING-CHANGE: drops it', 'BREAKING-CHANGE drops it'],
+    ['mail a@b.c today', 'mail a@b.c today'],
+    ['a@b.c', 'a@b.c'],
+    ['see owner/repo#3 now', 'see owner/repo 3 now'],
+    ['see GH-7 now', 'see GH 7 now'],
+    ['see https://github.com/owner/repo/issues/12 now', 'see now'],
+    ['look ![diagram](https://example.invalid/x.png) here', 'look here'],
+    ['a [link text](https://example.invalid/x) b', 'a link text b'],
+    ['a <b>bold</b> &amp; c', 'a bold c'],
+    ['line one\n\n  line   two', 'line one line two'],
+  ];
+  for (const [raw, expected] of cases) {
+    assert.equal(sanitizeDerivedText(raw, 'summary'), expected, raw);
+  }
+  for (const raw of [
+    'owner/repo#3',
+    'https://github.com/o/r/issues/12',
+    '![x](https://e.invalid/i.png)',
+  ]) {
+    const out = sanitizeDerivedText(`before ${raw} after`, 'summary');
+    assert.ok(!/#\d|https?:|!\[|:\/\//.test(out), out);
+  }
+});
+
+test('sanitizeDerivedText: a reference rebuilt by removal is cleaned to a fixed point or refused', () => {
+  assert.equal(sanitizeDerivedText('#<b></b>#12', 'title').includes('#'), false);
+  assert.equal(sanitizeDerivedText('@<b></b>someone', 'title').includes('@someone'), false);
+  assert.equal(sanitizeDerivedText('Release<!-- -->-As: 1', 'title').includes(':'), false);
+});
+
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+// Invariant: GitHub decodes a numeric character reference with either `x` case and a named one,
+// so none of them can rebuild a reference, a mention or a URL scheme.
+test('sanitizeDerivedText: character references in any case leave no reference, mention or scheme', () => {
+  for (const raw of [
+    '&#X23;12',
+    '&#x23;12',
+    '&#35;12',
+    '&num;12',
+    '&#X40;octocat',
+    '&commat;octocat',
+    '&#X68;ttps://evil.example/x',
+    '&&#X23;12',
+  ]) {
+    const out = sanitizeDerivedText(`see ${raw} now`, 'summary');
+    assert.doesNotMatch(out, /&#|#\d|@octocat|\/\/|evil\.example/, `${raw} => ${out}`);
+  }
+});
+
+// Invariant: GitHub treats `@` as a mention after any character but an ASCII letter or digit;
+// only an ASCII letter or digit before it (an e-mail address) keeps it.
+test('sanitizeDerivedText: an @ after a format character, a combining mark or a non-ASCII letter is removed', () => {
+  for (const raw of ['​@octocat', 'x́@octocat', 'café@octocat', '(@octocat)', '@@b']) {
+    const out = sanitizeDerivedText(`hello ${raw} there`, 'summary');
+    assert.equal(out.includes('@'), false, `${JSON.stringify(raw)} => ${out}`);
+  }
+  assert.equal(sanitizeDerivedText('mail a@b.c and x_1@y.z', 'summary'), 'mail a@b.c and x_1@y.z');
+});
+
+// Invariant: `_` is Markdown emphasis that renders away before GitHub links mentions, references
+// and autolinks, so it never shields an `@`, a `GH-N` or a `www.` from the sanitizer.
+const UNDERSCORE_PAYLOADS = [
+  ['_@octocat_', '_octocat_'],
+  ['_x_@octocat', '_x_octocat'],
+  ['_GH-12_', '_GH 12_'],
+  ['_www.evil.example_', '_'],
+];
+
+test('sanitizeDerivedText: an underscore before a mention, GH-N or www. does not keep it', () => {
+  for (const [raw, expected] of UNDERSCORE_PAYLOADS) {
+    const out = sanitizeDerivedText(`see ${raw} now`, 'summary');
+    assert.equal(out, `see ${expected} now`, raw);
+    assert.doesNotMatch(out, /@|GH-\d|www\./i, raw);
+  }
+});
+
+test('deriveForgeText: an underscore-wrapped mention, GH-N or www. in the summary is neutralised', () => {
+  for (const [raw] of UNDERSCORE_PAYLOADS) {
+    const plan = REVIEWED_PLAN_EN.replace(
+      'Helpers accept the field names they document.',
+      `Helpers accept ${raw} names.`,
+    );
+    assert.notEqual(plan, REVIEWED_PLAN_EN);
+    const body = buildPullRequestBody(deriveForgeText(plan, DERIVE_OPTIONS).prose, PLAN_PATH, 12);
+    assert.match(body, /Helpers accept/, raw);
+    assert.doesNotMatch(body, /@octocat|GH-12|www\./i, raw);
+  }
+});
+
+// Invariant: no link, image or autolink survives, whatever its destination or text nesting.
+test('sanitizeDerivedText: links with parentheses or nested brackets and bare //host or www. URLs are removed', () => {
+  const cases = [
+    ['![a](//evil.example/a(1).png)', '!a('],
+    ['[here](//evil.example/(x))', 'here('],
+    ['[a [b] c](//evil.example/p)', 'a b c('],
+    ['see //evil.example/x now', 'see now'],
+    ['see www.evil.example/x now', 'see now'],
+    ['see HTTPS://evil.example/x now', 'see now'],
+    ['[WIP] tidy', 'WIP tidy'],
+  ];
+  for (const [raw, expected] of cases) {
+    const out = sanitizeDerivedText(raw, 'summary');
+    assert.equal(out, expected, raw);
+    assert.doesNotMatch(out, /\[|\]|\]\(|!\[|\/\/|www\./, raw);
+  }
+});
+
+// Invariant: a fence run in the summary or title cannot open a code block that swallows the body
+// tail.
+test('sanitizeDerivedText: runs of three or more backticks or tildes are removed', () => {
+  assert.equal(sanitizeDerivedText('```js thing', 'summary'), 'js thing');
+  assert.equal(sanitizeDerivedText('~~~~ thing', 'summary'), 'thing');
+  assert.equal(sanitizeDerivedText('[](x)``` rest', 'summary'), 'rest');
+  assert.equal(sanitizeDerivedText('``<b></b>` rest', 'summary'), 'rest');
+  assert.equal(
+    sanitizeDerivedText('use `code` and ``pair``', 'summary'),
+    'use `code` and ``pair``',
+  );
+});
+
+test('deriveForgeText: a summary list item opening a fence keeps the review paragraph, marker and Refs outside any fence', () => {
+  for (const item of ['- ```js thing', '- [](x)``` rest', '- ~~~ thing']) {
+    const plan = REVIEWED_PLAN_EN.replace('Helpers accept the field names they document.', item);
+    assert.notEqual(plan, REVIEWED_PLAN_EN);
+    const derived = deriveForgeText(plan, DERIVE_OPTIONS);
+    const body = buildPullRequestBody(derived.prose, PLAN_PATH, 12);
+    assert.doesNotMatch(body, /`{3,}|~{3,}/, item);
+    assert.equal(derived.prose.split('\n\n').at(-1), 'Review result: approved; open points: 0.');
+    assert.deepEqual(inspectPlanPrMarker(body), { status: 'valid', plan: PLAN_PATH }, item);
+    assert.match(body, /\nRefs #12\n?$/);
+  }
+});
+
+// Invariant: a run of `#` or `@` goes in one round, so plain repetition never exhausts the rounds.
+test('sanitizeDerivedText: runs of # and @ are removed at once', () => {
+  assert.equal(sanitizeDerivedText('see ######12', 'title'), 'see 12');
+  assert.equal(sanitizeDerivedText('see owner/repo###12', 'title'), 'see owner/repo 12');
+  assert.equal(sanitizeDerivedText('hi @@@@@@user', 'title'), 'hi user');
+});
+
+// Invariant: a token that survives the rounds refuses the title but only drops the optional
+// summary paragraph.
+test('deriveForgeText: a residual token refuses the title and drops the summary', () => {
+  const nested = `${'&'.repeat(6)}${'#'.repeat(6)}x40;octocat`;
+  assert.throws(
+    () => sanitizeDerivedText(`Demo ${nested}`, 'title'),
+    (error) => error.code === 'PLAN_TEXT_UNUSABLE' && error.details.reason === 'residual-token',
+  );
+  assert.throws(
+    () => deriveForgeText(`# Demo ${nested}\n`, DERIVE_OPTIONS),
+    (error) =>
+      error.code === 'PLAN_TEXT_UNUSABLE' &&
+      error.details.field === 'title' &&
+      error.details.source === 'derived',
+  );
+  const plan = REVIEWED_PLAN_EN.replace(
+    'Helpers accept the field names they document.',
+    `Helpers ${nested}.`,
+  );
+  assert.deepEqual(deriveForgeText(plan, DERIVE_OPTIONS).prose.split('\n\n'), [
+    'Plan for issue #12. The implementation follows as further commits on this branch.',
+    `Plan: ${PLAN_PATH}`,
+    'Recommended workflow: Bugfix',
+    'Review result: approved; open points: 0.',
+  ]);
+});
+
+// Invariant: neither footer separator a release tool reads survives.
+test('sanitizeDerivedText: BREAKING CHANGE and Release-As lose a # separator as well as a colon', () => {
+  assert.equal(sanitizeDerivedText('BREAKING CHANGE #foo', 'title'), 'BREAKING CHANGE foo');
+  assert.equal(sanitizeDerivedText('BREAKING-CHANGE#foo', 'title'), 'BREAKING-CHANGE foo');
+  assert.equal(sanitizeDerivedText('Release-As #2', 'title'), 'Release-As 2');
+});
+
+test('sanitizeDerivedText: only the first 4096 code points are processed', () => {
+  const out = sanitizeDerivedText(`${'a'.repeat(5000)} #99`, 'summary');
+  assert.equal(Array.from(out).length, 4096);
+});
+
+// Invariant: a title longer than the subject budget is cut to 72 UTF-16 code units, the unit
+// commitlint counts, never inside a surrogate pair, and ends in the ellipsis.
+test('truncateTitleDescription: a 200-code-point H1 gives a subject of at most 72 code units ending in an ellipsis', () => {
+  const derived = deriveForgeText(`# ${'x'.repeat(200)}\n`, DERIVE_OPTIONS);
+  const points = Array.from(derived.title);
+  assert.equal(derived.title.length, 72);
+  assert.ok(derived.title.startsWith('docs: plan x'));
+  assert.equal(points.at(-1), '…');
+  assert.equal(derived.commitMessage, derived.title);
+  assert.equal(truncateTitleDescription('short', 10), 'short');
+});
+
+test('truncateTitleDescription: an astral-plane H1 stays within 72 UTF-16 code units', () => {
+  const derived = deriveForgeText(`# ${'😀'.repeat(40)}\n`, DERIVE_OPTIONS);
+  assert.ok(derived.title.length <= 72, String(derived.title.length));
+  assert.doesNotMatch(derived.title, LONE_SURROGATE);
+  assert.equal(derived.title, `docs: plan ${'😀'.repeat(30)}…`);
+  assert.equal(truncateTitleDescription('😀'.repeat(30), 9), `${'😀'.repeat(4)}…`);
+});
+
+test('truncateTitleDescription and truncateSummary leave well-formed text when the cut falls on an emoji', () => {
+  for (let limit = 8; limit <= 12; limit += 1) {
+    const title = truncateTitleDescription('😀'.repeat(30), limit);
+    assert.doesNotMatch(
+      title,
+      /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/,
+    );
+    assert.ok(Array.from(title).length <= limit);
+    assert.ok(title.endsWith('…'));
+    const summary = truncateSummary('😀'.repeat(30), limit);
+    assert.doesNotMatch(
+      summary,
+      /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/,
+    );
+    assert.ok(Array.from(summary).length <= limit);
+    assert.ok(summary.endsWith('…'));
+  }
+});
+
+test('truncateSummary: a 2000-code-point paragraph gives at most 600 code points ending in an ellipsis', () => {
+  const long = Array.from({ length: 2000 / 5 }, () => 'word ')
+    .join('')
+    .trim();
+  const out = truncateSummary(long);
+  assert.ok(Array.from(out).length <= 600);
+  assert.ok(out.endsWith('…'));
+  assert.equal(truncateSummary('short text.'), 'short text.');
+  assert.equal(Array.from(truncateSummary('x'.repeat(2000))).length, 600);
+});
+
+test('truncateSummary: a cut at a sentence end gets a space before the ellipsis, a word or hard cut none', () => {
+  const sentences = `${'Alpha beta gamma. '.repeat(60)}`.trim();
+  const bySentence = truncateSummary(sentences, 100);
+  assert.match(bySentence, /\. …$/);
+  assert.ok(Array.from(bySentence).length <= 100);
+  const byWord = truncateSummary('word '.repeat(40).trim(), 50);
+  assert.match(byWord, /word…$/);
+  const hard = truncateSummary('x'.repeat(100), 50);
+  assert.equal(hard, `${'x'.repeat(49)}…`);
+});
+
+// Invariant: the PR body is the five paragraphs in a fixed order, English or German, taken from the
+// plan's own text.
+test('deriveForgeText: English title and body hold the paragraphs in order', () => {
+  const derived = deriveForgeText(REVIEWED_PLAN_EN, DERIVE_OPTIONS);
+  assert.equal(derived.title, 'docs: plan Name helper input fields');
+  assert.equal(derived.commitMessage, derived.title);
+  assert.deepEqual(derived.prose.split('\n\n'), [
+    'Plan for issue #12. The implementation follows as further commits on this branch.',
+    `Plan: ${PLAN_PATH}`,
+    'Recommended workflow: Bugfix',
+    'Helpers accept the field names they document.',
+    'Review result: approved; open points: 0.',
+  ]);
+});
+
+test('deriveForgeText: German title and body hold the paragraphs in order', () => {
+  const derived = deriveForgeText(REVIEWED_PLAN_DE, {
+    ...DERIVE_OPTIONS,
+    languageGit: 'de',
+    languageForge: 'de',
+  });
+  assert.equal(derived.title, 'docs: Plan Name helper input fields');
+  assert.deepEqual(derived.prose.split('\n\n'), [
+    'Plan für Issue #12. Die Umsetzung folgt als weitere Commits auf diesem Branch.',
+    `Plan: ${PLAN_PATH}`,
+    'Empfohlener Workflow: Feature',
+    'Helfer akzeptieren die dokumentierten Feldnamen.',
+    'Review-Ergebnis: freigegeben; offene Punkte: 0.',
+  ]);
+});
+
+test('deriveForgeText: git and forge languages are independent', () => {
+  const derived = deriveForgeText(REVIEWED_PLAN_EN, { ...DERIVE_OPTIONS, languageForge: 'de' });
+  assert.equal(derived.title, 'docs: plan Name helper input fields');
+  assert.ok(derived.prose.startsWith('Plan für Issue #12.'));
+});
+
+test('deriveForgeText: a plan without review, workflow or Requirement text omits those paragraphs', () => {
+  const derived = deriveForgeText('# Only a title\n', DERIVE_OPTIONS);
+  assert.deepEqual(derived.prose.split('\n\n'), [
+    'Plan for issue #12. The implementation follows as further commits on this branch.',
+    `Plan: ${PLAN_PATH}`,
+  ]);
+});
+
+test('deriveForgeText: the review paragraph shows revision required and the open-point count', () => {
+  const revised = REVIEWED_PLAN_EN.replace(
+    '**Result:** Approved',
+    '**Result:** Revision required',
+  ).replace('- No open points.', '- First open point.\n- Second open point.');
+  const lines = deriveForgeText(revised, DERIVE_OPTIONS).prose.split('\n\n');
+  assert.equal(lines.at(-1), 'Review result: revision required; open points: 2.');
+});
+
+// Invariant: an H1 that sanitizes to nothing, or that keeps a token, is refused as derived text.
+test('deriveForgeText: an empty or unusable title is PLAN_TEXT_UNUSABLE', () => {
+  for (const text of [
+    '# <!-- only a comment -->\n',
+    '# ![x](https://e.invalid/i.png)\n',
+    'no heading\n',
+  ]) {
+    assert.throws(
+      () => deriveForgeText(text, DERIVE_OPTIONS),
+      (error) =>
+        error.code === 'PLAN_TEXT_UNUSABLE' &&
+        error.details.source === 'derived' &&
+        error.details.field === 'title',
+      text,
+    );
+  }
+});
+
+test('deriveForgeText: sanitized plan text never carries a reference or mention into the body', () => {
+  const text =
+    '# Fixes #12 for @someone\n\n## Requirement\n\nSee owner/repo#3 and https://example.invalid/x.\n';
+  const derived = deriveForgeText(text, DERIVE_OPTIONS);
+  assert.equal(derived.title, 'docs: plan Fixes 12 for someone');
+  assert.ok(derived.prose.includes('See owner/repo 3 and'));
+  assert.equal(hasClosingKeyword(derived.title), false);
+});
+
+test('publish rejects a caller commitMessage as INVALID_INPUT before any runner call', async () => {
+  const runner = recordingRunner();
+  const envelope = await executeOperation(
+    'publish',
+    publishInput({ commitMessage: 'docs: plan demo' }),
+    { apply: true, runner },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_INPUT');
+  assert.equal(runner.calls.length, 0);
 });

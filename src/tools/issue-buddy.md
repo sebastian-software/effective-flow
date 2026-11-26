@@ -237,10 +237,11 @@ in its returned order and up to remaining `limits.plans`:
 - For an authorized orphan, call `plan-publication.mjs inspect-branch` with
   `{cwd, runState: "unattended", visibility: "standard", issue, planDir, branch: headRef,
 branchPrefix, remote: "origin", baseBranch, expectedBaseOid: collect.baseOid}`. It returns only
-  `{baseOid, branchTip, planFile, blobOid, reviewResult, openPointCount}`. Build fixed text below
-  from these bound enums/numbers, then call `complete-branch --apply` with that same input plus
-  `{title, body, expectedTipOid: <inspected branchTip>}`. Pass no `planFile`, `commitMessage` or
-  model prose to completion. A moved tip/base stops; only confirmed success is recordable.
+  `{baseOid, branchTip, planFile, blobOid, reviewResult, openPointCount}`. Then call
+  `complete-branch --apply` with that same input plus `{languageGit, languageForge,
+expectedTipOid: <inspected branchTip>}`; WP4 derives the forge text from the branch blob as in
+  Phase 5. Pass no `planFile`, forge text or model prose to completion. A moved tip/base stops;
+  only confirmed success is recordable.
 
 Record a recovered publication with `verdict-record` input
 `{cwd, passId, issue, fingerprint, verdict: "published", mode, reason,
@@ -344,19 +345,15 @@ independently; a prior snapshot or equal contents does not prove ownership.
 
 ## Phase 5: Publish
 
-Use fixed localized forge text only. English title and `commitMessage` are exactly
-`docs: plan issue #<N>`; German descriptive words are `docs: Issue #<N> planen`.
-English body: `Plan for issue #<N>; review result: <approved|revision required>; open points: <n>.`
-German body: `Plan für Issue #<N>; Review-Ergebnis: <freigegeben|Überarbeitung nötig>; offene Punkte: <n>.`
-Title/commit use `language.git`; body uses `language.forge`. Map only validated `reviewResult`
-enums and `openPointCount` into these templates. Do not copy plan/issue/title/comment prose,
-local paths, closing keywords or markers. WP4 alone appends its plan marker and `Refs #<N>`.
-`revision-required` and positive open-point counts remain publishable; implementation waits for
-clarification, which the fixed body makes explicit.
+Pass no forge text. WP4 derives the title, commit subject and body from the verified plan bytes,
+sanitizes them, appends its plan marker and `Refs #<N>`, and returns none of that text;
+`languageGit` and `languageForge` carry the resolved `language.git` and `language.forge`. Never
+copy plan/issue/title/comment prose into a call. `revision-required` and positive open-point counts
+remain publishable; implementation waits for clarification, which the body's review line states.
 
 Call `plan-publication.mjs publish --apply` with exactly
 `{cwd, runState: "unattended", visibility: "standard", issue, planDir, planFile, branchPrefix,
-remote: "origin", baseBranch, title, body, commitMessage, expectedBaseOid: collect.baseOid,
+remote: "origin", baseBranch, languageGit, languageForge, expectedBaseOid: collect.baseOid,
 expectedBlobOid: <metadata blobOid>}`. WP4 scans, runs hooks, creates the single-file plumbing
 commit, compares its actual plan blob before push, pushes create-only and confirms the draft PR.
 Do not implement those mechanics here or retry an ambiguous create. A `BASE_CHANGED` without
@@ -397,13 +394,15 @@ Apply this order with operation, phase and safe details, not a code-only allowli
    authorize later recovery.
 4. **Issue-content failures only:** malformed readiness or demonstrable new/authorized plan
    faults (plan-content scan, issue-header mismatch, invalid structure/encoding or missing/invalid
-   review metadata) may record `failed`. Prove origin using operation/phase/safe details.
+   review metadata, or any refusal with `details.source: "derived"`, which WP4 raises on forge
+   text it derived from the plan) may record `failed`. Prove origin using operation/phase/safe
+   details.
    `SCAN_BLOCKED` for a hook-modified commit message is not plan content; `INVALID_CONTENT` with
    `details.reason: blob` is an integrity failure. Neither spends an issue retry.
 5. **Default environment/integrity stop:** base/tip/blob drift (`BASE_CHANGED`, except the first
    pre-mutation one, which `issue-buddy-base-move` assesses for its single assessed re-publish,
    flagged when unresolved or moved again; `TIP_CHANGED`; `BLOB_CHANGED`),
-   Git/forge/network/runtime/journal errors, hook or fixed-template/input contract faults, blob
+   Git/forge/network/runtime/journal errors, hook, base-move-flag or input-contract faults, blob
    integrity, `PUSH_REJECTED` without confirmed success, unknown codes or unknown origins stop the
    pass without an issue failure/retry. Do not retry or silently replan.
 6. **Persistence:** never bypass `verdict-record`, its pending intent or reconciliation with a

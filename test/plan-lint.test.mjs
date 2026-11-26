@@ -21,6 +21,7 @@ import {
   executeOperation,
   exitCodeFor,
   lintPlans,
+  planForgeFields,
 } from '../src/scripts/plan-lint-core.mjs';
 import { main } from '../src/scripts/plan-lint.mjs';
 
@@ -1335,4 +1336,80 @@ test('the exported plan resolvers keep their containment and reading contract', 
   const absent = resolveRoots({ cwd, planDir: 'nope/plan' }, nodeFs);
   assert.equal(absent.planDirReal, null);
   assert.deepEqual(listTopLevel(absent, nodeFs), []);
+});
+
+// Invariant: `planForgeFields` returns the raw H1, the Requirement summary and the workflow label
+// from the plan prose, and nulls for whatever the plan lacks; pull-request text is derived from
+// these fields alone.
+const FORGE_HEAD = (workflow = '**Recommended workflow:** Feature (`effective-flow build`)') =>
+  `# Name helper input fields\n\n**Plan status:** Not implemented\n${workflow}\n\n`;
+
+test('planForgeFields: the first prose paragraph of the Requirement is the summary, joined on one line', () => {
+  const text = `${FORGE_HEAD()}## Requirement\n\nFirst line of the paragraph\ncontinues here.\n\nSecond paragraph.\n\n## Acceptance criteria\n\n- [ ] done\n`;
+  assert.deepEqual(planForgeFields(text), {
+    title: 'Name helper input fields',
+    summary: 'First line of the paragraph continues here.',
+    workflow: 'Feature',
+  });
+});
+
+test('planForgeFields: a Requirement made only of a list yields its first item, marker and task box removed', () => {
+  for (const [list, expected] of [
+    ['- first item\n- second item', 'first item'],
+    ['* [ ] first task\n* second', 'first task'],
+    ['1. numbered first\n2. numbered second', 'numbered first'],
+    ['- wrapped item\n  continues\n- next', 'wrapped item continues'],
+  ]) {
+    const text = `${FORGE_HEAD()}## Requirement\n\n${list}\n`;
+    assert.equal(planForgeFields(text).summary, expected, list);
+  }
+});
+
+test('planForgeFields: a Requirement without prose or list yields a null summary', () => {
+  for (const body of [
+    '',
+    '> only a quote\n',
+    '| a | b |\n|---|---|\n| 1 | 2 |\n',
+    '```\ncode only\n```\n',
+    '    indented code\n',
+  ]) {
+    const text = `${FORGE_HEAD()}## Requirement\n\n${body}\n## Acceptance criteria\n\n- [ ] done\n`;
+    assert.equal(planForgeFields(text).summary, null, JSON.stringify(body));
+  }
+  assert.equal(
+    planForgeFields(`${FORGE_HEAD()}## Acceptance criteria\n\n- [ ] done\n`).summary,
+    null,
+  );
+});
+
+test('planForgeFields: fences, blockquotes and tables never become the summary paragraph', () => {
+  const text = `${FORGE_HEAD()}## Requirement\n\n\`\`\`\nfenced text\n\`\`\`\n\n> quoted text\n\n| a | b |\n|---|---|\n\nThe real paragraph.\n`;
+  assert.equal(planForgeFields(text).summary, 'The real paragraph.');
+});
+
+test('planForgeFields: a prose paragraph wins over an earlier list item', () => {
+  const text = `${FORGE_HEAD()}## Requirement\n\n- list first\n\nProse after the list.\n`;
+  assert.equal(planForgeFields(text).summary, 'Prose after the list.');
+});
+
+test('planForgeFields: the workflow label maps a skill-name span to its workflow word', () => {
+  for (const [value, expected] of [
+    ['Bugfix (`effective-flow fix`)', 'Bugfix'],
+    ['`effective-flow fix`', 'Bugfix'],
+    ['`effective-flow build`', 'Feature'],
+    ['`/effective-flow refactor`', 'Refactoring'],
+    ['`$effective-flow docs`', 'Documentation'],
+    ['Refactoring', 'Refactoring'],
+    ['`effective-flow plan`', null],
+    ['something else', null],
+  ]) {
+    const text = `${FORGE_HEAD(`**Recommended workflow:** ${value}`)}## Requirement\n\nText.\n`;
+    assert.equal(planForgeFields(text).workflow, expected, value);
+  }
+  const absent = `# Title\n\n## Requirement\n\nText.\n`;
+  assert.deepEqual(planForgeFields(absent), { title: 'Title', summary: 'Text.', workflow: null });
+});
+
+test('planForgeFields: a plan without an H1 yields a null title', () => {
+  assert.equal(planForgeFields('## Requirement\n\nText.\n').title, null);
 });

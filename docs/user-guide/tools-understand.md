@@ -493,9 +493,11 @@ killed leaves its claims and its pass record behind; they block only their own i
 [`autopilot`](tools-automation.md) run, the pass adopts that run's claim; only one pass can adopt
 it.
 
-Issue-derived text stays inside the delegated planning context. The publication title, commit
-message, and body use fixed templates; the body reports only the issue number, review result, and
-open-point count. A published plan pull request is a draft and must be continued through
+Issue-derived text stays inside the delegated planning context. The publication helper derives the
+title (`docs: plan <plan title>`), the commit subject, and the body from the plan file itself and
+sanitizes them: the body names the issue number, the plan path, the recommended workflow, the
+requirement summary, the review result, and the open-point count. The orchestrator never sees that
+text. A published plan pull request is a draft and must be continued through
 `/effective-flow build <plan-file>` after restoring the plan file from its pull-request branch.
 When a plan cannot be published, the pass keeps its planning worktree with the plan and names it;
 the issue stays plannable. Move the plan out of that worktree or delete it, then run

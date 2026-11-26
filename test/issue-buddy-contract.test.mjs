@@ -153,20 +153,41 @@ test('Issue Buddy binds leftovers, readiness, nested planning and report state',
   assert.match(prose, /never inline judgment\/planning or an issue retry/);
 });
 
-test('Issue Buddy publishes only fixed metadata-derived forge text and preserves integrity bindings', () => {
+// Invariant: the authority-holding pass passes no forge text. The helper derives title, commit
+// subject and body from the verified plan bytes; the pass hands it only the two language values,
+// and a refusal on that derived text is an issue-content failure, not a pass stop.
+test('Issue Buddy passes no forge text, lets the helper derive it, and preserves integrity bindings', () => {
   assert.match(source, /reviewResult: "approved"\|"revision-required",\s*openPointCount/);
   assert.match(source, /expectedBaseOid: collect\.baseOid/);
   assert.match(source, /expectedTipOid: <inspected branchTip>/);
   assert.match(source, /expectedBlobOid: <metadata blobOid>/);
-  assert.match(source, /Do not copy plan\/issue\/title\/comment prose/);
-  assert.match(prose, /English title and `commitMessage` are exactly `docs: plan issue #<N>`/);
+  for (const text of [prose, baseMoveProse]) {
+    assert.doesNotMatch(text, /docs: plan issue #/);
+    assert.doesNotMatch(text, /Plan for issue #<N>; review result/);
+    assert.doesNotMatch(text, /Plan für Issue #<N>; Review-Ergebnis/);
+  }
+  assert.match(prose, /Pass no forge text\. WP4 derives the title, commit subject and body/);
+  assert.match(prose, /Never copy plan\/issue\/title\/comment prose into a call/);
   assert.match(
     prose,
-    /English body: `Plan for issue #<N>; review result: <approved\|revision required>; open points: <n>\.`/,
+    /remote: "origin", baseBranch, languageGit, languageForge, expectedBaseOid: collect\.baseOid, expectedBlobOid: <metadata blobOid>\}/,
   );
   assert.match(
     prose,
-    /German body: `Plan für Issue #<N>; Review-Ergebnis: <freigegeben\|Überarbeitung nötig>; offene Punkte: <n>\.`/,
+    /plus `\{languageGit, languageForge, expectedTipOid: <inspected branchTip>\}`/,
+  );
+  assert.match(prose, /Pass no `planFile`, forge text or model prose to completion/);
+  // No publication call names a caller title, body or commit message.
+  for (const call of prose.match(/`\{cwd, runState: "unattended"[^`]*\}`/g) ?? []) {
+    assert.doesNotMatch(call, /\b(?:title|body|commitMessage)\b/, call);
+  }
+  assert.match(
+    prose,
+    /any refusal with `details\.source: "derived"`, which WP4 raises on forge text it derived from the plan\) may record `failed`/,
+  );
+  assert.match(
+    baseMoveProse,
+    /a refusal with `details\.source: "base-move-flag"` is an item-5 input-contract stop/,
   );
   assert.match(prose, /A moved tip\/base stops; only confirmed success is recordable/);
   assert.match(
@@ -448,7 +469,7 @@ test('the base-move fragment re-publishes once on the assessed base and flags a 
   assert.match(baseMoveProse, /it pushes nothing and writes no forge object/i);
   assert.match(
     baseMoveProse,
-    /call `publish --apply` once, with the unchanged input and fixed texts plus `expectedBaseOid: <toBaseOid>` and `allowNewerBase: true`/,
+    /call `publish --apply` once, with the unchanged input plus `expectedBaseOid: <toBaseOid>` and `allowNewerBase: true`/,
   );
   assert.equal(
     (baseMoveProse.match(/allowNewerBase: true/g) ?? []).length,

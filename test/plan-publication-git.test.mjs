@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -62,6 +63,19 @@ const PLAN_TABLE_TEXT = [
   '| `remote-tracker-github-core.mjs` | a shorthand entry |',
   '',
 ].join('\n');
+// What the helper derives from PLAN_TEXT (and PLAN_TABLE_TEXT): the H1 title, which is also the
+// whole commit message, and body prose without workflow or review paragraphs, since the plan names
+// neither.
+const DERIVED_TITLE = 'docs: plan Demo plan';
+const DERIVED_PROSE = [
+  `Plan for issue #${ISSUE}. The implementation follows as further commits on this branch.`,
+  `Plan: ${PLAN_FILE}`,
+  'Ship the demo behind `src/shared/demo.md`.',
+].join('\n\n');
+// A dry run reports a derived text only as its length and digest.
+function digest(text) {
+  return { length: text.length, sha256: createHash('sha256').update(text, 'utf8').digest('hex') };
+}
 const TIMEOUT_RESULT = Object.freeze({ status: null, signal: 'SIGTERM', stdout: '', stderr: '' });
 
 // Fixtures that look like secrets are assembled at runtime.
@@ -406,15 +420,14 @@ function publishInput(world, overrides = {}) {
     branchPrefix: BRANCH_PREFIX,
     remote: 'origin',
     baseBranch: 'main',
-    title: 'docs: plan demo',
-    body: 'Adds the plan for the demo.\n\nRequirement: ship the demo.',
-    commitMessage: 'docs: plan demo\n\nThe plan for the demo.',
+    languageGit: 'en',
+    languageForge: 'en',
     ...overrides,
   };
 }
 
 function completeInput(world, overrides = {}) {
-  const { planFile: _planFile, commitMessage: _commitMessage, ...rest } = publishInput(world);
+  const { planFile: _planFile, ...rest } = publishInput(world);
   return { ...rest, branch: BRANCH, ...overrides };
 }
 
@@ -680,10 +693,7 @@ test('publish --apply pushes one commit that adds only the plan and opens a draf
     `100644 blob ${data.blobOid}`,
   );
   assert.equal(remoteGit('cat-file', 'blob', `${BRANCH}:${PLAN_FILE}`), PLAN_TEXT.trim());
-  assert.equal(
-    remoteGit('log', '-1', '--format=%B', BRANCH),
-    'docs: plan demo\n\nThe plan for the demo.',
-  );
+  assert.equal(remoteGit('log', '-1', '--format=%B', BRANCH), DERIVED_TITLE);
   assert.equal(
     remoteGit('log', '-1', '--format=%an <%ae>|%cn <%ce>', BRANCH),
     'Plan Publisher <publisher@example.invalid>|Plan Publisher <publisher@example.invalid>',
@@ -709,7 +719,11 @@ test('publish --apply pushes one commit that adds only the plan and opens a draf
   assert.equal(create.payload.draft, true);
   assert.equal(create.payload.base, 'main');
   assert.equal(create.payload.head, BRANCH);
-  assert.equal(create.payload.title, 'docs: plan demo');
+  assert.equal(create.payload.title, DERIVED_TITLE);
+  assert.equal(
+    create.payload.body,
+    `${DERIVED_PROSE}\n\n${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`,
+  );
   const lines = create.payload.body.split('\n');
   assert.equal(
     lines.at(-2),
@@ -811,10 +825,13 @@ test('a dry run changes no object, no ref and no forge state, and reports the pl
   assert.equal(data.planFile, PLAN_FILE);
   assert.deepEqual(data.findings, []);
   assert.equal(data.blobId, world.git('hash-object', '--no-filters', PLAN_FILE));
-  assert.equal(data.title, 'docs: plan demo');
-  const lines = data.body.split('\n');
-  assert.equal(lines.at(-1), `Refs #${ISSUE}`);
-  assert.equal(lines.at(-2), buildPlanPrMarkerLine(PLAN_FILE));
+  // Only the length and digest of the derived texts, never the texts themselves.
+  assert.deepEqual(data.title, digest(DERIVED_TITLE));
+  assert.deepEqual(
+    data.body,
+    digest(`${DERIVED_PROSE}\n\n${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`),
+  );
+  assert.ok(!JSON.stringify(envelope).includes('Demo plan'), 'no derived text is returned');
   assert.ok(Array.isArray(data.plannedCommands) && data.plannedCommands.length > 0);
 
   assert.equal(objectCount(world), before.objects);
@@ -1388,32 +1405,32 @@ test('a base branch that does not exist on the remote is REMOTE_UNREACHABLE', as
 // ---------------------------------------------------------------------------------------------
 // Scan
 
+// A finding in the derived title, commit subject or body prose blocks before the base fetch and
+// names `derived` as its source; one in the plan alone blocks at the pre-publication scan.
 test('a high-confidence finding in the plan, title or body blocks the publication without echoing it', async (t) => {
   const token = tokenValue(3);
   const cases = [
-    [
-      'plan',
-      (world) => write(world.local, PLAN_FILE, `${PLAN_TEXT}\nThe value ${token} leaked.\n`),
-      {},
-    ],
-    ['title', () => {}, { title: `docs: plan ${token}` }],
-    ['body', () => {}, { body: `Prose with ${token} inside.` }],
-    ['commitMessage', () => {}, { commitMessage: `docs: plan demo\n\n${token}` }],
+    ['plan', `${PLAN_TEXT}\nThe value ${token} leaked.\n`, null],
+    ['title', PLAN_TEXT.replace('# Demo plan', `# Demo ${token}`), 'derived'],
+    ['commitMessage', PLAN_TEXT.replace('# Demo plan', `# Demo ${token}`), 'derived'],
+    ['body', PLAN_TEXT.replace('Ship the demo', `Ship ${token} as the demo`), 'derived'],
   ];
-  for (const [field, prepare, overrides] of cases) {
+  for (const [field, text, source] of cases) {
     const world = createWorld(t);
-    prepare(world);
+    write(world.local, PLAN_FILE, text);
     const objectsBefore = objectCount(world);
-    const envelope = await publish(world, overrides);
+    const envelope = await publish(world);
     assert.equal(envelope.ok, false, field);
     assert.equal(envelope.error.code, 'SCAN_BLOCKED', field);
     assert.ok(
       envelope.error.details.blocking.some((id) => id.startsWith(`provider-token:${field}:`)),
       field,
     );
+    assert.equal(envelope.error.details.source, source ?? undefined, field);
+    assert.equal(envelope.error.details.stage, source ? 'derived' : 'pre-publication', field);
     assert.ok(!JSON.stringify(envelope).includes(token), `${field}: the value is never echoed`);
     assert.equal(objectCount(world), objectsBefore);
-    assertNothingWritten(world, { allowFetch: true });
+    assertNothingWritten(world, { allowFetch: source === null });
   }
 });
 
@@ -1439,7 +1456,7 @@ test('a commit-msg hook that exits nonzero refuses the publication after writing
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'COMMIT_MSG_HOOK_REJECTED');
   assert.equal(envelope.error.details.reason, 'rejected');
-  assert.match(envelope.error.details.stderr, /message refused by policy/);
+  assert.deepEqual(envelope.error.details.stderr, digest('message refused by policy\n'));
   assert.equal(objectCount(world), objectsBefore + 1, 'only the blob was written');
   assert.equal(gitCalls(world, 'commit-tree').length, 0);
   assert.equal(gitCalls(world, 'push').length, 0);
@@ -1543,7 +1560,7 @@ test('a commit-msg hook that appends a token is caught by the rescan of the fina
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'SCAN_BLOCKED');
   assert.equal(envelope.error.details.stage, 'commit-msg');
-  assert.deepEqual(envelope.error.details.blocking, ['provider-token:commitMessage:5']);
+  assert.deepEqual(envelope.error.details.blocking, ['provider-token:commitMessage:3']);
   assert.ok(!JSON.stringify(envelope).includes(token));
   assert.equal(gitCalls(world, 'commit-tree').length, 0);
   assert.equal(gitCalls(world, 'push').length, 0);
@@ -1630,7 +1647,7 @@ test('the commit uses the message after a legitimate commit-msg hook edited it',
   assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
   assert.equal(
     world.gitIn(world.remote, 'log', '-1', '--format=%B', BRANCH),
-    'docs: plan demo\n\nThe plan for the demo.\n\nSigned-off-by: Hook <hook@example.invalid>',
+    `${DERIVED_TITLE}\n\nSigned-off-by: Hook <hook@example.invalid>`,
   );
 });
 
@@ -1666,9 +1683,39 @@ test('a failing pre-push hook is reported as PUSH_REJECTED and leaves the remote
   installHook(world, 'pre-push', 'echo "push policy" >&2\nexit 1');
   const envelope = await publish(world);
   assert.equal(envelope.error.code, 'PUSH_REJECTED');
-  assert.match(envelope.error.details.stderr, /push policy/);
+  assert.ok(envelope.error.details.stderr.length >= 'push policy\n'.length);
+  assert.match(envelope.error.details.stderr.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(JSON.stringify(envelope).includes('push policy'), false);
   assert.equal(remoteRef(world, BRANCH), null);
   assert.equal(world.forge.creates.length, 0);
+});
+
+// Invariant: the helper returns none of the derived text, so a hook that echoes the message on
+// refusal never carries the title into the envelope; its stderr is only a length and digest.
+test('a refusing commit-msg hook that echoes the message leaves the derived title out of the envelope', async (t) => {
+  const world = createWorld(t);
+  installHook(world, 'commit-msg', 'cat "$1" >&2\nexit 1');
+  const envelope = await publish(world);
+  assert.equal(envelope.error.code, 'COMMIT_MSG_HOOK_REJECTED');
+  assert.deepEqual(envelope.error.details.stderr, digest(`${DERIVED_TITLE}\n`));
+  assert.equal(JSON.stringify(envelope).includes('Demo plan'), false);
+});
+
+test('a server hook that echoes the commit subject on refusal leaves the derived title out of PUSH_REJECTED', async (t) => {
+  const world = createWorld(t);
+  const hook = join(world.remote, 'hooks', 'pre-receive');
+  mkdirSync(dirname(hook), { recursive: true });
+  writeFileSync(
+    hook,
+    '#!/bin/sh\nwhile read old new ref; do git log -1 --format=%s "$new" >&2; done\nexit 1\n',
+  );
+  chmodSync(hook, 0o755);
+  const envelope = await publish(world);
+  assert.equal(envelope.error.code, 'PUSH_REJECTED');
+  assert.ok(envelope.error.details.stderr.length > 0);
+  assert.match(envelope.error.details.stderr.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(JSON.stringify(envelope).includes('Demo plan'), false);
+  assert.equal(remoteRef(world, BRANCH), null);
 });
 
 for (const ignoreTerm of [false, true]) {
@@ -2170,7 +2217,11 @@ test('complete-branch opens a draft pull request for a single-file orphan branch
   assert.equal(payload.draft, true);
   assert.equal(payload.head, BRANCH);
   assert.equal(payload.base, 'main');
-  assert.equal(payload.title, 'docs: plan demo');
+  assert.equal(payload.title, DERIVED_TITLE);
+  assert.equal(
+    payload.body,
+    `${DERIVED_PROSE}\n\n${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`,
+  );
   const lines = payload.body.split('\n');
   assert.equal(lines.at(-2), buildPlanPrMarkerLine(PLAN_FILE));
   assert.equal(lines.at(-1), `Refs #${ISSUE}`);
@@ -2315,7 +2366,7 @@ test('complete-branch refuses a branch blob with invalid UTF-8 or NUL before any
   }
 });
 
-test('complete-branch scans the branch blob, the existing commit message, the title and the body', async (t) => {
+test('complete-branch scans the branch blob and the existing commit message, and derives the title from the blob', async (t) => {
   const token = tokenValue(7);
   const blob = createWorld(t);
   createOrphanBranch(blob, (second) =>
@@ -2348,13 +2399,16 @@ test('complete-branch scans the branch blob, the existing commit message, the ti
   assert.equal(closingResult.error.code, 'CLOSING_KEYWORD');
   assert.equal(closing.forge.creates.length, 0);
 
-  const body = createWorld(t);
-  createOrphanBranch(body);
-  const titleResult = await completeBranch(body, { title: `docs: plan ${token}` });
-  assert.equal(titleResult.error.code, 'SCAN_BLOCKED');
-  const bodyResult = await completeBranch(body, { body: `Prose ${token}` });
-  assert.equal(bodyResult.error.code, 'SCAN_BLOCKED');
-  assert.equal(body.forge.creates.length, 0);
+  // The title is derived from the branch blob: an H1 that sanitizes to nothing is refused before
+  // any pull-request call, with `derived` as its source.
+  const untitled = createWorld(t);
+  createOrphanBranch(untitled, (second) =>
+    addPlan(second, PLAN_TEXT.replace('# Demo plan', '# <!-- only a comment -->')),
+  );
+  const untitledResult = await completeBranch(untitled);
+  assert.equal(untitledResult.error.code, 'PLAN_TEXT_UNUSABLE');
+  assert.equal(untitledResult.error.details.source, 'derived');
+  assert.equal(untitled.forge.creates.length, 0);
 });
 
 test('complete-branch refuses a missing branch, an existing pull request and a mismatching issue', async (t) => {
@@ -2865,16 +2919,16 @@ test('assess-base-move: a changed table path overlaps and names the path', async
 });
 
 // Invariant (issue #734 follow-up): an overlapping move re-publishes on the assessed tip with the
-// helper-rendered flag between the caller's prose and the marker tail; a dry run returns exactly that
-// body, the same input without `baseMove` keeps today's body byte for byte, and the stored draft PR
-// body carries the flag with a marker the shipped parser still reads as valid.
+// helper-rendered flag between the derived prose and the marker tail; a dry run reports exactly that
+// body's digest, the same input without `baseMove` keeps the unflagged body byte for byte, and the
+// stored draft PR body carries the flag with a marker the shipped parser still reads as valid.
 test('assess-base-move: an overlapping move publishes flagged on the new tip', async (t) => {
   const { world, data } = await assessMove(t, { move: { files: { 'README.md': 'changed\n' } } });
   assert.equal(data.verdict, 'overlap');
   assert.equal(data.republish, true);
   const { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths } = data;
   const baseMove = { fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths };
-  const prose = publishInput(world).body;
+  const prose = DERIVED_PROSE;
   const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
   const flag =
     `**Unresolved base move.** The base moved from \`${fromBaseOid.slice(0, 7)}\` to ` +
@@ -2884,10 +2938,10 @@ test('assess-base-move: an overlapping move publishes flagged on the new tip', a
 
   const plain = await publish(world, { expectedBaseOid: toBaseOid }, { apply: false });
   assert.equal(plain.ok, true, JSON.stringify(plain.error));
-  assert.equal(plain.data.body, `${prose}\n\n${tail}`, 'no flag without baseMove');
+  assert.deepEqual(plain.data.body, digest(`${prose}\n\n${tail}`), 'no flag without baseMove');
   const dry = await publish(world, { expectedBaseOid: toBaseOid, baseMove }, { apply: false });
   assert.equal(dry.ok, true, JSON.stringify(dry.error));
-  assert.equal(dry.data.body, `${prose}\n\n${flag}\n\n${tail}`);
+  assert.deepEqual(dry.data.body, digest(`${prose}\n\n${flag}\n\n${tail}`));
   assert.equal(remoteRef(world, BRANCH), null);
 
   const envelope = await publish(world, { expectedBaseOid: toBaseOid, baseMove });
@@ -2897,7 +2951,7 @@ test('assess-base-move: an overlapping move publishes flagged on the new tip', a
   assert.equal(world.forge.creates.length, 1);
   assert.equal(world.forge.creates[0].payload.draft, true);
   const stored = world.forge.pulls.at(-1).body;
-  assert.ok(stored.includes('**Unresolved base move.**'), stored);
+  assert.equal(stored, `${prose}\n\n${flag}\n\n${tail}`);
   assert.deepEqual(inspectPlanPrMarker(stored), { status: 'valid', plan: PLAN_FILE });
 });
 
@@ -2911,7 +2965,7 @@ test('publish with allowNewerBase publishes on the assessed base behind a newer 
   const base0 = trackingTip(world);
   const base1 = moveBase(world, { files: { 'README.md': 'changed\n' }, message: 'docs: first' });
   const base2 = moveBase(world, { files: { 'docs/more.md': 'x\n' }, message: 'docs: second' });
-  const prose = publishInput(world).body;
+  const prose = DERIVED_PROSE;
   const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
 
   // Fits variant: the assessed base is base1 and carries no flag of its own.
@@ -2924,7 +2978,7 @@ test('publish with allowNewerBase publishes on the assessed base behind a newer 
     { apply: false },
   );
   assert.equal(dry.ok, true, JSON.stringify(dry.error));
-  assert.equal(dry.data.body, `${prose}\n\n${further}\n\n${tail}`);
+  assert.deepEqual(dry.data.body, digest(`${prose}\n\n${further}\n\n${tail}`));
   assert.deepEqual(dry.data.furtherBaseMove, fitting);
   assert.equal(remoteRef(world, BRANCH), null);
 
@@ -3066,7 +3120,7 @@ test('allowNewerBase reports COMMAND_FAILED when the assessed-base probe fails t
 test('allowNewerBase on an unmoved tip publishes exactly as before', async (t) => {
   const world = createWorld(t);
   const tip = trackingTip(world);
-  const prose = publishInput(world).body;
+  const prose = DERIVED_PROSE;
   const tail = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
   const dry = await publish(
     world,
@@ -3074,10 +3128,10 @@ test('allowNewerBase on an unmoved tip publishes exactly as before', async (t) =
     { apply: false },
   );
   assert.equal(dry.ok, true, JSON.stringify(dry.error));
-  assert.equal(dry.data.body, `${prose}\n\n${tail}`);
+  assert.deepEqual(dry.data.body, digest(`${prose}\n\n${tail}`));
   assert.equal(dry.data.furtherBaseMove, null);
   const plain = await publish(world, { expectedBaseOid: tip }, { apply: false });
-  assert.equal(plain.data.body, dry.data.body);
+  assert.deepEqual(plain.data.body, dry.data.body);
   assert.equal('furtherBaseMove' in plain.data, false);
 
   const envelope = await publish(world, { expectedBaseOid: tip, allowNewerBase: true });
@@ -3326,5 +3380,217 @@ test('assess-base-move: an overlapping move leaves publish refusing the old base
   assert.equal(stale.ok, false);
   assert.equal(stale.error.code, 'BASE_CHANGED');
   assertNothingWritten(world, { allowFetch: true });
+  assert.equal(remoteRef(world, BRANCH), null);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Derived title and body
+
+const REVIEWED_EN = [
+  '# Name helper input fields',
+  '',
+  '**Plan status:** Not implemented',
+  `**Issue:** #${ISSUE}`,
+  '**Source:** effective-flow plan',
+  '**Recommended workflow:** Bugfix (`effective-flow fix`)',
+  '',
+  '## Requirement',
+  '',
+  'Helpers accept the field names they document.',
+  '',
+  '## Acceptance criteria',
+  '',
+  '- [ ] The helper accepts the names.',
+  '',
+  '## Assumptions and open points',
+  '',
+  '- The names stay small.',
+  '',
+  '## Plan review',
+  '',
+  '**Result:** Approved',
+  '',
+  '### Summary',
+  '',
+  '### Findings',
+  '',
+  '- No findings.',
+  '',
+  '## Open points',
+  '',
+  '- No open points.',
+  '',
+].join('\n');
+const REVIEWED_DE = [
+  '# Name helper input fields',
+  '',
+  '**Planungsstatus:** Nicht umgesetzt',
+  `**Issue:** #${ISSUE}`,
+  '**Quelle:** effective-flow plan',
+  '**Empfohlener Workflow:** Feature (`effective-flow build`)',
+  '',
+  '## Anforderung',
+  '',
+  'Helfer akzeptieren die dokumentierten Feldnamen.',
+  '',
+  '## Akzeptanzkriterien',
+  '',
+  '- [ ] Der Helfer akzeptiert die Namen.',
+  '',
+  '## Annahmen und offene Punkte',
+  '',
+  '- Die Namen bleiben klein.',
+  '',
+  '## Plan-Review',
+  '',
+  '**Ergebnis:** Freigegeben',
+  '',
+  '## Offene Punkte',
+  '',
+  '- Keine offenen Punkte.',
+  '',
+].join('\n');
+const MARKER_TAIL = `${buildPlanPrMarkerLine(PLAN_FILE)}\nRefs #${ISSUE}`;
+
+// Invariant: the pull request is titled from the plan H1 and carries the five paragraphs, then the
+// marker line, with `Refs #<N>` last; the message passed to commit-msg is exactly the title.
+test('publish derives the English title and body, and the commit-msg hook sees exactly the title', async (t) => {
+  const world = createWorld(t);
+  write(world.local, PLAN_FILE, REVIEWED_EN);
+  const seen = join(world.local, '.git', 'seen-message.txt');
+  installHook(world, 'commit-msg', `cp "$1" '${seen}'`);
+  const envelope = await publish(world);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  const title = 'docs: plan Name helper input fields';
+  assert.equal(readFileSync(seen, 'utf8').trimEnd(), title);
+  assert.equal(world.forge.creates[0].payload.title, title);
+  assert.equal(
+    world.forge.creates[0].payload.body,
+    [
+      `Plan for issue #${ISSUE}. The implementation follows as further commits on this branch.`,
+      `Plan: ${PLAN_FILE}`,
+      'Recommended workflow: Bugfix',
+      'Helpers accept the field names they document.',
+      'Review result: approved; open points: 0.',
+    ].join('\n\n') + `\n\n${MARKER_TAIL}`,
+  );
+  assert.equal(world.forge.creates[0].payload.body.split('\n').at(-1), `Refs #${ISSUE}`);
+});
+
+test('publish derives the German title and body from a German plan', async (t) => {
+  const world = createWorld(t);
+  write(world.local, PLAN_FILE, REVIEWED_DE);
+  const envelope = await publish(world, { languageGit: 'de', languageForge: 'de' });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  const { payload } = world.forge.creates[0];
+  assert.equal(payload.title, 'docs: Plan Name helper input fields');
+  assert.equal(
+    payload.body,
+    [
+      `Plan für Issue #${ISSUE}. Die Umsetzung folgt als weitere Commits auf diesem Branch.`,
+      `Plan: ${PLAN_FILE}`,
+      'Empfohlener Workflow: Feature',
+      'Helfer akzeptieren die dokumentierten Feldnamen.',
+      'Review-Ergebnis: freigegeben; offene Punkte: 0.',
+    ].join('\n\n') + `\n\n${MARKER_TAIL}`,
+  );
+  assert.equal(
+    world.gitIn(world.remote, 'log', '-1', '--format=%B', BRANCH),
+    'docs: Plan Name helper input fields',
+  );
+});
+
+test('complete-branch renders the same title and body from the branch blob as publish', async (t) => {
+  const published = createWorld(t);
+  write(published.local, PLAN_FILE, REVIEWED_EN);
+  assert.equal((await publish(published)).ok, true);
+  const completed = createWorld(t);
+  createOrphanBranch(completed, (second) => addPlan(second, REVIEWED_EN));
+  const envelope = await completeBranch(completed);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(completed.forge.creates[0].payload.title, published.forge.creates[0].payload.title);
+  assert.equal(completed.forge.creates[0].payload.body, published.forge.creates[0].payload.body);
+});
+
+// Invariant: an H1 that sanitizes to nothing is refused as derived text before the base fetch, so
+// nothing is fetched, committed, pushed or opened.
+test('publish refuses a plan whose H1 sanitizes to nothing before fetchBase, with source derived', async (t) => {
+  for (const heading of ['# <!-- only a comment -->', '# ![x](https://example.invalid/i.png)']) {
+    const world = createWorld(t);
+    write(world.local, PLAN_FILE, PLAN_TEXT.replace('# Demo plan', heading));
+    const envelope = await publish(world);
+    assert.equal(envelope.ok, false, heading);
+    assert.equal(envelope.error.code, 'PLAN_TEXT_UNUSABLE', heading);
+    assert.equal(envelope.error.details.source, 'derived');
+    assert.equal(gitCalls(world, 'fetch').length, 0, 'before fetchBase');
+    assertNothingWritten(world);
+    assert.equal(remoteRef(world, BRANCH), null);
+    assert.equal(world.forge.creates.length, 0);
+  }
+});
+
+test('publish refuses a caller title, body or commit message as INVALID_INPUT with no Git call', async (t) => {
+  for (const key of ['title', 'body', 'commitMessage']) {
+    const world = createWorld(t);
+    const envelope = await publish(world, { [key]: 'docs: plan demo' });
+    assert.equal(envelope.error.code, 'INVALID_INPUT', key);
+    assert.equal(gitCalls(world).length, 0, key);
+    assert.equal(world.forge.creates.length, 0, key);
+  }
+  for (const key of ['title', 'body']) {
+    const world = createWorld(t);
+    createOrphanBranch(world);
+    const envelope = await completeBranch(world, { [key]: 'text' });
+    assert.equal(envelope.error.code, 'INVALID_INPUT', key);
+    assert.equal(world.forge.creates.length, 0, key);
+  }
+});
+
+test('dry-run envelopes of publish and complete-branch contain no derived title or body text', async (t) => {
+  const world = createWorld(t);
+  write(world.local, PLAN_FILE, REVIEWED_EN);
+  const dry = await publish(world, {}, { apply: false });
+  assert.equal(dry.ok, true, JSON.stringify(dry.error));
+  for (const text of [
+    'Name helper input fields',
+    'Helpers accept',
+    'Review result',
+    'docs: plan',
+  ]) {
+    assert.ok(!JSON.stringify(dry).includes(text), text);
+  }
+  const orphan = createWorld(t);
+  createOrphanBranch(orphan, (second) => addPlan(second, REVIEWED_EN));
+  const complete = await completeBranch(orphan, {}, { apply: false });
+  assert.equal(complete.ok, true, JSON.stringify(complete.error));
+  for (const text of [
+    'Name helper input fields',
+    'Helpers accept',
+    'Review result',
+    'docs: plan',
+  ]) {
+    assert.ok(!JSON.stringify(complete).includes(text), text);
+  }
+});
+
+// Invariant: a refusal that the base-move flag causes names the flag, not the derived text, as its
+// source, so Issue Buddy does not classify it as a plan defect.
+test('a scan finding that only the base-move flag introduces carries source base-move-flag', async (t) => {
+  const { world, data } = await assessMove(t, { move: { files: { 'README.md': 'changed\n' } } });
+  const { fromBaseOid, toBaseOid, verdict, reason, commitCount } = data;
+  const baseMove = {
+    fromBaseOid,
+    toBaseOid,
+    verdict,
+    reason,
+    commitCount,
+    overlappingPaths: [`src/${tokenValue(4)}.md`],
+  };
+  const envelope = await publish(world, { expectedBaseOid: toBaseOid, baseMove });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'SCAN_BLOCKED');
+  assert.equal(envelope.error.details.source, 'base-move-flag');
+  assert.ok(!JSON.stringify(envelope).includes(tokenValue(4)));
+  assert.equal(world.forge.creates.length, 0);
   assert.equal(remoteRef(world, BRANCH), null);
 });
