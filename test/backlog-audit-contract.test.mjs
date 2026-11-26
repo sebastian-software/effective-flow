@@ -331,7 +331,7 @@ test('backlog-audit passes hash-bearing results by reference and sends agent-aut
   assert.doesNotMatch(prose, /back unchanged|`inventory`, `merged` or `writeSet` sends its JSON/);
   assert.match(
     prose,
-    /A call carrying `externalIssues`, `primary`, `panel`, `drafts` or `current` sends its JSON, reference fields included, as a file: apply the runtime guard to `\.effective-flow\/backlog-audit\/inputs\/<operation>-<n>\.json` under `RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there only while it is still absent, and send `\{"inputFile": "<absolute path>"\}`\. The helper reads and removes the file\./,
+    /A call carrying `externalIssues`, `primary`, `panel`, `drafts`, `current` or `selected` sends its JSON, reference fields included, as a file: apply the runtime guard to `\.effective-flow\/backlog-audit\/inputs\/<operation>-<n>\.json` under `RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there only while it is still absent, and send `\{"inputFile": "<absolute path>"\}`\. The helper reads and removes the file\./,
   );
 });
 

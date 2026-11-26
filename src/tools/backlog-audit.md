@@ -110,7 +110,7 @@ handled below stops the run.
 holds its absolute path as `inputFile`: pass that path, from the most recent result of its kind, as
 the matching `<name>File` field and never re-serialise the object; `TAMPERED_INPUT` stops the run.
 The helper keeps these files until the exit rule. A call carrying `externalIssues`, `primary`,
-`panel`, `drafts` or `current` sends its JSON, reference fields included, as a file: apply the
+`panel`, `drafts`, `current` or `selected` sends its JSON, reference fields included, as a file: apply the
 runtime guard to `.effective-flow/backlog-audit/inputs/<operation>-<n>.json` under
 `RUNTIME_STATE_ROOT`, with the lowest `<n>` from 1 whose file is absent, write the JSON there only
 while it is still absent, and send `{"inputFile": "<absolute path>"}`. The helper reads and removes
