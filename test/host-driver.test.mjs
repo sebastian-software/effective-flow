@@ -13,7 +13,7 @@ if (process.platform === 'win32') {
   test('portable host-driver Python tests', { skip: 'requires POSIX process groups' }, () => {});
 } else {
   const identities = await discoverPythonCases(root);
-  describe('portable host-driver Python tests', { concurrency: 2 }, () => {
+  describe('portable host-driver Python tests', () => {
     for (const identity of identities) {
       const { pythonTimeout, nodeTimeout } = pythonCaseBudgets(identity);
       test(`portable host-driver Python tests (${identity})`, { timeout: nodeTimeout }, (context) =>

@@ -68,7 +68,7 @@
   "test/helper-call-shape-contract.test.mjs": 0.5,
   "test/helper-step-contract.test.mjs": 0.1,
   "test/host-driver-runner.test.mjs": 13.1,
-  "test/host-driver.test.mjs": 129.3,
+  "test/host-driver.test.mjs": 179.2,
   "test/host-qualification.test.mjs": 3.8,
   "test/install-dalo.test.mjs": 3.3,
   "test/install-skill.test.mjs": 0.2,

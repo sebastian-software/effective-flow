@@ -70,8 +70,9 @@ instead. Re-running only `Format, test and build` does not clear a failed job, b
 reads the same result again: re-run the failed job, or use "Re-run failed jobs". `always()` is
 kept deliberately, because `!cancelled()` would turn a cancelled run's required check into a
 passing "skipped". Locally, `pnpm test` still runs the whole suite in one unsharded run.
-On POSIX, the host-driver test file runs up to two Python cases concurrently, each in its own
-process with its own timeout and cancellation signal.
+On POSIX, the host-driver test file runs its Python cases one after another, each in its own
+process with its own timeout and cancellation signal; running two at once did not shorten the
+slowest CI shard.
 
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
