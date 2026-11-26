@@ -1,17 +1,22 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
+  symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import test from 'node:test';
 
 import { main as runCli } from '../src/scripts/triage.mjs';
@@ -2648,4 +2653,656 @@ test('the report names a TRIAGE_LOCKED failure with its lock path and drops a ma
     assert.match(text, /^- Write outcome: failed \(TRIAGE_LOCKED\)$/m);
     assert.doesNotMatch(text, /injected|x`y/);
   }
+});
+
+// --- Persisted hash-bearing results and reference fields --------------------------------------
+
+const SECOND_RUN = () => Buffer.from('b1b2c3d4', 'hex');
+const FIRST_RUN_ID = '2026-11-23-a1b2c3d4';
+const inputsDir = (root) => stateFile(root, 'inputs');
+const inputNames = (root) =>
+  existsSync(inputsDir(root)) ? readdirSync(inputsDir(root)).sort() : [];
+const parsed = (file) => JSON.parse(readFileSync(file, 'utf8'));
+
+// `proven()` with a `runtimeStateRoot`: the helper mints the run id and persists the permission.
+async function provenIn(root, fake, { target = FORGE, extra = {}, deps = {} } = {}) {
+  return ok(
+    'permission-prove',
+    { cwd: root, target, runtimeStateRoot: root, ...extra },
+    { tracker: fake.tracker, ...deps },
+  );
+}
+
+const inventoryFrom = (root, fake, permissionFile, selection = { references: ['#1'] }, deps = {}) =>
+  run(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: FORGE,
+      permissionFile,
+      planDir: 'docs/plan',
+      selection,
+    },
+    { tracker: fake.tracker, ...deps },
+  );
+
+// Permission, inventory and validated verdicts of one run, each reached by its returned path only.
+async function referencedRun(root, fake, { deps = {}, references = ['#1'] } = {}) {
+  const permission = await provenIn(root, fake, { deps });
+  const built = await inventoryFrom(root, fake, permission.inputFile, { references }, deps);
+  assert.equal(built.ok, true, JSON.stringify(built.error));
+  const data = built.data;
+  const checked = await ok('verdicts-validate', {
+    cwd: root,
+    inventoryFile: data.inputFile,
+    assessments: data.items.map((item) => assessment(item.id)),
+  });
+  return { permission, inventory: data, validated: checked };
+}
+
+const writeSetFrom = (run_) =>
+  ok('write-set-build', {
+    inventoryFile: run_.inventory.inputFile,
+    validatedFile: run_.validated.inputFile,
+    permissionFile: run_.permission.inputFile,
+    drafts: implementDrafts('#1')(),
+  });
+
+// Invariant: every hash-bearing result is persisted by the helper under the runtime guard, returned
+// as `inputFile`, and the file's parsed object equals the returned one.
+test('each producer persists its result and returns the path of an identical file', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const flow = await referencedRun(root, fake);
+  const writeSet = await writeSetFrom(flow);
+  const kinds = { permission: 'permission', inventory: 'inventory', validated: 'validated' };
+  for (const [name, kind] of Object.entries(kinds)) {
+    const data = flow[name];
+    assert.equal(data.inputFile, join(inputsDir(root), `${kind}-${FIRST_RUN_ID}-1.json`), name);
+    assert.deepEqual(parsed(data.inputFile), data, name);
+  }
+  assert.equal(writeSet.inputFile, join(inputsDir(root), `writeset-${FIRST_RUN_ID}-1.json`));
+  assert.deepEqual(parsed(writeSet.inputFile), writeSet);
+  assert.equal(flow.permission.runId, FIRST_RUN_ID);
+  assert.equal(flow.inventory.runId, FIRST_RUN_ID);
+  // The object including its `inputFile` still verifies when passed back inline.
+  const checked = await ok('verdicts-validate', {
+    cwd: root,
+    inventory: flow.inventory,
+    assessments: [assessment('#1')],
+  });
+  assert.equal(checked.inputFile, join(inputsDir(root), `validated-${FIRST_RUN_ID}-2.json`));
+  assert.deepEqual(
+    inputNames(root),
+    [
+      `permission-${FIRST_RUN_ID}-1.json`,
+      `inventory-${FIRST_RUN_ID}-1.json`,
+      `validated-${FIRST_RUN_ID}-1.json`,
+      `validated-${FIRST_RUN_ID}-2.json`,
+      `writeset-${FIRST_RUN_ID}-1.json`,
+    ].sort(),
+  );
+});
+
+test('permission-prove without runtimeStateRoot writes nothing and mints no run id', async (t) => {
+  const root = repository(t);
+  const fake = forge();
+  const data = await proven(root, fake);
+  assert.equal(data.runId, undefined);
+  assert.equal(data.inputFile, undefined);
+  assert.equal(existsSync(inputsDir(root)), false);
+  assert.equal(existsSync(stateFile(root)), false);
+});
+
+// Invariant: the whole chain runs on returned paths alone, and a path stays valid for every consumer.
+test('the reference chain runs from permission-prove to write-set-apply on returned paths only', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const flow = await referencedRun(root, fake);
+  const { permission, inventory: data, validated: checked } = flow;
+  const report = await ok('report-write', {
+    runtimeStateRoot: root,
+    inventoryFile: data.inputFile,
+    validatedFile: checked.inputFile,
+  });
+  assert.ok(existsSync(report.reportPath));
+  const writeSet = await writeSetFrom(flow);
+  assert.equal(writeSet.mode, 'forge');
+  const applied = await ok(
+    'write-set-apply',
+    {
+      cwd: root,
+      target: FORGE,
+      permissionFile: permission.inputFile,
+      inventoryFile: data.inputFile,
+      writeSetFile: writeSet.inputFile,
+      selected: select(writeSet),
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(applied.issues[0].outcome, 'applied');
+  assert.equal(managedComments(fake, 1).length, 1);
+  for (const file of [permission, data, checked, writeSet].map(({ inputFile }) => inputFile))
+    assert.equal(existsSync(file), true, file);
+  // A second consumer of the same files still works, here an apply with an empty selection.
+  const again = await ok(
+    'write-set-apply',
+    {
+      cwd: root,
+      target: FORGE,
+      permissionFile: permission.inputFile,
+      inventoryFile: data.inputFile,
+      writeSetFile: writeSet.inputFile,
+      selected: [],
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(again.issues[0].outcome, 'not-selected');
+});
+
+test('a stopped permission or inventory writes no file, and a report-only write set is persisted', async (t) => {
+  const root = repository(t);
+  const stoppedPermission = await ok(
+    'permission-prove',
+    { cwd: root, target: { kind: 'local' }, runtimeStateRoot: root },
+    { tracker: forge().tracker },
+  );
+  assert.equal(stoppedPermission.stopped, true);
+  assert.equal(stoppedPermission.inputFile, undefined);
+  assert.deepEqual(inputNames(root), []);
+
+  const many = forge({
+    issues: Array.from({ length: MAX_LISTED_ISSUES + 1 }, (_, position) => issue(position + 1)),
+  });
+  const permission = await provenIn(root, many);
+  const stopped = await inventoryFrom(root, many, permission.inputFile, { untriaged: true });
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.data.stopped, true);
+  assert.equal(stopped.data.inputFile, undefined);
+  assert.deepEqual(inputNames(root), [`permission-${FIRST_RUN_ID}-1.json`]);
+
+  const readerRoot = repository(t);
+  const reader = forge({ issues: [issue(1)], viewer: 'reader' });
+  const flow = await referencedRun(readerRoot, reader);
+  assert.equal(flow.inventory.runMode, 'report-only');
+  const writeSet = await writeSetFrom(flow);
+  assert.equal(writeSet.mode, 'report-only');
+  assert.equal(writeSet.inputFile, join(inputsDir(readerRoot), `writeset-${FIRST_RUN_ID}-1.json`));
+  assert.deepEqual(parsed(writeSet.inputFile), writeSet);
+});
+
+// Invariant: a reference verifies with today's tamper check, and only a regular file of the
+// helper's own output name inside the guarded input directory is read.
+test('a referenced file changed by one value byte fails with TAMPERED_INPUT', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const permission = await provenIn(root, fake);
+  const text = readFileSync(permission.inputFile, 'utf8');
+  const changed = text.replace('"runMode":"write"', '"runMode":"writf"');
+  assert.notEqual(changed, text);
+  writeFileSync(permission.inputFile, changed);
+  const error = (await inventoryFrom(root, fake, permission.inputFile)).error;
+  assert.equal(error.code, 'TAMPERED_INPUT');
+
+  const fresh = repository(t);
+  const flow = await referencedRun(fresh, forge({ issues: [issue(1)] }));
+  const body = readFileSync(flow.inventory.inputFile, 'utf8');
+  const altered = body.replace('"fingerprint":"0', '"fingerprint":"1');
+  assert.notEqual(altered, body);
+  writeFileSync(flow.inventory.inputFile, altered);
+  const refusal = await refused('verdicts-validate', {
+    cwd: fresh,
+    inventoryFile: flow.inventory.inputFile,
+    assessments: [assessment('#1')],
+  });
+  assert.equal(refusal.code, 'TAMPERED_INPUT');
+});
+
+test('a symlinked file, an out-of-tree path and a symlinked directory component are refused', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const permission = await provenIn(root, fake);
+  const file = permission.inputFile;
+
+  // Out of the input directory, under a valid output name.
+  const stray = join(root, `permission-${FIRST_RUN_ID}-1.json`);
+  copyFileSync(file, stray);
+  assert.equal((await inventoryFrom(root, fake, stray)).error.code, 'INVALID_PAYLOAD');
+  assert.equal(
+    (await inventoryFrom(root, fake, 'relative/permission-x.json')).error.code,
+    'INVALID_PAYLOAD',
+  );
+
+  // Another runtime root under the same name.
+  const other = repository(t);
+  mkdirSync(inputsDir(other), { recursive: true });
+  const foreign = join(inputsDir(other), `permission-${FIRST_RUN_ID}-1.json`);
+  copyFileSync(file, foreign);
+  assert.equal((await inventoryFrom(root, fake, foreign)).error.code, 'INVALID_PAYLOAD');
+
+  // A symlink in place of the file.
+  const real = join(root, 'real-permission.json');
+  renameSync(file, real);
+  symlinkSync(real, file);
+  assert.equal((await inventoryFrom(root, fake, file)).error.code, 'INVALID_PAYLOAD');
+  rmSync(file);
+  renameSync(real, file);
+
+  // A symlinked directory component.
+  const moved = stateFile(root, 'inputs-real');
+  renameSync(inputsDir(root), moved);
+  symlinkSync(moved, inputsDir(root));
+  assert.equal((await inventoryFrom(root, fake, file)).error.code, 'UNSAFE_RUNTIME_STATE');
+});
+
+test('an agent-authored name, a wrong kind and a copied file are refused', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const flow = await referencedRun(root, fake);
+  const authored = join(inputsDir(root), 'inventory-build-1.json');
+  copyFileSync(flow.inventory.inputFile, authored);
+  const assessments = [assessment('#1')];
+  let error = await refused('verdicts-validate', {
+    cwd: root,
+    inventoryFile: authored,
+    assessments,
+  });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /inventoryFile must name this helper's inventory output/);
+
+  error = await refused('verdicts-validate', {
+    cwd: root,
+    inventoryFile: flow.permission.inputFile,
+    assessments,
+  });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /must name this helper's inventory output/);
+
+  const copy = join(inputsDir(root), `inventory-${FIRST_RUN_ID}-2.json`);
+  copyFileSync(flow.inventory.inputFile, copy);
+  error = await refused('verdicts-validate', { cwd: root, inventoryFile: copy, assessments });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /inventoryFile was copied from another path/);
+});
+
+test('both an inline field and its reference, or a reference the operation does not consume, are refused', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const flow = await referencedRun(root, fake);
+  let error = await refused('verdicts-validate', {
+    cwd: root,
+    inventory: flow.inventory,
+    inventoryFile: flow.inventory.inputFile,
+    assessments: [assessment('#1')],
+  });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /pass either inventory or inventoryFile, not both/);
+
+  error = await refused('verdicts-validate', {
+    cwd: root,
+    inventoryFile: flow.inventory.inputFile,
+    permissionFile: flow.permission.inputFile,
+    assessments: [assessment('#1')],
+  });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /verdicts-validate does not take permissionFile/);
+
+  error = await refused('report-write', {
+    runtimeStateRoot: root,
+    inventoryFile: flow.inventory.inputFile,
+    validatedFile: flow.validated.inputFile,
+    writeSetFile: flow.validated.inputFile,
+  });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /report-write does not take writeSetFile/);
+
+  error = await refused('snapshot-remove', {
+    runtimeStateRoot: root,
+    inventoryFile: flow.inventory.inputFile,
+  });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /snapshot-remove does not take inventoryFile/);
+});
+
+test('a helper output sent as a whole input is refused and kept', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const flow = await referencedRun(root, fake);
+  for (const file of [flow.permission, flow.inventory, flow.validated].map((v) => v.inputFile)) {
+    const error = await refused('verdicts-validate', { inputFile: file });
+    assert.equal(error.code, 'INVALID_PAYLOAD', file);
+    assert.match(error.message, /names a helper output; pass it as its reference field instead/);
+    assert.equal(existsSync(file), true, file);
+  }
+});
+
+test('a symlinked runtimeStateRoot works and returns canonical paths', async (t) => {
+  const root = repository(t);
+  const holder = realpathSync(mkdtempSync(join(tmpdir(), 'triage-link-')));
+  t.after(() => rmSync(holder, { recursive: true, force: true }));
+  const link = join(holder, 'root-link');
+  symlinkSync(root, link);
+  const fake = forge({ issues: [issue(1)] });
+  const permission = await ok(
+    'permission-prove',
+    { cwd: root, target: FORGE, runtimeStateRoot: link },
+    { tracker: fake.tracker },
+  );
+  assert.equal(permission.inputFile, join(inputsDir(root), `permission-${FIRST_RUN_ID}-1.json`));
+  const data = await ok(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: link,
+      target: FORGE,
+      permissionFile: permission.inputFile,
+      planDir: 'docs/plan',
+      selection: { references: ['#1'] },
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(data.inputFile, join(inputsDir(root), `inventory-${FIRST_RUN_ID}-1.json`));
+  const checked = await ok('verdicts-validate', {
+    cwd: root,
+    inventoryFile: data.inputFile,
+    assessments: [assessment('#1')],
+  });
+  const report = await ok('report-write', {
+    runtimeStateRoot: link,
+    inventoryFile: data.inputFile,
+    validatedFile: checked.inputFile,
+  });
+  assert.ok(existsSync(report.reportPath));
+});
+
+// Invariant: a failed persist leaves neither the run's snapshot nor an advanced scan cursor. The
+// snapshot root existing proves the failure came after the snapshot was written, not before it.
+async function persistFailure(t, issues, selection, before = () => {}) {
+  const root = repository(t);
+  const fake = forge({ issues });
+  const permission = await proven(root, fake);
+  mkdirSync(stateFile(root), { recursive: true });
+  before(root);
+  writeFileSync(inputsDir(root), 'not a directory');
+  const error = await refused(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: FORGE,
+      permission,
+      planDir: 'docs/plan',
+      selection,
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.equal(statSync(stateFile(root, 'snapshots')).isDirectory(), true);
+  assert.deepEqual(readdirSync(stateFile(root, 'snapshots')), []);
+  return root;
+}
+
+test('a persist failure after the snapshot leaves no snapshot of that run', async (t) => {
+  await persistFailure(t, [issue(1)], { references: ['#1'] });
+});
+
+test('a persist failure after the snapshot leaves the scan cursor unchanged', async (t) => {
+  const cursor = '{"version":1,"from":5}\n';
+  const root = await persistFailure(t, [issue(3), issue(7)], { untriaged: true }, (root) =>
+    writeFileSync(stateFile(root, 'scan-cursor.json'), cursor),
+  );
+  assert.equal(readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8'), cursor);
+});
+
+// Invariant: a scan-cursor write that fails after a successful persist leaves neither the run's
+// snapshot nor its inventory output file, so no stale output can verify against a retry's snapshot.
+test('a scan-cursor failure after the persist leaves no snapshot and no inventory output of that run', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(3), issue(7)] });
+  const permission = await provenIn(root, fake);
+  mkdirSync(stateFile(root, 'scan-cursor.json'), { recursive: true });
+  const built = await inventoryFrom(root, fake, permission.inputFile, { untriaged: true });
+  assert.equal(built.ok, false, 'the operation must be refused');
+  assert.equal(existsSync(stateFile(root, 'snapshots', permission.runId)), false);
+  assert.deepEqual(
+    inputNames(root).filter((name) => name.startsWith(`inventory-${permission.runId}-`)),
+    [],
+  );
+  assert.deepEqual(inputNames(root), [basename(permission.inputFile)]);
+});
+
+// Invariant: one proof starts one run, and the refusal comes before any forge read or cursor write.
+test('inventory-build adopts the permission run id and refuses a second inventory before any read', async (t) => {
+  const root = repository(t);
+  const settled = settledIssues(100);
+  const newer = Array.from({ length: 30 }, (_, index) => issue(101 + index));
+  const fake = forge({ issues: [...settled.issues, ...newer], comments: settled.comments });
+  const permission = await provenIn(root, fake);
+  assert.match(permission.runId, /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/);
+  const first = await inventoryFrom(root, fake, permission.inputFile, { untriaged: true });
+  assert.equal(first.ok, true, JSON.stringify(first.error));
+  assert.equal(first.data.runId, permission.runId);
+  const cursor = readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8');
+  const calls = fake.calls.length;
+
+  const second = await inventoryFrom(root, fake, permission.inputFile, { untriaged: true });
+  assert.equal(second.error.code, 'INVALID_PAYLOAD');
+  assert.match(second.error.message, /the permission already started a run/);
+  assert.equal(fake.calls.length, calls);
+  assert.equal(readFileSync(stateFile(root, 'scan-cursor.json'), 'utf8'), cursor);
+});
+
+test('a second inventory with the same permission is refused after report-write and snapshot-remove', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const flow = await referencedRun(root, fake);
+  const report = await ok('report-write', {
+    runtimeStateRoot: root,
+    inventoryFile: flow.inventory.inputFile,
+    validatedFile: flow.validated.inputFile,
+  });
+  await ok('snapshot-remove', { runtimeStateRoot: root, runId: flow.permission.runId });
+  const calls = fake.calls.length;
+  const before = readFileSync(report.reportPath, 'utf8');
+  // The run's removal took the permission file, so the proof comes back inline.
+  assert.equal(existsSync(flow.permission.inputFile), false);
+  const again = await run(
+    'inventory-build',
+    {
+      cwd: root,
+      runtimeStateRoot: root,
+      target: FORGE,
+      permission: flow.permission,
+      planDir: 'docs/plan',
+      selection: { references: ['#1'] },
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(again.ok, false);
+  assert.equal(again.error.code, 'INVALID_PAYLOAD');
+  assert.match(again.error.message, /the permission already started a run/);
+  assert.equal(fake.calls.length, calls);
+  assert.equal(readFileSync(report.reportPath, 'utf8'), before);
+});
+
+test('write-set-build and write-set-apply refuse a permission proven for another run', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const flow = await referencedRun(root, fake);
+  const writeSet = await writeSetFrom(flow);
+  const other = await provenIn(root, fake, { deps: { randomBytes: SECOND_RUN } });
+  assert.notEqual(other.runId, flow.permission.runId);
+
+  let error = await refused('write-set-build', {
+    inventoryFile: flow.inventory.inputFile,
+    validatedFile: flow.validated.inputFile,
+    permissionFile: other.inputFile,
+    drafts: implementDrafts('#1')(),
+  });
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /permission was proven for another run/);
+
+  error = await refused(
+    'write-set-apply',
+    {
+      cwd: root,
+      target: FORGE,
+      permissionFile: other.inputFile,
+      inventoryFile: flow.inventory.inputFile,
+      writeSetFile: writeSet.inputFile,
+      selected: [],
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(error.code, 'INVALID_PAYLOAD');
+  assert.match(error.message, /permission was proven for another run/);
+  assert.equal(fake.mutations().length, 0);
+});
+
+test('a permission without a run id stays accepted beside a referenced inventory', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const { permission, inventory: data } = await inventory(root, fake, { references: ['#1'] });
+  assert.equal(permission.runId, undefined);
+  const checked = await ok('verdicts-validate', {
+    cwd: root,
+    inventoryFile: data.inputFile,
+    assessments: [assessment('#1')],
+  });
+  const writeSet = await ok('write-set-build', {
+    inventoryFile: data.inputFile,
+    validatedFile: checked.inputFile,
+    permission,
+    drafts: implementDrafts('#1')(),
+  });
+  assert.equal(writeSet.mode, 'forge');
+  const applied = await ok(
+    'write-set-apply',
+    {
+      cwd: root,
+      target: FORGE,
+      permission,
+      inventoryFile: data.inputFile,
+      writeSetFile: writeSet.inputFile,
+      selected: [],
+    },
+    { tracker: fake.tracker },
+  );
+  assert.equal(applied.issues[0].outcome, 'not-selected');
+});
+
+test('a permission or validated file of another runtime root is refused beside an inline inventory', async (t) => {
+  const root = repository(t);
+  const other = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const here = await referencedRun(root, fake);
+  const there = await referencedRun(other, forge({ issues: [issue(1)] }));
+  for (const [name, input] of [
+    ['permissionFile', { validated: here.validated, permissionFile: there.permission.inputFile }],
+    ['validatedFile', { permission: here.permission, validatedFile: there.validated.inputFile }],
+  ]) {
+    const error = await refused('write-set-build', {
+      inventory: here.inventory,
+      drafts: implementDrafts('#1')(),
+      ...input,
+    });
+    assert.equal(error.code, 'INVALID_PAYLOAD', name);
+    assert.match(error.message, new RegExp(`${name} belongs to another runtime root`), name);
+  }
+});
+
+// Invariant: a stale output temp is swept instead of failing the removal, a fresh one may belong to
+// a concurrent write and is skipped, and a run's removal never touches another run's files.
+test('snapshot-remove sweeps a stale output temp and skips a fresh one', async (t) => {
+  const root = repository(t);
+  const fake = forge();
+  const permission = await provenIn(root, fake);
+  const stale = join(inputsDir(root), '.triage-output-0123456789abcdef.tmp');
+  const fresh = join(inputsDir(root), '.triage-output-fedcba9876543210.tmp');
+  writeFileSync(stale, '{}');
+  writeFileSync(fresh, '{}');
+  const old = new Date('2026-11-23T09:00:00Z');
+  utimesSync(stale, old, old);
+  const removed = await ok('snapshot-remove', {
+    runtimeStateRoot: root,
+    runId: permission.runId,
+  });
+  assert.deepEqual(removed.removedInputs.sort(), [
+    '.triage-output-0123456789abcdef.tmp',
+    `permission-${FIRST_RUN_ID}-1.json`,
+  ]);
+  assert.equal(existsSync(stale), false);
+  assert.equal(existsSync(fresh), true);
+  assert.equal(existsSync(permission.inputFile), false);
+
+  // The day-old sweep applies the same temp rule.
+  utimesSync(fresh, old, old);
+  const swept = await ok('snapshot-remove', { runtimeStateRoot: root });
+  assert.deepEqual(swept.removedInputs, ['.triage-output-fedcba9876543210.tmp']);
+});
+
+test('snapshot-remove after a stop between permission and inventory leaves no output of that run', async (t) => {
+  const root = repository(t);
+  const fake = forge();
+  const permission = await provenIn(root, fake);
+  const foreign = join(inputsDir(root), '.triage-output-fedcba9876543210.tmp');
+  writeFileSync(foreign, '{}');
+  const removed = await ok('snapshot-remove', {
+    runtimeStateRoot: root,
+    runId: permission.runId,
+  });
+  assert.deepEqual(removed.removed, []);
+  assert.deepEqual(removed.removedInputs, [`permission-${FIRST_RUN_ID}-1.json`]);
+  assert.deepEqual(inputNames(root), ['.triage-output-fedcba9876543210.tmp']);
+});
+
+// Invariant: snapshot-remove checks every entry before its first removal, so an unexpected entry in
+// the input directory fails closed with the run's snapshot and output files untouched, in both modes.
+for (const mode of ['run id', 'stale']) {
+  test(`snapshot-remove (${mode}) checks every entry before its first removal`, async (t) => {
+    const root = repository(t);
+    const fake = forge({ issues: [issue(1)] });
+    const flow = await referencedRun(root, fake);
+    const outputs = [flow.permission, flow.inventory, flow.validated].map(
+      ({ inputFile }) => inputFile,
+    );
+    mkdirSync(join(inputsDir(root), 'unexpected'));
+    const input =
+      mode === 'run id'
+        ? { runtimeStateRoot: root, runId: flow.permission.runId }
+        : { runtimeStateRoot: root };
+    // Far enough ahead that every entry of the run is stale.
+    const later = { now: () => new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) };
+    const error = await refused('snapshot-remove', input, later);
+    assert.equal(error.code, 'UNSAFE_RUNTIME_STATE');
+    assert.equal(existsSync(flow.inventory.snapshotDir), true);
+    for (const file of outputs) assert.equal(existsSync(file), true, file);
+  });
+}
+
+test('snapshot-remove with a run id removes exactly that run output files', async (t) => {
+  const root = repository(t);
+  const fake = forge({ issues: [issue(1)] });
+  const first = await referencedRun(root, fake);
+  const second = await referencedRun(root, fake, { deps: { randomBytes: SECOND_RUN } });
+  assert.notEqual(first.permission.runId, second.permission.runId);
+  const removed = await ok('snapshot-remove', {
+    runtimeStateRoot: root,
+    runId: first.permission.runId,
+  });
+  assert.deepEqual(removed.removed, [first.permission.runId]);
+  assert.deepEqual(
+    removed.removedInputs,
+    [first.permission, first.inventory, first.validated]
+      .map(({ inputFile }) => basename(inputFile))
+      .sort(),
+  );
+  assert.deepEqual(
+    inputNames(root),
+    [second.permission, second.inventory, second.validated]
+      .map(({ inputFile }) => basename(inputFile))
+      .sort(),
+  );
+  assert.equal(existsSync(second.inventory.snapshotDir), true);
 });

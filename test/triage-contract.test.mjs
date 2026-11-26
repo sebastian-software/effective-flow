@@ -209,3 +209,23 @@ test('cleanup lists finished triage reports through the helper only', () => {
     TRIAGE_OPERATIONS.includes('report-list') && TRIAGE_OPERATIONS.includes('report-prune'),
   );
 });
+
+// Invariant: the agent never re-serialises a hash-bearing object: it passes each result's path as
+// its `<name>File` field, the helper keeps those files until the exit rule, and only `assessments`
+// and `drafts` (which carry reference fields too) travel as an agent-written whole-input file.
+test('hash-bearing results travel as reference fields and only assessments and drafts as an input file', () => {
+  assert.match(
+    prose,
+    /Each hash-bearing result \(`permission`, `inventory`, `validated`, `writeSet`\) holds its absolute path as `inputFile`: pass that path as the matching `<name>File` field and never re-serialise the object/,
+  );
+  assert.match(prose, /The helper keeps these files until the exit rule\./);
+  assert.match(
+    prose,
+    /A call carrying `assessments` or `drafts` sends its JSON, reference fields included, as a file: .*send `\{"inputFile": "<absolute path>"\}`, which the helper reads and removes\./,
+  );
+  assert.doesNotMatch(prose, /Pass every hash-bearing object/);
+  assert.match(
+    prose,
+    /Once `permission-prove` has returned a `runId`, every exit .* first calls `snapshot-remove` with `\{runtimeStateRoot, runId: permission\.runId\}`/,
+  );
+});

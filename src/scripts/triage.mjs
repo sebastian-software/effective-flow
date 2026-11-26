@@ -5,7 +5,11 @@
 // write-set-apply, snapshot-remove, report-list, report-prune. Writes exactly one
 // `{ ok, operation, data }` envelope line to stdout and exits non-zero on failure. Input never
 // travels as command-line arguments; only the operation name does. A stdin object whose only key
-// is `inputFile` names a runtime-state input file the core reads and removes instead.
+// is `inputFile` names a runtime-state input file the core reads and removes instead. The
+// hash-bearing results (permission, inventory, validated verdicts, write set) are persisted by the
+// helper itself; a later call names each one by its reference field (`permissionFile`,
+// `inventoryFile`, `validatedFile`, `writeSetFile`) instead of re-sending the object, and
+// `snapshot-remove {runtimeStateRoot, runId}` removes that run's files.
 import { realpathSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
