@@ -1,6 +1,6 @@
 # Link pull requests delivered through a delegated pr run on T3 Code
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #771
@@ -77,13 +77,13 @@ request themselves through `host-pr-watch`. `pr` stays unchanged.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/host-pr-watch.md` | Add `apply-issues` and `apply-review` (tracker mode) to the "Loaded by" opening sentence. Add one "Linking" bullet for these two callers (occasion, URL source, no double link, limit without T3 context, one-line failure report). Extend the `pr` bullet's last sentence so it names caller-side linking as the mechanism for a delegated `pr` run. Keep the bullet's opening `` `{{SKILL:pr}}`: right after step 10 `` unchanged. |
-| `src/tools/apply-issues.md` | In Phase 4, add one link step with one `lazy-include` pointer to `host-pr-watch` between "Sufficient issues" step 3 and step 4. Step 3 performs the push for both the `pr` path and the target-PR path, so this one placement covers both. In Phase 5, name the one-line link-failure report. Raise `contextBudget` only if the build report requires it. |
-| `src/tools/apply-review-remote.md` | In Phase 4 remote, add the same link step and lazy pointer after step 4's `pr` result or after the target-PR push, before step 5. In Phase 7/8 remote, name the one-line link-failure report in the summary. Raise `contextBudget` only if the build report requires it. |
-| `test/workflow-contracts.test.mjs` | Update and extend the "Issue #635" `host-pr-watch` block (around lines 27469–27700) as described under "Validation plan". |
-| `test/model-tiers-contract.test.mjs` | Conditional. Add one `SPAWN_MENTION_ALLOWLIST` entry per new block only if the spawn-candidate test flags it (see Approach step 6). |
+| File                                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/shared/host-pr-watch.md`        | Add `apply-issues` and `apply-review` (tracker mode) to the "Loaded by" opening sentence. Add one "Linking" bullet for these two callers (occasion, URL source, no double link, limit without T3 context, one-line failure report). Extend the `pr` bullet's last sentence so it names caller-side linking as the mechanism for a delegated `pr` run. Keep the bullet's opening `` `{{SKILL:pr}}`: right after step 10 `` unchanged. |
+| `src/tools/apply-issues.md`          | In Phase 4, add one link step with one `lazy-include` pointer to `host-pr-watch` between "Sufficient issues" step 3 and step 4. Step 3 performs the push for both the `pr` path and the target-PR path, so this one placement covers both. In Phase 5, name the one-line link-failure report. Raise `contextBudget` only if the build report requires it.                                                                            |
+| `src/tools/apply-review-remote.md`   | In Phase 4 remote, add the same link step and lazy pointer after step 4's `pr` result or after the target-PR push, before step 5. In Phase 7/8 remote, name the one-line link-failure report in the summary. Raise `contextBudget` only if the build report requires it.                                                                                                                                                             |
+| `test/workflow-contracts.test.mjs`   | Update and extend the "Issue #635" `host-pr-watch` block (around lines 27469–27700) as described under "Validation plan".                                                                                                                                                                                                                                                                                                            |
+| `test/model-tiers-contract.test.mjs` | Conditional. Add one `SPAWN_MENTION_ALLOWLIST` entry per new block only if the spawn-candidate test flags it (see Approach step 6).                                                                                                                                                                                                                                                                                                  |
 
 ## Implementation details
 
@@ -113,6 +113,7 @@ request themselves through `host-pr-watch`. `pr` stays unchanged.
    run, for example "…links nothing; its delegating caller links per the bullet below". Keep the
    bullet's opening anchor unchanged. State nothing about failed deliveries here: they deliver no
    pull request, so the occasion does not arise.
+
 3. **`apply-issues.md`, Phase 4.** Add exactly one step and one pointer, between "Sufficient
    issues" step 3 and step 4 ("Immediately after a successful push or PR creation"). Step 3
    already pushes in both cases: it delivers through `{{SKILL:pr}}` without a target PR, and
@@ -178,16 +179,12 @@ request themselves through `host-pr-watch`. `pr` stays unchanged.
 ## Acceptance criteria
 
 - [ ] `src/shared/host-pr-watch.md` "### Linking" contains a bullet for the delegating callers
-      `apply-issues` and `apply-review` tracker mode. The bullet names:
-      - caller-side linking after a `created`, `reused` or pushed target pull request;
-      - the URL `pr` returned, or for a target PR the `pr-read` `url`, linked only when that read
-        is open and same-repository;
-      - one call per distinct pull request;
-      - no call after a `pr` run in this session;
-      - no link without T3 running-environment context;
-      - a one-line failure report that never blocks.
-
-      The `pr` bullet's last sentence points to that caller-side linking, and its opening
+      `apply-issues` and `apply-review` tracker mode. The bullet names caller-side linking after a
+      `created`, `reused` or pushed target pull request; the URL `pr` returned, or for a target PR
+      the `pr-read` `url`, linked only when that read is open and same-repository; one call per
+      distinct pull request; no call after a `pr` run in this session; no link without T3
+      running-environment context; and a one-line failure report that never blocks. The `pr`
+      bullet's last sentence points to that caller-side linking, and its opening
       `` `{{SKILL:pr}}`: right after step 10 `` is unchanged.
 - [ ] `src/tools/apply-issues.md` Phase 4 has exactly one link step "per `host-pr-watch`" and
       exactly one `host-pr-watch` pointer. Both sit after "Sufficient issues" step 3 and before
@@ -274,9 +271,11 @@ request themselves through `host-pr-watch`. `pr` stays unchanged.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-CLR","question":"Which linking mechanism should apply-issues (and apply-review remote mode) use for pull requests delivered through a delegated pr run on T3 Code?","options":["Caller links after delivery","Pass Host: t3-code to pr","Decide later"],"escape":["Decide later"],"stop":[],"scores":[{"label":"Caller links after delivery","score":9,"reason":"One caller-side link per pull request covers created, reused and target-PR deliveries, follows the merge-gate caller-links pattern and leaves pr unchanged; its edge is one mechanism instead of two without widening the host-identity exception."},{"label":"Pass Host: t3-code to pr","score":4,"reason":"It adds a validated input to pr.md and widens the pinned one-exception wording, yet the target-PR path still needs a caller-side link, leaving two mechanisms."}]},{"site":"S-BAT","question":"How should the plan bound the audit of other workflows that deliver through pr?","options":["Verify only, follow-up for new gaps","Extend scope to all ambiguous callers","Keep step 8 with a listed criterion","Decide later"],"escape":["Decide later"],"stop":[],"scores":[{"label":"Verify only, follow-up for new gaps","score":9,"reason":"Limits the change to the two callers the plan found with the gap. Each audit claim gets a file:line and its mode, so the uncited audit is fixed. Its edge over option 3: any new gap goes to a follow-up issue, so the scope cannot grow mid-build."},{"label":"Extend scope to all ambiguous callers","score":3,"reason":"The audit says deliver, autopilot and the worktree handback run pr in the same session; adding linking text there is paid on every run without shown evidence of a gap and breaks the rule that deliver needs no pointer of its own."},{"label":"Keep step 8 with a listed criterion","score":5,"reason":"The criterion makes the audit checkable, but the scope stays open. About 50 grep hits with an unclear cross-agent or same-session clause could still lead to unplanned edits and tests during the build."}]},{"site":"S-BAT","question":"How should the plan handle an apply-issues or apply-review orchestrator that runs without T3 running-environment context of its own (for example a cross-agent adapter from apply)?","options":["Narrow the criterion, verify same-session apply","apply links one level up","Assumption plus follow-up issue","Decide later"],"escape":["Decide later"],"stop":[],"scores":[{"label":"Narrow the criterion, verify same-session apply","score":8,"reason":"apply.md:141-145 starts the skill directly, which points to a same-session run. Checking this and citing it shows the criterion holds in practice. The limit is named where it applies, so the plan claims only what it can deliver."},{"label":"apply links one level up","score":6,"reason":"It covers the cross-agent case, but apply must then know how its adapter ran, widening scope to a third caller with duplicate-link risk; if apply is nested the gap moves up a level. Not needed if same-session is confirmed."},{"label":"Assumption plus follow-up issue","score":4,"reason":"It leaves the gap the judgment found unchecked. An unverified assumption lets the plan claim the criterion without showing it is met, and the follow-up issue only moves the work elsewhere."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -285,15 +284,15 @@ request themselves through `host-pr-watch`. `pr` stays unchanged.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 2 | 1 |
-| Testability | 0 | 3 | 4 |
-| Scope | 0 | 1 | 1 |
-| Maintainability | 0 | 1 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         2 |    1 |
+| Testability     |        0 |         3 |    4 |
+| Scope           |        0 |         1 |    1 |
+| Maintainability |        0 |         1 |    1 |
 
 ### Findings
 

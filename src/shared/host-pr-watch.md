@@ -1,6 +1,7 @@
 ## Host PR watch
 
-Loaded by `{{SKILL:merge-gate}}`, `{{SKILL:iterate}}`, `{{SKILL:pr}}` and `{{SKILL:capture}}` when the running host may
+Loaded by `{{SKILL:merge-gate}}`, `{{SKILL:iterate}}`, `{{SKILL:pr}}`, `{{SKILL:capture}}`,
+`apply-issues` and `apply-review` in tracker mode (`apply-review-remote`) when the running host may
 be T3 Code. This fragment owns how those tools wait for, link and unwatch a pull request on that
 host; their sources only point here. `{{SKILL:deliver}}` publishes through `{{SKILL:pr}}` and needs
 no pointer of its own.
@@ -39,11 +40,21 @@ blocks the run.
 - `{{SKILL:pr}}`: right after step 10's created result, a `mutationMayHaveSucceeded` match
   included, or step 8's reuse match, before step 11 and before any plan-draft finish mutation. Step
   12 reports a link failure in one line. A `pr` run inside a sub-agent without T3 running-environment
-  context links nothing.
+  context links nothing; its delegating caller links it per the `apply-issues` bullet below.
 - `{{SKILL:merge-gate}}`: the caller, once per gate run, when Phase 0 step 1 has first resolved an
   open pull request of this repository, before step 2. A re-dispatch's re-run of step 1 and the
   delegated run's Entry re-read link nothing.
 - Top-level `{{SKILL:iterate}}`: as the next call after the Phase 5 step 1 push, before step 2.
+- `apply-issues` and `apply-review` in tracker mode: the orchestrator links each pull request a
+  work item delivered, right after that delivery and before the item's PR-link comment: a `pr`
+  result of `created`, a `mutationMayHaveSucceeded` match included, a `pr` result of `reused`, or
+  a target PR the item pushed to. Link the URL `pr` returned; for a target PR, the `url` of a
+  fresh `pr-read` after the push, never URL text from the issue, and only when that read returns
+  `state` open and `sameRepository === true`; otherwise make no call and report one summary line.
+  Make one call per distinct pull request per run. No call follows a `pr` run that executed in
+  this session, decided from how the orchestrator started it, because that run links under its own
+  bullet. An orchestrator without T3 running-environment context links nothing. A link failure is
+  one line in the run's summary and never blocks.
 
 ### Issue linking
 
