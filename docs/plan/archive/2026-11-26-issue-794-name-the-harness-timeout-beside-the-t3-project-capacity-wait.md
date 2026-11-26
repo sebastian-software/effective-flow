@@ -1,6 +1,6 @@
 # Name the harness timeout beside the t3-project capacity wait
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
@@ -135,6 +135,7 @@ shipped prompt source (`src/**`), script, test or configuration. It changes no p
    path), and add no list, table or sub-heading. Name no T3 Code tool or MCP tool spelling, because
    `test/session-contracts.test.mjs:1066-1100` bans retired T3 tool and butler strings across this
    guide.
+
 3. Run `pnpm format` on the changed file only if `pnpm agent:check` reports it. The file is under
    oxfmt's scope (`.oxfmtrc.json` ignores only `dist`, `node_modules`, `.sf-plugin`).
 4. Deliver the change as one implementation commit. Its message body carries the one-sentence
@@ -238,6 +239,7 @@ shipped prompt source (`src/**`), script, test or configuration. It changes no p
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -298,6 +300,7 @@ shipped prompt source (`src/**`), script, test or configuration. It changes no p
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -375,3 +378,22 @@ Deep plan review (Phase 6b):
 ## Open points
 
 - No open points.
+
+## Test results
+
+- Section check: `## Test environment prerequisites` keeps its original paragraph and gains one
+  three-sentence paragraph with `--max-wait`, "capacity wait", the call-start timeout statement,
+  the background full-suite timeout statement, the "no validation result" statement and
+  `/opt/t3-project-runtime/INSTRUCTIONS.md`.
+- Exit-code check: the section `grep -cE '\b(75|125)\b'` prints `0`.
+- `git diff --numstat origin/develop -- . ':(exclude)docs/plan'`: one line,
+  `docs/developer-guide/build-system.md`, 2 added, 0 deleted.
+- `pnpm agent:check` through `t3-project` (environment `effective-flow-node24`): passed. A first
+  run flagged this plan file's formatting, fixed with `pnpm exec oxfmt` on this file only.
+- `pnpm test test/session-contracts.test.mjs test/workflow-contracts.test.mjs test/focus-contracts.test.mjs test/build-lib.test.mjs test/test-capabilities.test.mjs`
+  through `t3-project`, preflight included: 1076 tests, 1075 passed, 0 failed, 1 skipped.
+- The full suite stays with pull-request CI, as the validation plan states.
+
+## Review findings
+
+- The docs workflow has no review phase; no findings were raised during implementation.
