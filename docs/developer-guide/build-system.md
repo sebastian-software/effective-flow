@@ -15,6 +15,7 @@ the prompt-writing rule.
 ```sh
 node build.mjs          # builds native + portable targets into dist/ (alias: pnpm build)
 pnpm test:preflight     # verifies required capabilities in the test environment
+pnpm test:contracts     # checks setup allow rules and subagent progress coverage
 pnpm test               # runs the unit test suite (node:test)
 pnpm format             # formats with oxfmt (Markdown + JS)
 pnpm agent:check        # oxfmt --check, CI mode without write access
@@ -33,6 +34,16 @@ and portable layouts, archive, and staged delivery tree. `pnpm test:managers` se
 exercises the documented DALO and Skills CLI consumer paths against externally published
 releases of those managers. After every source or installer change, use the same order as CI:
 `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
+
+For changes to Claude Code setup allow rules or subagent spawn and progress records, run
+`pnpm test:contracts` before the full local suite and fix any failures first. It reuses the
+normal test preflight and runs the two contract files in full. Use `t3-project` where required
+by the checkout. The focused check does not replace `pnpm test` or change the required CI checks.
+
+For delivery evidence, run the focused check on a clean candidate commit in a checkout that
+will not be edited during validation. Record the tested commit SHA, the checkout status before
+and after, and the result. Treat results from a mutable draft as preliminary. If the candidate
+changes or the runner reports a source change, do not carry the result forward to the new state.
 
 In CI the unit suite runs in the `unit-tests` matrix job as three shards, `Unit tests (1/3)` to
 `Unit tests (3/3)`, each running `pnpm test --test-shard=<i>/3 --test-concurrency=4` with its own
