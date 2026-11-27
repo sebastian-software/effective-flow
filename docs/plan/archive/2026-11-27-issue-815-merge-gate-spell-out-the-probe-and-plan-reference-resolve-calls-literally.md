@@ -1,6 +1,6 @@
 # merge-gate: spell out the probe and plan-reference-resolve calls literally
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #815
@@ -89,11 +89,11 @@ test, and lockstep update of existing prose pins.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/tools/merge-gate.md` | Phase 0 step 2 gains the literal `probe` call followed by the inline-ban sentence; the `Associated plan:` item gains the literal `plan-reference-resolve` call; raise `contextBudget` if the build report demands it |
-| `test/merge-gate-helper-calls-contract.test.mjs` | New contract test: both literals present in the merge-gate source, each operation accepted by its helper, both payloads accepted by their helper's `executeOperation` |
-| `test/workflow-contracts.test.mjs` | Update the verbatim pin of the `Associated plan:` sentence (`:5390-5393`) to the new wording; adjust any other pin the rewrap breaks |
+| File                                             | Description                                                                                                                                                                                                          |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/tools/merge-gate.md`                        | Phase 0 step 2 gains the literal `probe` call followed by the inline-ban sentence; the `Associated plan:` item gains the literal `plan-reference-resolve` call; raise `contextBudget` if the build report demands it |
+| `test/merge-gate-helper-calls-contract.test.mjs` | New contract test: both literals present in the merge-gate source, each operation accepted by its helper, both payloads accepted by their helper's `executeOperation`                                                |
+| `test/workflow-contracts.test.mjs`               | Update the verbatim pin of the `Associated plan:` sentence (`:5390-5393`) to the new wording; adjust any other pin the rewrap breaks                                                                                 |
 
 ## Implementation details
 
@@ -114,6 +114,7 @@ test, and lockstep update of existing prose pins.
    Add no other framing sentence about the general call form, which
    `src/shared/remote-helper-contract.md:5-8` already owns. Leave the Phase 0 preamble (`:152-153`)
    unchanged.
+
 2. **`Associated plan:` item.** Replace "resolve it through `plan-reference-resolve` with `cwd`
    the root `plan.dir` resolves against (the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode)
    and `planDir` the configured `plan.dir`" with the literal `plan-reference-resolve` line. Define
@@ -165,6 +166,7 @@ test, and lockstep update of existing prose pins.
 
    Re-run the other merge-gate pins in that file, such as the Phase 0 capability pin at
    `:13982-13990`, and adjust only those whose matched wording actually changed.
+
 5. **Budget and format.** Run `node build.mjs`. If the `Always-loaded core (lines/budget)` report
    for `merge-gate` exceeds `contextBudget: 981`, raise it to the built count plus at most ten
    lines (AGENTS.md, "Adding a tool or agent"). Then run `pnpm format`.
@@ -202,16 +204,13 @@ test, and lockstep update of existing prose pins.
       `RUNTIME_STATE_ROOT` in hidden mode.
 - [ ] `src/tools/merge-gate.md` contains the exact `INLINE_BAN` sentence of
       `test/helper-call-shape-contract.test.mjs`.
-- [ ] `test/merge-gate-helper-calls-contract.test.mjs` exists and asserts four things:
-      - each literal sits whole on one source line;
-      - every extracted helper span maps to an exported operation list that contains its
-        operation, and both helpers occur;
-      - the `plan-reference-resolve` payload parsed from the source resolves `ok: true`,
-        `resolved`, `exact`;
-      - the `probe` payload parsed from the source has exactly the key `cwd` and returns `ok: true`
-        with zero runner calls under the offline harness.
+- [ ] `test/merge-gate-helper-calls-contract.test.mjs` exists and asserts four things: - each literal sits whole on one source line; - every extracted helper span maps to an exported operation list that contains its
+      operation, and both helpers occur; - the `plan-reference-resolve` payload parsed from the source resolves `ok: true`,
+      `resolved`, `exact`; - the `probe` payload parsed from the source has exactly the key `cwd` and returns `ok: true`
+      with zero runner calls under the offline harness.
 
       It fails against the pre-change `src/tools/merge-gate.md` and passes after the change.
+
 - [ ] The updated `Associated plan:` pin in `test/workflow-contracts.test.mjs` still asserts the
       dispatch-timing clause, the full literal, the `resolved`/`data.exact` pass rule, the
       drop-on-failure rule and `"Entry" repeats it`.
@@ -254,15 +253,15 @@ test, and lockstep update of existing prose pins.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 1 |
-| Testability | 0 | 1 | 8 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 0 | 4 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    1 |
+| Testability     |        0 |         1 |    8 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         0 |    4 |
 
 ### Findings
 
