@@ -389,7 +389,7 @@ test('Issue Buddy plans in a per-pass issue-planning worktree at collect.baseOid
   );
   assert.match(
     prose,
-    /unless Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason `plan-preserved`, keep it and report its path and issue\. The claim is released either way/,
+    /unless Phase 4 or Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason `plan-preserved`, keep it and report its path and issue\. The claim is released either way/,
   );
   assert.match(
     prose,
@@ -403,6 +403,45 @@ test('Issue Buddy plans in a per-pass issue-planning worktree at collect.baseOid
   assert.match(
     prose,
     /the configured `delivery\.baseBranch` \(a remote ref only on `origin`, normalized to the branch name\), else local `origin\/HEAD`, else `origin\/main`/,
+  );
+});
+
+// Invariant (issue #799): a plan preserved after a planner abort is classified by the parent's own
+// helpers and stays listable by Phase 1. The no-mutation verification still runs, the abort text
+// never decides the outcome, and an aborted plan never reaches Phase 5's publish.
+test('Issue Buddy classifies a planner abort from its own helpers and never publishes the plan', () => {
+  ordered(
+    'Require terminal `DONE` or `ABORT`',
+    "The delegated orchestrator relays the planner's terminal line verbatim.",
+    'After any planner `ABORT`',
+    'Verify no HEAD/index/tracked/unrelated-path mutation',
+    '## Phase 5: Publish',
+  );
+  assert.match(
+    prose,
+    /After any planner `ABORT` other than `NESTED_SPAWN_UNAVAILABLE`, still run the verification below, which here also admits zero new plans; a mutation or ambiguous identity stays a pass stop/,
+  );
+  assert.match(
+    prose,
+    /With exactly one verified new plan, run `publication-metadata` as below and `plan-publication\.mjs scan` with `\{cwd, runState: "unattended", planFile: <relative plan path>\}`, reading only its finding ids/,
+  );
+  assert.match(
+    prose,
+    /classify from these two helper results through the ordered mapping, never from the abort text \(item 4 only for a helper-proven content fault such as a non-empty `data\.blocking` or invalid metadata, otherwise item 5\)/,
+  );
+  assert.match(
+    prose,
+    /preserve the plan as Phase 5 preserves an unpublished one, and skip Phase 5\. Without a new plan, item 5 applies and nothing is preserved/,
+  );
+  // The extra scan is the only helper call admitted beside publication-metadata.
+  assert.match(
+    prose,
+    /Besides that abort path's one `scan`, call only `plan-lint\.mjs publication-metadata` with/,
+  );
+  // The nested-spawn abort keeps its own whole-pass stop.
+  assert.match(
+    prose,
+    /returns `ABORT: NESTED_SPAWN_UNAVAILABLE` to the parent and stops the whole pass/,
   );
 });
 

@@ -1,6 +1,6 @@
 # Scan unattended plans for publication blockers before reporting success
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #799
@@ -118,15 +118,15 @@ refusal carrying finding ids only.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/unattended-planning.md` | "Completion" step 1: `plan`-entry-only self-scan, correction round, rescan, capped abort line and the writing rule; new abort reason. |
-| `src/shared/plan-publication.md` | "Content check": one pointer line that the unattended `plan` entry scans its own plan before completion, so a plan-content `SCAN_BLOCKED` in a later publish is a rare integrity signal. |
-| `src/tools/issue-buddy.md` | Phase 4: after a planner `ABORT`, keep the no-mutation verification, classify with the parent's own `publication-metadata` and `scan` results, preserve the plan and skip Phase 5; allow the one extra `scan` call beside "Call only `publication-metadata`". Planning-worktree rule: "unless Phase 4 or Phase 5 preserves a plan in it". Possibly its `contextBudget:` line. |
-| `test/plan-publication.test.mjs` | Attribution test: the observed shape (a list bullet with the trailer key and its colon inside a code span) added to the blocking loop and its descriptive rewording added to the harmless loop, built with the file's existing `cat(...)` split helper. |
-| `test/unattended-planning-contract.test.mjs` | Register the new abort reason in the fail-closed inventory; pin the self-scan sentence in step 1, its `plan`-entry scope, its position before the step 2 metadata call, the one-round bound and the capped abort line, naming the invariant. |
-| `test/issue-buddy-contract.test.mjs` | Pin the Phase 4 planner-abort path (verification kept, parent-run helper classification, Phase 5 skipped) and update the pinned planning-worktree literal to name Phase 4, with the invariant "a plan preserved after a planner abort is classified by the parent's own helpers and stays listable by Phase 1". |
-| `docs/developer-guide/plan-conventions.md` | Unattended completion paragraph: the self-scan before the metadata check, the new abort and the Issue Buddy stop. |
+| File                                         | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/unattended-planning.md`          | "Completion" step 1: `plan`-entry-only self-scan, correction round, rescan, capped abort line and the writing rule; new abort reason.                                                                                                                                                                                                                                         |
+| `src/shared/plan-publication.md`             | "Content check": one pointer line that the unattended `plan` entry scans its own plan before completion, so a plan-content `SCAN_BLOCKED` in a later publish is a rare integrity signal.                                                                                                                                                                                      |
+| `src/tools/issue-buddy.md`                   | Phase 4: after a planner `ABORT`, keep the no-mutation verification, classify with the parent's own `publication-metadata` and `scan` results, preserve the plan and skip Phase 5; allow the one extra `scan` call beside "Call only `publication-metadata`". Planning-worktree rule: "unless Phase 4 or Phase 5 preserves a plan in it". Possibly its `contextBudget:` line. |
+| `test/plan-publication.test.mjs`             | Attribution test: the observed shape (a list bullet with the trailer key and its colon inside a code span) added to the blocking loop and its descriptive rewording added to the harmless loop, built with the file's existing `cat(...)` split helper.                                                                                                                       |
+| `test/unattended-planning-contract.test.mjs` | Register the new abort reason in the fail-closed inventory; pin the self-scan sentence in step 1, its `plan`-entry scope, its position before the step 2 metadata call, the one-round bound and the capped abort line, naming the invariant.                                                                                                                                  |
+| `test/issue-buddy-contract.test.mjs`         | Pin the Phase 4 planner-abort path (verification kept, parent-run helper classification, Phase 5 skipped) and update the pinned planning-worktree literal to name Phase 4, with the invariant "a plan preserved after a planner abort is classified by the parent's own helpers and stays listable by Phase 1".                                                               |
+| `docs/developer-guide/plan-conventions.md`   | Unattended completion paragraph: the self-scan before the metadata check, the new abort and the Issue Buddy stop.                                                                                                                                                                                                                                                             |
 
 ## Implementation details
 
@@ -202,30 +202,30 @@ refusal carrying finding ids only.
 ## Acceptance criteria
 
 - [ ] `src/shared/unattended-planning.md` "Completion" step 1 names the `plan-publication.mjs scan`
-  call for the `plan` entry only, with `runState: "unattended"` and the plan file relative to
-  `EXECUTION_ROOT`, after the final plan-lint and before the step 2 `publication-metadata` call, and
-  the existing "step 2" references are unchanged.
+      call for the `plan` entry only, with `runState: "unattended"` and the plan file relative to
+      `EXECUTION_ROOT`, after the final plan-lint and before the step 2 `publication-metadata` call, and
+      the existing "step 2" references are unchanged.
 - [ ] The step reads `data.blocking`, allows exactly one correction round that reruns formatting and
-  the final lint before a rescan, and returns `ABORT: unattended plan content blocked: <id>, <id>`
-  with finding ids only, in `data.blocking` order and capped at 20 plus a remaining count, when
-  blocking findings remain.
+      the final lint before a rescan, and returns `ABORT: unattended plan content blocked: <id>, <id>`
+      with finding ids only, in `data.blocking` order and capped at 20 plus a remaining count, when
+      blocking findings remain.
 - [ ] A scan error envelope, nonzero exit or unparseable output is a terminal
-  `ABORT: <diagnostic>`, naming the error code when the envelope carries one.
+      `ABORT: <diagnostic>`, naming the error code when the envelope carries one.
 - [ ] The descriptive-naming rule is stated once, in `unattended-planning` "Completion", with no
-  second copy elsewhere under `src/`.
+      second copy elsewhere under `src/`.
 - [ ] `src/shared/plan-publication.md` "Content check" carries the one-line pointer, and the scan's
-  patterns and strictness in `src/scripts/` are unchanged.
+      patterns and strictness in `src/scripts/` are unchanged.
 - [ ] `src/tools/issue-buddy.md` Phase 4, after any planner `ABORT` other than the nested-spawn one,
-  keeps the no-mutation verification, classifies a present plan only from the parent's own
-  `publication-metadata` and `scan` results through the existing ordered mapping, preserves that
-  plan, and never reaches Phase 5; the planning-worktree rule names Phase 4, so the worktree moves
-  to `aborted` with reason `plan-preserved`.
+      keeps the no-mutation verification, classifies a present plan only from the parent's own
+      `publication-metadata` and `scan` results through the existing ordered mapping, preserves that
+      plan, and never reaches Phase 5; the planning-worktree rule names Phase 4, so the worktree moves
+      to `aborted` with reason `plan-preserved`.
 - [ ] `test/plan-publication.test.mjs` shows a blocking `attribution` finding for the code-span
-  bullet with the trailer key and its colon, and none for its descriptive rewording.
+      bullet with the trailer key and its colon, and none for its descriptive rewording.
 - [ ] `test/unattended-planning-contract.test.mjs` pins the self-scan, its scope, its position, its
-  bound and its abort line, and its fail-closed abort inventory includes
-  `ABORT: unattended plan content blocked`; `test/issue-buddy-contract.test.mjs` pins the Phase 4
-  abort path and the amended planning-worktree rule; each test names the invariant it protects.
+      bound and its abort line, and its fail-closed abort inventory includes
+      `ABORT: unattended plan content blocked`; `test/issue-buddy-contract.test.mjs` pins the Phase 4
+      abort path and the amended planning-worktree rule; each test names the invariant it protects.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass.
 
 ## Validation plan
@@ -268,6 +268,7 @@ refusal carrying finding ids only.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {"site":"S-CLR","question":"How should Issue Buddy handle the planner's new content-blocked abort?","options":["Item-4 mapping only","No Issue Buddy change","Phase 4 abort stop"],"escape":[],"stop":null,"scores":[{"label":"Item-4 mapping only","score":4,"reason":"It records the content-blocked abort as failed but never states that Phase 4 stops before Phase 5, so a plan aborted for another reason can still reach publish."},{"label":"No Issue Buddy change","score":2,"reason":"It leaves an aborted plan verifiable and publishable, caught at best by a later scan refusal after extra work."},{"label":"Phase 4 abort stop","score":9,"reason":"One Phase 4 sentence stops every planner abort before Phase 5, preserves the plan and maps each reason to item 4 or item 5; its edge over item-4 mapping is that it also closes the publish path for non-content aborts."}]},
@@ -278,6 +279,7 @@ refusal carrying finding ids only.
   {"site":"S-DEC","question":"How does Issue Buddy classify a planner abort for the outcome mapping?","options":["Parent-verified classification","Explicit reason list","Accept item-5 shift"],"escape":[],"stop":null,"scores":[{"label":"Parent-verified classification","score":9,"reason":"It keeps today's item 4 retry accounting for plan-then-abort cases and bases the outcome on parent-run helper results instead of child free text, meeting item 4's origin-proof requirement; that is its edge over the reason list, at the cost of one or two read-only helper calls."},{"label":"Explicit reason list","score":4,"reason":"It restores the failed-lint retry path, but the outcome depends on matching free text from a delegated run fed by third-party issue text, and the list drifts as abort reasons are added."},{"label":"Accept item-5 shift","score":2,"reason":"It turns today's item 4 outcomes into pass stops with no retry accounting, so one issue that never succeeds can stall every later pass."}]}
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -286,15 +288,15 @@ refusal carrying finding ids only.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 2 |
-| Security | 0 | 1 | 0 |
-| Data protection | 0 | 0 | 1 |
-| Error cases | 0 | 5 | 6 |
-| Testability | 0 | 0 | 4 |
-| Scope | 0 | 1 | 2 |
-| Maintainability | 0 | 0 | 4 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    2 |
+| Security        |        0 |         1 |    0 |
+| Data protection |        0 |         0 |    1 |
+| Error cases     |        0 |         5 |    6 |
+| Testability     |        0 |         0 |    4 |
+| Scope           |        0 |         1 |    2 |
+| Maintainability |        0 |         0 |    4 |
 
 ### Findings
 
@@ -344,3 +346,42 @@ refusal carrying finding ids only.
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Requirement:** the unattended `plan` entry scans its own plan for publication blockers before
+completion, corrects them once or aborts with finding ids only, and Issue Buddy never sends a plan
+whose planner aborted to Phase 5 (issue #799).
+
+**Architecture decisions:** implemented as planned: the existing `scan` operation is reused
+unchanged, only the `plan` entry scans, step 1 of "Completion" is extended instead of renumbered,
+the writing rule lives once in `unattended-planning`, and Issue Buddy classifies a planner abort
+from its own `publication-metadata` and `scan` results.
+
+**Affected files:** `src/shared/unattended-planning.md`, `src/shared/plan-publication.md`,
+`src/tools/issue-buddy.md` (`contextBudget` 580 to 590), `test/plan-publication.test.mjs`,
+`test/unattended-planning-contract.test.mjs`, `test/issue-buddy-contract.test.mjs`,
+`docs/developer-guide/plan-conventions.md`.
+
+**Implementation details:** one clause from the edge cases was added to step 1: inside the
+"Decided by score" block only a JSON string value is reworded. The Issue Buddy verification after a
+planner abort also admits zero new plans, which maps to item 5 without a leftover.
+
+**Test results:** the three targeted test files pass (179 tests). `node build.mjs` passes
+(`issue-buddy` 589/590, `plan` 801/804, `plan-review` 523/523) and `pnpm test:distribution` passes.
+The full `pnpm test` run had 12 failures and 4 cancelled subtests under heavy host load; a base
+attribution run found three pre-existing on the base commit and the other nine passing on a
+candidate rerun, so none is attributed to this change. Behavioural eval evidence debt was not
+recorded in this run.
+
+## Review findings
+
+**Date:** 2026-11-27
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     1 |
+| Open / Not implemented |     0 |

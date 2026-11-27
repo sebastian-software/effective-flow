@@ -200,6 +200,10 @@ never repeats a secret. State "no findings" explicitly when there are none. Ther
 no second question, and answering "Publish" is the explicit acknowledgement of every finding it
 listed.
 
+The unattended `plan` entry runs this `scan` with `runState` `unattended` on its own plan before
+completion (`unattended-planning`), so a plan-content `SCAN_BLOCKED` in a later publish is a rare
+integrity signal.
+
 ### The single question
 
 Ask exactly once, naming the remote, the base branch, the branch, that the pull request is a draft,
