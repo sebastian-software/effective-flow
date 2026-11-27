@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.81.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.80.0...effective-flow-v1.81.0) (2026-11-27)
+
+
+### Features
+
+* **backlog-audit:** persist hash-bearing results ([#763](https://github.com/sebastian-software/effective-flow/issues/763)) ([ed567ce](https://github.com/sebastian-software/effective-flow/commit/ed567cef0d04ee6d45d0daffaf0f2f23da41f0c4))
+* capture descriptions as approved tracker issues ([#766](https://github.com/sebastian-software/effective-flow/issues/766)) ([d615533](https://github.com/sebastian-software/effective-flow/commit/d6155334a4948aa3fca65f4b800f2c3a56f07793))
+* **concept:** route concept wording and entry points to central skills ([527b0b6](https://github.com/sebastian-software/effective-flow/commit/527b0b6d5f4fc0c028de02b17315e8f0d5a460d1)), closes [#784](https://github.com/sebastian-software/effective-flow/issues/784)
+* **issue-buddy:** derive descriptive titles and bodies for plan pull requests ([#750](https://github.com/sebastian-software/effective-flow/issues/750)) ([0974390](https://github.com/sebastian-software/effective-flow/commit/097439053b75002e568b85153aa1b6b1b66495d2))
+* **pilot-measurement:** name the failed check behind UNSAFE_RUNTIME_ROOT ([#805](https://github.com/sebastian-software/effective-flow/issues/805)) ([876e57c](https://github.com/sebastian-software/effective-flow/commit/876e57c8a85eafff334392f568480e0ef50c2728)), closes [#798](https://github.com/sebastian-software/effective-flow/issues/798)
+* **plan:** scan unattended plans for publication blockers before completion ([#807](https://github.com/sebastian-software/effective-flow/issues/807)) ([dc0bfe2](https://github.com/sebastian-software/effective-flow/commit/dc0bfe22f0ad98b0c4ffa09a8261ab5cc17d82b4)), closes [#799](https://github.com/sebastian-software/effective-flow/issues/799)
+* **pr:** map referenced issue acceptance criteria in derived bodies ([#808](https://github.com/sebastian-software/effective-flow/issues/808)) ([3f640b4](https://github.com/sebastian-software/effective-flow/commit/3f640b41063bcaf207561062a64302fb683366de))
+* **remote-tracker:** add a tested operation reference for every helper operation ([#777](https://github.com/sebastian-software/effective-flow/issues/777)) ([21b47e5](https://github.com/sebastian-software/effective-flow/commit/21b47e55d40580f5fce06b5efd7141188eac1280))
+* **remote-tracker:** read long payloads from a guarded input file ([#762](https://github.com/sebastian-software/effective-flow/issues/762)) ([7ac19e0](https://github.com/sebastian-software/effective-flow/commit/7ac19e0f9572f452d9ee2690f0aae9684e865257)), closes [#729](https://github.com/sebastian-software/effective-flow/issues/729)
+* **triage:** persist hash-bearing results so the agent never re-serialises them ([#753](https://github.com/sebastian-software/effective-flow/issues/753)) ([fae3765](https://github.com/sebastian-software/effective-flow/commit/fae3765cd7133c780e185de2aa64ab9d239dfa59)), closes [#730](https://github.com/sebastian-software/effective-flow/issues/730)
+
+
+### Bug Fixes
+
+* **apply-issues:** link pull requests delivered through a delegated pr run on T3 Code ([#772](https://github.com/sebastian-software/effective-flow/issues/772)) ([fd1e680](https://github.com/sebastian-software/effective-flow/commit/fd1e6801411eb6520e576b6d6e035dccb1bcbc89)), closes [#771](https://github.com/sebastian-software/effective-flow/issues/771)
+* **autopilot:** state the reason length limit in the architecture-fit prompt ([#745](https://github.com/sebastian-software/effective-flow/issues/745)) ([eca25b2](https://github.com/sebastian-software/effective-flow/commit/eca25b2d71ffe6750d5a4f61c503bea66e5dd2da)), closes [#743](https://github.com/sebastian-software/effective-flow/issues/743)
+* **config-resolve:** recognize focus as a read-only caller ([#791](https://github.com/sebastian-software/effective-flow/issues/791)) ([c82e49d](https://github.com/sebastian-software/effective-flow/commit/c82e49d2e1bfbe004fcdef7a2692a6dc5db91cd8)), closes [#789](https://github.com/sebastian-software/effective-flow/issues/789)
+* **config-resolve:** recognize retro as a read-only caller ([#785](https://github.com/sebastian-software/effective-flow/issues/785)) ([0e6114c](https://github.com/sebastian-software/effective-flow/commit/0e6114c14a2af2ae365e4b007ac63820d3f28929)), closes [#783](https://github.com/sebastian-software/effective-flow/issues/783)
+* **deliver:** check the pull-request writer before creating the delivery branch ([#780](https://github.com/sebastian-software/effective-flow/issues/780)) ([1830031](https://github.com/sebastian-software/effective-flow/commit/1830031bb43c38d068e2407dcc603441e9d91023))
+* **issue-buddy:** map planner-abort metadata refusals to item 5 ([#833](https://github.com/sebastian-software/effective-flow/issues/833)) ([c29d03a](https://github.com/sebastian-software/effective-flow/commit/c29d03a39a0c0937224337839b68a78799612e63)), closes [#807](https://github.com/sebastian-software/effective-flow/issues/807)
+* **merge-gate:** show the exact post-merge issue-state-wait call ([#778](https://github.com/sebastian-software/effective-flow/issues/778)) ([a24ce91](https://github.com/sebastian-software/effective-flow/commit/a24ce91a804cef1ebde0150869c4975010c62d94)), closes [#773](https://github.com/sebastian-software/effective-flow/issues/773)
+* **merge-gate:** spell out the probe and plan-reference-resolve calls literally ([#820](https://github.com/sebastian-software/effective-flow/issues/820)) ([8365f38](https://github.com/sebastian-software/effective-flow/commit/8365f38cce10f8a8a91f71039be34463cc09bfce)), closes [#815](https://github.com/sebastian-software/effective-flow/issues/815)
+* **pilot:** name not-applicable first for finish-packet modelCompliance ([#804](https://github.com/sebastian-software/effective-flow/issues/804)) ([0a426b9](https://github.com/sebastian-software/effective-flow/commit/0a426b921fc7ae044cd440a100ad2d51ec7ecc18)), closes [#796](https://github.com/sebastian-software/effective-flow/issues/796)
+* **plan-review:** keep exactly one review-result line in a plan ([#764](https://github.com/sebastian-software/effective-flow/issues/764)) ([6e474a4](https://github.com/sebastian-software/effective-flow/commit/6e474a4a1c925b5bf8ca528b75b3d4821703aafc))
+* **pr:** guard thread-bound PR writers against the wrong head ([#786](https://github.com/sebastian-software/effective-flow/issues/786)) ([76572d4](https://github.com/sebastian-software/effective-flow/commit/76572d461a1aa397324150782392e7c9c9b3ae74)), closes [#782](https://github.com/sebastian-software/effective-flow/issues/782)
+* **remote-tracker:** report lost PR comment writes as possibly applied ([#742](https://github.com/sebastian-software/effective-flow/issues/742)) ([17dd386](https://github.com/sebastian-software/effective-flow/commit/17dd386efaf892e74aa2fdf513937cfa55175489))
+* **verification-evidence:** name the required check keys in the producer mapping ([#746](https://github.com/sebastian-software/effective-flow/issues/746)) ([eee7461](https://github.com/sebastian-software/effective-flow/commit/eee7461342f53946bcd7b2c9aec80054c047343c)), closes [#744](https://github.com/sebastian-software/effective-flow/issues/744)
+* **worktree:** forbid every rebase of a delivery branch with an open PR ([#806](https://github.com/sebastian-software/effective-flow/issues/806)) ([96bb83b](https://github.com/sebastian-software/effective-flow/commit/96bb83b39102b321c6d47b785d1cbeee13df2016))
+
 ## [1.80.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.79.0...effective-flow-v1.80.0) (2026-11-25)
 
 
