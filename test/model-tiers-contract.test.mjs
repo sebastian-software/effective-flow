@@ -1559,6 +1559,28 @@ test('all targets ship the lazy committed-range fragment behind its deliver poin
   }
 });
 
+// Invariant: the publication-path stop fragment ships into every built skill behind its deliver
+// pointer, while the always-loaded deliver core never inlines its content.
+test('all targets ship the lazy publication-path stop fragment behind its deliver pointer', () => {
+  for (const target of TARGETS) {
+    const skillRoot = join(distRoot, target, 'effective-flow');
+    const read = (file) => readFileSync(join(skillRoot, file), 'utf8');
+    assert.ok(
+      read('shared/deliver-publication-preflight.md').includes('### Stop report'),
+      `${target}: ships shared/deliver-publication-preflight.md`,
+    );
+    const deliver = read('tools/deliver.md');
+    assert.ok(
+      deliver.includes('shared/deliver-publication-preflight.md'),
+      `${target}: deliver pointer`,
+    );
+    assert.ok(
+      !deliver.includes('### Stop report'),
+      `${target}: the deliver core does not inline the publication-path stop fragment`,
+    );
+  }
+});
+
 // Invariant: the acceptance lens's one read-only leaf is spawned at its own marked site, resolves
 // to the `deep` role it names and never moves down, and the marker sits beside the spawn it
 // classifies rather than in the router.

@@ -623,6 +623,24 @@ knownOids}`, never fetching) serves the lazy `deliver-committed-range` route, wh
   resolves to an `origin` remote-tracking ref and the checkout is attached to a non-base branch;
   otherwise the read fails and a failed read adds no notice.
 
+  The helper's read-only `publication-preflight` operation classifies the pull-request writer that
+  step 1.1 observed, with no Git access, runner, or state. Its payload carries `hostPolicy`
+  (`unrestricted` or `restricted`), `writer`, `source`, and optionally `head` and `base`. The writer
+  is `{kind: "provider-helper", probe}`, where `probe` is `null` only under `restricted` and
+  otherwise `{ok, code?, pullRequestCreate}`, or
+  `{kind: "host-tool", name, explicitHead, boundBranch}`; `source` is `{branch}`, with `null` for a
+  detached checkout. Without `head` and `base` the scope is `writer` and the head-dependent reasons
+  are not evaluated; with both it is `pair`. The result carries `status`
+  (`supported` or `unsupported`), `scope`, `reasons` in the fixed order `head-is-source-branch`,
+  `head-is-base`, `host-policy-restricted`, `helper-probe-failed`, `pull-request-create-unsupported`,
+  `host-tool-not-supported-by-pr`, `host-tool-no-explicit-head`, `host-tool-bound-to-other-branch`,
+  and `probeCode`, the helper's error code behind `helper-probe-failed`. Every host-tool writer is
+  unsupported, because `pr` publishes only through the provider helper's `pr-create`. The lazy
+  `deliver-publication-preflight` fragment owns the stop reports and the alternatives. The operation
+  has three call sites: step 1.1 in writer scope before the upstream check, step 3.3 in pair scope
+  with the derived head and the resolved base before any branch is created, and the resume path,
+  which runs the same observation and a pair-scope call for the record's branch before step 4.3.
+
 - `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
   validates files. A delivery caller supplies a verified execution-location receipt, declared path
   group, and expected index-tree OID; the result reports enough exact Git state for the caller to

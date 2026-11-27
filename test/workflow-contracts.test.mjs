@@ -20433,8 +20433,9 @@ test('deliver is exposed with its shipped helper and continues automatically aft
     'the manifest confirmation must be the sole approval and authorize the automatic continuation',
   );
   // The rule names its exceptions exhaustively: only the conditional questions of step 1.1, the
-  // resume and release questions for a retained partial-diff record and the upstream questions,
-  // may precede the manifest answer, so no further routine question can be added unnoticed.
+  // resume and release questions for a retained partial-diff record, the writer observation's
+  // provider question with its no-answer stop, and the upstream questions, may precede the
+  // manifest answer, so no further routine question can be added unnoticed.
   const additions = boundedSlice(
     prose(deliver),
     'sole routine approval. Its only additions',
@@ -20444,6 +20445,7 @@ test('deliver is exposed with its shipped helper and continues automatically aft
     'conditional questions of step 1.1',
     'can precede it',
     'the resume and release questions for a retained `partial-diff` record',
+    "the writer observation's provider question, whose unanswered, skipped, or non-interactive answer stops the run",
     'the upstream questions.',
     // The committed-range route's replacement of the manifest confirmation is named here too.
     'The committed-range route replaces it with at most its provider question or its focused publish question.',
@@ -20643,6 +20645,9 @@ test('deliver lazily loads a resume entry that maps the steps of a resumed deliv
     'Then call `worktree inspect`',
     '```lazy-include\ndeliver-partial-diff-resume\n',
     'Unless a record was resumed',
+    // The publication-writer observation sits between the resume entry and the upstream check.
+    'observe the pull-request writer',
+    'Call `publication-preflight {hostPolicy, writer, source: {branch}}`',
     'call `upstream-status {root: sourceRoot, fetch: true}`',
   );
   const triggers = new Map(
@@ -20865,21 +20870,233 @@ test('a ledger release proves one locked snapshot and keeps every discarded file
   );
 });
 
-// Invariant: the committed-range route is named in deliver's helper operation list, yet it is never
-// spliced into the `upstream-status`, `fast-forward`, `bind-manifest` adjacency that the step 1.1
-// pin and the source-upstream-sync flow depend on.
+// Invariant: the committed-range and publication-preflight operations are named in deliver's
+// helper operation list, yet neither is spliced into the `upstream-status`, `fast-forward`,
+// `bind-manifest` adjacency that the step 1.1 pin and the source-upstream-sync flow depend on.
 test('deliver names committed-range in its operation list outside the pinned helper adjacency', () => {
   const deliver = source('src/tools/deliver.md');
   assert.match(
     prose(deliver),
-    /`reconcile`, and `committed-range` operations/,
-    'the helper operation list must name committed-range',
+    /`reconcile`, `committed-range`, and `publication-preflight` operations/,
+    'the helper operation list must name committed-range and publication-preflight',
+  );
+  const adjacency = boundedSlice(deliver, '`upstream-status`, `fast-forward`', '`bind-manifest`');
+  for (const operation of ['committed-range', 'publication-preflight']) {
+    assert.ok(
+      !adjacency.includes(operation),
+      `${operation} must not sit between upstream-status and bind-manifest`,
+    );
+  }
+});
+
+// Invariant (issue #768): deliver observes the pull-request writer in step 1.1 before any source
+// or delivery mutation. The host policy is set first from running-environment evidence; the helper
+// calls and their provider question run only under an unrestricted policy, from the context `pr`
+// publishes in; and an unsupported writer stops before the upstream check, so no fast-forward,
+// selection, branch, worktree, index, commit, push or forge mutation is attempted.
+test('deliver step 1.1 observes the publication writer before upstream-status', () => {
+  const deliver = source('src/tools/deliver.md');
+  const step1 = prose(
+    boundedSlice(
+      deliver,
+      '### 1. Establish immutable source evidence',
+      '\n2. Resolve `language.git`',
+    ),
+  );
+  ordered(
+    step1,
+    'Unless a record was resumed, observe the pull-request writer before any source or delivery mutation',
+    'Read `tracker.remoteToolOverride`, `delivery.baseBranch`, and `delivery.branchPrefix`',
+    'Set `hostPolicy` first, from explicit running-environment evidence only',
+    "Only under an `unrestricted` policy, call the remote helper's `repository-resolve` and then its `probe`, each with `{cwd: <RUNTIME_STATE_ROOT>}`",
+    'On `AMBIGUOUS_HOST`, ask once for `github` or `forgejo`',
+    'Call `publication-preflight {hostPolicy, writer, source: {branch}}` in writer scope',
+    'On `unsupported`, stop with the early report before any fast-forward, selection, branch, worktree, index, commit, push, or forge mutation',
+    'Then call `upstream-status {root: sourceRoot, fetch: true}`',
+  );
+  for (const token of [
+    'no base-branch resolution runs here',
+    "It is `restricted` only when that evidence names a different PR-creation path as the allowed one or denies the helper's PR write",
+    'an approval prompt for a command is not a restriction',
+    'a Git push capability, a checkout path, or a generic PR tool is never evidence',
+    'an unanswered, skipped, or non-interactive answer ends the run with one notice naming `AMBIGUOUS_HOST`, with nothing changed by this delivery',
+    'any other error envelope from either call gives `{ok: false, code, pullRequestCreate: null}`',
+    'each with `provider` when `tracker.remoteToolOverride` is not `auto`: the provider override is that configured value, else the answer below, and it is carried on every helper call of this delivery',
+    "Retain the evidence and the provider override for step 3.3, `{{SKILL:pr}}`, and the committed-range route's provider question",
+  ]) {
+    assert.ok(step1.includes(token), `step 1.1 writer observation: ${token}`);
+  }
+});
+
+// Invariant (issue #768): the head/base classification runs at step 3.3, after the base refresh
+// (3.1) and the branch name (3.2) and before the step that creates the branch and worktree; an
+// unsupported pair stops before any branch, worktree, index, commit, push or forge mutation, and a
+// supported one continues with no new question. The abort boundaries forbid working around it.
+test('deliver step 3.3 classifies the head/base pair before creating the branch', () => {
+  const deliver = source('src/tools/deliver.md');
+  const step3 = prose(
+    boundedSlice(
+      deliver,
+      '### 3. Create the isolated delivery branch',
+      '### 4. Transfer and validate the confirmed selection',
+    ),
+  );
+  ordered(
+    step3,
+    '1. Revalidate the source receipt and runtime root. Refresh the configured remote base',
+    '2. Derive a collision-safe',
+    '3. Verify the publication path: call `publication-preflight` in pair scope',
+    '`head` the step 3.2 branch, and `base` the resolved local base branch',
+    'On `unsupported`, stop with the pair-scope report before any branch, worktree, index, commit, push, or forge mutation',
+    'on `supported`, continue with no question',
+    '4. Create a fresh branch/worktree from the refreshed base',
+    '5. Run setup only for the newly owned receipt',
+  );
+  const boundaries = prose(section(deliver, '## Abort boundaries', '\n## '));
+  assert.ok(
+    boundaries.includes(
+      'An unsupported publication path (step 1.1 or 3.3) stops before any artifact is created. Never switch or push the source branch, bypass host tool policy, or merge to work around it.',
+    ),
+    'the abort boundaries forbid working around an unsupported publication path',
+  );
+  assert.match(
+    prose(section(deliver, '### 6. Publish only the verified commits', '\n### ')),
+    /step 1\.1's provider override as its explicit provider override when one exists/,
+    'the early provider override reaches pr, so the run asks no more often than before',
+  );
+});
+
+// Invariant (issue #768): the stop text is paid only when a stop is possible. deliver carries the
+// remote-helper-contract and deliver-publication-preflight pointers at step 1.1 and never inlines
+// the host-tool description, the stop report or the alternatives in its always-loaded core. The
+// fragment's reports name head, base, writer and reasons, the early one the configured base and a
+// conditional head, and list only supported alternatives.
+test('deliver lazily loads the publication-path stop and the helper call contract', () => {
+  const deliver = source('src/tools/deliver.md');
+  const fragment = prose(source('src/shared/deliver-publication-preflight.md'));
+  const triggers = new Map(
+    [...deliver.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.equal(
+    triggers.get('deliver-publication-preflight'),
+    'the host policy is restricted or publication-preflight returns unsupported',
+  );
+  assert.equal(
+    triggers.get('remote-helper-contract'),
+    'the step 1.1 writer observation calls the remote helper',
+  );
+  const step1 = boundedSlice(
+    deliver,
+    '### 1. Establish immutable source evidence',
+    '\n2. Resolve `language.git`',
+  );
+  ordered(
+    step1,
+    'Set `hostPolicy` first',
+    '```lazy-include\ndeliver-publication-preflight\n',
+    '```lazy-include\nremote-helper-contract\n',
+    'call `upstream-status {root: sourceRoot, fetch: true}`',
+  );
+  assert.doesNotMatch(deliver, /^```include\ndeliver-publication-preflight\n/m);
+  for (const inlined of [
+    '### Host-tool writer',
+    '### Stop report',
+    'host-tool-bound-to-other-branch',
+    'is not a delivered pull request',
+    '<subject slug>',
+  ]) {
+    assert.ok(!deliver.includes(inlined), `the deliver core must not inline: ${inlined}`);
+  }
+  for (const token of [
+    '`{kind: "host-tool", name, explicitHead, boundBranch}`, read from that tool\'s own schema and description',
+    'Without such a tool the writer is `{kind: "provider-helper", probe: null}`',
+    'Under a restricted policy no helper call runs and no provider question is asked',
+    'every reason in the returned order with the capability it lacks',
+    "give the helper's structured remediation",
+    'the configured `delivery.baseBranch` value verbatim, a display value and not a resolved base',
+    'a fresh `<prefix>/deliver/<subject slug>` branch (`deliver/<subject slug>` with an empty prefix) for a selected change, or the current branch `<name>` when commits that already exist are published',
+    'nothing was changed by this delivery',
+    "names every retained record this run's Release question already released",
+    'names the intended head and the base from the result',
+    'no delivery branch, worktree, commit, push or pull request was created',
+    'List only the supported alternatives',
+    "run `{{SKILL:deliver}}` again from a context whose host policy permits the provider helper's PR write",
+    'create and publish the branch outside this workflow',
+    'a compare URL or a manual handoff is not a delivered pull request',
+    'Never switch, push or publish the source branch',
+    'never use a different transport',
+  ]) {
+    assert.ok(fragment.includes(token), `publication-path stop: ${token}`);
+  }
+});
+
+// Invariant (issue #768): a resumed delivery runs the writer observation and the pair
+// classification after step 1.2 and before step 4.3, against the record's branch and ledger base,
+// and every stop there rolls the adopted record back to `aborted`, never leaving it `active`, so
+// the record stays resumable. Step 3 stays skipped except that classification.
+test('the resume entry classifies the publication path before step 4.3 with an aborted rollback', () => {
+  const resume = prose(source('src/shared/deliver-partial-diff-resume.md'));
+  assert.ok(
+    boundedSlice(resume, 'Skipped:', 'Runs, in this order:').includes(
+      'steps 1.4, 2, 3, 4.1 and 4.2 (of step 3 only the step 3.3 classification runs, below)',
+    ),
+    'step 3 is skipped on resume except the step 3.3 classification',
+  );
+  const runs = boundedSlice(resume, 'Runs, in this order:', 'From the ledger:');
+  ordered(
+    runs,
+    'Step 1.2, with hidden mode',
+    "Step 1.1's writer observation, carrying the provider override on every helper call, then the step 3.3 classification with `head` the record's branch, `base` `resume.base.branch`, and `source` that fresh observation",
+    'Every stop of either, an `unsupported` result, an unanswered provider question, or a helper or `publication-preflight` error envelope, is a controlled stop before step 4.3',
+    'move the adopted record back to `aborted` with one `worktree transition`, never leaving it `active`',
+    'A fresh delivery execution-location receipt',
+    'Step 4.3.',
+  );
+});
+
+// Invariant (issue #768): the early step 1.1 provider answer is the committed-range route's single
+// provider question, so the route never asks a second one, and it is passed to condition 3's
+// repository-resolve, probe and pr-list so none can return AMBIGUOUS_HOST again.
+test('committed-range counts the step 1.1 provider answer as its provider question', () => {
+  const fragment = source('src/shared/deliver-committed-range.md');
+  assert.ok(
+    prose(
+      boundedSlice(fragment, '3. **No existing PR.**', '4. **No uncertain attempt.**'),
+    ).includes(
+      "all three carry step 1.1's provider override, the configured `tracker.remoteToolOverride` when not `auto`, else its provider answer, as their explicit `provider` when there is one",
+    ),
+    'condition 3 passes the provider override to resolve, probe and pr-list',
   );
   assert.ok(
-    !boundedSlice(deliver, '`upstream-status`, `fast-forward`', '`bind-manifest`').includes(
-      'committed-range',
+    prose(boundedSlice(fragment, '### Outcomes', '### Handoff')).includes(
+      "An answer to `deliver`'s step 1.1 provider question counts as this question, which is then not asked again",
     ),
-    'committed-range must not sit between upstream-status and bind-manifest',
+    "the early answer is the route's single provider question",
+  );
+});
+
+// Invariant (issue #768): pr opens the pull request with the exact handed-off head branch, never
+// a branch derived from the main checkout, and its head-OID and probe gates still run before the
+// push: step 3 keeps the handed-off OID, step 6 probes without side effects, step 7 requires the
+// exact head to still resolve to that OID.
+test('pr creates the pull request from the handed-off head behind its pre-push gates', () => {
+  const pr = prose(source('src/tools/pr.md'));
+  assert.ok(
+    boundedSlice(pr, '10. Create the PR:', '11. Reverify the published head:').includes(
+      'as its `head` the exact head branch of the committed handoff, or on a direct invocation the checked-out branch of step 1, never one derived from the main checkout',
+    ),
+    'step 10 names the payload head',
+  );
+  ordered(
+    pr,
+    '3. Verify the prepared head: Preserve the resolved head OID as the immutable handoff boundary',
+    '6. Check tool availability: Invoke the helper probe once',
+    'report the structured remediation and abort without side effects',
+    '7. Push the branch: Immediately before the push, require the exact head branch still resolves to the OID preserved in step 3',
+    '10. Create the PR:',
   );
 });
 
@@ -23830,7 +24047,12 @@ test('delivery branch names come from the helper, with no restated strip or suff
     ),
   );
   const deliver = prose(
-    boundedSlice(source('src/tools/deliver.md'), '2. Derive a collision-safe', '3. Create a fresh'),
+    // Step 3.2 ends where the step 3.3 publication-path classification begins.
+    boundedSlice(
+      source('src/tools/deliver.md'),
+      '2. Derive a collision-safe',
+      '3. Verify the publication path',
+    ),
   );
   const publication = prose(
     boundedSlice(
