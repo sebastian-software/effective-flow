@@ -1099,6 +1099,56 @@ async function reviewedGeneration(fx) {
   return generationId;
 }
 
+test('discard retry syncs the handle root before removing its generation', async (t) => {
+  const fx = fixture(t);
+  const generationId = await reviewedGeneration(fx);
+  const root = generationRoot(fx, generationId);
+  const handles = handleDirectory(fx, generationId);
+  const dryRun = await executeOperation(
+    'discard-generation',
+    { ...fx.common, generationId, configState: 'disabled', dryRun: true },
+    fx.deps,
+  );
+  const input = {
+    ...fx.common,
+    generationId,
+    configState: 'disabled',
+    dryRun: false,
+    fullInventoryDigest: dryRun.result.fullInventoryDigest,
+    decision: 'stop',
+    confirmation: true,
+  };
+  const afterRmdir = failingOnce(
+    fx,
+    ({ args }) => args.includes('rev-parse') && !existsSync(handles),
+  );
+  await assert.rejects(() => executeOperation('discard-generation', input, afterRmdir), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.equal(existsSync(handles), false);
+  assert.equal(existsSync(root), true);
+
+  let preRenameGuards = 0;
+  let handleGuardSeen = false;
+  const beforeRename = failingOnce(fx, ({ args }) => {
+    if (args.includes(HANDLE_ROOT_ARG)) handleGuardSeen = true;
+    return (
+      handleGuardSeen &&
+      existsSync(root) &&
+      args.includes('rev-parse') &&
+      args.includes('--show-toplevel') &&
+      ++preRenameGuards === 2
+    );
+  });
+  await assert.rejects(() => executeOperation('discard-generation', input, beforeRename), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.equal(existsSync(root), true);
+  await executeOperation('discard-generation', input, fx.deps);
+  assert.equal(existsSync(root), false);
+  assert.equal(existsSync(handles), false);
+});
+
 // Invariant: purge and discard remove the requested generation's capability-file directory and
 // never another generation's; an absent generation's leftovers go only when the confirmed run
 // echoes the dry run's `observationHandlesDigest`, and an unexpected entry is unsafe storage.

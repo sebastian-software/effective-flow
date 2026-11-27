@@ -1059,7 +1059,11 @@ async function observationHandleInventory(context, generationId, deps, { mutatio
 async function removeObservationHandles(context, generationId, deps) {
   await observationHandleGuard(context, deps);
   const names = await observationHandleNames(context, generationId);
-  if (names === null) return;
+  const handleRoot = observationHandleRoot(context);
+  if (names === null) {
+    if (await directoryState(handleRoot)) await syncDirectory(context, handleRoot, deps);
+    return;
+  }
   const directory = observationHandleDirectory(context, generationId);
   for (const name of names) {
     await unlink(path.join(directory, name)).catch((error) => {
@@ -1070,7 +1074,7 @@ async function removeObservationHandles(context, generationId, deps) {
     if (error?.code === 'ENOTEMPTY') fail('UNSAFE_STORAGE', { cause: error });
     if (error?.code !== 'ENOENT') fail('WRITE_FAILED', { cause: error });
   });
-  await syncDirectory(context, observationHandleRoot(context), deps);
+  await syncDirectory(context, handleRoot, deps);
 }
 
 async function regularFileSize(target, { missing = false } = {}, deps = {}) {
