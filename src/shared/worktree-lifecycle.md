@@ -114,7 +114,8 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
    (`git merge-base --is-ancestor <CREATION_OID> <CURRENT_BRANCH_TIP>` exits `0`), never compared
    with a moving remote tip.
 7. `git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none` is
-   empty; for removal it also fails on a kept release quarantine, ignored endpoint or hidden edit.
+   empty; for removal it also fails on a kept release quarantine, ignored endpoint or hidden edit,
+   and for an `issue-planning` record on an ignored entry under `plan.dir`.
 8. It is neither the main worktree nor the calling run's own execution worktree.
 9. No foreign or ownerless lock or cleanup claim exists.
 
@@ -160,7 +161,8 @@ node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"
   branch policy and deletes the record, its ledger first; a failed removal persists `cleanup-failed`
   with Git's error, and an already absent worktree is reconciled only under the call's own claim. Give the call an
   explicit Bash timeout of 120000 ms, above its 90 s deadline; in Codex, request sandbox escalation
-  for it up front. `executionRoot` is never one of the listed worktrees.
+  for it up front. `executionRoot` is never one of the listed worktrees. Its `publishedPlans`
+  input, Issue Buddy's release of published plans before the removal, is `worktree-plan-release`'s.
 
 ```lazy-include
 worktree-partial-diff-recovery
@@ -197,6 +199,7 @@ envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `r
 | item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                           |
 | item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                                    |
 | item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                      |
+| item `PLAN_NOT_RELEASED` (`publishedPlans`)                                                  | Nothing released, the record stays `active`; report `reason`, `path` and any `quarantinePath`, then follow `worktree-plan-release`.                   |
 | item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows.      |
 | item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                           |
 | item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.         |

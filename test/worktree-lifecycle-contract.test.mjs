@@ -664,6 +664,7 @@ test('the lifecycle and cleanup outcome tables cover every helper code', () => {
     'INTERRUPTED',
     'REMOVE_FAILED',
     'BRANCH_RETAINED',
+    'PLAN_NOT_RELEASED',
   ]) {
     assert.match(flatLifecycle, new RegExp(`\`${code}\``), `lifecycle outcome table names ${code}`);
   }
@@ -1226,4 +1227,21 @@ test('cleanup offers proven delivery branches as their own lazily detailed class
     [/the content itself stays in `<proofCommit>`/, 'content stays in the base'],
   ]);
   assert.doesNotMatch(flatCleanup, /gc\.pruneExpire/, 'the report wording stays lazy');
+});
+
+// Invariant (#810): the eager lifecycle fragment carries only a pointer to the Issue Buddy plan
+// release, whose mechanics stay in the lazy `worktree-plan-release` fragment, and the
+// `issue-planning` condition-7 rule that keeps a gitignored plan from a plain removal.
+test('the lifecycle points to the plan release and refuses ignored issue-planning plans', () => {
+  const flatLifecycle = lifecycle.replace(/\s+/g, ' ');
+  assert.match(
+    flatLifecycle,
+    /Its `publishedPlans` input, Issue Buddy's release of published plans before the removal, is `worktree-plan-release`'s/,
+  );
+  assert.match(
+    flatLifecycle,
+    /and for an `issue-planning` record on an ignored entry under `plan\.dir`/,
+  );
+  assert.doesNotMatch(lifecycle, /^worktree-plan-release$/m, 'no fence loads the release here');
+  assert.doesNotMatch(flatLifecycle, /refs\/effective-flow\/released/);
 });

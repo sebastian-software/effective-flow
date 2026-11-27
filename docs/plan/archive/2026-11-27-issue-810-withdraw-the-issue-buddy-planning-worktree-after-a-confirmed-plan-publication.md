@@ -1,6 +1,6 @@
 # Withdraw the Issue Buddy planning worktree after a confirmed plan publication
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #810
@@ -68,6 +68,7 @@ below), plus aligned Issue Buddy prose in Phase 2, Phase 5 and Phase 6.
 
   This is the protection against replacement during the check-and-removal interval that Phase 5
   demands. Export the quarantine primitive for reuse; do not write a second copy.
+
 - **Prove the publication commit, then anchor the released bytes under a release ref.** Both are
   decided by score (S-BAT).
   - **Commit proof.** Nothing is taken until all of these hold:
@@ -80,6 +81,7 @@ below), plus aligned Issue Buddy prose in Phase 2, Phase 5 and Phase 6.
     `baseOid` equals `creationOid`. It also covers a re-publish on `toBaseOid` after an assessed
     base move (`src/shared/issue-buddy-base-move.md`). A commit on unrelated history is still
     refused.
+
   - **Anchor.** Before the quarantine is cleared, the proven blobs are anchored as one tree under
     the existing ref family `refs/effective-flow/released/<RECORD_ID>/<tree>`. This is the same
     anchor `restoreResidual` uses (`preserveTree`).
@@ -169,21 +171,21 @@ below), plus aligned Issue Buddy prose in Phase 2, Phase 5 and Phase 6.
 
 ## Affected files
 
-| File | Description |
-|---|---|
+| File                                                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/scripts/effective-flow-state-worktree-core.mjs` | `worktree remove` accepts an optional `publishedPlans` input. Under the record lock and before the claim, it validates the input, runs the tolerated pre-release check, the commit proofs and the protected release, and anchors the released blobs. After the release it moves the record to `cleanup-ready`. It returns `planReleased`, the released paths, `absentPaths` and the new refusal details. Condition 7 for `issue-planning` also refuses ignored entries under `plan.dir`. Update the header comment and the documentation of `removeOne`, `claimAndRemove` and `gatherFacts`. |
-| `src/scripts/effective-flow-state-ledger-core.mjs` | Export the quarantine primitive (`makeQuarantine` or an extracted equivalent), the read-once capture with `realParents`, and the preserve-tree anchor (`preserveTree`, `RELEASE_PRESERVE_REF_PREFIX`) for reuse. `restoreResidual` keeps its behaviour. |
-| `src/scripts/effective-flow-state-core.mjs` | Add `publishedPlans` to the closed input-key list of `worktree remove` (around line 382). |
-| `src/shared/worktree-plan-release.md` (new) | A lazy fragment that holds the `publishedPlans` contract: input, tolerated check, commit proofs, protected release, anchor ref, the move to `cleanup-ready`, the refusal outcomes and the Issue Buddy fallback override. Decided by score (S-DEC). It is reached only from the Issue Buddy Phase 2 exit, through a ` ```lazy-include ` with its `when:` line. |
-| `src/shared/worktree-lifecycle.md` | Eagerly included by `cleanup`, `deliver`, `apply-review-commit-mechanics` and `worktree-integration`, so it gains only three things: a one-line pointer to `worktree-plan-release` under "Helper operations", the `issue-planning` ignored-entry sentence in condition 7, and a `PLAN_NOT_RELEASED` row in the outcome table. |
-| `build.mjs` | Only if shared fragments must be registered for lazy-include resolution or guards. Otherwise unchanged. |
-| `src/tools/issue-buddy.md` | Phase 5: replace the unreachable removal paragraph with the published-plan list rule. Phase 2 exit rule: describe the reachable release, the preservation decision and the fallback that overrides the generic denial fallback. Phase 6: move the planning-worktree exit before `pass-report`, and take `leftoverPlanFiles` from the actual exit outcome. Update `contextBudget`. |
-| `src/tools/cleanup.md` | At about line 601, extend the `issue-planning` condition 7 explanation by one sentence: a kept `.effective-flow-release-*` quarantine, or an ignored plan under `plan.dir`, also blocks removal, and the operator moves the held plan out or removes the empty quarantine. Change nothing else. |
-| `docs/developer-guide/architecture.md` | Around line 544: a planning worktree is kept only when a plan is preserved, and a confirmed, unchanged publication withdraws it. |
-| `test/effective-flow-state-worktree.test.mjs` | New helper cases for the release, its refusals, the ignored-file case and the race (see Validation plan). |
-| `test/issue-buddy-contract.test.mjs` | Replace the assertion at about lines 193–196, which matches the replaced "Only after confirmed publication may this pass remove…" sentence. Update the Phase 2 regex at about lines 390–393. Add assertions for the new Phase 5 rule, the exit rule and the fallback override, each naming the invariant it protects. |
-| `test/issue-buddy-pass.test.mjs` | At about lines 108–112, reword the assertion message "no protected removal proof is available, so the new plan survives". That test calls no `worktree remove`, so its assertion stays and only the reason changes. |
-| `test/worktree-lifecycle-contract.test.mjs` | Add `PLAN_NOT_RELEASED` to the list of helper codes that the outcome table must cover (about lines 653–669). Assert the pointer to `worktree-plan-release` and the `issue-planning` ignored-entry rule. |
+| `src/scripts/effective-flow-state-ledger-core.mjs`   | Export the quarantine primitive (`makeQuarantine` or an extracted equivalent), the read-once capture with `realParents`, and the preserve-tree anchor (`preserveTree`, `RELEASE_PRESERVE_REF_PREFIX`) for reuse. `restoreResidual` keeps its behaviour.                                                                                                                                                                                                                                                                                                                                      |
+| `src/scripts/effective-flow-state-core.mjs`          | Add `publishedPlans` to the closed input-key list of `worktree remove` (around line 382).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/shared/worktree-plan-release.md` (new)          | A lazy fragment that holds the `publishedPlans` contract: input, tolerated check, commit proofs, protected release, anchor ref, the move to `cleanup-ready`, the refusal outcomes and the Issue Buddy fallback override. Decided by score (S-DEC). It is reached only from the Issue Buddy Phase 2 exit, through a ` ```lazy-include ` with its `when:` line.                                                                                                                                                                                                                                |
+| `src/shared/worktree-lifecycle.md`                   | Eagerly included by `cleanup`, `deliver`, `apply-review-commit-mechanics` and `worktree-integration`, so it gains only three things: a one-line pointer to `worktree-plan-release` under "Helper operations", the `issue-planning` ignored-entry sentence in condition 7, and a `PLAN_NOT_RELEASED` row in the outcome table.                                                                                                                                                                                                                                                                |
+| `build.mjs`                                          | Only if shared fragments must be registered for lazy-include resolution or guards. Otherwise unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `src/tools/issue-buddy.md`                           | Phase 5: replace the unreachable removal paragraph with the published-plan list rule. Phase 2 exit rule: describe the reachable release, the preservation decision and the fallback that overrides the generic denial fallback. Phase 6: move the planning-worktree exit before `pass-report`, and take `leftoverPlanFiles` from the actual exit outcome. Update `contextBudget`.                                                                                                                                                                                                            |
+| `src/tools/cleanup.md`                               | At about line 601, extend the `issue-planning` condition 7 explanation by one sentence: a kept `.effective-flow-release-*` quarantine, or an ignored plan under `plan.dir`, also blocks removal, and the operator moves the held plan out or removes the empty quarantine. Change nothing else.                                                                                                                                                                                                                                                                                              |
+| `docs/developer-guide/architecture.md`               | Around line 544: a planning worktree is kept only when a plan is preserved, and a confirmed, unchanged publication withdraws it.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `test/effective-flow-state-worktree.test.mjs`        | New helper cases for the release, its refusals, the ignored-file case and the race (see Validation plan).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `test/issue-buddy-contract.test.mjs`                 | Replace the assertion at about lines 193–196, which matches the replaced "Only after confirmed publication may this pass remove…" sentence. Update the Phase 2 regex at about lines 390–393. Add assertions for the new Phase 5 rule, the exit rule and the fallback override, each naming the invariant it protects.                                                                                                                                                                                                                                                                        |
+| `test/issue-buddy-pass.test.mjs`                     | At about lines 108–112, reword the assertion message "no protected removal proof is available, so the new plan survives". That test calls no `worktree remove`, so its assertion stays and only the reason changes.                                                                                                                                                                                                                                                                                                                                                                          |
+| `test/worktree-lifecycle-contract.test.mjs`          | Add `PLAN_NOT_RELEASED` to the list of helper codes that the outcome table must cover (about lines 653–669). Assert the pointer to `worktree-plan-release` and the `issue-planning` ignored-entry rule.                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Implementation details
 
@@ -204,6 +206,7 @@ below), plus aligned Issue Buddy prose in Phase 2, Phase 5 and Phase 6.
      different `planDir`, fails closed as `INVALID_INPUT`.
 
      Paths must not repeat.
+
    - `blobOid`, `commitOid` and `baseOid` are full object IDs of the repository's hash length.
    - The following are `INVALID_INPUT`:
      - a malformed entry;
@@ -240,6 +243,7 @@ below), plus aligned Issue Buddy prose in Phase 2, Phase 5 and Phase 6.
 
    A failure returns `PLAN_NOT_RELEASED` with reason `commit-mismatch` and the path. It writes
    nothing and leaves the record `active`.
+
 4. **Protected release.**
    - Run a new named phase hook, `beforePlanRelease`, after the commit proofs and before the first
      rename, so tests can inject a replacement in that interval.
@@ -409,6 +413,7 @@ Not relevant.
   through `worktree inspect` (condition 7) and the killed pass's retained state. The operator moves
   the held plan out or deletes the empty quarantine, then runs `effective-flow cleanup`. This is the
   same operator action as for any interrupted `active` record.
+
 - **Dry-run pass.** It creates no planning worktree, so nothing changes.
 
 ## Acceptance criteria
@@ -417,9 +422,9 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 `pnpm test`, `node build.mjs`, `pnpm test:distribution` is green.
 
 - [ ] **Successful release.** A helper test in `test/effective-flow-state-worktree.test.mjs` uses
-  this session's `active` `issue-planning` record, whose worktree holds exactly the published,
-  unchanged plan or plans. It creates a matching publication commit by plumbing, as WP4 does.
-  `worktree remove` with `publishedPlans` must then:
+      this session's `active` `issue-planning` record, whose worktree holds exactly the published,
+      unchanged plan or plans. It creates a matching publication commit by plumbing, as WP4 does.
+      `worktree remove` with `publishedPlans` must then:
   - unregister the worktree and remove its directory;
   - delete the record and the `issue-planning/<SESSION_ID>` branch;
   - leave the anchor ref holding the plan blob;
@@ -428,6 +433,7 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 
   A second case does the same for a commit built on a later base that descends from
   `creationOid`, which is the base-move re-publish.
+
 - [ ] **Refusals.** Helper tests cover each of the following cases:
   - a changed plan;
   - a plan replaced between the eligibility check and the rename, injected through the new
@@ -442,17 +448,18 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 
   After each refusal, every plan file is byte-identical at its path, the worktree is still
   registered, the record is still `active`, and no anchor ref was written.
+
 - [ ] **Absent listed path.** A helper test shows that a listed plan proven absent is reported in
-  `absentPaths` and does not stop the withdrawal of an otherwise clean worktree.
+      `absentPaths` and does not stop the withdrawal of an otherwise clean worktree.
 - [ ] **Ignored plan without the input.** A helper test shows that an `issue-planning` worktree
-  with an ignored entry under `plan.dir` fails condition 7 for `worktree remove` and for cleanup.
-  The file stays.
+      with an ignored entry under `plan.dir` fails condition 7 for `worktree remove` and for cleanup.
+      The file stays.
 - [ ] **Put-back failure.** A helper test shows that a put-back failure keeps the quarantine and
-  names it as `quarantinePath`. That includes a put-back refused by `realParents`, which is
-  reported as `PLAN_NOT_RELEASED`. A later `worktree remove` and cleanup then fail condition 7.
+      names it as `quarantinePath`. That includes a put-back refused by `realParents`, which is
+      reported as `PLAN_NOT_RELEASED`. A later `worktree remove` and cleanup then fail condition 7.
 - [ ] **Preserved end state.** A helper-sequence test runs a refused `worktree remove` with
-  `publishedPlans` on a changed plan, followed by the `active` → `aborted` (`plan-preserved`)
-  transition. It asserts that:
+      `publishedPlans` on a changed plan, followed by the `active` → `aborted` (`plan-preserved`)
+      transition. It asserts that:
   - the worktree is still registered;
   - the record is `aborted` with reason `plan-preserved`;
   - the plan bytes are unchanged;
@@ -461,13 +468,14 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
   This is the issue's preservation criterion. A contract assertion in
   `test/issue-buddy-contract.test.mjs` adds that push-uncertain and create-uncertain outcomes are
   never appended to the published-plan list.
+
 - [ ] **Failure after the release.** A helper test injects a failure after the release, either
-  through the `afterClaim` hook or through a failing `git worktree remove`. The record must end
-  `cleanup-ready` or `cleanup-failed`, with no plan left, the anchor ref present and no
-  `plan-preserved` record. Ordinary cleanup must then remove it.
+      through the `afterClaim` hook or through a failing `git worktree remove`. The record must end
+      `cleanup-ready` or `cleanup-failed`, with no plan left, the anchor ref present and no
+      `plan-preserved` record. Ordinary cleanup must then remove it.
 - [ ] **Unchanged behaviour without the input.** Apart from the ignored-entry rule, the existing
-  `worktree remove`, cleanup and `plan-preserved` tests pass unchanged. That includes "cleanup
-  removes a kept issue-planning worktree with a preserved plan once the plan is gone".
+      `worktree remove`, cleanup and `plan-preserved` tests pass unchanged. That includes "cleanup
+      removes a kept issue-planning worktree with a preserved plan once the plan is gone".
 - [ ] **Input validation.** `INVALID_INPUT` is returned for:
   - a malformed entry;
   - a non-canonical path;
@@ -476,8 +484,9 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 
   A record of another session gets `NOT_OWNER`. This session's record with the wrong purpose or
   status gets `NOT_ELIGIBLE`.
+
 - [ ] **Issue Buddy prose.** Phase 5, the Phase 2 exit rule and Phase 6 of
-  `src/tools/issue-buddy.md` all describe the same reachable path:
+      `src/tools/issue-buddy.md` all describe the same reachable path:
   - only confirmed publications are listed, with `baseOid`;
   - a remove call carries `publishedPlans` only when every plan written is listed; otherwise the
     pass writes `plan-preserved` directly;
@@ -490,12 +499,13 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 
   The sentence "If the filesystem/harness cannot prove ownership and protected removal" is gone,
   and `test/issue-buddy-contract.test.mjs` asserts these sentences.
+
 - [ ] **Lifecycle contract.** `src/shared/worktree-lifecycle.md` has a `PLAN_NOT_RELEASED` outcome
-  row, and `test/worktree-lifecycle-contract.test.mjs` lists the code among those the table must
-  cover. The `publishedPlans` mechanics live in the lazy fragment `worktree-plan-release.md`,
-  which `issue-buddy.md` reaches through a ` ```lazy-include `.
+      row, and `test/worktree-lifecycle-contract.test.mjs` lists the code among those the table must
+      cover. The `publishedPlans` mechanics live in the lazy fragment `worktree-plan-release.md`,
+      which `issue-buddy.md` reaches through a ` ```lazy-include `.
 - [ ] **Context budgets.** Each of the following equals its built line count plus at most ten
-  lines of headroom, as reported by `node build.mjs`:
+      lines of headroom, as reported by `node build.mjs`:
   - `contextBudget` in `src/tools/issue-buddy.md`;
   - the budget of every tool that eagerly includes `worktree-lifecycle` (`cleanup`, `deliver`,
     `apply-review-commit-mechanics`, `worktree-integration` hosts) and grows.
@@ -509,6 +519,7 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
   - `test/worktree-lifecycle-contract.test.mjs`
 
   Then run the full suite.
+
 - **Full CI order through the project runner:** `pnpm agent:check`, `pnpm test`, `node build.mjs`,
   `pnpm test:distribution`. The full suite takes a long time under load.
 - **Budget report.** Check the `node build.mjs` report for these budgets:
@@ -518,6 +529,7 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 
   No tool's always-loaded core may grow past its budget. The new `worktree-plan-release` fragment
   must add nothing to any eager core.
+
 - **Behavioural-eval evidence.** The `merge-gate` and `iterate` suites seed
   `effective-flow-state-core.mjs` and `effective-flow-state-worktree-core.mjs`, so expect visible
   freshness debt there. Confirm it with `pnpm eval merge-gate verify` and `pnpm eval iterate verify`,
@@ -549,9 +561,11 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site": "S-CLR", "question": "Which removal mechanism should withdraw the planning worktree after a confirmed publication with an unchanged plan?", "options": ["Protected plan release inside worktree remove", "Separate protected removal operation in plan-publication-core", "Withdraw the whole worktree without a single-file step", "Document preservation as the normal outcome"], "escape": [], "stop": null, "scores": [{"label": "Protected plan release inside worktree remove", "score": 9, "reason": "It runs the quarantine-and-prove step under the same record lock as the ownership and condition-7 checks, so nothing can slip in between, which is its edge over a separate two-call operation."}, {"label": "Separate protected removal operation in plan-publication-core", "score": 5, "reason": "It reuses the quarantine pattern, but releasing the plan and removing the worktree become two separate lock scopes, so a failed or raced second call leaves an active record with its plan already deleted."}, {"label": "Withdraw the whole worktree without a single-file step", "score": 2, "reason": "Relaxing condition 7 or forcing removal breaks the never-force contract and could delete a changed plan or other untracked residue that the issue says must be preserved."}, {"label": "Document preservation as the normal outcome", "score": 2, "reason": "It contradicts the expected behaviour that a published, unchanged plan withdraws the planning worktree, and it leaves a plan-preserved record after every publication."}]}, {"site": "S-BAT", "question": "Which parent proof should the protected plan release require of the publication commit, given that a base-moved re-publish builds on toBaseOid rather than creationOid?", "options": ["List the base and require creationOid ancestry", "Drop the parent check", "Keep the strict creationOid parent"], "escape": [], "stop": null, "scores": [{"label": "List the base and require creationOid ancestry", "score": 9, "reason": "Binds the parent to the confirmed envelope's baseOid and keeps creationOid ancestry, so normal and base-moved publications both release; edge over dropping the check: commits on unrelated history are still refused."}, {"label": "Drop the parent check", "score": 5, "reason": "Blob and single-addition proofs still protect the bytes, but nothing ties the commit to the planning worktree's history, which weakens the claim that this commit is the pass's own publication."}, {"label": "Keep the strict creationOid parent", "score": 4, "reason": "Safe and simple, but every confirmed, unchanged base-moved publication stays plan-preserved, so the issue's goal of leaving nothing behind after success is only partly met."}]}, {"site": "S-BAT", "question": "How should Phase 6 order the persisted pass report and the planning-worktree exit, given that a v2 report is never rewritten?", "options": ["Withdraw before the report", "Pre-list every published plan", "Report only unlisted plans"], "escape": [], "stop": null, "scores": [{"label": "Withdraw before the report", "score": 9, "reason": "The report then records the actual remove result, which matters because a v2 report is never rewritten. pass-report only checks the shape of leftoverPlanFiles, so withdrawing first is a safe reorder. Neither alternative gives an accurate persisted report."}, {"label": "Pre-list every published plan", "score": 3, "reason": "After every successful release the stored report lists plans that no longer exist, each with a 'remove' action. That works against the goal that a pass leaves nothing behind."}, {"label": "Report only unlisted plans", "score": 5, "reason": "It keeps the current order and never overstates leftovers. But a refused release leaves a preserved plan that this pass's stored report omits, and only the chat summary and the next Phase 1 inventory show it."}]}, {"site": "S-BAT", "question": "How should the helper prove or secure the published bytes before deleting the plan's only working copy?", "options": ["Require the local tracking ref", "Anchor under a release ref", "Trust the caller and restate recovery"], "escape": [], "stop": null, "scores": [{"label": "Require the local tracking ref", "score": 6, "reason": "This is real local evidence of a successful push or fetch, but it fails closed when remote.origin.fetch has no mapping or the push timed out. The ref can move or be pruned, so local recovery is still not durable."}, {"label": "Anchor under a release ref", "score": 8, "reason": "It reuses preserveTree and the existing released-ref precedent, so the release is lossless. Its edge over the tracking ref: it does not depend on remote.origin.fetch and survives prune and gc. The cost is one uncleaned ref per pass."}, {"label": "Trust the caller and restate recovery", "score": 3, "reason": "It is honest about recovery, but a caller list built by an agent becomes the only guard before deleting the sole local copy, and nothing secures the bytes if that list is wrong."}]}, {"site": "S-BAT", "question": "What should the helper do when a listed published plan is already absent from the planning worktree?", "options": ["Require every listed path present", "Treat a proven-absent path as released"], "escape": [], "stop": null, "scores": [{"label": "Require every listed path present", "score": 5, "reason": "Fail-closed and simple, but it writes a misleading aborted/plan-preserved record for a worktree with no plan, which later Phase 1 passes inventory, and it misses the goal of leaving nothing behind."}, {"label": "Treat a proven-absent path as released", "score": 8, "reason": "Absence at lstat with real parents puts no bytes at risk, the commit proofs still run, and the untolerated condition-7 recheck catches a late file. Edge: no false plan-preserved record. Report absent paths separately."}]}, {"site": "S-BAT", "question": "Should this plan close the pre-existing gap that a worktree remove without publishedPlans cannot see an ignored plan?", "options": ["Leave it out of scope", "Refuse ignored plan entries for issue-planning"], "escape": [], "stop": null, "scores": [{"label": "Leave it out of scope", "score": 5, "reason": "It keeps scope tight and matches the plan's promise that calls without publishedPlans behave exactly as before, but a gitignored plan.dir stays deletable through a prose-only guard, cleanup of plan-preserved records included."}, {"label": "Refuse ignored plan entries for issue-planning", "score": 7, "reason": "It reuses the ignored-inclusive status read the plan already adds, makes cleanup.md's 'fails condition 7 while its plan is there' hold for ignored plan.dir, and fails closed; it does break the unchanged-without-input promise."}]}, {"site": "S-DEC", "question": "Where should the new worktree remove publishedPlans helper-operation prose live, given that worktree-lifecycle.md is eagerly included by several tools?", "options": ["New lazy fragment for the release", "Keep it in worktree-lifecycle and re-measure", "Minimal prose, proofs in the helper comment", "Decide later"], "escape": ["Decide later"], "stop": null, "scores": [{"label": "New lazy fragment for the release", "score": 8, "reason": "Only Issue Buddy passes publishedPlans, so its contract loads once, at the Phase 2 exit. The eager hosts (cleanup, deliver, apply-review mechanics, worktree-integration) gain only a pointer, the condition-7 rule and one outcome row. Edge: agents can read the proofs."}, {"label": "Keep it in worktree-lifecycle and re-measure", "score": 3, "reason": "It keeps the contract in its current fragment, but every eager host and worktree-integration consumer would pay for mechanics that only Issue Buddy uses. Re-measuring the budgets records that cost without avoiding it, against point 1."}, {"label": "Minimal prose, proofs in the helper comment", "score": 6, "reason": "It keeps the eager cost as small as option 1, but the release anchor and the refusal reasons would sit only in code. The agent then cannot read the recovery ref or explain a PLAN_NOT_RELEASED refusal from shipped prose."}]}, {"site": "S-DEC", "question": "How wide should the protected release's ignored-entry refusal be?", "options": ["Refuse any ignored entry, report it", "Refuse ignored entries under plan.dir only", "Refuse outside a hook-output allowlist", "Decide later"], "escape": ["Decide later"], "stop": null, "scores": [{"label": "Refuse any ignored entry, report it", "score": 5, "reason": "Fails closed and the reported paths help diagnosis. But a hook cache from commit-msg or pre-push would make every release refuse, so the bug comes back quietly, and no data is protected that the later plain removal would not delete anyway."}, {"label": "Refuse ignored entries under plan.dir only", "score": 9, "reason": "It matches the new issue-planning condition-7 rule and reuses ignoredPathsAt, so an ignored plan is still protected. Its edge: hook residue no longer blocks the release, and every other ignored file is removed the same way as in any other removal."}, {"label": "Refuse outside a hook-output allowlist", "score": 3, "reason": "Hook output differs from repository to repository and cannot be known ahead of time, so the allowlist will be incomplete and brittle. It adds upkeep and still refuses unlisted caches, and it protects nothing beyond the plan.dir rule."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -560,15 +574,15 @@ The plan is complete when every criterion below holds and the CI order `pnpm age
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 1 |
-| Security | 0 | 1 | 1 |
-| Data protection | 0 | 1 | 2 |
-| Error cases | 0 | 3 | 3 |
-| Testability | 0 | 1 | 3 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 1 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    1 |
+| Security        |        0 |         1 |    1 |
+| Data protection |        0 |         1 |    2 |
+| Error cases     |        0 |         3 |    3 |
+| Testability     |        0 |         1 |    3 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         1 |    1 |
 
 ### Findings
 

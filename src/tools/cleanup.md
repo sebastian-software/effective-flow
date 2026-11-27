@@ -600,7 +600,8 @@ Retention reasons and their safe next steps:
   cherry-pick, revert or rebase; `proof-unavailable` – a proof Git call failed or timed out. An
   `issue-planning` record with reason `plan-preserved` fails condition 7 while its plan is there:
   move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree
-  for removal
+  for removal; a kept `.effective-flow-release-*` quarantine or an ignored plan under `plan.dir`
+  blocks it the same way: move the held plan out or remove the empty quarantine
 - `cleanup-in-progress` or an existing lock: cleanup is claimed, active, or may have been
   interrupted; include known owner and timestamp and let the owner finish
 - dirty: clean the checkout before rerunning cleanup; locked: ask the known owner before unlocking

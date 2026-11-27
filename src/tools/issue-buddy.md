@@ -1,7 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 580
+contextBudget: 598
 ---
 
 # Effective Flow Issue Buddy
@@ -225,9 +225,21 @@ then run `git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' 
 `passId`, `creationOid` = `collect.baseOid`); a failed step stops the pass. Then require
 `git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
 `consent-check` when it applies. Every plan file, lint and publication of this pass uses
-`PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 5
-preserves a plan in it: then transition its record `active` → `aborted` with reason
-`plan-preserved`, keep it and report its path and issue. The claim is released either way.
+`PLANNING_ROOT`. On every exit, before Phase 6's `pass-report`, withdraw or keep it once. When
+every plan this pass wrote into it is on the published-plan list (Phase 5), or it wrote none,
+withdraw it with one `worktree remove` call, passing a non-empty list as `publishedPlans`. When at
+least one written plan is not listed, make no remove call: transition its record `active` →
+`aborted` with reason `plan-preserved`, keep it and report its path and issues. A call with
+`publishedPlans` that is not fully `ok` follows `worktree-plan-release`, which overrides the
+generic denial fallback for this record; a call without it that is not fully `ok` applies the
+denial fallback and reports the kept path for `{{SKILL:cleanup}}`. The claim is released either
+way.
+
+```lazy-include
+worktree-plan-release
+when: the pass withdraws its planning worktree with `publishedPlans`
+```
+
 Run no raw fetch or plan-branch read; WP3/WP4 own bounded Git reads.
 Dry-run reports recovery without completing it. Publishing processes only `authorizedRecovery`,
 in its returned order and up to remaining `limits.plans`:
@@ -370,14 +382,11 @@ from confirmed success, with the Phase-2 verdict-record shape; append its confir
 `{issue, number, headRef, url}` to `pullRequestsOpened` and consume one plan slot.
 When no slot remains, set `cutOff: publish-limit` and proceed to Phase 6.
 
-Only after confirmed publication may this pass remove its exact newly created plan, with proven
-creation ownership, unchanged current blob equal to WP4's `blobOid`, and protection against
-replacement through the check/removal interval. A hash check followed by ordinary pathname unlink
-is insufficient. If the filesystem/harness cannot prove ownership and protected removal, preserve
-and report it. Changed, ambiguous, earlier, failed or push/create-uncertain artifacts are always
-preserved, and so is the planning worktree that holds them (Phase 2). Append preserved new plans as
-validated leftover report diagnostics, deduplicate by path without changing initial metadata or
-selection, and report the bounded blob diagnostic with the worktree path.
+From a confirmed `publish --apply` success envelope only, append
+`{path: planFile, blobOid, commitOid, baseOid}` to this pass's published-plan list; the plan is
+removed only through the protected release at the Phase 2 exit, never by a hash check and an
+unlink. Changed, ambiguous, earlier, failed, unpublished or push/create-uncertain plans are never
+listed: they are preserved, and so is the planning worktree that holds them.
 Never force-push, force-clean or delete an earlier survivor.
 
 ## Ordered outcome mapping
@@ -412,12 +421,17 @@ Apply this order with operation, phase and safe details, not a code-only allowli
 
 ## Phase 6: Report and release
 
-Always reach this phase on a controlled ending after `pass-open`. Request `issue-buddy.mjs
-pass-report` with `{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts,
-pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`,
+Always reach this phase on a controlled ending after `pass-open`. First withdraw or keep the
+planning worktree as Phase 2 says, then request `issue-buddy.mjs pass-report` with
+`{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts, pullRequestsOpened,
+pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`,
 plus `baseMoves` when `issue-buddy-base-move` added an entry. After successful collection also pass
 `collect: <exact persisted returned result>`; before it, pass `mode` and `limits`. Use only reconciled successfully recorded verdicts/PR identities.
-Initial leftovers are bound by collection; append only validated preserved new-file diagnostics.
+Initial leftovers are bound by collection; append only validated preserved new-file diagnostics:
+every plan this pass wrote, minus the `releasedPaths` and `absentPaths` of an `ok` item or of one
+reporting `removed: true`, also when a fallback transition failed. Deduplicate by path without
+changing initial metadata or selection; each names its bounded blob diagnostic, the worktree path
+and any `quarantinePath`.
 No `ready`, `passFailure` or extra cache field is admitted. Never rewrite a v1 report.
 
 A normal pass, including numerical issue failures, uses `outcome: completed`. A preflight or
@@ -428,10 +442,9 @@ numerical issue failures matching persisted `failed` verdicts. Keep all earlier 
 the null failure consumes no retry, failure count or plan budget. Let the runtime reconcile the
 journal and validate the report; do not synthesize retained outcomes after persistence failure.
 
-Withdraw or keep the planning worktree as Phase 2 says, then attempt `pass-close` with
-`{cwd, passId}` after report handling, including after a failed report. It releases every claim the
-pass still holds (never an adopted autopilot claim), deletes the pass record and returns
-`{passId, closed, releasedClaims}`; `PASS_NOT_FOUND` means no open record for this `passId`. A
+Finally attempt `pass-close` with `{cwd, passId}` after report handling, including after a failed
+report. It releases every claim the pass still holds (never an adopted autopilot claim), deletes
+the pass record and returns `{passId, closed, releasedClaims}`; `PASS_NOT_FOUND` means no open record for this `passId`. A
 killed process leaves its pass record, claims and possibly its worktree, which block only its own
 issues until `{{SKILL:cleanup}}` prunes them. If runtime safety/bind or journal failure prevents
 report/close, name the primary error and retained state; never claim success for either operation

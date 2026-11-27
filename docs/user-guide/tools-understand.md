@@ -511,6 +511,8 @@ sanitizes them: the body names the issue number, the plan path, the recommended 
 requirement summary, the review result, and the open-point count. The orchestrator never sees that
 text. A published plan pull request is a draft and must be continued through
 `/effective-flow build <plan-file>` after restoring the plan file from its pull-request branch.
+Once every plan of a pass is published and confirmed unchanged, the pass withdraws its planning
+worktree itself; no cleanup is needed for it.
 When a plan cannot be published, the pass keeps its planning worktree with the plan and names it;
 the issue stays plannable. Move the plan out of that worktree or delete it, then run
 [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup), which removes the worktree.

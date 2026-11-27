@@ -6,6 +6,7 @@
 // `effective-flow-state-git.test.mjs`.
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import {
@@ -16,6 +17,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -58,6 +60,7 @@ import { main } from '../src/scripts/effective-flow-state.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 import { unreachableRunner } from './support/state-helper-fixtures.mjs';
 import {
+  GIT_ENV,
   SESSION,
   addWorktree,
   baseDir,
@@ -137,7 +140,14 @@ test('the six operations have the planned closed key sets and refuse unknown key
         'visibility',
       ],
       'worktree inspect': ['cwd', 'executionRoot', 'sessionId'],
-      'worktree remove': ['cwd', 'executionRoot', 'sessionId', 'recordIds', 'integrationRoot'],
+      'worktree remove': [
+        'cwd',
+        'executionRoot',
+        'sessionId',
+        'recordIds',
+        'integrationRoot',
+        'publishedPlans',
+      ],
       'cleanup plan': ['cwd', 'executionRoot', 'decisions'],
       'cleanup apply': ['cwd', 'executionRoot', 'decisions', 'items'],
     },
@@ -4290,4 +4300,566 @@ test('cleanup removes a kept issue-planning worktree with a preserved plan once 
   const blocked = planEntry(await plan(other), stopped.record.recordId);
   assert.equal(blocked.item, undefined);
   assert.deepEqual(blocked.blocked?.conditions, [1]);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Plan release (`publishedPlans`, Issue Buddy's withdrawal after a confirmed publication)
+
+const PLAN_PATH = 'docs/plan/2026-11-27-issue-7-published-plan.md';
+const PLAN_CONTENT = '# Published plan\n';
+const RELEASE_REFS = 'refs/effective-flow/released/';
+
+// Runs plumbing Git in `root` with `options.env` and `options.input`; returns trimmed stdout.
+function plumbing(root, options, ...args) {
+  const out = spawnSync('git', ['-C', root, ...args], {
+    env: { ...GIT_ENV, ...options.env },
+    input: options.input,
+  });
+  assert.equal(out.status, 0, `git ${args.join(' ')}: ${String(out.stderr)}`);
+  return String(out.stdout).trim();
+}
+
+// The publication commit WP4 builds by plumbing: `files` (path → content) added to `parent`'s tree
+// in a scratch index, committed with `parent` as its only parent. Returns the commit and each blob.
+function publicationCommit(t, root, parent, files) {
+  const scratchDir = mkdtempSync(join(tmpdir(), 'plan-index-'));
+  t.after(() => rmSync(scratchDir, { recursive: true, force: true }));
+  const indexed = { env: { GIT_INDEX_FILE: join(scratchDir, 'index') } };
+  plumbing(root, indexed, 'read-tree', `${parent}^{tree}`);
+  const blobs = {};
+  for (const [file, content] of Object.entries(files)) {
+    blobs[file] = plumbing(root, { input: content }, 'hash-object', '-w', '--stdin');
+    plumbing(
+      root,
+      indexed,
+      'update-index',
+      '--add',
+      '--cacheinfo',
+      `100644,${blobs[file]},${file}`,
+    );
+  }
+  const tree = plumbing(root, indexed, 'write-tree');
+  const commitOid = plumbing(root, {}, 'commit-tree', tree, '-p', parent, '-m', 'publish plan');
+  return { commitOid, blobs };
+}
+
+// An `active` `issue-planning` record whose worktree holds the untracked plans `files` (path →
+// content, default the one published plan), and the publication commit of `published` (default
+// `files`) on the record's `creationOid`. `entries` is the matching `publishedPlans` input.
+async function publishedPlanning(t, { files = { [PLAN_PATH]: PLAN_CONTENT }, published } = {}) {
+  const root = repository(t);
+  const base = unintegratedCommit(root);
+  const { worktree, record } = await initializedIssuePlanning(root, base);
+  for (const [file, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(worktree.worktreePath, file)), { recursive: true });
+    writeFileSync(join(worktree.worktreePath, file), content);
+  }
+  const publication = publicationCommit(t, root, base, published ?? files);
+  const entries = Object.keys(published ?? files).map((file) => ({
+    path: file,
+    blobOid: publication.blobs[file],
+    commitOid: publication.commitOid,
+    baseOid: base,
+  }));
+  return { root, base, worktree, record, entries, ...publication };
+}
+
+function removeWithPlans(root, record, publishedPlans, extra, overrides = {}) {
+  return call(
+    'worktree remove',
+    {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+      publishedPlans,
+      ...overrides,
+    },
+    extra,
+  );
+}
+
+function releaseRefs(root) {
+  return git(root, 'for-each-ref', '--format=%(refname)', RELEASE_REFS).split('\n').filter(Boolean);
+}
+
+// After a refused release: every file of `files` is byte-identical at its path, the worktree is
+// still registered, the record is still `active`, and no anchor ref was written.
+function assertNothingReleased(root, worktree, files, label) {
+  for (const [file, content] of Object.entries(files)) {
+    assert.equal(readFileSync(join(worktree.worktreePath, file), 'utf8'), content, label);
+  }
+  assert.match(git(root, 'worktree', 'list', '--porcelain'), /issue-planning/, label);
+  assert.equal(readRecord(root).status, 'active', label);
+  assert.deepEqual(releaseRefs(root), [], label);
+}
+
+// The quarantine directories directly below the worktree root.
+function quarantines(worktree) {
+  return readdirSync(worktree.worktreePath).filter((name) =>
+    name.startsWith('.effective-flow-release-'),
+  );
+}
+
+// Invariant (plan release): `worktree remove` with `publishedPlans` withdraws a pass's
+// `issue-planning` worktree only after proving the untracked plan is the published one, byte for
+// byte. It releases the plan through a quarantine, anchors its blob under
+// `refs/effective-flow/released/<RECORD_ID>/`, and then removes the worktree, record and branch
+// without force, leaving no `plan-preserved` record.
+test('remove: publishedPlans releases a confirmed, unchanged plan and withdraws the issue-planning worktree', async (t) => {
+  const { root, worktree, record, entries, blobs } = await publishedPlanning(t);
+  const [item] = expectOk(await removeWithPlans(root, record, entries)).items;
+  assert.equal(item.ok, true, JSON.stringify(item));
+  assert.equal(item.planReleased, true, JSON.stringify(item));
+  assert.deepEqual(item.releasedPaths, [PLAN_PATH]);
+  assert.deepEqual(item.absentPaths, []);
+  assert.equal(item.branch.outcome, 'deleted-after-proof');
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.doesNotMatch(git(root, 'worktree', 'list', '--porcelain'), /issue-planning/);
+  assert.equal(existsSync(recordFile(root)), false);
+  assert.equal(git(root, 'branch', '--list', ISSUE_PLANNING_BRANCH), '');
+
+  const anchors = releaseRefs(root);
+  assert.deepEqual(anchors, [item.anchorRef]);
+  assert.ok(item.anchorRef.startsWith(`${RELEASE_REFS}${record.recordId}/`), item.anchorRef);
+  assert.equal(git(root, 'rev-parse', `${item.anchorRef}:${PLAN_PATH}`), blobs[PLAN_PATH]);
+});
+
+// Invariant (plan release): a re-publish after an assessed base move commits on `toBaseOid`, which
+// descends from `creationOid`; listed as `baseOid`, it releases like any other publication. Two
+// plans of one pass are released in one call and anchored as one tree.
+test('remove: publishedPlans releases plans published on a later base that descends from creationOid', async (t) => {
+  const root = repository(t);
+  const base = unintegratedCommit(root);
+  const { worktree, record } = await initializedIssuePlanning(root, base);
+  const later = git(root, 'commit-tree', `${base}^{tree}`, '-p', base, '-m', 'moved base');
+  const second = 'docs/plan/2026-11-27-issue-8-second-plan.md';
+  const files = { [PLAN_PATH]: PLAN_CONTENT, [second]: '# Second plan\n' };
+  mkdirSync(join(worktree.worktreePath, 'docs', 'plan'), { recursive: true });
+  const entries = [];
+  for (const [file, content] of Object.entries(files)) {
+    writeFileSync(join(worktree.worktreePath, file), content);
+    const { commitOid, blobs } = publicationCommit(t, root, later, { [file]: content });
+    entries.push({ path: file, blobOid: blobs[file], commitOid, baseOid: later });
+  }
+  const [item] = expectOk(await removeWithPlans(root, record, entries.reverse())).items;
+  assert.equal(item.ok, true, JSON.stringify(item));
+  assert.deepEqual(item.releasedPaths, [PLAN_PATH, second]);
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(existsSync(recordFile(root)), false);
+  assert.deepEqual(releaseRefs(root), [item.anchorRef]);
+  assert.equal(
+    git(root, 'ls-tree', '-r', '--name-only', item.anchorRef),
+    [PLAN_PATH, second].join('\n'),
+  );
+});
+
+// Invariant (plan release): a listed plan already moved out of the worktree (no entry at `lstat`,
+// real parents) is proven absent: reported in `absentPaths`, not released, and the otherwise
+// clean worktree is still withdrawn, with no anchor ref for nothing held.
+test('remove: publishedPlans reports a proven-absent listed plan and still withdraws the worktree', async (t) => {
+  const { root, worktree, record, entries } = await publishedPlanning(t);
+  rmSync(join(worktree.worktreePath, 'docs'), { recursive: true });
+  const [item] = expectOk(await removeWithPlans(root, record, entries)).items;
+  assert.equal(item.ok, true, JSON.stringify(item));
+  assert.deepEqual(
+    [item.planReleased, item.releasedPaths, item.absentPaths, item.anchorRef],
+    [true, [], [PLAN_PATH], null],
+  );
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(existsSync(recordFile(root)), false);
+  assert.deepEqual(releaseRefs(root), []);
+});
+
+// Invariant (plan release): only bytes proven to be the published blob leave the worktree. A
+// changed plan, a symbolic link or unlisted untracked plan, an ignored plan under `plan.dir` and a
+// path tracked at `creationOid` refuse before anything is taken; a replacement injected between
+// the eligibility check and the rename (`beforePlanRelease`) is caught on the held entry and put
+// back, and a parent directory swapped for a symbolic link is refused by `realParents` before the
+// rename. Each refusal leaves every file in place, the worktree registered, the record `active`
+// and no anchor ref.
+test('remove: publishedPlans refuses every plan that is not provably the published one', async (t) => {
+  const outside = (root) =>
+    join(root, '..', `${SESSION}-outside-${Math.random().toString(16).slice(2)}`);
+  const cases = [
+    {
+      label: 'changed plan',
+      files: { [PLAN_PATH]: '# Changed after publication\n' },
+      published: { [PLAN_PATH]: PLAN_CONTENT },
+      expect: { code: 'PLAN_NOT_RELEASED', reason: 'changed', path: PLAN_PATH },
+    },
+    {
+      label: 'unlisted extra untracked plan',
+      files: {
+        [PLAN_PATH]: PLAN_CONTENT,
+        'docs/plan/2026-11-27-issue-9-unpublished.md': '# Unpublished\n',
+      },
+      published: { [PLAN_PATH]: PLAN_CONTENT },
+      expect: { code: 'NOT_ELIGIBLE', conditions: [7] },
+    },
+    {
+      label: 'ignored plan under plan.dir',
+      files: {
+        [PLAN_PATH]: PLAN_CONTENT,
+        'docs/plan/2026-11-27-issue-9-ignored.md': '# Ignored\n',
+      },
+      published: { [PLAN_PATH]: PLAN_CONTENT },
+      exclude: 'docs/plan/*-issue-9-*\n',
+      expect: { code: 'NOT_ELIGIBLE', conditions: [7] },
+    },
+    {
+      label: 'replaced between the check and the rename',
+      onPhase: (worktree) => {
+        const target = join(worktree.worktreePath, PLAN_PATH);
+        rmSync(target);
+        symlinkSync('2026-11-27-issue-9-other.md', target);
+      },
+      restored: { [PLAN_PATH]: null },
+      expect: { code: 'PLAN_NOT_RELEASED', reason: 'replaced', path: PLAN_PATH },
+    },
+    {
+      label: 'parent directory swapped for a symbolic link before the rename',
+      onPhase: (worktree, root) => {
+        const moved = outside(root);
+        cpSync(join(worktree.worktreePath, 'docs', 'plan'), moved, { recursive: true });
+        t.after(() => rmSync(moved, { recursive: true, force: true }));
+        rmSync(join(worktree.worktreePath, 'docs', 'plan'), { recursive: true });
+        symlinkSync(moved, join(worktree.worktreePath, 'docs', 'plan'));
+      },
+      expect: { code: 'PLAN_NOT_RELEASED', reason: 'replaced', path: PLAN_PATH },
+    },
+  ];
+  for (const testCase of cases) {
+    const setup = await publishedPlanning(t, {
+      files: testCase.files,
+      published: testCase.published,
+    });
+    const { root, worktree, record, entries } = setup;
+    if (testCase.exclude) writeFileSync(join(root, '.git', 'info', 'exclude'), testCase.exclude);
+    const extra = testCase.onPhase
+      ? {
+          onPhase: (name) => {
+            if (name === 'beforePlanRelease') testCase.onPhase(worktree, root);
+          },
+        }
+      : undefined;
+    const [item] = expectOk(await removeWithPlans(root, record, entries, extra)).items;
+    assert.equal(item.ok, false, `${testCase.label}: ${JSON.stringify(item)}`);
+    for (const [key, value] of Object.entries(testCase.expect)) {
+      assert.deepEqual(item[key], value, `${testCase.label}: ${JSON.stringify(item)}`);
+    }
+    assert.equal(item.planReleased, undefined, testCase.label);
+    assert.equal(item.quarantinePath, undefined, testCase.label);
+    assert.deepEqual(quarantines(worktree), [], testCase.label);
+    const files = testCase.files ?? { [PLAN_PATH]: PLAN_CONTENT };
+    const kept = Object.fromEntries(
+      Object.entries(files).filter(([file]) => testCase.restored?.[file] !== null),
+    );
+    assertNothingReleased(root, worktree, kept, testCase.label);
+    if (testCase.restored) {
+      assert.equal(
+        readlinkTarget(join(worktree.worktreePath, PLAN_PATH)),
+        '2026-11-27-issue-9-other.md',
+        `${testCase.label}: the replacement is put back`,
+      );
+    }
+  }
+
+  // A plan that is a symbolic link before the call is no regular untracked file: condition 7.
+  const linked = await publishedPlanning(t);
+  const target = join(linked.worktree.worktreePath, PLAN_PATH);
+  rmSync(target);
+  symlinkSync('elsewhere.md', target);
+  const [link] = expectOk(await removeWithPlans(linked.root, linked.record, linked.entries)).items;
+  assert.deepEqual([link.code, link.conditions], ['NOT_ELIGIBLE', [7]], JSON.stringify(link));
+  assert.equal(readlinkTarget(target), 'elsewhere.md');
+  assertNothingReleased(linked.root, linked.worktree, {});
+
+  // A path tracked at `creationOid` is never an untracked new plan.
+  const root = repository(t);
+  mkdirSync(join(root, 'docs', 'plan'), { recursive: true });
+  writeFileSync(join(root, PLAN_PATH), PLAN_CONTENT);
+  git(root, 'add', PLAN_PATH);
+  git(root, 'commit', '-q', '-m', 'tracked plan');
+  const base = unintegratedCommit(root);
+  const { worktree, record } = await initializedIssuePlanning(root, base);
+  const blobOid = git(root, 'rev-parse', `${base}:${PLAN_PATH}`);
+  const [tracked] = expectOk(
+    await removeWithPlans(root, record, [
+      { path: PLAN_PATH, blobOid, commitOid: base, baseOid: git(root, 'rev-parse', `${base}^`) },
+    ]),
+  ).items;
+  assert.equal(tracked.ok, false, JSON.stringify(tracked));
+  assert.ok(['NOT_ELIGIBLE', 'PLAN_NOT_RELEASED'].includes(tracked.code), JSON.stringify(tracked));
+  assertNothingReleased(root, worktree, { [PLAN_PATH]: PLAN_CONTENT });
+});
+
+function readlinkTarget(file) {
+  return readlinkSync(file);
+}
+
+// Invariant (plan release): nothing is taken until the listed commit is proven the publication of
+// the path: a commit whose blob, parent, base ancestry or changed paths differ, or that is no
+// local commit, is PLAN_NOT_RELEASED `commit-mismatch` with the path, and the plan stays.
+test('remove: publishedPlans refuses a commit that is not the publication of the listed plan', async (t) => {
+  const variants = {
+    blob: ({ entries }) => [{ ...entries[0], blobOid: 'a'.repeat(40) }],
+    parent: ({ root, entries, base }) => [
+      { ...entries[0], baseOid: git(root, 'rev-parse', `${base}^`) },
+    ],
+    ancestry: ({ root, entries }) => {
+      const orphanTree = git(root, 'mktree', '--missing');
+      const unrelated = git(root, 'commit-tree', orphanTree, '-m', 'unrelated');
+      return [{ ...entries[0], baseOid: unrelated }];
+    },
+    paths: ({ t: context, root, base, entries }) => {
+      const { commitOid } = publicationCommit(context, root, base, {
+        [PLAN_PATH]: PLAN_CONTENT,
+        'docs/plan/2026-11-27-issue-9-extra.md': '# Extra\n',
+      });
+      return [{ ...entries[0], commitOid }];
+    },
+    missing: ({ entries }) => [{ ...entries[0], commitOid: 'b'.repeat(40) }],
+  };
+  for (const [label, variant] of Object.entries(variants)) {
+    const setup = await publishedPlanning(t);
+    const plans = variant({ ...setup, t });
+    if (label === 'ancestry') {
+      // The commit itself must sit on the unrelated base for only the ancestry proof to fail.
+      const { commitOid, blobs } = publicationCommit(t, setup.root, plans[0].baseOid, {
+        [PLAN_PATH]: PLAN_CONTENT,
+      });
+      plans[0] = { ...plans[0], commitOid, blobOid: blobs[PLAN_PATH] };
+    }
+    const [item] = expectOk(await removeWithPlans(setup.root, setup.record, plans)).items;
+    assert.deepEqual(
+      [item.ok, item.code, item.reason, item.path],
+      [false, 'PLAN_NOT_RELEASED', 'commit-mismatch', PLAN_PATH],
+      `${label}: ${JSON.stringify(item)}`,
+    );
+    assertNothingReleased(setup.root, setup.worktree, { [PLAN_PATH]: PLAN_CONTENT }, label);
+  }
+});
+
+// Invariant (plan release): a held entry that cannot be put back without overwriting keeps the
+// quarantine, named as `quarantinePath`; a put-back that `realParents` refuses (a parent swapped
+// for a symbolic link after the rename) is PLAN_NOT_RELEASED `replaced`. Either kept quarantine
+// fails condition 7 of every later `worktree remove` and of cleanup, so its bytes are never lost.
+test('remove: publishedPlans keeps the quarantine when a changed plan cannot be put back', async (t) => {
+  for (const mode of ['occupied', 'parent']) {
+    const { root, worktree, record, entries } = await publishedPlanning(t, {
+      files: { [PLAN_PATH]: '# Changed\n' },
+      published: { [PLAN_PATH]: PLAN_CONTENT },
+    });
+    const planDir = join(worktree.worktreePath, 'docs', 'plan');
+    const moved = join(
+      root,
+      '..',
+      `${SESSION}-moved-${mode}-${Math.random().toString(16).slice(2)}`,
+    );
+    t.after(() => rmSync(moved, { recursive: true, force: true }));
+    const { rename } = await import('node:fs/promises');
+    const fs = {
+      rename: async (from, to) => {
+        await rename(from, to);
+        if (!String(to).includes('.effective-flow-release-')) return;
+        if (mode === 'occupied') writeFileSync(join(worktree.worktreePath, PLAN_PATH), '# New\n');
+        else {
+          mkdirSync(moved);
+          rmSync(planDir, { recursive: true });
+          symlinkSync(moved, planDir);
+        }
+      },
+    };
+    const [item] = expectOk(await removeWithPlans(root, record, entries, { fs })).items;
+    assert.equal(item.code, 'PLAN_NOT_RELEASED', `${mode}: ${JSON.stringify(item)}`);
+    assert.equal(item.reason, mode === 'occupied' ? 'changed' : 'replaced', mode);
+    assert.ok(item.quarantinePath, `${mode}: ${JSON.stringify(item)}`);
+    const heldFiles = readdirSync(item.quarantinePath);
+    assert.equal(heldFiles.length, 1, mode);
+    assert.equal(readFileSync(join(item.quarantinePath, heldFiles[0]), 'utf8'), '# Changed\n');
+    assert.equal(readRecord(root).status, 'active', mode);
+    assert.deepEqual(releaseRefs(root), [], mode);
+
+    if (mode === 'parent') {
+      rmSync(planDir);
+      mkdirSync(planDir);
+    } else rmSync(join(worktree.worktreePath, PLAN_PATH));
+    const [later] = expectOk(
+      await call('worktree remove', {
+        cwd: root,
+        executionRoot: root,
+        sessionId: SESSION,
+        recordIds: [record.recordId],
+      }),
+    ).items;
+    assert.deepEqual([later.code, later.conditions], ['NOT_ELIGIBLE', [7]], mode);
+    await moveTo(root, record, 'aborted', 'plan-preserved');
+    const blocked = planEntry(await plan(root), record.recordId);
+    assert.equal(blocked.item, undefined, mode);
+    assert.deepEqual(blocked.blocked?.conditions, [7], mode);
+    assert.ok(existsSync(item.quarantinePath), mode);
+  }
+});
+
+// Invariant (preserved end state, #810): a refused release is followed by Issue Buddy's
+// `active` → `aborted` (`plan-preserved`) transition; the worktree stays registered, the plan
+// bytes are unchanged, and cleanup refuses it with condition 7 while the plan is there.
+test('remove: a refused plan release ends as a preserved planning worktree', async (t) => {
+  const { root, worktree, record, entries } = await publishedPlanning(t, {
+    files: { [PLAN_PATH]: '# Changed\n' },
+    published: { [PLAN_PATH]: PLAN_CONTENT },
+  });
+  const [item] = expectOk(await removeWithPlans(root, record, entries)).items;
+  assert.deepEqual([item.code, item.reason], ['PLAN_NOT_RELEASED', 'changed']);
+  expectOk(
+    await call('worktree transition', {
+      cwd: root,
+      executionRoot: root,
+      recordId: record.recordId,
+      from: 'active',
+      to: 'aborted',
+      reason: 'plan-preserved',
+      sessionId: SESSION,
+    }),
+  );
+  assert.match(git(root, 'worktree', 'list', '--porcelain'), /issue-planning/);
+  assert.deepEqual(
+    [readRecord(root).status, readRecord(root).reason],
+    ['aborted', 'plan-preserved'],
+  );
+  assert.equal(readFileSync(join(worktree.worktreePath, PLAN_PATH), 'utf8'), '# Changed\n');
+  const blocked = planEntry(await plan(root), record.recordId);
+  assert.equal(blocked.item, undefined);
+  assert.deepEqual(blocked.blocked?.conditions, [7]);
+});
+
+// Invariant (plan release): a failure after the release (here a failing `git worktree remove`)
+// leaves a `cleanup-failed` record that holds no plan, never `plan-preserved`; the plan bytes stay
+// under the anchor ref, the item still reports the release, and ordinary cleanup removes it.
+test('remove: a failure after the plan release leaves a cleanup-failed record that cleanup removes', async (t) => {
+  const { root, worktree, record, entries, blobs } = await publishedPlanning(t);
+  const { runner } = interceptingRunner((args) =>
+    args[0] === 'worktree' && args[1] === 'remove'
+      ? { status: 1, stdout: Buffer.alloc(0), stderr: Buffer.from('fatal: injected failure\n') }
+      : null,
+  );
+  const [item] = expectOk(await removeWithPlans(root, record, entries, { runner })).items;
+  assert.deepEqual([item.ok, item.code, item.planReleased], [false, 'REMOVE_FAILED', true]);
+  assert.deepEqual(item.releasedPaths, [PLAN_PATH]);
+  assert.equal(readRecord(root).status, 'cleanup-failed');
+  assert.equal(existsSync(join(worktree.worktreePath, PLAN_PATH)), false);
+  assert.equal(git(root, 'rev-parse', `${item.anchorRef}:${PLAN_PATH}`), blobs[PLAN_PATH]);
+
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  const result = expectOk(await applyPlanned(root, planned));
+  assert.deepEqual(
+    result.items.map(({ ok }) => ok),
+    [true],
+  );
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(existsSync(recordFile(root)), false);
+  assert.deepEqual(releaseRefs(root), [item.anchorRef]);
+});
+
+// Invariant (ignored plans): every `issue-planning` removal, with or without `publishedPlans` and
+// in cleanup, fails condition 7 on an ignored entry under `plan.dir`, which `git status` never
+// lists, so a gitignored plan is never deleted by `git worktree remove`. An ignored file outside
+// `plan.dir`, such as a hook cache, refuses nothing and is removed with the worktree.
+test('remove: an ignored plan under plan.dir blocks every issue-planning removal; other ignored files do not', async (t) => {
+  const root = repository(t);
+  const { worktree, record } = await initializedIssuePlanning(root, unintegratedCommit(root));
+  writeFileSync(join(root, '.git', 'info', 'exclude'), 'docs/plan/\n.hook-cache/\n');
+  const ignoredPlan = join(worktree.worktreePath, PLAN_PATH);
+  mkdirSync(dirname(ignoredPlan), { recursive: true });
+  writeFileSync(ignoredPlan, PLAN_CONTENT);
+  const [refused] = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  ).items;
+  assert.deepEqual([refused.code, refused.conditions], ['NOT_ELIGIBLE', [7]]);
+  await moveTo(root, record, 'cleanup-ready');
+  const blocked = planEntry(await plan(root), record.recordId);
+  assert.equal(blocked.item, undefined);
+  assert.deepEqual(blocked.blocked?.conditions, [7]);
+  assert.equal(readFileSync(ignoredPlan, 'utf8'), PLAN_CONTENT);
+
+  // With the plan published and released, an ignored hook cache outside plan.dir is removed with
+  // the worktree.
+  const setup = await publishedPlanning(t);
+  writeFileSync(join(setup.root, '.git', 'info', 'exclude'), '.hook-cache/\n');
+  mkdirSync(join(setup.worktree.worktreePath, '.hook-cache'));
+  writeFileSync(join(setup.worktree.worktreePath, '.hook-cache', 'state'), 'cache\n');
+  const [item] = expectOk(await removeWithPlans(setup.root, setup.record, setup.entries)).items;
+  assert.equal(item.ok, true, JSON.stringify(item));
+  assert.equal(existsSync(setup.worktree.worktreePath), false);
+});
+
+// Invariant (plan release input): `publishedPlans` is validated before any record is touched: a
+// malformed entry, a non-canonical path or one outside `plan.dir`, more than one record ID and a
+// combination with `integrationRoot` are INVALID_INPUT. Another session's record stays NOT_OWNER,
+// and this session's record of another purpose or status is NOT_ELIGIBLE, with nothing changed.
+test('remove: publishedPlans input validation, ownership and applicability', async (t) => {
+  const { root, worktree, record, entries } = await publishedPlanning(t);
+  const [entry] = entries;
+  const invalid = {
+    'not an array': entry,
+    empty: [],
+    'missing key': [{ path: entry.path, blobOid: entry.blobOid, commitOid: entry.commitOid }],
+    'extra key': [{ ...entry, mode: '100644' }],
+    'short oid': [{ ...entry, blobOid: entry.blobOid.slice(0, 12) }],
+    'sha256 length': [{ ...entry, commitOid: 'c'.repeat(64) }],
+    'dot segment': [{ ...entry, path: 'docs/./plan/2026-11-27-issue-7-x.md' }],
+    'dotdot segment': [{ ...entry, path: 'docs/plan/../plan/2026-11-27-issue-7-x.md' }],
+    absolute: [{ ...entry, path: `/${entry.path}` }],
+    backslash: [{ ...entry, path: 'docs\\plan/2026-11-27-issue-7-x.md' }],
+    'outside plan.dir': [{ ...entry, path: 'docs/2026-11-27-issue-7-x.md' }],
+    nested: [{ ...entry, path: 'docs/plan/archive/2026-11-27-issue-7-x.md' }],
+    'not a plan name': [{ ...entry, path: 'docs/plan/notes.md' }],
+    repeated: [entry, entry],
+  };
+  for (const [label, publishedPlans] of Object.entries(invalid)) {
+    expectError(await removeWithPlans(root, record, publishedPlans), 'INVALID_INPUT');
+    assert.equal(readRecord(root).status, 'active', label);
+  }
+  expectError(
+    await removeWithPlans(root, record, entries, undefined, {
+      recordIds: [record.recordId, 'record-2'],
+    }),
+    'INVALID_INPUT',
+  );
+  expectError(
+    await removeWithPlans(root, record, entries, undefined, { integrationRoot: root }),
+    'INVALID_INPUT',
+  );
+  const [foreign] = expectOk(
+    await removeWithPlans(root, record, entries, undefined, { sessionId: 'other-session' }),
+  ).items;
+  assert.equal(foreign.code, 'NOT_OWNER');
+  await moveTo(root, record, 'cleanup-ready');
+  const [released] = expectOk(await removeWithPlans(root, record, entries)).items;
+  assert.deepEqual(
+    [released.code, released.reason],
+    ['NOT_ELIGIBLE', 'plan-release-not-applicable'],
+  );
+  assert.equal(readFileSync(join(worktree.worktreePath, PLAN_PATH), 'utf8'), PLAN_CONTENT);
+
+  const other = repository(t);
+  const delivery = await initialized(other);
+  const [purpose] = expectOk(
+    await call('worktree remove', {
+      cwd: other,
+      executionRoot: other,
+      sessionId: SESSION,
+      recordIds: [delivery.record.recordId],
+      publishedPlans: [{ ...entry, commitOid: git(other, 'rev-parse', 'HEAD') }],
+    }),
+  ).items;
+  assert.deepEqual([purpose.code, purpose.purpose], ['NOT_ELIGIBLE', 'delivery']);
+  assert.ok(existsSync(delivery.worktree.worktreePath));
 });

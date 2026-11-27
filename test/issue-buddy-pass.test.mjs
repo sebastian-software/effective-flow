@@ -108,7 +108,7 @@ test('real WP3/WP4 draft publish records confirmed identity; the unchanged next 
   assert.equal(
     exists(world, PLAN),
     true,
-    'no protected removal proof is available, so the new plan survives',
+    'publication alone never removes the plan; only the Phase 2 exit release does, so it survives',
   );
   await release(world, passId);
   const secondId = await acquire(world);

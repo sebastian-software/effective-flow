@@ -190,9 +190,84 @@ test('Issue Buddy passes no forge text, lets the helper derive it, and preserves
     /a refusal with `details\.source: "base-move-flag"` is an item-5 input-contract stop/,
   );
   assert.match(prose, /A moved tip\/base stops; only confirmed success is recordable/);
+});
+
+// Invariant (#810): only a confirmed publication puts a plan on the published-plan list, with the
+// `baseOid` its commit was built on, and the plan leaves its worktree only through the helper's
+// protected release; a push- or create-uncertain plan is never listed and so stays preserved.
+test('Issue Buddy lists only confirmed publications for the protected plan release', () => {
   assert.match(
     prose,
-    /Only after confirmed publication may this pass remove its exact newly created plan/,
+    /From a confirmed `publish --apply` success envelope only, append `\{path: planFile, blobOid, commitOid, baseOid\}` to this pass's published-plan list; the plan is removed only through the protected release at the Phase 2 exit, never by a hash check and an unlink/,
+  );
+  assert.match(
+    prose,
+    /Changed, ambiguous, earlier, failed, unpublished or push\/create-uncertain plans are never listed: they are preserved, and so is the planning worktree that holds them/,
+  );
+  assert.doesNotMatch(
+    prose,
+    /If the filesystem\/harness cannot prove ownership and protected removal/,
+  );
+  assert.doesNotMatch(prose, /Only after confirmed publication may this pass remove/);
+});
+
+// Invariant (#810): the Phase 2 exit passes `publishedPlans` only when every plan written is
+// listed, else keeps the worktree as `plan-preserved` without a remove call; its non-`ok` handling
+// lives in the lazy `worktree-plan-release` fragment, which overrides the generic denial fallback,
+// preserves nothing for an item that reports `removed: true`, and reads `STATUS_MISMATCH` and
+// `RECORD_NOT_FOUND` from the stored status.
+test('Issue Buddy withdraws its planning worktree through the plan release or preserves it', () => {
+  assert.match(
+    prose,
+    /When every plan this pass wrote into it is on the published-plan list \(Phase 5\), or it wrote none, withdraw it with one `worktree remove` call, passing a non-empty list as `publishedPlans`\. When at least one written plan is not listed, make no remove call: transition its record `active` → `aborted` with reason `plan-preserved`, keep it and report its path and issues/,
+  );
+  assert.match(
+    prose,
+    /A call with `publishedPlans` that is not fully `ok` follows `worktree-plan-release`, which overrides the generic denial fallback for this record; a call without it that is not fully `ok` applies the denial fallback/,
+  );
+  const pointers = source.match(/^```lazy-include\nworktree-plan-release\nwhen: [^\n]+\n```$/gm);
+  assert.equal(pointers?.length, 1, 'one lazy pointer at the Phase 2 exit');
+  assert.ok(
+    source.indexOf(pointers[0]) < source.indexOf('## Phase 3: Readiness'),
+    'the pointer sits at the Phase 2 exit rule',
+  );
+  const release = flat(
+    readFileSync(new URL('../src/shared/worktree-plan-release.md', import.meta.url), 'utf8'),
+  );
+  assert.match(
+    release,
+    /This rule overrides the lifecycle denial fallback for the planning record/,
+  );
+  assert.match(
+    release,
+    /An `ok` item, or one that reports `removed: true` \(`BRANCH_RETAINED`, `REMOVE_FAILED`\): the worktree is gone and nothing is preserved/,
+  );
+  assert.match(
+    release,
+    /Every other result, whole-call failures included: call `worktree transition` `active` → `aborted` with reason `plan-preserved`/,
+  );
+  assert.match(
+    release,
+    /`STATUS_MISMATCH` means the release already moved the record on and no plan remains, so report the kept path for `\{\{SKILL:cleanup\}\}`; `RECORD_NOT_FOUND` means the worktree is withdrawn/,
+  );
+});
+
+// Invariant (#810): a v2 report is never rewritten, so Phase 6 runs the planning-worktree exit
+// before `pass-report`, and the leftovers it reports are every plan written minus those an `ok`
+// or `removed: true` item reports released or absent, also after a failed fallback transition.
+test('Issue Buddy withdraws the planning worktree before it persists the report', () => {
+  assert.match(
+    prose,
+    /First withdraw or keep the planning worktree as Phase 2 says, then request `issue-buddy\.mjs pass-report`/,
+  );
+  ordered('First withdraw or keep the', 'Finally attempt `pass-close`');
+  assert.match(
+    prose,
+    /every plan this pass wrote, minus the `releasedPaths` and `absentPaths` of an `ok` item or of one reporting `removed: true`, also when a fallback transition failed/,
+  );
+  assert.doesNotMatch(
+    prose,
+    /Withdraw or keep the planning worktree as Phase 2 says, then attempt/,
   );
 });
 
@@ -389,7 +464,7 @@ test('Issue Buddy plans in a per-pass issue-planning worktree at collect.baseOid
   );
   assert.match(
     prose,
-    /unless Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason `plan-preserved`, keep it and report its path and issue\. The claim is released either way/,
+    /make no remove call: transition its record `active` → `aborted` with reason `plan-preserved`, keep it and report its path and issues\..* The claim is released either way/,
   );
   assert.match(
     prose,

@@ -85,23 +85,12 @@ import {
   selectionRunner,
   transition,
   withRecordLock,
+  worktreeGit,
 } from './effective-flow-state-worktree-core.mjs';
 import { VISIBILITY_VALUES } from './remote-tracker-shared-core.mjs';
 
 function gitOk(result) {
   return !result?.error && result?.status === 0;
-}
-
-// The guarded Git of the proven worktree `root` (`guardedGit`) as the ledger core's restore and
-// unstage call it: `git(args, {stdin, indexFile})`, where `indexFile` points the call at a private
-// index through `GIT_INDEX_FILE` instead of the worktree's own.
-function worktreeGit(context, root) {
-  const inWorktree = guardedGit(context, root);
-  return (args, { stdin, indexFile } = {}) =>
-    inWorktree(args, {
-      ...(stdin === undefined ? {} : { stdin }),
-      ...(indexFile === undefined ? {} : { env: { ...context.env, GIT_INDEX_FILE: indexFile } }),
-    });
 }
 
 // Runs one reused selection function; a DeliverySelectionError (the function could not prove or

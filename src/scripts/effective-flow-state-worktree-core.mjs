@@ -5,7 +5,8 @@
 //   worktree transition   {cwd, executionRoot, recordId, from, to, reason, sessionId, branch?,
 //                          workflow?, fetchedHeadOid?, release?, adoption?, visibility?}
 //   worktree inspect      {cwd, executionRoot, sessionId?}
-//   worktree remove       {cwd, executionRoot, sessionId, recordIds, integrationRoot?}
+//   worktree remove       {cwd, executionRoot, sessionId, recordIds, integrationRoot?,
+//                          publishedPlans?}
 //   cleanup plan          {cwd, executionRoot, decisions?}
 //   cleanup apply         {cwd, executionRoot, decisions?, items}
 //   ledger init           {cwd, executionRoot, recordId, sessionId, manifest, groups, base,
@@ -92,6 +93,23 @@
 // the removal instead. Its failures are the entry's `blockers`; the record is never rewritten
 // before the claim and its branch is retained.
 //
+// Plan release (`publishedPlans`, Issue Buddy only, `worktree-plan-release.md`): `worktree remove`
+// of exactly one record without `integrationRoot` may list the plans the pass published from its
+// `active` `issue-planning` worktree, each `{path, blobOid, commitOid, baseOid}` from a confirmed
+// publication, with `path` directly under the canonical `plan.dir` (`planDirectory`). Under the
+// record lock and before any write, condition 7 accepts exactly the listed paths as untracked
+// regular files (or proven absent: `absentPaths`) and still refuses every other untracked entry, a
+// kept quarantine, a hidden edit and an ignored entry under `plan.dir`; every listed commit must
+// have the single parent `baseOid`, add exactly `path` with `blobOid`, and `baseOid` must descend
+// from `creationOid` (`provenPublication`). The present plans are then released through a
+// quarantine and anchored at `refs/effective-flow/released/<RECORD_ID>/<tree>`
+// (`releasePresentPlans`); only then does the record move to `cleanup-ready` and the ordinary
+// conditions, without tolerance, guard the claim and removal. A refusal before that write
+// (NOT_ELIGIBLE, PLAN_NOT_RELEASED with a reason of PLAN_RELEASE_REASONS, and `quarantinePath`
+// when a held entry could not be put back) leaves the record `active` and every byte in place.
+// Independently, every `issue-planning` removal fails condition 7 on an ignored entry under
+// `plan.dir` (`ignoredPlanEntries`), so a gitignored plan is never deleted without the release.
+//
 // The same cleanup-only flag admits an `issue-planning` record that Issue Buddy kept `aborted` with
 // reason `plan-preserved` (PRESERVED_PLAN_REASON, `preservedPlanRelease`): condition 1 accepts
 // that status for it, and every other condition stays required. Its worktree still holding the
@@ -172,14 +190,22 @@ import {
   scopedGitRunner,
 } from './delivery-selection-core.mjs';
 import {
+  RELEASE_PRESERVE_REF_PREFIX,
   RELEASE_QUARANTINE_PREFIX,
+  anchorBlobs,
+  commitGroupProblems,
   deleteLedger,
   ledgerExists,
   ledgerPaths,
   ledgersDir,
   listLedgerIds,
+  makeQuarantine,
+  readHeldEntry,
   readLedger,
+  realParents,
+  releaseIo,
 } from './effective-flow-state-ledger-core.mjs';
+import { UNATTENDED_PLAN_NAME } from './plan-lint-core.mjs';
 import { VISIBILITY_VALUES } from './remote-tracker-shared-core.mjs';
 import {
   BRANCH_PROOFS,
@@ -370,6 +396,13 @@ export const ITEM_FLOOR_MS = 15_000;
 export const RECONCILE_RESERVE_MS = 10_000;
 export const PROSE_BASH_TIMEOUT_MS = 120_000;
 export const MAX_RECORD_IDS = 64;
+// The `publishedPlans` input of `worktree remove` (see the header): at most this many entries,
+// each with exactly these keys; `plan.dir` defaults to DEFAULT_PLAN_DIR, and a refused release is
+// PLAN_NOT_RELEASED with one of PLAN_RELEASE_REASONS.
+export const MAX_PUBLISHED_PLANS = 64;
+export const PUBLISHED_PLAN_KEYS = Object.freeze(['path', 'blobOid', 'commitOid', 'baseOid']);
+export const DEFAULT_PLAN_DIR = 'docs/plan';
+export const PLAN_RELEASE_REASONS = Object.freeze(['commit-mismatch', 'changed', 'replaced']);
 export const MAX_REPORTED_COMMITS = 64;
 export const WORKTREE_SIGNALS = Object.freeze(['SIGINT', 'SIGTERM', 'SIGHUP']);
 const MAX_RECORD_BYTES = 64 * 1024;
@@ -739,6 +772,8 @@ export function prepare(operation, input, deps) {
   requireClosedKeys(input, OPERATION_KEYS[operation], 'input');
   const context = makeContext(deps);
   context.fs = { ...DEFAULT_FS, ...deps.fs };
+  // The environment the configuration resolver reads (`resolveBases`, `planDirectory`).
+  context.configEnv = deps.env;
   return context;
 }
 
@@ -785,6 +820,39 @@ async function resolveBases(context, deps) {
     applyReview: base('applyReview.worktree.baseDir'),
     locatorStep: config.source.step,
   };
+}
+
+// The `plan.dir` of the configuration `resolveBases` reads (default DEFAULT_PLAN_DIR), as a
+// normalized repository-relative POSIX path (`.` for the repository root), resolved once per call;
+// null when it is set but invalid or the configuration cannot be resolved, so every check that
+// needs it fails closed.
+async function planDirectory(context) {
+  if (context.planDir === undefined) context.planDir = await resolvePlanDirectory(context);
+  return context.planDir;
+}
+
+async function resolvePlanDirectory(context) {
+  let config;
+  try {
+    config = await resolveConfiguration(
+      { cwd: context.cwd, tool: 'cleanup' },
+      { runner: context.runner, env: context.configEnv },
+    );
+  } catch {
+    return null;
+  }
+  const entry = config.values['plan.dir'];
+  if (!entry) return DEFAULT_PLAN_DIR;
+  if (entry.state !== 'set') return null;
+  const value = typeof entry.value === 'string' ? entry.value : entry.raw;
+  if (typeof value !== 'string' || value.trim() === '') return DEFAULT_PLAN_DIR;
+  if (!isText(value) || value.includes('\\') || value.startsWith('/')) return null;
+  const parts = value.replace(/\/+$/, '').split('/');
+  if (parts.length === 1 && parts[0] === '.') return '.';
+  if (parts.some((part) => ['', '.', '..'].includes(part) || part.toLowerCase() === '.git')) {
+    return null;
+  }
+  return parts.join('/');
 }
 
 // The canonical form of `target` when it exists, else `target` itself.
@@ -1142,7 +1210,9 @@ export async function deferSignals(deps, recordId, fn) {
 // cannot be established, fail condition 7 of those callers too (`ignoredEndpoints`), and so does
 // an index entry of the worktree, of any purpose, whose skip-worktree or assume-unchanged bit
 // hides bytes that neither its index nor HEAD holds, or such entries that cannot be established
-// (`hiddenChanges`): `git status` never compares their working tree.
+// (`hiddenChanges`): `git status` never compares their working tree. For purpose `issue-planning`
+// an ignored entry under `plan.dir`, or one that cannot be established, fails condition 7 of those
+// callers as well (`ignoredPlanEntries`): `git status` never lists a gitignored plan.
 //
 // `mergeGateRelease` is the cleanup-only release of a `merge-gate` record, passed only by `cleanup
 // plan` and the item recompute, pre-lock gone gate and claim of `cleanup apply`, never by `worktree
@@ -1196,6 +1266,8 @@ export function evaluateEligibility(
         (facts.quarantineRetained ||
           facts.ignoredEndpoints === null ||
           facts.ignoredEndpoints.length > 0 ||
+          facts.ignoredPlanEntries === null ||
+          (facts.ignoredPlanEntries ?? []).length > 0 ||
           facts.hiddenChanges === null ||
           facts.hiddenChanges.length > 0)))
   ) {
@@ -1419,6 +1491,18 @@ export function guardedGit(context, root) {
     );
 }
 
+// The guarded Git of the proven worktree `root` (`guardedGit`) as the ledger core's restore,
+// unstage and anchor call it: `git(args, {stdin, indexFile})`, where `indexFile` points the call at
+// a private index through `GIT_INDEX_FILE` instead of the worktree's own.
+export function worktreeGit(context, root) {
+  const inWorktree = guardedGit(context, root);
+  return (args, { stdin, indexFile } = {}) =>
+    inWorktree(args, {
+      ...(stdin === undefined ? {} : { stdin }),
+      ...(indexFile === undefined ? {} : { env: { ...context.env, GIT_INDEX_FILE: indexFile } }),
+    });
+}
+
 // The runner the reused `delivery-selection-core.mjs` functions get: Git only in `provenRoots`
 // (a `merge-file` on temporary files runs in the main checkout), always with
 // `core.fsmonitor=false`, with the environment `runGit` gives every helper call.
@@ -1507,15 +1591,99 @@ async function hiddenWorktreeEntries(context, roots, root) {
   }
 }
 
+// Whether `plan.dir` (`planDirectory`) of the proven `issue-planning` worktree of `record` holds
+// an ignored untracked entry (`ignoredPathsAt` for `[plan.dir]`: a file directly under it, below a
+// nested ignored directory, or a file in place of one of its parents; for plan directory `.` any
+// ignored entry of the worktree): `[plan.dir]` when it does, else empty. `git status` never lists
+// such a plan, while `git worktree remove` deletes it. Empty for every other purpose; null when it
+// cannot be established (an invalid `plan.dir`, a listing Git or the file system fails). Only for a
+// worktree whose common directory is proven ours.
+async function ignoredPlanEntries(context, roots, record) {
+  if (record.purpose !== 'issue-planning') return [];
+  const planDir = await planDirectory(context);
+  if (planDir === null) return null;
+  if (planDir === '.') {
+    const listed = await guardedGit(
+      context,
+      record.worktreePath,
+    )(['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory']);
+    if (!gitOk(listed)) return null;
+    return asBuffer(listed.stdout).length > 0 ? ['.'] : [];
+  }
+  try {
+    return await ignoredPathsAt(
+      { root: record.worktreePath, paths: [planDir] },
+      { runner: selectionRunner(context, roots, [record.worktreePath]) },
+    );
+  } catch (error) {
+    if (error instanceof DeliverySelectionError) return null;
+    throw error;
+  }
+}
+
+// The tolerated condition-7 status of a plan release (`publishedPlans`, see the header) in the
+// proven worktree `root`: `{present, absent}` (repository paths, sorted) when every entry of
+// `git status --porcelain=v1 -z --untracked-files=all` is an untracked (`??`) listed path, compared
+// byte for byte, each such path a regular file below real parent directories, and every other
+// listed path proven absent (no entry at `lstat`, every existing parent a real directory); null
+// otherwise, or when Git or the file system cannot establish it. Ignored entries are left to the
+// `ignoredPlanEntries` rule.
+async function toleratedStatus(context, inWorktree, root, plans) {
+  const status = await inWorktree([
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+    '--ignore-submodules=none',
+  ]);
+  if (!gitOk(status)) return null;
+  const listed = new Map(
+    plans.map((plan) => [Buffer.from(plan.path, 'utf8').toString('hex'), plan]),
+  );
+  const untracked = new Set();
+  const out = asBuffer(status.stdout);
+  let start = 0;
+  while (start < out.length) {
+    const end = out.indexOf(0, start);
+    if (end === -1) return null;
+    const entry = out.subarray(start, end);
+    start = end + 1;
+    if (entry.length < 4 || entry.subarray(0, 3).toString('latin1') !== '?? ') return null;
+    const plan = listed.get(entry.subarray(3).toString('hex'));
+    if (!plan) return null;
+    untracked.add(plan.path);
+  }
+  const present = [];
+  const absent = [];
+  for (const plan of plans) {
+    let parents;
+    let info = null;
+    try {
+      parents = await realParents(context.fs, root, plan.path);
+      if (parents) info = await context.fs.lstat(path.join(root, ...plan.path.split('/')));
+    } catch (error) {
+      if (error?.code !== 'ENOENT') return null;
+    }
+    if (untracked.has(plan.path)) {
+      if (!info?.isFile()) return null;
+      present.push(plan.path);
+    } else if (info === null) absent.push(plan.path);
+    else return null;
+  }
+  return { present: present.sort(), absent: absent.sort() };
+}
+
 // Gathers the facts of one valid record. `worktrees` is a fresh porcelain list; `ownLock` the
 // token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID;
 // `mergeGateRelease` adds the `releaseProof` of a `merge-gate` record (see `evaluateEligibility`).
+// `tolerated`, the validated `publishedPlans` of a plan release (`worktree remove` only), replaces
+// the clean status of condition 7 by `toleratedStatus`, whose result is `planRelease`.
 export async function gatherFacts(
   context,
   roots,
   worktrees,
   record,
-  { ownLock = null, ownClaim = null, mergeGateRelease = false },
+  { ownLock = null, ownClaim = null, mergeGateRelease = false, tolerated = null },
 ) {
   const { fs } = context;
   const target = record.worktreePath;
@@ -1542,7 +1710,9 @@ export async function gatherFacts(
     clean: false,
     quarantineRetained: false,
     ignoredEndpoints: [],
+    ignoredPlanEntries: [],
     hiddenChanges: [],
+    planRelease: null,
     isMain: target === roots.cwd || (worktrees[0] ? matches(worktrees[0], target) : false),
     isExecutionRoot: target === roots.executionRoot,
     foreignLock: false,
@@ -1568,15 +1738,21 @@ export async function gatherFacts(
     toplevel = top === null ? null : await canonical(fs, top);
     facts.headOnBranch =
       (await line(['symbolic-ref', '-q', 'HEAD'])) === `refs/heads/${record.branch}`;
-    const status = await inWorktree([
-      'status',
-      '--porcelain',
-      '--untracked-files=all',
-      '--ignore-submodules=none',
-    ]);
-    facts.clean = gitOk(status) && asBuffer(status.stdout).length === 0;
+    if (tolerated === null) {
+      const status = await inWorktree([
+        'status',
+        '--porcelain',
+        '--untracked-files=all',
+        '--ignore-submodules=none',
+      ]);
+      facts.clean = gitOk(status) && asBuffer(status.stdout).length === 0;
+    } else {
+      facts.planRelease = await toleratedStatus(context, inWorktree, target, tolerated);
+      facts.clean = facts.planRelease !== null;
+    }
     facts.quarantineRetained = await retainsQuarantine(fs, target);
     facts.ignoredEndpoints = await ignoredLedgerEndpoints(context, roots, record);
+    facts.ignoredPlanEntries = await ignoredPlanEntries(context, roots, record);
     facts.hiddenChanges = await hiddenWorktreeEntries(context, roots, target);
   }
   facts.branchTip = await branchTip(context, record.branch);
@@ -2862,6 +3038,252 @@ async function worktreeGone(context, record) {
   return { registered, present, gone: !registered && !present };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Plan release (`publishedPlans`, see the header)
+
+// The validated `publishedPlans` of `worktree remove`, sorted by path: 1 to MAX_PUBLISHED_PLANS
+// entries of exactly PUBLISHED_PLAN_KEYS, each `path` a repository-relative POSIX path (no leading
+// `/`, no empty, `.`, `..` or `.git` segment, no backslash or NUL) directly under the canonical
+// `planDir` with an UNATTENDED_PLAN_NAME file name, no path repeated, and each OID a full object
+// ID of the repository's `oidLength`. Anything else is INVALID_INPUT.
+function requirePublishedPlans(value, planDir, oidLength) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_PUBLISHED_PLANS) {
+    fail('INVALID_INPUT', `publishedPlans must list 1 to ${MAX_PUBLISHED_PLANS} plans`);
+  }
+  const plans = value.map((entry, index) => {
+    const label = `publishedPlans[${index}]`;
+    requireObject(entry, label);
+    requireClosedKeys(entry, PUBLISHED_PLAN_KEYS, label);
+    const repoPath = entry.path;
+    if (
+      !isText(repoPath) ||
+      repoPath.includes('\\') ||
+      repoPath.startsWith('/') ||
+      repoPath
+        .split('/')
+        .some((part) => ['', '.', '..'].includes(part) || part.toLowerCase() === '.git')
+    ) {
+      fail('INVALID_INPUT', `${label}.path must be a canonical repository-relative path`);
+    }
+    if (
+      path.posix.dirname(repoPath) !== planDir ||
+      !UNATTENDED_PLAN_NAME.test(path.posix.basename(repoPath))
+    ) {
+      fail('INVALID_INPUT', `${label}.path must be a plan file directly under plan.dir`);
+    }
+    for (const key of ['blobOid', 'commitOid', 'baseOid']) {
+      const oid = entry[key];
+      if (typeof oid !== 'string' || !OID_PATTERN.test(oid) || oid.length !== oidLength) {
+        fail('INVALID_INPUT', `${label}.${key} must be a full object ID of this repository`);
+      }
+    }
+    return {
+      path: repoPath,
+      blobOid: entry.blobOid,
+      commitOid: entry.commitOid,
+      baseOid: entry.baseOid,
+    };
+  });
+  if (new Set(plans.map((plan) => plan.path)).size !== plans.length) {
+    fail('INVALID_INPUT', 'publishedPlans must not repeat a path');
+  }
+  return plans.sort((left, right) => (left.path < right.path ? -1 : 1));
+}
+
+// The object ID length of the repository (`rev-parse --show-object-format`).
+async function objectIdLength(context) {
+  const format = await gitLine(context, context.cwd, ['rev-parse', '--show-object-format']);
+  if (format === 'sha1') return 40;
+  if (format === 'sha256') return 64;
+  fail('GIT_FAILED', 'the object format of the repository cannot be read');
+}
+
+// The NOT_ELIGIBLE refusal of a plan release on a record that is not this session's `active`
+// `issue-planning` record, or null when the release applies.
+function planReleaseRefusal(recordId, record, plans) {
+  if (plans === null || (record.purpose === 'issue-planning' && record.status === 'active')) {
+    return null;
+  }
+  return itemFailure(recordId, 'NOT_ELIGIBLE', {
+    status: record.status,
+    purpose: record.purpose,
+    reason: 'plan-release-not-applicable',
+    conditions: [],
+    blockers: [],
+  });
+}
+
+// Whether `plan` is the confirmed publication of its path for `record`, from the main checkout
+// without replace objects: `commitOid` is a commit whose only parent is `baseOid` and whose one
+// change against it adds `path` as a regular file with `blobOid` (`commitGroupProblems`, plus
+// `path` absent from `baseOid`), `creationOid` is an ancestor of `baseOid`, and `path` is absent
+// from `creationOid`. Any failed or failing check is false.
+async function provenPublication(context, record, plan) {
+  const env = { ...context.env, ...NO_REPLACE_ENV };
+  const run = (args) => runGit(context, context.cwd, args, { env });
+  const problems = await commitGroupProblems(run, {
+    commitOid: plan.commitOid,
+    parentOid: plan.baseOid,
+    group: { endpoints: [{ path: plan.path, kind: 'blob', mode: '100644', oid: plan.blobOid }] },
+  });
+  if (problems.length > 0) return false;
+  const ancestor = await run(['merge-base', '--is-ancestor', record.creationOid, plan.baseOid]);
+  if (!gitOk(ancestor)) return false;
+  for (const tree of [plan.baseOid, record.creationOid]) {
+    const listed = await run(['--literal-pathspecs', 'ls-tree', '-z', tree, '--', plan.path]);
+    if (!gitOk(listed) || asBuffer(listed.stdout).length > 0) return false;
+  }
+  return true;
+}
+
+// The protected release of the proven, present plans `present` (paths of `plans`) from the
+// worktree of `record`, under its record lock: after the `beforePlanRelease` phase, each path in
+// sorted order is renamed into one quarantine directly below the worktree root (`makeQuarantine`,
+// its parents proven real directories right before), its held entry read once (`readHeldEntry`)
+// and required to be a regular file whose `hash-object -w --no-filters` is its `blobOid`. What is
+// proven is exactly what left the worktree. Only when every entry is proven are their blobs
+// anchored as one tree at `refs/effective-flow/released/<RECORD_ID>/<tree>` (`anchorBlobs`) and the
+// quarantine cleared. Otherwise every held entry is put back without overwriting anything (its
+// parents proven again first), and an entry that cannot be put back keeps the quarantine
+// (`quarantinePath`), which fails condition 7 of every later removal. Returns `{ok: true,
+// released, anchorRef}` or a failed item: PLAN_NOT_RELEASED `changed` or `replaced` with the path,
+// GIT_FAILED for a failed hash or anchor, WRITE_FAILED for a quarantine that could not be cleared.
+async function releasePresentPlans(context, record, plans, present, deps) {
+  const recordId = record.recordId;
+  const root = record.worktreePath;
+  await phase(deps, 'beforePlanRelease', { recordId, paths: present });
+  if (present.length === 0) return { ok: true, released: [], anchorRef: null };
+  const io = releaseIo(context.fs);
+  const quarantine = makeQuarantine(io, root);
+  const inWorktree = guardedGit(context, root);
+  const byPath = new Map(plans.map((plan) => [plan.path, plan]));
+  const held = [];
+  const kept = () => (quarantine.kept ? { quarantinePath: quarantine.directory } : {});
+  // Puts every held entry back; true when a parent of its path is no longer a real directory, which
+  // makes the refusal `replaced` whatever started it.
+  const putBackAll = async () => {
+    let parentReplaced = false;
+    for (const taken of [...held].reverse()) {
+      let back = false;
+      try {
+        if (await realParents(io, root, taken.path)) {
+          back = await quarantine.putBack(taken.entry, taken.target);
+        } else parentReplaced = true;
+      } catch {
+        parentReplaced = true;
+      }
+      if (!back) quarantine.keep();
+    }
+    try {
+      await quarantine.clear([]);
+    } catch {
+      quarantine.keep();
+    }
+    return parentReplaced;
+  };
+  const refuse = async (code, details) => {
+    const parentReplaced = await putBackAll();
+    const reason = code === 'PLAN_NOT_RELEASED' && parentReplaced ? { reason: 'replaced' } : {};
+    return itemFailure(recordId, code, { status: record.status, ...details, ...reason, ...kept() });
+  };
+  for (const repoPath of present) {
+    const target = path.join(root, ...repoPath.split('/'));
+    let entry;
+    try {
+      if (!(await realParents(io, root, repoPath))) {
+        return refuse('PLAN_NOT_RELEASED', { reason: 'replaced', path: repoPath });
+      }
+      entry = await quarantine.take(target);
+    } catch {
+      return refuse('PLAN_NOT_RELEASED', { reason: 'replaced', path: repoPath });
+    }
+    held.push({ path: repoPath, target, entry });
+    let read;
+    try {
+      read = await readHeldEntry(io, entry);
+    } catch {
+      return refuse('PLAN_NOT_RELEASED', { reason: 'replaced', path: repoPath });
+    }
+    if (!read.file) return refuse('PLAN_NOT_RELEASED', { reason: 'replaced', path: repoPath });
+    const hashed = await inWorktree(['hash-object', '-w', '--no-filters', '--stdin'], {
+      stdin: read.bytes,
+    });
+    if (!gitOk(hashed)) {
+      return refuse('GIT_FAILED', {
+        message: gitFailureDetail(hashed, 'git hash-object failed'),
+        path: repoPath,
+      });
+    }
+    if (gitStdout(hashed).trim() !== byPath.get(repoPath).blobOid) {
+      return refuse('PLAN_NOT_RELEASED', { reason: 'changed', path: repoPath });
+    }
+  }
+  let anchorRef;
+  try {
+    anchorRef = await anchorBlobs(
+      worktreeGit(context, root),
+      io,
+      held.map((taken) => ({
+        path: taken.path,
+        mode: '100644',
+        oid: byPath.get(taken.path).blobOid,
+      })),
+      `${RELEASE_PRESERVE_REF_PREFIX}/${recordId}`,
+    );
+  } catch (error) {
+    return refuse('GIT_FAILED', { message: error?.message ?? String(error) });
+  }
+  try {
+    await quarantine.clear(held.map((taken) => taken.entry));
+  } catch {
+    quarantine.keep();
+  }
+  if (quarantine.kept) {
+    return itemFailure(recordId, 'WRITE_FAILED', {
+      status: record.status,
+      message: 'the released plans are anchored, but their quarantine could not be cleared',
+      anchorRef,
+      ...kept(),
+    });
+  }
+  return { ok: true, released: [...present], anchorRef };
+}
+
+// The plan release of `plans` for `record` (under its lock, eligible with the tolerated status
+// `planRelease` of `gatherFacts`): the commit proofs of every listed plan, the proven-absent ones
+// included, then the protected release of the present ones. Returns `{ok: true, summary}` with the
+// result fields `{planReleased: true, releasedPaths, absentPaths, anchorRef}`, or a failed item
+// that wrote nothing and left the record `active`: PLAN_NOT_RELEASED `commit-mismatch` with the
+// path, INTERRUPTED, or a refusal of `releasePresentPlans`.
+async function releasePublishedPlans(context, record, plans, planRelease, options, deps) {
+  for (const plan of plans) {
+    if (!(await provenPublication(context, record, plan))) {
+      return itemFailure(record.recordId, 'PLAN_NOT_RELEASED', {
+        status: record.status,
+        reason: 'commit-mismatch',
+        path: plan.path,
+      });
+    }
+  }
+  if (options.signals.signal) {
+    return itemFailure(record.recordId, 'INTERRUPTED', {
+      signal: options.signals.signal,
+      status: record.status,
+    });
+  }
+  const released = await releasePresentPlans(context, record, plans, planRelease.present, deps);
+  if (!released.ok) return released;
+  return {
+    ok: true,
+    summary: {
+      planReleased: true,
+      releasedPaths: released.released,
+      absentPaths: [...planRelease.absent],
+      anchorRef: released.anchorRef,
+    },
+  };
+}
+
 // Runs claim-remove-reconcile for one record. `options`:
 //   sessionId     the owner every record must belong to (`worktree remove`), or null
 //   allowActive   whether an `active` record is first moved to `cleanup-ready`
@@ -2869,6 +3291,7 @@ async function worktreeGone(context, record) {
 //   expectDigest  the selected `itemDigest` re-checked under the lock (`cleanup apply`), or null
 //   mergeGateRelease  the cleanup-only `merge-gate` release (`cleanup apply` only; see
 //                 `evaluateEligibility`), for the pre-lock gone gate and the claim
+//   publishedPlans  the validated plans of a plan release (`worktree remove` only), or null
 //   signals       the signal state of the call
 async function removeOne(context, roots, recordId, options, deps) {
   const paths = recordPaths(roots.cwd, recordId);
@@ -2883,6 +3306,8 @@ async function removeOne(context, roots, recordId, options, deps) {
   if (options.sessionId !== null && first.record.sessionId !== options.sessionId) {
     return itemFailure(recordId, 'NOT_OWNER', { reason: 'session-mismatch' });
   }
+  const notApplicable = planReleaseRefusal(recordId, first.record, options.publishedPlans ?? null);
+  if (notApplicable) return notApplicable;
   const proof = await proveOwnWorktree(context, roots, first.record);
   let gone = false;
   if (!proof.commonDirMatches) {
@@ -2931,6 +3356,13 @@ async function removeOne(context, roots, recordId, options, deps) {
 // with the exact reason, so the record stays the visible truth; only a gone worktree lets the
 // branch policy run and the record be deleted. The `merge-gate` release proof is re-derived here,
 // under the lock and before the claim.
+//
+// With `publishedPlans` (a plan release), condition 7 is first evaluated with the tolerated status
+// of `gatherFacts`, then the commit proofs and the protected release run (`releasePublishedPlans`)
+// under the same lock hold; only after every listed plan is released or proven absent does the
+// record move `active` → `cleanup-ready`, and the conditions are re-derived without any tolerance
+// before the claim. Every refusal before that write leaves the record `active`; every item after
+// it carries the release fields.
 async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, held, options, deps) {
   await phase(deps, 'underLock', { operation: options.operation, recordId });
   const read = await readRecord(context, paths, recordId);
@@ -2942,11 +3374,15 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
   if (options.sessionId !== null && record.sessionId !== options.sessionId) {
     return itemFailure(recordId, 'NOT_OWNER', { reason: 'session-mismatch' });
   }
+  const plans = options.publishedPlans ?? null;
+  const notApplicable = planReleaseRefusal(recordId, record, plans);
+  if (notApplicable) return notApplicable;
   const mergeGateRelease = options.mergeGateRelease === true;
   const worktrees = await listWorktrees(context);
   const facts = await gatherFacts(context, roots, worktrees, record, {
     ownLock: held.token,
     mergeGateRelease,
+    tolerated: plans,
   });
   if (options.expectDigest !== null) {
     if (itemDigest(worktreeDigestInput(record, facts.branchTip)) !== options.expectDigest) {
@@ -2965,15 +3401,42 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
   // The ledger is deleted right before the record, so a `ledgers/` entry the guard refuses fails
   // the item here, before any write or removal (UNSAFE_TARGET): nothing is deleted through it.
   await ledgerExists(context, roots.cwd, recordId);
+  let release = null;
+  if (plans !== null) {
+    const outcome = await releasePublishedPlans(
+      context,
+      record,
+      plans,
+      facts.planRelease,
+      options,
+      deps,
+    );
+    if (!outcome.ok) return outcome;
+    release = outcome.summary;
+  }
+  const withRelease = (item) => (release === null ? item : { ...item, ...release });
   if (record.status === 'active') {
     record = { ...record, status: 'cleanup-ready', reason: null, updatedAt: timestamp(deps) };
     await writeRecord(context, paths, record, held);
   }
-  if (options.signals.signal) {
-    return itemFailure(recordId, 'INTERRUPTED', {
-      signal: options.signals.signal,
-      status: record.status,
+  if (release !== null) {
+    const fresh = await gatherFacts(context, roots, await listWorktrees(context), record, {
+      ownLock: held.token,
     });
+    const again = assessEligibility(fresh, { statuses: CLAIMABLE_STATUSES, removal: true });
+    if (again.conditions.length > 0 || again.blockers.length > 0) {
+      return withRelease(
+        itemFailure(recordId, 'NOT_ELIGIBLE', { status: record.status, ...again }),
+      );
+    }
+  }
+  if (options.signals.signal) {
+    return withRelease(
+      itemFailure(recordId, 'INTERRUPTED', {
+        signal: options.signals.signal,
+        status: record.status,
+      }),
+    );
   }
   record = {
     ...record,
@@ -2985,7 +3448,9 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
   await writeRecord(context, paths, record, held);
   const claimed = record;
   try {
-    return await removeClaimed(context, roots, paths, recordId, claimed, held, options, deps);
+    return withRelease(
+      await removeClaimed(context, roots, paths, recordId, claimed, held, options, deps),
+    );
   } catch (error) {
     // Any error after the claim (a failed or timed-out Git call, a lost lock, a guard refusal)
     // would otherwise leave the record `cleanup-in-progress` under a claim no one finishes. It is
@@ -3000,10 +3465,10 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
       deps,
     );
     if (error && typeof error === 'object') {
-      error.itemDetails = {
+      error.itemDetails = withRelease({
         status: persisted.persisted ? 'cleanup-failed' : claimed.status,
         persisted,
-      };
+      });
     }
     throw error;
   }
@@ -3142,9 +3607,25 @@ export async function removeRecords(input, deps) {
   const context = prepare('worktree remove', input, deps);
   const sessionId = requireSessionId(input.sessionId);
   const recordIds = requireRecordIds(input.recordIds);
+  if (input.publishedPlans !== undefined) {
+    if (input.integrationRoot !== undefined) {
+      fail('INVALID_INPUT', 'publishedPlans cannot be combined with integrationRoot');
+    }
+    if (recordIds.length !== 1) fail('INVALID_INPUT', 'publishedPlans needs exactly one record ID');
+  }
   const clock = startClock(deps);
   boundGit(context, clock);
   const roots = await openRoots(context, input);
+  let publishedPlans = null;
+  if (input.publishedPlans !== undefined) {
+    const planDir = await planDirectory(context);
+    if (planDir === null) fail('INVALID_STATE', 'plan.dir cannot be resolved');
+    publishedPlans = requirePublishedPlans(
+      input.publishedPlans,
+      planDir,
+      await objectIdLength(context),
+    );
+  }
   let integration = null;
   if (input.integrationRoot !== undefined) {
     const entry = await requireRegistered(
@@ -3179,6 +3660,7 @@ export async function removeRecords(input, deps) {
           integration,
           expectDigest: null,
           mergeGateRelease: false,
+          publishedPlans,
           signals,
         },
         deps,

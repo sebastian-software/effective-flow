@@ -385,6 +385,7 @@ export const OPERATION_KEYS = Object.freeze({
     'sessionId',
     'recordIds',
     'integrationRoot',
+    'publishedPlans',
   ]),
   'worktree resume-check': Object.freeze(['cwd', 'executionRoot', 'recordId', 'visibility']),
   'cleanup plan': Object.freeze(['cwd', 'executionRoot', 'decisions']),

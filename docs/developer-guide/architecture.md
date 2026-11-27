@@ -541,8 +541,11 @@ whole-pass lock: each pass keeps a record (`passes/<passId>.json`, `pass-open`/`
 plans only issues it holds a per-issue planning claim for. `cleanup` alone removes leftovers of a
 killed pass, from the read-only `pass-list` inventory, through `pass-prune` (a helper-verified
 `process-dead` proof or confirmed staleness) and `trusted-prune` (trusted text no pass record
-lists); a kept `issue-planning` worktree (`aborted`, reason `plan-preserved`) becomes removable
-once its plan is moved or discarded. The claims are the state helper's
+lists); a pass whose plans were all published unchanged withdraws its `issue-planning` worktree
+after the helper's protected plan release (`worktree remove` with `publishedPlans`, anchored at
+`refs/effective-flow/released/<RECORD_ID>/<tree>`), and keeps it only while a plan is preserved: a
+kept worktree (`aborted`, reason `plan-preserved`) becomes removable once its plan is moved or
+discarded. The claims are the state helper's
 `planning-claim` group (`effective-flow-state-planning-claim-core.mjs`), shared with issue-sourced
 `autopilot`, which claims in `run-init` and releases in `run-close`, and with `plan-issue`. The
 loopback TCP mutation mutex covers only short local state work, never a fetch or forge call, and

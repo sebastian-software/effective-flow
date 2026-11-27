@@ -563,7 +563,8 @@ function outputText(result) {
   return asBuffer(result.stdout).toString('utf8').replace(/\n$/, '');
 }
 
-// The filesystem calls of the restore and the unstage; a caller's `fs` overrides any of them.
+// The filesystem calls of the restore, the unstage and the plan release of
+// `effective-flow-state-worktree-core.mjs`; a caller's `fs` overrides any of them (`releaseIo`).
 const NODE_FS = Object.freeze({
   link: fsLink,
   lstat: fsLstat,
@@ -579,6 +580,12 @@ const NODE_FS = Object.freeze({
   utimes: fsUtimes,
   writeFile: fsWriteFile,
 });
+
+// NODE_FS with the calls of `fs` in place of its own: the `io` every quarantine, capture and
+// anchor below takes.
+export function releaseIo(fs) {
+  return { ...NODE_FS, ...fs };
+}
 
 const RESTORE_STAGED = Object.freeze([
   '--literal-pathspecs',
@@ -713,7 +720,7 @@ async function indexSnapshotProblems(git, byPath, dirty) {
 
 // Whether every parent of `repoPath` below `root` is a real directory: false once one is missing
 // (the path is then absent); a symbolic link or a non-directory parent is UNSAFE_TARGET.
-async function realParents(io, root, repoPath) {
+export async function realParents(io, root, repoPath) {
   const parts = repoPath.split('/');
   let current = root;
   for (const part of parts.slice(0, -1)) {
@@ -811,7 +818,7 @@ async function removeEmptiedParents(fs, root, repoPath) {
   }
 }
 
-// The quarantine of one restore: a private directory directly below the worktree `root` (so a
+// The quarantine of one restore or plan release: a private directory directly below the worktree `root` (so a
 // rename into it never crosses a file system) that holds every file the restore took from a
 // residual path until its bytes are preserved. `take` moves one file or symbolic link in and
 // returns where it is held; `putBack` returns a held entry to its path without replacing anything
@@ -822,7 +829,7 @@ async function removeEmptiedParents(fs, root, repoPath) {
 // nor anchored: that entry and the directory are kept. `keep` leaves the directory and every entry.
 // A kept quarantine, ignored by Git or not, refuses every later release (proof `quarantine`) and
 // removal (condition 7) of the worktree until it is gone.
-function makeQuarantine(io, root) {
+export function makeQuarantine(io, root) {
   const directory = path.join(
     root,
     `${RELEASE_QUARANTINE_PREFIX}${randomBytes(8).toString('hex')}`,
@@ -898,6 +905,43 @@ async function preserveTree(git, scratchIndex, entries, refPrefix) {
   return ref;
 }
 
+// `preserveTree` outside a locked index: anchors `entries` (blobs already in the object database)
+// through a private scratch index beside the index of the worktree `git(args, {stdin, indexFile})`
+// runs in, named with a random token as `withLockedIndex`'s `scratch()` names its files, and
+// removed again (with a lock Git may have left) whatever happens. Returns the ref.
+export async function anchorBlobs(git, io, entries, refPrefix) {
+  const gitDir = outputText(await runOrFail(git, ['rev-parse', '--absolute-git-dir']));
+  if (!path.isAbsolute(gitDir)) {
+    fail('GIT_FAILED', 'git rev-parse returned no absolute Git directory');
+  }
+  const scratch = path.join(
+    gitDir,
+    `index.effective-flow-${randomBytes(8).toString('hex')}-anchor`,
+  );
+  try {
+    return await preserveTree(git, scratch, entries, refPrefix);
+  } finally {
+    await io.unlink(scratch).catch(() => {});
+    await io.unlink(`${scratch}.lock`).catch(() => {});
+  }
+}
+
+// Reads the entry a quarantine holds at `held` once: `lstat`, then the target of a symbolic link
+// or the bytes of a regular file. The entry sits in the private quarantine directory, where
+// nothing else replaces it between the two calls, so this `lstat`-then-read is used instead of
+// opening it with O_NOFOLLOW. Returns `{bytes, mode, link, file}`; `bytes` is null for any other
+// type.
+export async function readHeldEntry(io, held) {
+  const info = await io.lstat(held);
+  const link = info.isSymbolicLink();
+  const file = !link && info.isFile();
+  let bytes = null;
+  if (link) bytes = Buffer.from(await io.readlink(held), 'utf8');
+  else if (file) bytes = await io.readFile(held);
+  const mode = link ? '120000' : info.mode & 0o111 ? '100755' : '100644';
+  return { bytes, mode, link, file };
+}
+
 // The error of a restore that stopped part-way: the code of `error` (WRITE_FAILED for one that is
 // not the helper's), its message, the residual paths this call had already restored and the
 // index entries it had already removed, in the message and as `envelopeDetails.restored` and
@@ -963,7 +1007,7 @@ export async function restoreResidual({
   sourceRecheck,
   preserveRef,
 }) {
-  const io = { ...NODE_FS, ...fs };
+  const io = releaseIo(fs);
   const byPath = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor]));
   const dirty = new Set(residual.dirty);
   const tracked = new Set(residual.tracked);
@@ -1009,12 +1053,7 @@ export async function restoreResidual({
     const held = await quarantine.take(target);
     let mismatch = false;
     try {
-      const heldInfo = await io.lstat(held);
-      const link = heldInfo.isSymbolicLink();
-      let bytes = null;
-      if (link) bytes = Buffer.from(await io.readlink(held), 'utf8');
-      else if (heldInfo.isFile()) bytes = await io.readFile(held);
-      const mode = link ? '120000' : heldInfo.mode & 0o111 ? '100755' : '100644';
+      const { bytes, mode } = await readHeldEntry(io, held);
       if (
         bytes === null ||
         mode !== descriptor.mode ||
