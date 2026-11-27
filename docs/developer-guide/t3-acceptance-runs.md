@@ -116,6 +116,10 @@ Record the evidence on the issue or PR, as #635 did. For each run:
 - UTC timestamps of suspend, turn end, wake and result;
 - deviations from the intended setup.
 
+The `delegate_task` behaviour that the delegation transport depends on (wake, nesting, child tool
+surface, settings and questions) is recorded in
+[T3 delegation transport acceptance](t3-delegation-transport-acceptance.md).
+
 ## Known host gap
 
 `t3_thread_launch` has no origin field, so the link lines in the prompt and in the parent thread are
