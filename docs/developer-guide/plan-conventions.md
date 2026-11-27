@@ -156,6 +156,15 @@ Notes: <comma list or none>
 DONE
 ```
 
+Before the `plan-lint.mjs publication-metadata` check, the `plan` entry runs `plan-publication.mjs scan` with `runState: "unattended"`
+on its own plan after the final lint. It rewords every blocking finding once (inside the
+"Decided by score" block only a JSON string value), then rescans. Findings that remain return
+`ABORT: unattended plan content blocked: <id>, <id>`, listing finding ids only, never matched values
+or plan text; a failed scan is an `ABORT` carrying its diagnostic. When a planner aborts inside an
+Issue Buddy pass, Issue Buddy Phase 4 still verifies the planning worktree. With exactly one new
+plan it runs `publication-metadata` and the same scan, classifies the outcome from those helper
+results, preserves the plan and skips Phase 5.
+
 The result comes from the `reviewResult` that `plan-lint.mjs publication-metadata` returns for the
 final plan; when that check fails because the plan holds duplicate result lines, the run
 consolidates them once and runs the check again. German `Freigegeben`/`Überarbeitung nötig`
