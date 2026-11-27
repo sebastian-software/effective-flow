@@ -1,6 +1,6 @@
 # Map acceptance criteria in derived pull request bodies so Merge Gate can reach complete
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #795
@@ -81,6 +81,7 @@ and one lazy-loaded coverage fragment
   `acceptanceIssues` rebuilds each entry in today's key order, adding `reference` and
   `relationship` from the receipt item. This keeps the `pr-acceptance-sources` output and its
   snapshot byte-identical. The new operation projects its own output from the same result.
+
 - **Ordinals equal Merge Gate's count.** The new operation's `ordinal` is the item's raw 1-based
   position among the section's top-level list items, taken from `sectionListItems` before
   `boundedCriteria` drops empty or duplicate items. A dropped item keeps its ordinal as an entry
@@ -108,6 +109,7 @@ and one lazy-loaded coverage fragment
   This diverges deliberately from Merge Gate, which applies no author gate: an outside author's
   issue stays `undetermined` there. Autopilot already skips `untrusted-author` issue sources
   (`src/shared/autopilot-issue-source.md`), so only direct `pr` runs are affected. Decided by score.
+
 - **Gate: a forge lifecycle receipt from the caller, outside hidden mode.** `pr` makes the call only
   when the invocation carries the caller-supplied `effective-flow-issue-lifecycle:v1` receipt
   machine line (`src/shared/issue-lifecycle-receipt.md`) whose `target` is `forge`, and visibility
@@ -142,6 +144,7 @@ and one lazy-loaded coverage fragment
   Runs without criteria pay nothing beyond the gate. The fragment is the single owner of the
   coverage contract, and `autopilot` and `plan-pr-continuation` inherit it through `pr`. Decided by
   score.
+
 - **Machine-checkable coverage format** (owned by the fragment).
   - **Heading.** The section starts with an acceptance-criteria heading: `Acceptance criteria` or
     `Akzeptanzkriterien`, otherwise translated once per run.
@@ -150,7 +153,7 @@ and one lazy-loaded coverage fragment
     never by the translated heading.
   - **Numbers.** Each number equals the helper's `ordinal`.
   - **Line shape.** Every line has the language-neutral shape `<ordinal>. <paraphrase> — <status>`,
-    with the one fixed separator ` — `.
+    with the one fixed separator `—`.
   - **Status.** The status is exactly one of two values: a covered pointer (the covering file,
     behaviour or commit subject), or the literal not-covered phrase. That phrase is `not covered`
     (en) or `nicht abgedeckt` (de), and is otherwise translated once per run. A `duplicateOf` line
@@ -190,24 +193,24 @@ and one lazy-loaded coverage fragment
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/remote-tracker-core.mjs` | Register `issue-acceptance-criteria` in `REMOTE_OPERATIONS` and `CAPABILITY_BY_OPERATION` (`issueRead`); add its closed input validation (`cwd`; `numbers`: non-empty array of distinct positive integers); factor the shared per-issue function out of `acceptanceIssues`; implement the operation with per-number error isolation and raw ordinals. Output per number: `number`, `trust` (`trusted` / `untrusted-author` / `unreadable` with `code`), `headingFound`, `criteria` as `{ section, ordinal, displayText, displayTruncated, dropped, duplicateOf }` (`duplicateOf` only on a duplicate); plus run-level `truncated` notes; never the raw body or criterion `text` |
-| `src/scripts/remote-tracker.mjs` | Verify that the thin CLI dispatches every registered operation generically; change only if it keeps a per-operation table |
-| `src/scripts/claude-settings-core.mjs` | Add `issue-acceptance-criteria` to the read-only `remote-tracker.mjs` operation list |
-| `src/shared/setup-allowlist.md` | Update the stated allow-rule count (lines 3 and 82) to the count derived from `claude-settings-core.mjs` |
-| `src/shared/pr-criteria-coverage.md` | New lazy fragment: brief addition for `pr/body-draft`, coverage format and body rule, structural Body check clause |
-| `src/shared/model-tiers.md` | Line 118: the `pr/body-draft` site description also names the referenced issues' criteria; tier unchanged |
-| `src/tools/pr.md` | Step 9: extend the read-set sentence (line 302) with the receipt parse and criteria calls; add the gated call paragraph (gate: the forge lifecycle receipt) and the lazy-include pointer; route a single-commit body to `pr/body-draft` when criteria were returned; step 12: one report line for a failed criteria read; update `contextBudget` from the `node build.mjs` report |
-| `test/remote-tracker.test.mjs` | Unit tests for the new operation |
-| `test/setup-allowlist-contract.test.mjs` | Adjust a pinned rule count or operation list, if one exists |
-| `test/workflow-contracts.test.mjs` | New contract test across `pr.md` and the fragment, asserting the pointer and its `when:` clause with `LAZY_INCLUDE_RE` the way the `pr-thread-bound-writer` test does (near lines 6647-6690); the merge-gate trigger table near line 3245 reads only `merge-gate.md` and gets no row; extend the read-set invariant test (near line 23803) |
-| `docs/developer-guide/build-system.md` | Line ~1520 rule count; lines ~2154-2157 `pr/body-draft` inputs |
-| `docs/developer-guide/configuration.md` | Line ~135 read-only operation count |
-| `docs/developer-guide/architecture.md` | Line ~1128 read-only operation count; name the new operation where reads are listed |
-| `docs/user-guide/tools-setup.md` | Lines ~275 and ~283 rule and remote-tracker counts |
-| `docs/user-guide/tools-deliver.md` | `/effective-flow pr` section (lines ~262-404): the coverage section a derived description can now contain, its known limitations (including direct runs without a receipt), and the step 12 line for a failed read |
-| `docs/developer-guide/subagent-progress-coverage.md` | Line 159: set the `pr/body-draft` reference to the spawn site's line after the step 9 edit |
+| File                                                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/remote-tracker-core.mjs`                | Register `issue-acceptance-criteria` in `REMOTE_OPERATIONS` and `CAPABILITY_BY_OPERATION` (`issueRead`); add its closed input validation (`cwd`; `numbers`: non-empty array of distinct positive integers); factor the shared per-issue function out of `acceptanceIssues`; implement the operation with per-number error isolation and raw ordinals. Output per number: `number`, `trust` (`trusted` / `untrusted-author` / `unreadable` with `code`), `headingFound`, `criteria` as `{ section, ordinal, displayText, displayTruncated, dropped, duplicateOf }` (`duplicateOf` only on a duplicate); plus run-level `truncated` notes; never the raw body or criterion `text` |
+| `src/scripts/remote-tracker.mjs`                     | Verify that the thin CLI dispatches every registered operation generically; change only if it keeps a per-operation table                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `src/scripts/claude-settings-core.mjs`               | Add `issue-acceptance-criteria` to the read-only `remote-tracker.mjs` operation list                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `src/shared/setup-allowlist.md`                      | Update the stated allow-rule count (lines 3 and 82) to the count derived from `claude-settings-core.mjs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `src/shared/pr-criteria-coverage.md`                 | New lazy fragment: brief addition for `pr/body-draft`, coverage format and body rule, structural Body check clause                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `src/shared/model-tiers.md`                          | Line 118: the `pr/body-draft` site description also names the referenced issues' criteria; tier unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `src/tools/pr.md`                                    | Step 9: extend the read-set sentence (line 302) with the receipt parse and criteria calls; add the gated call paragraph (gate: the forge lifecycle receipt) and the lazy-include pointer; route a single-commit body to `pr/body-draft` when criteria were returned; step 12: one report line for a failed criteria read; update `contextBudget` from the `node build.mjs` report                                                                                                                                                                                                                                                                                               |
+| `test/remote-tracker.test.mjs`                       | Unit tests for the new operation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `test/setup-allowlist-contract.test.mjs`             | Adjust a pinned rule count or operation list, if one exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `test/workflow-contracts.test.mjs`                   | New contract test across `pr.md` and the fragment, asserting the pointer and its `when:` clause with `LAZY_INCLUDE_RE` the way the `pr-thread-bound-writer` test does (near lines 6647-6690); the merge-gate trigger table near line 3245 reads only `merge-gate.md` and gets no row; extend the read-set invariant test (near line 23803)                                                                                                                                                                                                                                                                                                                                      |
+| `docs/developer-guide/build-system.md`               | Line ~1520 rule count; lines ~2154-2157 `pr/body-draft` inputs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `docs/developer-guide/configuration.md`              | Line ~135 read-only operation count                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `docs/developer-guide/architecture.md`               | Line ~1128 read-only operation count; name the new operation where reads are listed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `docs/user-guide/tools-setup.md`                     | Lines ~275 and ~283 rule and remote-tracker counts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `docs/user-guide/tools-deliver.md`                   | `/effective-flow pr` section (lines ~262-404): the coverage section a derived description can now contain, its known limitations (including direct runs without a receipt), and the step 12 line for a failed read                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `docs/developer-guide/subagent-progress-coverage.md` | Line 159: set the `pr/body-draft` reference to the spawn site's line after the step 9 edit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Implementation details
 
@@ -226,6 +229,7 @@ and one lazy-loaded coverage fragment
      entries, and a repeated item also carries `duplicateOf`, the ordinal of its first occurrence.
 
    Register the capability and the allow rule.
+
 3. **`pr.md` step 9.** Make these edits:
    - Extend the read-set sentence with the receipt parse call and the single criteria call.
    - After the hidden-mode paragraph, add one paragraph, which applies only when a body will be
@@ -335,12 +339,13 @@ Not relevant.
       match.
 - [ ] **No false claims.** A criterion gets the literal not-covered phrase and is never marked
       covered when any of these holds:
-      - the change does not cover it;
-      - the drafter cannot show its coverage from the commits, the stat or the hunks read;
-      - it is truncated or an empty item, or a duplicate whose first occurrence is not covered;
-      - it needs a check result.
+  - the change does not cover it;
+  - the drafter cannot show its coverage from the commits, the stat or the hunks read;
+  - it is truncated or an empty item, or a duplicate whose first occurrence is not covered;
+  - it needs a check result.
 
-      A duplicate of a covered first occurrence repeats its covered status.
+  A duplicate of a covered first occurrence repeats its covered status.
+
 - [ ] **Today's body elsewhere.** The fragment is loaded and the clause applies only when the
       helper returned usable criteria. Hidden mode, an absent or `external` receipt and a direct run
       without a receipt make no `issue-acceptance-criteria` call, and a supplied description is used
@@ -354,19 +359,20 @@ Not relevant.
       cover all of this.
 - [ ] **Contract test.** A contract test in `test/workflow-contracts.test.mjs` fails if any of these
       is lost:
-      - `pr.md` step 9's gated call;
-      - its lazy-include pointer with the trigger;
-      - the single-commit routing;
-      - the step 12 line for a failed criteria read;
-      - the gate paragraph of step 9, which names the receipt and the parse call and never mentions
-        `tracker.mode`;
-      - the fragment's brief addition, coverage rule (with its literal not-covered phrases and
-        separator) or structural Body check clause.
+  - `pr.md` step 9's gated call;
+  - its lazy-include pointer with the trigger;
+  - the single-commit routing;
+  - the step 12 line for a failed criteria read;
+  - the gate paragraph of step 9, which names the receipt and the parse call and never mentions
+    `tracker.mode`;
+  - the fragment's brief addition, coverage rule (with its literal not-covered phrases and
+    separator) or structural Body check clause.
 
-      It also asserts that `pr.md` and the fragment never state the issue-matching heading rule:
-      neither contains `Done criteria` or a numeric bound (3, 20, 64 KiB, 1000). The fragment's
-      own PR-section heading `Acceptance criteria` / `Akzeptanzkriterien` stays allowed. The test
-      also asserts the two verification-claim exemptions.
+  It also asserts that `pr.md` and the fragment never state the issue-matching heading rule:
+  neither contains `Done criteria` or a numeric bound (3, 20, 64 KiB, 1000). The fragment's
+  own PR-section heading `Acceptance criteria` / `Akzeptanzkriterien` stays allowed. The test
+  also asserts the two verification-claim exemptions.
+
 - [ ] **Counts.** Every rule and operation count in the docs and in `setup-allowlist.md` matches
       `claude-settings-core.mjs`.
 - [ ] **CI.** The CI order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`,
@@ -435,6 +441,7 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -529,6 +536,7 @@ Not relevant.
   {"site": "S-DEC", "question": "Which per-number error codes should issue-acceptance-criteria turn into an unreadable entry?", "options": ["Catch three codes", "Catch two codes"], "scores": [{"label": "Catch three codes", "score": 8, "reason": "GitHub issue-read goes through normalizeIssue, which rejects a pull request with INVALID_PAYLOAD. Input is validated before the per-number loop, so catching it only isolates odd provider replies while other refs keep their criteria."}, {"label": "Catch two codes", "score": 4, "reason": "A trusted receipt makes a pull request number rarer but still possible. With this option one such number or bad reply wipes every reference criteria and falls back to the old body with one line, a poor trade for a small gain in noise."}]}
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -537,15 +545,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 2 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 4 |
-| Testability | 0 | 0 | 3 |
-| Scope | 0 | 0 | 2 |
-| Maintainability | 0 | 0 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    2 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    4 |
+| Testability     |        0 |         0 |    3 |
+| Scope           |        0 |         0 |    2 |
+| Maintainability |        0 |         0 |    1 |
 
 ### Findings
 
@@ -582,3 +590,99 @@ pointer. This round decided the three open points and judged the persisted plan 
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Requirement:** When a caller-supplied forge lifecycle receipt references issues (`refs` `#<N>`)
+that state acceptance criteria, the body `pr` derives in step 9 carries one coverage line per
+criterion, so Merge Gate can reach `complete`. Everything else stays as today.
+
+**Architecture decisions:** Implemented as planned:
+
+- the read-only remote-tracker operation `issue-acceptance-criteria`, over the shared per-issue
+  function `acceptanceIssueSource(context, number)`;
+- per-number isolation of only `COMMAND_FAILED`, `INVALID_PAYLOAD` and `TARGET_NOT_FOUND`;
+- raw per-section ordinals, with `dropped` and `duplicateOf`;
+- a gate in `pr.md` step 9 on the receipt, checked with one literal
+  `issue-lifecycle-receipt-parse` call;
+- the lazy fragment `src/shared/pr-criteria-coverage.md`;
+- one step 12 line for a failed criteria read.
+
+`src/shared/merge-gate-issue-observation.md` is untouched.
+
+Deviation (accepted, fail-closed): an item that repeats one from an _earlier section_ is
+`dropped` without `duplicateOf`, because `duplicateOf` is an ordinal within one section. It
+therefore gets the not-covered phrase, and that issue stays `undetermined`.
+`docs/user-guide/tools-deliver.md` lists this as a known limitation. Same-section duplicates
+follow the plan.
+
+**Affected files:**
+
+- `src/scripts/remote-tracker-core.mjs`
+- `src/scripts/claude-settings-core.mjs` (82 read-only rules, 49 remote-tracker reads)
+- `src/shared/setup-allowlist.md`
+- `src/shared/pr-criteria-coverage.md` (new)
+- `src/shared/model-tiers.md`
+- `src/tools/pr.md` (`contextBudget` 527, built 525)
+- `test/remote-tracker.test.mjs`
+- `test/workflow-contracts.test.mjs`
+- `docs/developer-guide/architecture.md`
+- `docs/developer-guide/build-system.md`
+- `docs/developer-guide/configuration.md`
+- `docs/developer-guide/subagent-progress-coverage.md`
+- `docs/user-guide/tools-deliver.md`
+- `docs/user-guide/tools-setup.md`
+
+`src/scripts/remote-tracker.mjs` needed no change, because it dispatches every operation
+generically.
+
+**Implementation details:**
+
+- The criteria walk records each item's section and raw position.
+- `acceptanceIssues` rebuilds its entries in the old key and note order, so the output of
+  `pr-acceptance-sources` is unchanged.
+- The new operation also accepts the dispatcher's own selection keys (`repository`, `remote`,
+  `provider`, `teaLogins`, `probe`).
+- A `dropped` entry carries `displayText: null`.
+- The fragment words the separator as an em dash with one space on each side.
+
+**Test results:**
+
+- New tests:
+  - 14 `issue-acceptance-criteria:` unit tests;
+  - a contract test that `pr` maps referenced issue acceptance criteria into the derived body;
+  - an extended read-set invariant test.
+- Phase 5 full run (CI order through the project runner):
+  - `node build.mjs` and `pnpm test:distribution` passed.
+  - `pnpm agent:check` flagged only this plan file, a pre-existing formatting issue fixed in the
+    completion step.
+  - `pnpm test` reported 13 failing and 4 cancelled timing/process tests. All were in files the
+    change does not touch, and the runner was at 6/6 load.
+  - A targeted base run proved one timeout pre-existing. The other identities passed on base and
+    then passed on the unchanged candidate, so no code change was needed.
+- Phase 7 final validation was targeted at the delta since the Phase 5 tree, plus the earlier
+  failing identities by file:
+  - 1191 and 373 tests passed.
+  - `node build.mjs` and `pnpm test:distribution` passed.
+  - `pnpm agent:check` flagged only this plan file, as before.
+- Behavioural eval verification and the manual `pr` run with a real receipt were not performed.
+  They remain evidence debt for the pull request.
+
+**Review result:** `effective-flow-nodejs-reviewer` reported 5 Notes. F1, F2, F4 and F5 were
+fixed in one incorporation pass, and a scoped re-check confirmed them with no new findings. F3 is
+the cross-section duplicate deviation above, closed as an accepted limitation. No findings were
+offloaded.
+
+## Review findings
+
+**Date:** 2026-11-27
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     4 |
+| Open / Not implemented |     0 |
+
+One further Note (F3) was closed as an accepted, documented fail-closed limitation.

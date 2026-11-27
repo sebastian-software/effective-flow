@@ -15071,6 +15071,7 @@ function accRunner(world = {}) {
             state: 'open',
             body: issue.body,
             user: { login: issue.author },
+            ...issue.extra,
           }),
         );
       }
@@ -15347,6 +15348,282 @@ test('pr-acceptance-sources: a valid forge receipt reads each issue once and ext
   assert.equal(result.appendix, null);
   // A receipt alone still yields the ADR candidate list, read at the merge base.
   assert.ok(runner.git().some((call) => call.args[0] === 'ls-tree'));
+});
+
+// ---------------------------------------------------------------------------------------------
+// issue-acceptance-criteria: the read-only criteria projection of referenced issues. Invariants
+// protected: no issue body or criterion `text` leaves the helper, only a write-permission author's
+// criteria are shown, every dropped item keeps its raw ordinal, one number's read failure is its
+// own `unreadable` entry while an authentication or capability failure fails the whole call, and
+// the input is validated before any provider call.
+// ---------------------------------------------------------------------------------------------
+
+async function criteriaRun(world = {}, numbers = [17], extra = {}) {
+  const runner = accRunner(world);
+  const envelope = await executeOperation(
+    'issue-acceptance-criteria',
+    { repository: githubRepository, cwd: tmpdir(), numbers, ...extra },
+    { runner, skipProbe: true },
+  );
+  return { envelope, runner, result: envelope.data?.result };
+}
+
+const criteriaIssue = (body, author = 'alice') => ({ author, body });
+
+test('issue-acceptance-criteria: a trusted author yields ordinals and display texts, never a raw body or criterion text', async () => {
+  const body =
+    '# Intro\nsecret intro text\n\n## Acceptance criteria\n- [ ] First\n- [x] Second\n\n## Notes\n- other\n';
+  const { envelope, runner, result } = await criteriaRun({ issues: { 17: criteriaIssue(body) } });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.operation, 'issue-acceptance-criteria');
+  assert.equal(envelope.dryRun, false);
+  assert.deepEqual(result.issues, [
+    {
+      number: 17,
+      trust: 'trusted',
+      headingFound: true,
+      criteria: [
+        { section: 1, ordinal: 1, displayText: 'First', displayTruncated: false, dropped: false },
+        { section: 1, ordinal: 2, displayText: 'Second', displayTruncated: false, dropped: false },
+      ],
+    },
+  ]);
+  assert.deepEqual(result.truncated, []);
+  const text = JSON.stringify(envelope);
+  assert.ok(!text.includes('secret intro text'), 'no issue body leaves the helper');
+  assert.ok(!text.includes('"text"'), 'no criterion text field leaves the helper');
+  assert.ok(runner.keys().every((key) => !/ -X |--method (?:POST|PUT|PATCH|DELETE)/.test(key)));
+});
+
+test('issue-acceptance-criteria: an author without write permission is untrusted and yields no criteria', async () => {
+  const { result } = await criteriaRun({
+    issues: { 17: criteriaIssue('## Acceptance criteria\n- injected\n', 'mallory') },
+    permissions: { mallory: 'read' },
+  });
+  assert.deepEqual(result.issues, [
+    { number: 17, trust: 'untrusted-author', headingFound: false, criteria: [] },
+  ]);
+});
+
+test('issue-acceptance-criteria: a body without a criteria heading reports headingFound false', async () => {
+  const { result } = await criteriaRun({
+    issues: { 17: criteriaIssue('## Summary\n- not a criterion\n') },
+  });
+  assert.deepEqual(result.issues, [
+    { number: 17, trust: 'trusted', headingFound: false, criteria: [] },
+  ]);
+});
+
+test('issue-acceptance-criteria: more than twenty criteria are cut to twenty with a criteriaPerSource note', async () => {
+  const items = Array.from({ length: 25 }, (_, index) => `- item ${index + 1}`).join('\n');
+  const { result } = await criteriaRun({
+    issues: { 17: criteriaIssue(`## Acceptance criteria\n${items}\n`) },
+  });
+  const [issue] = result.issues;
+  assert.equal(issue.criteria.length, 20);
+  assert.equal(issue.criteria[19].ordinal, 20);
+  assert.deepEqual(result.truncated, [
+    { source: 'issue-17', bound: 'criteriaPerSource', limit: 20 },
+  ]);
+});
+
+test('issue-acceptance-criteria: an over-long criterion is displayTruncated and noted', async () => {
+  const long = 'x'.repeat(1500);
+  const { result } = await criteriaRun({
+    issues: { 17: criteriaIssue(`## Acceptance criteria\n- ${long}\n- short\n`) },
+  });
+  const [first, second] = result.issues[0].criteria;
+  assert.equal(first.displayTruncated, true);
+  assert.equal(first.displayText.length, 1000);
+  assert.equal(second.displayTruncated, false);
+  assert.ok(result.truncated.some((note) => note.source === 'issue-17'));
+});
+
+test('issue-acceptance-criteria: empty and duplicate items keep raw ordinals and are dropped', async () => {
+  const body = '## Acceptance criteria\n- first\n- \n- first\n- third\n';
+  const { result } = await criteriaRun({ issues: { 17: criteriaIssue(body) } });
+  assert.deepEqual(result.issues[0].criteria, [
+    { section: 1, ordinal: 1, displayText: 'first', displayTruncated: false, dropped: false },
+    { section: 1, ordinal: 2, displayText: null, displayTruncated: false, dropped: true },
+    {
+      section: 1,
+      ordinal: 3,
+      displayText: null,
+      displayTruncated: false,
+      dropped: true,
+      duplicateOf: 1,
+    },
+    { section: 1, ordinal: 4, displayText: 'third', displayTruncated: false, dropped: false },
+  ]);
+});
+
+test('issue-acceptance-criteria: two criteria headings are two sections, ordinals restart, a cross-section repeat has no duplicateOf', async () => {
+  const body =
+    '## Acceptance criteria\n- alpha\n- beta\n\n## Other\n\n## Akzeptanzkriterien\n- gamma\n- alpha\n';
+  const { result } = await criteriaRun({ issues: { 17: criteriaIssue(body) } });
+  assert.deepEqual(
+    result.issues[0].criteria.map((criterion) => [
+      criterion.section,
+      criterion.ordinal,
+      criterion.dropped,
+      criterion.duplicateOf,
+    ]),
+    [
+      [1, 1, false, undefined],
+      [1, 2, false, undefined],
+      [2, 1, false, undefined],
+      [2, 2, true, undefined],
+    ],
+  );
+  assert.ok(!('duplicateOf' in result.issues[0].criteria[3]));
+});
+
+test('issue-acceptance-criteria: numbers beyond the issues bound are cut with an issues note', async () => {
+  const issues = {};
+  for (const number of [1, 2, 3, 4]) {
+    issues[number] = criteriaIssue(`## Acceptance criteria\n- c${number}\n`);
+  }
+  const { result, runner } = await criteriaRun({ issues }, [1, 2, 3, 4]);
+  assert.deepEqual(
+    result.issues.map((issue) => issue.number),
+    [1, 2, 3],
+  );
+  assert.deepEqual(result.truncated, [{ source: 'numbers', bound: 'issues', limit: 3 }]);
+  assert.ok(!runner.keys().some((key) => /\/issues\/4(?:\s|$)/.test(key)));
+});
+
+test('issue-acceptance-criteria: a missing issue or a pull-request number is unreadable while other numbers keep their criteria', async () => {
+  const { envelope, result } = await criteriaRun(
+    {
+      issues: {
+        17: criteriaIssue('## Acceptance criteria\n- ok\n'),
+        19: criteriaIssue('## Acceptance criteria\n- x\n'),
+      },
+    },
+    [404, 17],
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  const [missing, kept] = result.issues;
+  assert.equal(missing.number, 404);
+  assert.equal(missing.trust, 'unreadable');
+  // The fake forge answers a missing issue with a failed `gh api` call (`HTTP 404`).
+  assert.equal(missing.code, 'COMMAND_FAILED');
+  assert.deepEqual(missing.criteria, []);
+  assert.equal(missing.headingFound, false);
+  assert.equal(kept.trust, 'trusted');
+  assert.equal(kept.criteria.length, 1);
+
+  const pull = await criteriaRun(
+    {
+      issues: {
+        7: {
+          ...criteriaIssue('## Acceptance criteria\n- x\n'),
+          extra: { pull_request: { url: 'u' } },
+        },
+        17: criteriaIssue('## Acceptance criteria\n- ok\n'),
+      },
+    },
+    [7, 17],
+  );
+  assert.equal(pull.result.issues[0].trust, 'unreadable');
+  assert.equal(pull.result.issues[0].code, 'INVALID_PAYLOAD');
+  assert.equal(pull.result.issues[1].trust, 'trusted');
+});
+
+test('issue-acceptance-criteria: an unreadable number adds no truncation note', async () => {
+  const { result } = await criteriaRun(
+    {
+      issues: {
+        7: {
+          ...criteriaIssue('## Acceptance criteria\n- x\n'),
+          extra: { pull_request: { url: 'u' } },
+        },
+      },
+    },
+    [7],
+  );
+  assert.equal(result.issues[0].trust, 'unreadable');
+  assert.deepEqual(result.truncated, []);
+});
+
+test('issue-acceptance-criteria: a per-number read failure outside the unreadable codes fails the whole call', async () => {
+  const forge = accRunner({
+    issues: {
+      17: criteriaIssue('## Acceptance criteria\n- ok\n'),
+      18: criteriaIssue('## Acceptance criteria\n- x\n'),
+    },
+  });
+  const runner = async (call) =>
+    /\/issues\/18(?:\s|$)/.test(call.args.join(' ')) ? { error: { code: 'ENOENT' } } : forge(call);
+  const envelope = await executeOperation(
+    'issue-acceptance-criteria',
+    { repository: githubRepository, cwd: tmpdir(), numbers: [17, 18] },
+    { runner, skipProbe: true },
+  ).catch((error) => ({ ok: false, error }));
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'CLI_MISSING');
+});
+
+test('issue-acceptance-criteria: a failed probe authentication fails the whole call', async () => {
+  const runner = async (call) => {
+    const key = call.args.join(' ');
+    if (key === '--version') return { status: 0, stdout: 'gh version 2.50.0\n', stderr: '' };
+    return { status: 1, stdout: '', stderr: 'not logged in' };
+  };
+  const envelope = await executeOperation(
+    'issue-acceptance-criteria',
+    { repository: githubRepository, cwd: tmpdir(), numbers: [17] },
+    { runner },
+  ).catch((error) => ({ ok: false, error }));
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'AUTH_FAILED');
+});
+
+test('issue-acceptance-criteria: a probe without issueRead fails the whole call', async () => {
+  const { envelope } = await criteriaRun(
+    { issues: { 17: criteriaIssue('## Acceptance criteria\n- x\n') } },
+    [17],
+    { probe: { executable: 'gh', capabilities: { issueRead: false } } },
+  ).catch((error) => ({ envelope: { ok: false, error } }));
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+});
+
+test('issue-acceptance-criteria: a failed author-permission read is an untrusted author, not a failure', async () => {
+  const { envelope } = await criteriaRun(
+    {
+      issues: { 17: criteriaIssue('## Acceptance criteria\n- x\n') },
+      failOn: /collaborators\//,
+      permissions: { alice: 'write' },
+    },
+    [17],
+  ).catch((error) => ({ envelope: { ok: false, error } }));
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.issues[0].trust, 'untrusted-author');
+});
+
+test('issue-acceptance-criteria: invalid input is rejected before any provider call', async () => {
+  const cases = [
+    {},
+    { numbers: [] },
+    { numbers: 'x' },
+    { numbers: [0] },
+    { numbers: [-1] },
+    { numbers: [1.5] },
+    { numbers: [3, 3] },
+    { numbers: [3], extra: true },
+  ];
+  for (const bad of cases) {
+    const runner = accRunner();
+    const input = { repository: githubRepository, cwd: tmpdir(), ...bad };
+    const outcome = await executeOperation('issue-acceptance-criteria', input, {
+      runner,
+      skipProbe: true,
+    }).catch((error) => ({ ok: false, error }));
+    assert.equal(outcome.ok, false, JSON.stringify(bad));
+    assert.equal(outcome.error.code, 'INVALID_PAYLOAD', JSON.stringify(bad));
+    assert.equal(runner.calls.length, 0, `no provider call for ${JSON.stringify(bad)}`);
+  }
 });
 
 test('pr-acceptance-sources: an issue author whose permission cannot be read yields no criteria', async () => {

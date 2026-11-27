@@ -1517,7 +1517,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 81 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 82 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -2153,6 +2153,8 @@ record; an `INVALID_*` error records `unverified`. A Fast
   - (e) The orchestrator does not itself read the bulk input the spawn reads, so work actually
     moves. For `pr/body-draft` that bulk is the full diff and the plan content; `--stat`,
     `--name-only` and commit messages stay allowed.
+    The criteria `pr` step 9 reads with `issue-acceptance-criteria` are small quoted data the
+    brief carries (`src/shared/pr-criteria-coverage.md`), not bulk input.
 
   `pr/body-draft` (the PR body draft in `pr` step 9) is the first real `mechanical` site; the
   no-op `merge-gate-delegated-run/nested-spawn-probe` is the only other one.
