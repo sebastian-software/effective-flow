@@ -260,6 +260,10 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
+        'asked. It never counts a withheld finding or one whose normalized signature already appears under',
+      ],
+      [
+        'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
         'Governed by the configuration key `delivery.prReview` with the values `ask` (default), `always`, and',
       ],
       [
