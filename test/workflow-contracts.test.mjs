@@ -5406,7 +5406,7 @@ test('the delegated merge-gate run validates Associated plan at Entry and reject
   // delegated run's Entry, which applies the same check by reference as a backstop.
   assert.match(
     caller,
-    /Before every dispatch, re-dispatches included, or an inline run, resolve it through `plan-reference-resolve` with `cwd` the root `plan\.dir` resolves against \(the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode\) and `planDir` the configured `plan\.dir`; it passes only on `resolved` with `data\.exact` true inside `<plan\.dir>\/` or `<plan\.dir>\/archive\/`\. Drop a line that fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it/,
+    /Before every dispatch, re-dispatches included, or an inline run, resolve it through `node <skill-root>\/scripts\/effective-flow-mechanics\.mjs plan-reference-resolve <<< '\{"cwd":"<root>","planDir":"<plan\.dir>","reference":"<repo-relative path>"\}'`, spelled per the call rule of Phase 0 step 2, with `<root>` the root `plan\.dir` resolves against \(the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode\) and `<plan\.dir>` the configured `plan\.dir`; it passes only on `resolved` with `data\.exact` true inside `<plan\.dir>\/` or `<plan\.dir>\/archive\/`\. Drop a line that fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it/,
   );
   // The criteria sit in the eager core, ahead of the lazy delegated-run pointer.
   ordered(
