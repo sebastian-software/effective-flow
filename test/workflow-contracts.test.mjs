@@ -2954,6 +2954,7 @@ test('the retired-key contract detects at the first configuration read and names
       ['iterate', 'pr', reviewerKeys],
       ['merge-gate', null, ['mergeGate.*']],
       ['retro', null, []],
+      ['focus', null, []],
     ],
   );
   assert.deepEqual(
@@ -3482,6 +3483,22 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
   );
   assert.match(preflight, /continue the merge gate with the same mode and outcome/);
   assert.match(preflight, /never turn an observation failure into a merge blocker/);
+});
+
+// Invariant: a merge-gate pilot failure reports the closed `details.reason` of
+// UNSAFE_RUNTIME_ROOT in the dispatch's final report, as one value-free line.
+test('merge-gate pilot failure reports the closed details.reason of UNSAFE_RUNTIME_ROOT', () => {
+  const preflight = prose(
+    section(
+      source('src/shared/pilot-measurement.md'),
+      '### Phase 0 observation preflight and reservation',
+      '\n### ',
+    ),
+  );
+  assert.match(
+    preflight,
+    /If inventory or reservation fails, .*On `UNSAFE_RUNTIME_ROOT`, this dispatch's final report names the skipped observation in one value-free line with the code, its closed `details\.reason`, and `details\.subcommand` when present\./,
+  );
 });
 
 // Invariant: the deferred configured-reviewer route keeps its single lazy edge and exact headings,
@@ -6622,6 +6639,87 @@ test('the concept handoff stays self-contained text and marks ADR candidates onl
     flat(conceptReview),
     /Mark durable decisions in the concept as ADR candidates with a one-line rationale\. Write no ADR/,
   );
+});
+
+// Invariant: the concept tools route entry-point detail to `effective-engineering` and concept
+// wording to `effective-writing` as pointers. Without the conditional Phase 3 rule and the handoff
+// clauses, a concept with "MCP as a second logical frontend" passes Phase 4 while readers picture
+// different systems, and the judgment sub-agent never learns the tool-local wording owner.
+test('the concept tools route entry-point detail and concept wording to their central owners as pointers', () => {
+  const concept = source('src/tools/concept.md');
+  const conceptReview = source('src/tools/concept-review.md');
+  // Bounded slices only: `effective-writing`, `effective-engineering` and the trigger phrase each
+  // appear in more than one place, so a whole-file match would survive removing the guarded text.
+  const handoff = (text) =>
+    prose(
+      boundedSlice(
+        text,
+        '```include\nskill-discovery\n```',
+        '```include\ncentral-reasoning-delegation',
+      ),
+    );
+  const recommended = (text) =>
+    boundedSlice(text, '## Recommended skills', '## Hard scope boundary');
+
+  const conceptPhase3 = prose(boundedSlice(concept, '### Phase 3:', '### Phase 4:'));
+  assert.match(
+    conceptPhase3,
+    /a second entry point, or adds a runtime component beside existing ones/,
+  );
+  assert.match(
+    conceptPhase3,
+    /call path and owning component in `## Technical direction`, each as decided or open/,
+  );
+  assert.match(conceptPhase3, /a candidate the concept proposes counts as open/);
+
+  const conceptHandoff = handoff(concept);
+  assert.match(conceptHandoff, /routes to `effective-writing`/);
+  assert.match(conceptHandoff, /the judgment handoff names it, with its one-line fallback/);
+  assert.match(conceptHandoff, /second entry point to the same business rules or data/);
+
+  const reviewPhase2 = prose(boundedSlice(conceptReview, '### Phase 2:', '### Phase 3:'));
+  assert.match(
+    reviewPhase2,
+    /second entry point to the same business rules or data, or a new runtime component that shares them, to `effective-engineering`/,
+  );
+  // The relevance gate keeps exactly the include's three owners; wording routes in its own sentence.
+  const gateSentence = boundedSlice(
+    reviewPhase2,
+    'via the relevance gate',
+    'a narrow concept stays narrow',
+  );
+  assert.doesNotMatch(gateSentence, /effective-writing/);
+  assert.match(reviewPhase2, /The wording of the concept text routes to `effective-writing`/);
+  assert.match(reviewPhase2, /"Record as open"/);
+  assert.match(reviewPhase2, /marker `open` \(German: `offen`\)/);
+  assert.match(reviewPhase2, /severity Note, is not applied/);
+  assert.doesNotMatch(reviewPhase2, /decided or open/);
+
+  const conceptPhase4 = prose(boundedSlice(concept, '### Phase 4:', '### Phase 5:'));
+  assert.match(
+    conceptPhase4,
+    /style-only Notes go into one combined `## Risks and open questions` entry/,
+  );
+
+  const reviewHandoff = handoff(conceptReview);
+  assert.match(reviewHandoff, /comes from `effective-writing`/);
+  assert.match(reviewHandoff, /the judgment handoff names it, with its one-line fallback/);
+
+  for (const [name, text] of [
+    ['concept', concept],
+    ['concept-review', conceptReview],
+  ]) {
+    assert.match(
+      recommended(text),
+      /^- `effective-writing` – route-when-relevant for the wording of the concept text/m,
+      `${name} must recommend effective-writing for concept wording`,
+    );
+    assert.match(
+      recommended(text),
+      /style-only findings stay Notes/,
+      `${name} must keep style-only wording findings as Notes`,
+    );
+  }
 });
 
 test('pr never repeats a creation whose mutation may already have succeeded', () => {

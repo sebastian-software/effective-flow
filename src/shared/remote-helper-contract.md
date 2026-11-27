@@ -29,6 +29,11 @@ never as a missing-CLI error.
 remote-tracker-input-files
 ```
 
+```lazy-include
+remote-tracker-operations
+when: a step must choose a remote-tracker operation or input keys its workflow does not spell out, or a helper call returned `INVALID_PAYLOAD` or `INVALID_REFERENCE` for an unknown operation or input field
+```
+
 Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes
 additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`,
 and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API
