@@ -186,23 +186,58 @@ never watches and takes the caller's report-and-stop path.
 
 A **top-level** `{{SKILL:iterate}}` run carries neither a body delimiter nor a `Run state:` line.
 On T3 Code this wait replaces Phase 1.5 step 5's single blocking wait and the Rules' "wait at most
-once"; the cap of three unchanged wakes bounds it instead. When its T3 Code Phase 1.5 question is
-answered `Wait`, call `watch_pull_request` once. Where it cannot be loaded or is rejected, end the
-run with step 5's report naming the running reviewers before any wait line: no sleep, no other
-transport. Otherwise print one visible line naming the running reviewers, stating that the wait has
-no time bound and that the user can continue or stop, and end the turn. While this run is suspended
-in its Phase 1.5 wait, on each wake for this pull request, or a request to continue, re-read once as
-Phase 1.5 step 5 does and observe again:
+once"; the cap of three unchanged wakes bounds it instead.
+
+**Wake gate.** A running reviewer is **wake-capable** only when a pending check entry matching its
+configured `mergeGate.bots.<login>.check` reports `required: true` in the run's current read:
+Phase 1's read for the first decision, step 5's re-read after a wake. It is not wake-capable when no
+entry matches its check, the matching entry reports `required: false` or states no requiredness
+(Forgejo, or a missing field), or it counts as running only through a trigger comment (step 3).
+Unlike the `merge-gate` caller's warning under "Watch.", unstated requiredness counts as not
+wake-capable here. When at least one reviewer counts as running and none is wake-capable, the run
+hands back instead of asking: the hand-back replaces step 4's T3 question and the Rules' "ask once
+per Phase 1.5".
+
+**Wait.** When the T3 question is answered `Wait`, call `watch_pull_request`. Where it cannot be
+loaded or is rejected, end the run with step 5's report naming the running reviewers before any
+wait line: no sleep, no other transport. Otherwise print one visible line naming the running
+reviewers, stating that the wait has no time bound and that the user can continue or stop, and end
+the turn. A watch starts with exactly one `watch_pull_request` call, on `Wait` or on leaving a
+hand-back; re-suspends while it stays on call nothing.
+
+**Hand-back.** A hand-back is a suspension without a watch. Unwatch first while this run's watch is
+on, then print one visible line naming each running reviewer with its evidence (the check name and
+its stated requiredness, or the trigger comment), stating that no event is guaranteed to wake the
+session and offering continue, proceed or stop, and end the turn. A request to continue is
+classified like a wake. Proceed continues as Phase 1.5's `Proceed` does, and step 7 records the
+branch as proceeded; stop ends the run with step 5's report. When a re-read finds a wake-capable
+running reviewer, the hand-back ends: ask the T3 question if this run has never asked it, otherwise
+call `watch_pull_request` once more and suspend as on `Wait`. Estimates and polling follow "Checks
+that are not required.".
+
+**Wakes.** While this run is suspended in its Phase 1.5 wait or hand-back, on each wake for this
+pull request, or a request to continue, re-read once as Phase 1.5 step 5 does and observe again:
 
 - every reviewer finished: continue into Phase 2 with what they produced;
-- a reviewer still running: re-suspend without asking again or calling the watch again. A wake whose
-  re-read changed no reviewer's state or evidence is unchanged; after three consecutive unchanged
-  wakes, end the run with step 5's report. Only unchanged wakes count: a wake that changed a
-  reviewer's state or evidence resets the count;
+- a reviewer still running: the gate decides each re-suspend. Re-suspend when one still running is
+  wake-capable, leaving a hand-back as above, otherwise hand back. A wake whose re-read changed no
+  reviewer's state or evidence is unchanged; after three consecutive counted unchanged wakes, end
+  the run with step 5's report. A wake that changed a reviewer's state or evidence resets the count;
 - a stop request ends the run with that report.
 
-A wake while this run is not suspended in its Phase 1.5 wait, such as while the Phase 2.5 approval
-question is open, continues nothing; restate any open question.
+**Neutral wakes.** An unchanged wake is **neutral** when its re-read also shows an unchanged head,
+no new comment, review or thread, no newly failed required check and no new conflict, and at least
+one required check newly passed: passed now, and not passed or absent in the previous read.
+Non-required checks, failures included, and other merge-state changes do not affect this. A neutral
+wake neither adds to nor resets the count; every other unchanged wake counts. Record each read's
+check states, starting with Phase 1's read, and the unchanged-wake count in the wisdom file with
+what Phase 1.5 step 7 records, before every suspension, the check states as the next comparison's
+baseline. Neutral wakes are bounded: a required check newly passes a bounded number of times per
+head, and a re-run read only after it passes again reads as passed in both reads, so its wake
+counts.
 
-Unwatch before the final report whenever this session watched the pull request, and link after the
+A wake while this run is not suspended in its Phase 1.5 wait or hand-back, such as while the Phase
+2.5 approval question is open, continues nothing; restate any open question.
+
+Unwatch before the final report while this run's watch is on, and link after the
 Phase 5 push per "Linking".
