@@ -2953,6 +2953,7 @@ test('the retired-key contract detects at the first configuration read and names
       ['iterate', 'local', ['delivery.baseBranch']],
       ['iterate', 'pr', reviewerKeys],
       ['merge-gate', null, ['mergeGate.*']],
+      ['retro', null, []],
       ['focus', null, []],
     ],
   );
@@ -6633,6 +6634,62 @@ test('pr never repeats a creation whose mutation may already have succeeded', ()
   assert.match(pr, /Resolve it by repeating the step 8 existing-PR lookup/);
   assert.match(pr, /identifies a pull request by head and base rather than by a number/);
   assert.match(pr, /Retrying the creation is forbidden on every provider/);
+});
+
+test('pr makes no thread-bound PR-create call unless the bound repository, branch and pushed head match the verified handoff', () => {
+  const raw = source('src/tools/pr.md');
+  const pr = flat(raw);
+
+  // Invariant (#782): a thread-bound PR writer takes no explicit head, so it targets whatever
+  // repository, branch and pushed head its thread is bound to. pr.md must load the guard
+  // fragment before any such call, and the guard must verify the binding against the verified
+  // handoff, stop on a mismatch or an unestablished value, and never retry or fall back.
+  const fence =
+    /```lazy-include pr-thread-bound-writer when: before any call to a host PR-create operation that takes no explicit head/g;
+  assert.equal(
+    pr.match(fence)?.length,
+    1,
+    'pr.md carries exactly one lazy-include of pr-thread-bound-writer, gated on a PR-create operation that takes no explicit head',
+  );
+  const fenceAt = raw.search(/```lazy-include\s+pr-thread-bound-writer/);
+  const step9 = raw.search(/^9\. \*\*/m);
+  const step10 = raw.search(/^10\. \*\*Create the PR:\*\*/m);
+  assert.ok(
+    step9 !== -1 && step10 !== -1 && fenceAt > step9 && fenceAt < step10,
+    'the thread-bound writer fence sits after step 9 starts and before step 10 creates the PR',
+  );
+  assert.match(
+    pr,
+    /do not improvise another transport path/,
+    'step 10 still forbids improvising another transport path on a structured error',
+  );
+
+  const guard = flat(source('src/shared/pr-thread-bound-writer.md'));
+  const pins = [
+    ['takes no explicit head', 'defines the thread-bound writer by its missing explicit head'],
+    ['--git-common-dir', 'derives the bound repository from the git common dir'],
+    ['symbolic-ref --quiet --short HEAD', 'probes the bound branch HEAD'],
+    ['t3_worktree_status', 'reads the thread binding report'],
+    ['ls-remote --exit-code origin', 'proves the pushed ref on origin'],
+    ['refs/remotes/origin/<head-branch>', 'checks the upstream of the head branch'],
+    ['disclosure rule', 're-checks the publication text against the disclosure rule'],
+    ['attribution rule', 're-checks the publication text against the attribution rule'],
+    ['cannot be established', 'stops on an unestablished value exactly like a mismatch'],
+    ['expected target', 'reports the expected target'],
+    ['observed target', 'reports the observed target'],
+    ['No competing pull request', 'stops on a competing pull request'],
+    ["continues with step 10's helper", 'returns to the helper path only on a full match'],
+    ['environmentId', 'forbids overriding the environment'],
+    ['no fallback writer', 'prohibits a fallback writer'],
+    ['explicit boolean', 'requires an explicit boolean draft value'],
+    ['headSha', 'reads back the created PR head SHA'],
+    ['result: unverified', 'reports an unverifiable read-back as unverified'],
+    ['never call the writer again', 'never retries the writer'],
+    ['selects no writer and authorizes none', 'selects and authorizes no writer itself'],
+  ];
+  for (const [phrase, property] of pins) {
+    assert.ok(guard.includes(phrase), `pr-thread-bound-writer ${property}: missing "${phrase}"`);
+  }
 });
 
 test('a failed delivery is surfaced as an assigned issue that closes itself', () => {

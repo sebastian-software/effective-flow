@@ -203,7 +203,8 @@ export const SUCCESSOR_SETS = deepFreeze([
     ],
   },
   { tool: 'merge-gate', mode: null, successors: ['mergeGate.*'] },
-  // A read-only caller: it acts on no retired row.
+  // Read-only callers: they act on no retired row.
+  { tool: 'retro', mode: null, successors: [] },
   { tool: 'focus', mode: null, successors: [] },
 ]);
 
