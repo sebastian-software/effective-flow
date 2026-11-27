@@ -1,6 +1,6 @@
 # T3 Code PR watch: document that non-required jobs never wake the session
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #793
@@ -173,6 +173,7 @@ one short section in `docs/developer-guide/t3-acceptance-runs.md`, and one contr
    - it states that a comment a job posts may wake the session but that no rule relies on it.
 
    Match on short stable phrase pairs from the new paragraph, not on the whole paragraph.
+
 6. Run the validation plan below. If the budget report of `node build.mjs` changes for any of the
    six lazy hosts, the eager-core assumption is wrong. Stop and report; do not raise a budget.
 
@@ -281,6 +282,7 @@ Not relevant: no user interface.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -409,6 +411,7 @@ Not relevant: no user interface.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -430,6 +433,7 @@ Not relevant: no user interface.
 ### Findings
 
 The gap analysis came before this review. Its findings were incorporated or decided by score:
+
 - the watching tools were corrected to `merge-gate` and `iterate`;
 - the first-suspension stall became a follow-up;
 - the check of unstated requiredness was added;
@@ -476,3 +480,77 @@ incorporated:
 ## Open points
 
 - No open points.
+
+## Build completion
+
+### Requirement
+
+Issue #793: on T3 Code, a passing check that is not required never wakes a watching session. The
+PR-watch fragment and the acceptance-run guide now say how a run waits for such a job.
+
+### Architecture decisions
+
+- The generic wake rule lives once in the T3 section of `src/shared/host-pr-watch.md`. The
+  repository-specific gate workaround lives in `docs/developer-guide/t3-acceptance-runs.md`, which
+  points to the fragment instead of restating it (scored decision S-CLR 1).
+- The fragment states facts and does not claim that no rule relies on a non-required wake. The
+  `merge-gate` T3 path does watch a pending set of only non-required checks. That first-suspension
+  stall stays a follow-up (scored decision S-BAT 1).
+- The wait rule on line 22 is byte-for-byte unchanged. No `contextBudget` changed.
+
+### Affected files
+
+- `src/shared/host-pr-watch.md`: new paragraph "Checks that are not required." between the wait
+  rule and "The tools.".
+- `docs/developer-guide/t3-acceptance-runs.md`: new section "Waiting for a job that is not
+  required", with the throwaway-branch `needs` workaround and its expected guard failure.
+- `test/workflow-contracts.test.mjs`: new contract test
+  `host-pr-watch T3 section hands a wait on a non-required job back to the user`.
+
+### Implementation details
+
+The paragraph covers four points. A passing non-required check never wakes the session, and
+neither wake of a failing or unstated-requiredness check is guaranteed. Where no tool rule governs
+the wait, the run hands back to the user. A partial required-check wake is ordinary and is
+classified by the `merge-gate` and `iterate` wake rules. A job-posted comment is not relied on.
+The test pins the placement, with every anchor checked for presence, plus the qualifier together
+with the hand-back and the other stable phrases.
+
+### Test results
+
+All checks ran through `t3-project` in the `effective-flow-node24` environment.
+
+- **Phase 5 full run:** at tree `2f36137e`, with all six runner slots busy.
+  - `node --test test/workflow-contracts.test.mjs` passed 623/623.
+  - `pnpm test` had 14 failures, all signal, process-group or timing tests, and none of their
+    files reads a changed file. A local base run at `91d79a21` failed three of them again, so
+    those three are pre-existing: two `host-driver` recovery tests and the
+    `merge-gate-eval-round-lifecycle` round test. The other eleven passed at base and passed on
+    the candidate when re-run by identity.
+  - `node build.mjs` and `pnpm test:distribution` passed.
+  - `pnpm agent:check` flagged only this plan file's formatting, which is fixed at completion.
+- **Phase 7 targeted check:** run after the review corrections.
+  - The five test files that read the changed documents passed 733/733.
+  - `node build.mjs` passed with unchanged Always-loaded core rows.
+  - `pnpm eval <suite> verify` found no integrity error in `merge-gate`, `iterate`, `next-steps`,
+    `build-context` or `focus`. The freshness and evidence debt is accepted under the pragmatic
+    test and release policy.
+
+### Review result
+
+The Node.js reviewer found seven Notes (F1–F6 and N1), with no Critical or Important findings.
+All seven were fixed. `src/shared/host-pr-watch.md` got a full re-pass, because its floor
+classification was uncertain. The other paths got a scoped re-check, and it confirmed every
+correction.
+
+## Review findings
+
+**Date:** 2026-11-27
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     7 |
+| Open / Not implemented |     0 |

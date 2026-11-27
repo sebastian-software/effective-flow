@@ -66,6 +66,30 @@ Report every duration from host timestamps only: thread `createdAt` and `updated
 `startedAt` and `completedAt`, PR check completion times and wake times. Never derive a duration
 from a requested timeout or an estimate.
 
+## Waiting for a job that is not required
+
+That a passing measurement job that is not required never wakes a watching session, and the
+hand-back for such a wait, are stated in the T3 section of
+[`src/shared/host-pr-watch.md`](../../src/shared/host-pr-watch.md); this section covers only the
+setup that is specific to this repository.
+
+To make the required gate wait for the job, use this workaround on a throwaway branch only, never
+on a branch meant to merge:
+
+- Add the measurement job to the `needs` of the required `build` job ("Format, test and build") in
+  `.github/workflows/ci.yml`. `needs` works only within one workflow file, so the measurement job
+  must be a job in `ci.yml`, and its actions follow the repository's commit-pinning rule.
+- Expect the test "ci.yml gates the required job on every unit-test shard and the build checks" in
+  `test/workflow-contracts.test.mjs` to fail on its `needs` assertion. This is the minimum expected
+  failure; record any additional red guard, for example the expectation about `ci.yml` jobs in
+  `test/conflict-validation.test.mjs`, in the run's evidence as a deviation.
+- A `unit-tests` shard then fails long before the measurement job ends and may trigger an early
+  failed-check wake, which usually has nothing to act on. The wake that matters is the later
+  failure of the required "Format, test and build". The gate does not read the measurement job's
+  result, so read the outcome from that job's own log.
+- A wake for the first required check to pass (for example `Shellcheck`, which usually finishes
+  first) is an ordinary no-op wake in such runs.
+
 ## Recording evidence
 
 Record the evidence on the issue or PR, as #635 did. For each run:

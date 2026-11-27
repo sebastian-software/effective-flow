@@ -21,6 +21,15 @@ run: its host identity is the `Host: t3-code` input line alone.
 
 **The host owns every pull-request wait.** Never `sleep`, never run `gh … --watch`, never call `pr-checks-wait`, never poll, and never use Monitor or ScheduleWakeup to wait for a pull request. A wait is one `watch_pull_request` call followed by the end of the turn: the host wakes the session on failed checks, passed required checks, new comments or reviews, and conflicts, and the watch stays on after each wake. A wake is no merge decision; the woken run decides from its own fresh reads. A delegated sub-agent never watches.
 
+**Checks that are not required.** A non-required check that passes never wakes the session. One
+that fails may wake it as a failed check, and a check of unstated requiredness may behave like a
+non-required one; neither wake is guaranteed. Where no tool rule below governs the wait, a run
+that must wait for such a check hands back to the user, naming the check and any completion time
+only as an estimate with its basis from host data, never invented; "Unwatch" applies and polling
+stays forbidden. A wake that reports only part of the required checks as passed is an ordinary
+wake, classified by the `merge-gate` and `iterate` wake rules below like any other. A comment that
+a job posts when it finishes may wake the session like any new comment, but no rule relies on it.
+
 **The tools.** `watch_pull_request`, `link_pull_request` and `unwatch_pull_request` are named
 unqualified on purpose, as `session-rename` names its operation: find each through the
 host's deferred-tool search by that unqualified name, whatever prefix the host adds to it, and call
