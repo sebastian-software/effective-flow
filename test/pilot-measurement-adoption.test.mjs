@@ -1949,6 +1949,12 @@ test('finalize never suspends on caller errors, contention, location faults, or 
     const envelope = await rejection('finalize', input, fx.deps);
     restore();
     assert.equal(envelope.error.code, code, label);
+    // The control rewrap keeps the failed runtime-root check; no other code carries details.
+    if (code === 'UNSAFE_RUNTIME_ROOT') {
+      assert.deepEqual(envelope.error.details, { reason: 'identity-mismatch' }, label);
+    } else {
+      assert.equal('details' in envelope.error, false, label);
+    }
     assert.deepEqual(control(envelope), NEUTRAL, label);
     assert.deepEqual(snapshot(fx, generationId), before, label);
   }

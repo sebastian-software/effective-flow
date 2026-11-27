@@ -182,7 +182,9 @@ The packet timing and identity operations take exactly these keys:
 - Call `finish-packet` once when that packet's initial phase ends: its Quality attempt, its Fast
   success, or its failed Fast attempt plus the single retained-state Quality continuation. Never
   finish or restart the timer between the Fast attempt and that continuation. It adds the key
-  `modelCompliance` with the packet's value from the `execution-profiles` delegation rule.
+  `modelCompliance` with the packet's value from the `execution-profiles` delegation rule. A packet
+  not reserved as `fast`, or whose `start-packet` carried `admission-changed`, sends
+  `not-applicable`.
 - Validation, review, retry, and correction spawns lie outside the interval and count only through
   `qualityCorrectionRounds`. Missing or incompatible data stays unavailable, never zero.
 - An exit that ends the run before every packet completed finalizes as `aborted` or `failed`,

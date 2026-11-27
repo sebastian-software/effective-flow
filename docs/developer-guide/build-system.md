@@ -15,6 +15,7 @@ the prompt-writing rule.
 ```sh
 node build.mjs          # builds native + portable targets into dist/ (alias: pnpm build)
 pnpm test:preflight     # verifies required capabilities in the test environment
+pnpm test:contracts     # checks setup allow rules and subagent progress coverage
 pnpm test               # runs the unit test suite (node:test)
 pnpm format             # formats with oxfmt (Markdown + JS)
 pnpm agent:check        # oxfmt --check, CI mode without write access
@@ -34,25 +35,44 @@ exercises the documented DALO and Skills CLI consumer paths against externally p
 releases of those managers. After every source or installer change, use the same order as CI:
 `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
+For changes to Claude Code setup allow rules or subagent spawn and progress records, run
+`pnpm test:contracts` before the full local suite and fix any failures first. It reuses the
+normal test preflight and runs the two contract files in full. Use `t3-project` where required
+by the checkout. The focused check does not replace `pnpm test` or change the required CI checks.
+
+For delivery evidence, run the focused check on a clean candidate commit in a checkout that
+will not be edited during validation. Record the tested commit SHA, the checkout status before
+and after, and the result. Treat results from a mutable draft as preliminary. If the candidate
+changes or the runner reports a source change, do not carry the result forward to the new state.
+
 In CI the unit suite runs in the `unit-tests` matrix job as three shards, `Unit tests (1/3)` to
-`Unit tests (3/3)`, each running `pnpm test --test-shard=<i>/3 --test-concurrency=4` with its own
-preflight. Each shard runs up to four test files concurrently. The flags follow `pnpm test`
-without a `--` separator: pnpm forwards `--` to the script, and
-`node --test -- <flags>` would read the flags as file patterns. `--test-shard` assigns test files
-round-robin over the sorted file list, not by duration, so adding or renaming a test file
-reshuffles every shard. The required job `Format, test and build` declares `needs: unit-tests`,
-runs under `if: always()` and first runs the `Unit test shards` gate, which fails unless every
-shard succeeded; a skipped required check would count as passing, so a failed, skipped or
-cancelled shard turns the required check red instead. Format check, build, distribution smoke
-tests and eval evidence follow the gate, so a format failure is reported only after all shards
-finish. Re-running only `Format, test and build` does not clear a failed shard, because its gate
-reads the same shard result again: re-run the failed shard, or use "Re-run failed jobs". A cancel
-after the gate step has passed lets `Format, test and build` run to the end: GitHub re-evaluates
-`if:` on cancel and `always()` keeps the job running, so only a force-cancel stops it. `always()` is
+`Unit tests (3/3)`, each running `pnpm test:shard <i>/3 --test-concurrency=4` with its own
+preflight. Each shard runs up to four test files concurrently. The flags follow the script without
+a `--` separator: pnpm forwards `--` to the script, and the shard runner rejects every argument
+outside its allowlist (`--test-concurrency`, `--test-reporter`).
+
+`scripts/shard-tests.mjs` discovers the same files as a bare `node --test` on Node 24 and assigns
+them by runtime from the checked-in table `scripts/shard-weights.json` (wall time in seconds per
+file). Because `node --test` starts its files in alphabetical order, the script simulates each
+shard's run on the concurrency slots and places files heaviest first on the shard whose simulated
+finish time is lowest after adding the file; `--list` prints each shard's files, summed weight and simulated duration. A
+file missing from the table gets a default weight, so a new test file never breaks CI; a table
+entry whose file no longer exists fails `test/shard-tests.test.mjs`. Refresh the table with
+`node scripts/shard-tests.mjs --measure` on a CI runner after larger test moves or when the shard
+durations drift apart.
+
+The broad checks (format check, build, distribution smoke tests and eval evidence) run in the
+`Build checks` job beside the shards. The required job `Format, test and build` declares
+`needs: [unit-tests, checks]`, runs under `if: always()` and has one step, the gate, which fails
+unless both results are `success` and names the job that failed; a skipped required check would
+count as passing, so a failed, skipped or cancelled shard or check turns the required check red
+instead. Re-running only `Format, test and build` does not clear a failed job, because its gate
+reads the same result again: re-run the failed job, or use "Re-run failed jobs". `always()` is
 kept deliberately, because `!cancelled()` would turn a cancelled run's required check into a
 passing "skipped". Locally, `pnpm test` still runs the whole suite in one unsharded run.
-On POSIX, the host-driver test file runs up to two Python cases concurrently, each in its own
-process with its own timeout and cancellation signal.
+On POSIX, the host-driver test file runs its Python cases one after another, each in its own
+process with its own timeout and cancellation signal; running two at once did not shorten the
+slowest CI shard.
 
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
@@ -90,6 +110,8 @@ or `GIT_WORK_TREE`; a Git call aimed at a fixture runs without either. Without t
 validation records limited evidence (checks that need no Git, such as format and build, plus the
 test files that name or import a changed path, with the full suite left to pull-request CI) instead
 of bypassing the preflight with another full-suite run.
+
+When validation runs through the shared `t3-project` runner, the harness's own command timeout (for example the Claude Code Bash tool's foreground or background timeout) counts from the start of the call and includes the runner's capacity wait, not only the run. Set `--max-wait` so that the harness timeout still comfortably covers the longest wait it allows, including the overrun the runtime instructions document, plus the command's run time, and run a full suite in the background with a timeout sized the same way. A call the harness interrupts is no validation result; before repeating it, follow the runner's instructions in `/opt/t3-project-runtime/INSTRUCTIONS.md`, which own its flags, limits and recovery.
 
 ## Placeholder and directive syntax
 
@@ -1058,6 +1080,9 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   a mutation dry run keeps it, and a consuming call removes it after verification. An abandoned
   dry run leaves its file until it is removed by hand. Mutations are dry runs unless `--apply` is present;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
+  The operation reference lives in `src/shared/remote-tracker-operations.md`; adding, removing or
+  re-keying an operation requires a matching row, enforced by
+  `test/remote-tracker-operations-reference.test.mjs`.
 - **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
   with one closed-schema JSON object on standard input. The entry point emits one stable JSON
   envelope and uses nonzero exit codes for structured failures. The core owns guarded local
@@ -1512,9 +1537,14 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 - **Backlog audit.** Invoke it as `node <skill-root>/scripts/backlog-audit.mjs <operation>` with one
   closed-schema JSON object on standard input; `BACKLOG_AUDIT_OPERATIONS` lists the operations
   (permission proof, epic candidates, inventory, bounds, verdict validation with the panel merge,
-  write-set build and apply, the external call check, snapshot cleanup); a large input instead
-  arrives as `{"inputFile": …}`, a file below `.effective-flow/backlog-audit/inputs/` the helper
-  reads and removes. It emits one `{ ok, operation, data }` envelope and returns no third-party
+  write-set build and apply, the external call check, snapshot cleanup); an agent-authored
+  whole input (external issues, primary or panel verdicts, drafts, current items) instead arrives as
+  `{"inputFile": …}`, a file below `.effective-flow/backlog-audit/inputs/` the helper reads and
+  removes. The four hash-bearing results (permission, inventory, merged verdicts, write set) are
+  persisted there by the helper itself, which returns the absolute path as hashed `inputFile`; later
+  operations take it back by reference (`permissionFile`, `inventoryFile`, `mergedFile`,
+  `writeSetFile`), so the agent never re-serialises them, and `snapshot-cleanup` removes them
+  run-scoped (`removedInputs`). It emits one `{ ok, operation, data }` envelope and returns no third-party
   issue or comment text: that text reaches assessors only as quoted files in a per-run snapshot
   below `.effective-flow/backlog-audit/snapshots/`. Forge access goes through the remote-tracker
   core; an external tracker is never contacted, its items arrive from the caller, its writes leave

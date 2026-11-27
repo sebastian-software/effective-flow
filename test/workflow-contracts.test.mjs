@@ -22,7 +22,7 @@ import {
   mergeGateDelegatedRun,
   mergeGateWithDelegatedRun,
 } from './support/merge-gate-source.mjs';
-import { inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
+import { executeOperation, inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
 import {
   classifySetupStem,
   compareSetupCandidates,
@@ -2953,6 +2953,8 @@ test('the retired-key contract detects at the first configuration read and names
       ['iterate', 'local', ['delivery.baseBranch']],
       ['iterate', 'pr', reviewerKeys],
       ['merge-gate', null, ['mergeGate.*']],
+      ['retro', null, []],
+      ['focus', null, []],
     ],
   );
   assert.deepEqual(
@@ -3481,6 +3483,22 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
   );
   assert.match(preflight, /continue the merge gate with the same mode and outcome/);
   assert.match(preflight, /never turn an observation failure into a merge blocker/);
+});
+
+// Invariant: a merge-gate pilot failure reports the closed `details.reason` of
+// UNSAFE_RUNTIME_ROOT in the dispatch's final report, as one value-free line.
+test('merge-gate pilot failure reports the closed details.reason of UNSAFE_RUNTIME_ROOT', () => {
+  const preflight = prose(
+    section(
+      source('src/shared/pilot-measurement.md'),
+      '### Phase 0 observation preflight and reservation',
+      '\n### ',
+    ),
+  );
+  assert.match(
+    preflight,
+    /If inventory or reservation fails, .*On `UNSAFE_RUNTIME_ROOT`, this dispatch's final report names the skipped observation in one value-free line with the code, its closed `details\.reason`, and `details\.subcommand` when present\./,
+  );
 });
 
 // Invariant: the deferred configured-reviewer route keeps its single lazy edge and exact headings,
@@ -6623,6 +6641,87 @@ test('the concept handoff stays self-contained text and marks ADR candidates onl
   );
 });
 
+// Invariant: the concept tools route entry-point detail to `effective-engineering` and concept
+// wording to `effective-writing` as pointers. Without the conditional Phase 3 rule and the handoff
+// clauses, a concept with "MCP as a second logical frontend" passes Phase 4 while readers picture
+// different systems, and the judgment sub-agent never learns the tool-local wording owner.
+test('the concept tools route entry-point detail and concept wording to their central owners as pointers', () => {
+  const concept = source('src/tools/concept.md');
+  const conceptReview = source('src/tools/concept-review.md');
+  // Bounded slices only: `effective-writing`, `effective-engineering` and the trigger phrase each
+  // appear in more than one place, so a whole-file match would survive removing the guarded text.
+  const handoff = (text) =>
+    prose(
+      boundedSlice(
+        text,
+        '```include\nskill-discovery\n```',
+        '```include\ncentral-reasoning-delegation',
+      ),
+    );
+  const recommended = (text) =>
+    boundedSlice(text, '## Recommended skills', '## Hard scope boundary');
+
+  const conceptPhase3 = prose(boundedSlice(concept, '### Phase 3:', '### Phase 4:'));
+  assert.match(
+    conceptPhase3,
+    /a second entry point, or adds a runtime component beside existing ones/,
+  );
+  assert.match(
+    conceptPhase3,
+    /call path and owning component in `## Technical direction`, each as decided or open/,
+  );
+  assert.match(conceptPhase3, /a candidate the concept proposes counts as open/);
+
+  const conceptHandoff = handoff(concept);
+  assert.match(conceptHandoff, /routes to `effective-writing`/);
+  assert.match(conceptHandoff, /the judgment handoff names it, with its one-line fallback/);
+  assert.match(conceptHandoff, /second entry point to the same business rules or data/);
+
+  const reviewPhase2 = prose(boundedSlice(conceptReview, '### Phase 2:', '### Phase 3:'));
+  assert.match(
+    reviewPhase2,
+    /second entry point to the same business rules or data, or a new runtime component that shares them, to `effective-engineering`/,
+  );
+  // The relevance gate keeps exactly the include's three owners; wording routes in its own sentence.
+  const gateSentence = boundedSlice(
+    reviewPhase2,
+    'via the relevance gate',
+    'a narrow concept stays narrow',
+  );
+  assert.doesNotMatch(gateSentence, /effective-writing/);
+  assert.match(reviewPhase2, /The wording of the concept text routes to `effective-writing`/);
+  assert.match(reviewPhase2, /"Record as open"/);
+  assert.match(reviewPhase2, /marker `open` \(German: `offen`\)/);
+  assert.match(reviewPhase2, /severity Note, is not applied/);
+  assert.doesNotMatch(reviewPhase2, /decided or open/);
+
+  const conceptPhase4 = prose(boundedSlice(concept, '### Phase 4:', '### Phase 5:'));
+  assert.match(
+    conceptPhase4,
+    /style-only Notes go into one combined `## Risks and open questions` entry/,
+  );
+
+  const reviewHandoff = handoff(conceptReview);
+  assert.match(reviewHandoff, /comes from `effective-writing`/);
+  assert.match(reviewHandoff, /the judgment handoff names it, with its one-line fallback/);
+
+  for (const [name, text] of [
+    ['concept', concept],
+    ['concept-review', conceptReview],
+  ]) {
+    assert.match(
+      recommended(text),
+      /^- `effective-writing` – route-when-relevant for the wording of the concept text/m,
+      `${name} must recommend effective-writing for concept wording`,
+    );
+    assert.match(
+      recommended(text),
+      /style-only findings stay Notes/,
+      `${name} must keep style-only wording findings as Notes`,
+    );
+  }
+});
+
 test('pr never repeats a creation whose mutation may already have succeeded', () => {
   const pr = flat(source('src/tools/pr.md'));
 
@@ -6632,6 +6731,62 @@ test('pr never repeats a creation whose mutation may already have succeeded', ()
   assert.match(pr, /Resolve it by repeating the step 8 existing-PR lookup/);
   assert.match(pr, /identifies a pull request by head and base rather than by a number/);
   assert.match(pr, /Retrying the creation is forbidden on every provider/);
+});
+
+test('pr makes no thread-bound PR-create call unless the bound repository, branch and pushed head match the verified handoff', () => {
+  const raw = source('src/tools/pr.md');
+  const pr = flat(raw);
+
+  // Invariant (#782): a thread-bound PR writer takes no explicit head, so it targets whatever
+  // repository, branch and pushed head its thread is bound to. pr.md must load the guard
+  // fragment before any such call, and the guard must verify the binding against the verified
+  // handoff, stop on a mismatch or an unestablished value, and never retry or fall back.
+  const fence =
+    /```lazy-include pr-thread-bound-writer when: before any call to a host PR-create operation that takes no explicit head/g;
+  assert.equal(
+    pr.match(fence)?.length,
+    1,
+    'pr.md carries exactly one lazy-include of pr-thread-bound-writer, gated on a PR-create operation that takes no explicit head',
+  );
+  const fenceAt = raw.search(/```lazy-include\s+pr-thread-bound-writer/);
+  const step9 = raw.search(/^9\. \*\*/m);
+  const step10 = raw.search(/^10\. \*\*Create the PR:\*\*/m);
+  assert.ok(
+    step9 !== -1 && step10 !== -1 && fenceAt > step9 && fenceAt < step10,
+    'the thread-bound writer fence sits after step 9 starts and before step 10 creates the PR',
+  );
+  assert.match(
+    pr,
+    /do not improvise another transport path/,
+    'step 10 still forbids improvising another transport path on a structured error',
+  );
+
+  const guard = flat(source('src/shared/pr-thread-bound-writer.md'));
+  const pins = [
+    ['takes no explicit head', 'defines the thread-bound writer by its missing explicit head'],
+    ['--git-common-dir', 'derives the bound repository from the git common dir'],
+    ['symbolic-ref --quiet --short HEAD', 'probes the bound branch HEAD'],
+    ['t3_worktree_status', 'reads the thread binding report'],
+    ['ls-remote --exit-code origin', 'proves the pushed ref on origin'],
+    ['refs/remotes/origin/<head-branch>', 'checks the upstream of the head branch'],
+    ['disclosure rule', 're-checks the publication text against the disclosure rule'],
+    ['attribution rule', 're-checks the publication text against the attribution rule'],
+    ['cannot be established', 'stops on an unestablished value exactly like a mismatch'],
+    ['expected target', 'reports the expected target'],
+    ['observed target', 'reports the observed target'],
+    ['No competing pull request', 'stops on a competing pull request'],
+    ["continues with step 10's helper", 'returns to the helper path only on a full match'],
+    ['environmentId', 'forbids overriding the environment'],
+    ['no fallback writer', 'prohibits a fallback writer'],
+    ['explicit boolean', 'requires an explicit boolean draft value'],
+    ['headSha', 'reads back the created PR head SHA'],
+    ['result: unverified', 'reports an unverifiable read-back as unverified'],
+    ['never call the writer again', 'never retries the writer'],
+    ['selects no writer and authorizes none', 'selects and authorizes no writer itself'],
+  ];
+  for (const [phrase, property] of pins) {
+    assert.ok(guard.includes(phrase), `pr-thread-bound-writer ${property}: missing "${phrase}"`);
+  }
 });
 
 test('a failed delivery is surfaced as an assigned issue that closes itself', () => {
@@ -12144,47 +12299,70 @@ test('ci.yml keeps the job names the develop ruleset requires', () => {
   }
 });
 
-test('ci.yml shards the unit suite and gates the required job on every shard', async () => {
-  // Invariant: every unit test still runs inside the required status `Format, test and build`.
-  // The suite runs in the `unit-tests` matrix, and the required job fails unless the matrix
-  // aggregate is `success`, which it is only when every shard succeeded. A skipped required check
-  // passes, so nothing may skip the required job, fail a shard quietly or filter tests out of it.
+test('ci.yml gates the required job on every unit-test shard and the build checks', async () => {
+  // Invariant: every unit test and every broad package check still runs inside the required
+  // status `Format, test and build`. The suite runs in the `unit-tests` matrix and the checks in
+  // the parallel `checks` job; the required job fails unless every needed job's result is
+  // `success`, which a matrix reports only when every shard succeeded. A skipped required check
+  // passes, so nothing may skip the required job, fail a shard or a check quietly, or filter
+  // tests out of the suite.
   const { spawnSync } = await import('node:child_process');
   const ci = source('.github/workflows/ci.yml');
   const jobs = parseWorkflowYaml(ci).get('jobs');
   const shards = jobs.get('unit-tests');
+  const checks = jobs.get('checks');
   const build = jobs.get('build');
   assert.ok(shards, 'ci.yml must declare the unit-tests job');
-  assert.ok(
-    ci.indexOf('\n  unit-tests:\n') < ci.indexOf('\n  build:\n'),
-    'unit-tests must precede build so the build job slice stays bounded by shellcheck',
-  );
+  assert.ok(checks, 'ci.yml must declare the checks job');
+  assert.ok(build, 'ci.yml must declare the build job');
+  // The file order bounds the job slices other assertions cut by their neighbor's key.
+  ordered(ci, '\n  unit-tests:\n', '\n  checks:\n', '\n  build:\n', '\n  shellcheck:\n');
 
-  // The required job waits for the shards and runs whatever their result.
-  assert.equal(build.get('needs'), 'unit-tests');
+  // The required job waits for both jobs and runs whatever their result.
+  const needs = build.get('needs');
+  assert.deepEqual(needs, ['unit-tests', 'checks']);
   assert.equal(build.get('if'), 'always()');
   assert.equal(build.has('continue-on-error'), false);
+  // It reads only `needs` results, so it holds no token scope: naming one scope `none` drops
+  // every unnamed one too.
+  assert.deepEqual([...build.get('permissions')], [['contents', 'none']]);
 
-  // Its first step is the gate: unconditional, never tolerated as a failure, reading the result
-  // through `env:` rather than an expression spliced into the script.
-  const gate = build.get('steps')[0];
-  assert.equal(gate.get('name'), 'Unit test shards');
+  // Its only step is the gate: unconditional, never tolerated as a failure, no checkout or
+  // action, and reading one result per needed job through `env:` rather than an expression
+  // spliced into the script.
+  const buildSteps = build.get('steps');
+  assert.equal(buildSteps.length, 1, 'the gate job must run exactly one step');
+  const [gate] = buildSteps;
+  assert.equal(gate.get('name'), 'Unit test shards and build checks');
   assert.equal(gate.has('if'), false);
   assert.equal(gate.has('continue-on-error'), false);
   assert.equal(gate.has('uses'), false);
+  const variable = (job) => `${job.toUpperCase().replace(/-/g, '_')}_RESULT`;
   const variables = [...gate.get('env')];
-  assert.deepEqual(variables, [['UNIT_TESTS_RESULT', '${{ needs.unit-tests.result }}']]);
+  assert.deepEqual(
+    variables,
+    needs.map((job) => [variable(job), `\${{ needs.${job}.result }}`]),
+    'the gate env keys must equal the needs list exactly',
+  );
   const script = gate.get('run');
   assert.doesNotMatch(script, /\$\{\{/);
-  // Exercise the gate body: only `success` passes; every other aggregate fails the job.
-  for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
-    const run = spawnSync('bash', ['-e', '-c', script], {
+  // Exercise the gate body: it passes only when every needed result is `success`; any other
+  // result of any one needed job fails it.
+  const runGate = (results) =>
+    spawnSync('bash', ['-e', '-c', script], {
       encoding: 'utf8',
       timeout: 5_000,
-      env: { ...process.env, UNIT_TESTS_RESULT: result },
+      env: { ...process.env, ...results },
     });
-    if (result === 'success') assert.equal(run.status, 0, run.stderr);
-    else assert.notEqual(run.status, 0, `the gate must fail on "${result}"`);
+  const allSuccess = Object.fromEntries(needs.map((job) => [variable(job), 'success']));
+  const passing = runGate(allSuccess);
+  assert.equal(passing.status, 0, passing.stderr);
+  for (const job of needs) {
+    for (const result of ['failure', 'cancelled', 'skipped', '']) {
+      const run = runGate({ ...allSuccess, [variable(job)]: result });
+      assert.notEqual(run.status, 0, `the gate must fail when ${job} is "${result}"`);
+      assert.match(run.stderr, new RegExp(job), `the gate log must name ${job}`);
+    }
   }
 
   // The shard job: no condition and no tolerated failure, so a red shard reaches the gate.
@@ -12198,35 +12376,48 @@ test('ci.yml shards the unit suite and gates the required job on every shard', a
   const testSteps = shards.get('steps').filter((step) => step.get('name') === 'Unit tests');
   assert.equal(testSteps.length, 1);
   const [testStep] = testSteps;
-  // Pinned literally. No `--` separator: pnpm forwards it, and `node --test -- <flags>` reads
-  // the flags as file patterns.
-  assert.equal(
-    testStep.get('run'),
-    'pnpm test --test-shard=${{ matrix.shard }}/3 --test-concurrency=4',
-  );
+  // Pinned literally. No `--` separator: pnpm forwards it, and the shard runner rejects every
+  // argument outside its allowlist.
+  assert.equal(testStep.get('run'), 'pnpm test:shard ${{ matrix.shard }}/3 --test-concurrency=4');
   assert.equal(testStep.has('if'), false);
   assert.equal(testStep.has('continue-on-error'), false);
-  // `--test-shard=i/N` runs only shard i of N, so a matrix shorter than N silently drops shards.
-  const total = Number(
-    testStep.get('run').match(/--test-shard=\$\{\{ matrix\.shard \}\}\/(\d+)/)[1],
-  );
+  // `i/N` runs only shard i of N, so a matrix shorter than N silently drops shards.
+  const total = Number(testStep.get('run').match(/test:shard \$\{\{ matrix\.shard \}\}\/(\d+)/)[1]);
   assert.equal(matrix.length, total);
   assert.deepEqual(
     matrix.map(Number),
     Array.from({ length: total }, (_, index) => index + 1),
   );
 
-  // The shards check out the same history as the build job (matched without the action ref).
+  // The checks job: no dependency, condition or tolerated failure on the job or any step, so a
+  // red check reaches the gate, and only read access to the checkout.
+  for (const key of ['needs', 'if', 'continue-on-error']) {
+    assert.equal(checks.has(key), false, `the checks job must not declare ${key}`);
+  }
+  assert.deepEqual([...checks.get('permissions')], [['contents', 'read']]);
+  for (const step of checks.get('steps')) {
+    assert.equal(step.has('if'), false, `checks step ${step.get('name') ?? step.get('uses')}`);
+    assert.equal(step.has('continue-on-error'), false);
+  }
+
+  // The shards check out the same history as the checks job (matched without the action ref).
   const checkoutInputs = (job) =>
     job
       .get('steps')
       .filter((step) => /^actions\/checkout@/.test(step.get('uses') ?? ''))
       .map((step) => [...(step.get('with') ?? [])]);
-  assert.deepEqual(checkoutInputs(shards), checkoutInputs(build));
+  assert.deepEqual(checkoutInputs(shards), checkoutInputs(checks));
   assert.deepEqual(checkoutInputs(shards), [[['fetch-depth', '0']]]);
+  assert.deepEqual(checkoutInputs(build), []);
 
-  // No test filter may thin out the suite anywhere in the workflow.
-  assert.doesNotMatch(ci, /--test-name-pattern|--test-skip-pattern|--test-only/);
+  // No test filter may thin out the suite anywhere in the workflow or in the shard script it
+  // runs. The shard runner names these flags to reject them; its behavioural test covers it.
+  const filters = /--test-name-pattern|--test-skip-pattern|--test-only/;
+  assert.doesNotMatch(ci, filters);
+  const shardScript = JSON.parse(source('package.json')).scripts['test:shard'];
+  assert.equal(typeof shardScript, 'string', 'package.json must declare the test:shard script');
+  assert.match(shardScript, /scripts\/shard-tests\.mjs/);
+  assert.doesNotMatch(shardScript, filters);
 });
 
 test('ci.yml cancels a superseded pull-request run only on the first attempt of a new push', () => {
@@ -12247,23 +12438,25 @@ test('package evidence reporting preserves broad checks and identical freshness 
   // Invariant: no branch-name bypass, omitted suite or ignored verifier failure may hide debt or
   // invalid evidence, and reporting must follow every mandatory broad package check.
   const ci = source('.github/workflows/ci.yml');
-  const buildJob = boundedSlice(ci, '  build:\n', '\n  shellcheck:');
-  // The unit suite runs in the `unit-tests` shards that this job gates on; the broad checks
-  // that stay here keep their order.
+  const checksJob = boundedSlice(ci, '  checks:\n', '\n  build:');
+  // The broad checks run in the `checks` job, beside the unit-test shards, and keep their order;
+  // the required `build` job gates on both.
   ordered(
-    buildJob,
-    'name: Unit test shards',
+    checksJob,
     'pnpm agent:check',
     'node build.mjs',
     'pnpm test:distribution',
     'name: Behavioural eval evidence',
   );
-  // Relaxed from "no job condition" to exactly `if: always()`: a skipped required check passes,
-  // so the job must run even when a shard failed or the run was cancelled, and any other
-  // condition could skip it.
-  assert.deepEqual(buildJob.slice(0, buildJob.indexOf('    steps:')).match(/^ {4}if:.*$/gm), [
-    '    if: always()',
-  ]);
+  // The gate job keeps exactly `if: always()`: a skipped required check passes, so the job must
+  // run even when a shard or a check failed or the run was cancelled, and any other condition
+  // could skip it.
+  const buildJob = boundedSlice(ci, '  build:\n', '\n  shellcheck:');
+  assert.deepEqual(buildJob.match(/^ {4}if:.*$/gm), ['    if: always()']);
+  // No job or step condition: the checks job must run on every pull request and report its
+  // result to the gate, so any condition here could hide a check.
+  assert.doesNotMatch(checksJob, /^\s*if:/m);
+  assert.doesNotMatch(checksJob, /continue-on-error/);
   const step = shellCode(workflowStep(ci, 'Behavioural eval evidence'));
   assert.doesNotMatch(
     step,
@@ -12285,6 +12478,7 @@ test('package evidence reporting preserves broad checks and identical freshness 
   assert.match(step, /status=\$suite_status/);
   assert.match(step, /exit "\$status"/);
   assert.match(step, /GITHUB_STEP_SUMMARY/);
+  assert.doesNotMatch(checksJob, /Build-context provisional PR581 release disposition/);
   assert.doesNotMatch(buildJob, /Build-context provisional PR581 release disposition/);
 });
 
@@ -13031,6 +13225,67 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
     /Keep the marker\s*for every other outcome, `terminal \(cancelled\)` included/,
   );
   assert.match(observation, /Never force-close an issue/);
+});
+
+// Invariant: the post-merge guidance shows an `issue-state-wait` call the helper accepts on the
+// first invocation, so a reader copying it never hits a rejected call and a retry.
+test('merge-gate issue observation shows an issue-state-wait call the helper accepts', async () => {
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const step = boundedSlice(fragment, '2. Give auto-close automation', '3. **Assess completion');
+  const calls = [...step.matchAll(/remote-tracker\.mjs issue-state-wait <<< '([^']*)'/g)];
+  assert.equal(calls.length, 1, 'step 2 must show exactly one issue-state-wait call');
+  assert.equal(
+    calls[0][1],
+    '{"cwd":"<RUNTIME_STATE_ROOT>","issue":<issue number>}',
+    'shown payload',
+  );
+  const parsed = JSON.parse(calls[0][1].replace('<issue number>', '17'));
+  assert.deepEqual(Object.keys(parsed), ['cwd', 'issue']);
+  assert.equal(parsed.cwd, '<RUNTIME_STATE_ROOT>');
+  assert.equal(parsed.issue, 17);
+  assert.match(
+    prose(step),
+    near('no timeout, wait or polling field', '30-second maximum is fixed'),
+  );
+
+  const recorded = [];
+  const runner = async (plan) => {
+    recorded.push(plan);
+    if (plan.executable === 'git' && plan.args[0] === 'rev-parse') {
+      return { status: 0, stdout: 'true\n', stderr: '' };
+    }
+    if (plan.executable === 'git' && plan.args[0] === 'remote') {
+      return { status: 0, stdout: 'https://github.com/example/flow.git\n', stderr: '' };
+    }
+    return {
+      status: 0,
+      stderr: '',
+      stdout:
+        'HTTP/2 200 OK\ncontent-type: application/json\n\n' +
+        JSON.stringify({
+          number: 17,
+          title: 't',
+          body: '',
+          state: 'closed',
+          labels: [],
+          html_url: 'https://github.com/example/flow/issues/17',
+        }),
+    };
+  };
+  const sleeps = [];
+  const sleeper = async (ms) => {
+    sleeps.push(ms);
+  };
+  const result = await executeOperation(
+    'issue-state-wait',
+    { ...parsed, cwd: '/main/checkout' },
+    { runner, skipProbe: true, sleeper },
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.data.result.outcome, 'terminal');
+  assert.equal(recorded.length, 3);
+  for (const plan of recorded) assert.equal(plan.cwd, '/main/checkout');
+  assert.deepEqual(sleeps, []);
 });
 
 test('external started-state configuration is tracker-verified and only setup persists suggestions', () => {
@@ -27706,13 +27961,20 @@ function hostPrWatchT3Section() {
 }
 
 // Invariant: the T3 PR-watch procedure is a deferred fragment reached only through a lazy pointer in
-// merge-gate, iterate and pr, so no run on another host and no other tool pays for it.
-test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', () => {
+// merge-gate, iterate, pr, apply-issues and apply-review-remote, so no run on another host and no
+// other tool pays for it.
+test('host-pr-watch is lazy in merge-gate, iterate, pr, apply-issues and apply-review-remote and eager nowhere', () => {
   assert.ok(
     existsSync(new URL(HOST_PR_WATCH_PATH, repositoryRoot)),
     `${HOST_PR_WATCH_PATH} must exist`,
   );
-  for (const path of [MERGE_GATE_PATH, 'src/tools/iterate.md', 'src/tools/pr.md']) {
+  for (const path of [
+    MERGE_GATE_PATH,
+    'src/tools/iterate.md',
+    'src/tools/pr.md',
+    'src/tools/apply-issues.md',
+    'src/tools/apply-review-remote.md',
+  ]) {
     const includes = collectIncludeNames(source(path));
     assert.ok(
       includes.lazy.has('host-pr-watch'),
@@ -27741,8 +28003,10 @@ test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', ()
 // Invariant: the iterate and pr pointers load host-pr-watch only at their decision points. iterate
 // loads it on T3 Code only in a top-level run, decided by the absence of both a body delimiter and
 // a `Run state:` line, because a run delegated by merge-gate leaves the watch to the gate; pr loads
-// it on T3 Code. The merge-gate pointer is pinned with the other merge-gate pointers. Exactly these
-// four tools reach the fragment: capture loads it only for issue linking.
+// it on T3 Code; apply-issues and apply-review-remote load it only when the running environment
+// identifies T3 Code and a work item's pull request was created, reused or pushed. The merge-gate
+// pointer is pinned with the other merge-gate pointers. Exactly these six tools reach the fragment:
+// capture loads it only for issue linking.
 test('host-pr-watch pointers keep decision-scoped loading, with capture for issue linking', () => {
   const pointerIn = (path) =>
     [...source(path).matchAll(LAZY_INCLUDE_RE)]
@@ -27760,6 +28024,16 @@ test('host-pr-watch pointers keep decision-scoped loading, with capture for issu
       trigger: /T3 Code/,
       decision: 'the environment identifying T3 Code',
     },
+    {
+      path: 'src/tools/apply-issues.md',
+      trigger: /(?=[\s\S]*T3 Code)(?=[\s\S]*(?:created|reused|push))/,
+      decision: 'T3 Code and a work item pull request that was created, reused or pushed',
+    },
+    {
+      path: 'src/tools/apply-review-remote.md',
+      trigger: /(?=[\s\S]*T3 Code)(?=[\s\S]*(?:created|reused|push))/,
+      decision: 'T3 Code and a work item pull request that was created, reused or pushed',
+    },
   ];
   for (const { path, trigger, decision } of pinned) {
     const when = pointerIn(path);
@@ -27772,7 +28046,14 @@ test('host-pr-watch pointers keep decision-scoped loading, with capture for issu
   }
   assert.deepEqual(includeHostsOf('host-pr-watch'), {
     eager: [],
-    lazy: ['tools/capture.md', 'tools/iterate.md', 'tools/merge-gate.md', 'tools/pr.md'],
+    lazy: [
+      'tools/apply-issues.md',
+      'tools/apply-review-remote.md',
+      'tools/capture.md',
+      'tools/iterate.md',
+      'tools/merge-gate.md',
+      'tools/pr.md',
+    ],
   });
 });
 
@@ -27853,9 +28134,12 @@ test('host-pr-watch names watch, link and unwatch tools unqualified without an m
   assert.doesNotMatch(text, /mcp__[A-Za-z0-9_-]*(?:watch|link)_pull_request/);
 });
 
-// Invariant: the procedure lives only in the fragment; the callers carry no tool name.
-test('watch_pull_request, link_pull_request and unwatch_pull_request appear only in host-pr-watch, not in the merge-gate, iterate or pr sources', () => {
+// Invariant: the procedure lives only in the fragment; the callers, apply-issues and
+// apply-review-remote included, carry no tool name.
+test('watch_pull_request, link_pull_request and unwatch_pull_request appear only in host-pr-watch, not in the merge-gate, iterate, pr, apply-issues or apply-review-remote sources', () => {
   for (const path of [
+    'src/tools/apply-issues.md',
+    'src/tools/apply-review-remote.md',
     MERGE_GATE_PATH,
     'src/shared/merge-gate-delegated-run.md',
     'src/shared/merge-gate-configured-reviewer.md',
@@ -27867,6 +28151,106 @@ test('watch_pull_request, link_pull_request and unwatch_pull_request appear only
       assert.equal(text.includes(tool), false, `${path} must not name ${tool}`);
     }
   }
+});
+
+// Invariant: a delegated `pr` run is linked by its caller. On T3 Code the apply-issues and
+// apply-review tracker-mode orchestrators link each pull request they delivered, through the
+// fragment's "Linking" section; the fragment's `pr` bullet points there, each caller places its
+// one link step after its delivery and before its PR-link comment, and each names the one-line
+// link failure in its summary.
+test('a delegated pr run is linked by its caller, with the link step placed after delivery and the failure named in the summary', () => {
+  const text = hostPrWatchSource();
+  const start = text.indexOf('### Linking');
+  assert.notEqual(start, -1, 'host-pr-watch must carry a "### Linking" section');
+  const after = text.slice(start + 1).search(/\n#{1,6} /);
+  const section = after === -1 ? text.slice(start) : text.slice(start, start + 1 + after);
+  const bullets = section
+    .split(/^- /m)
+    .slice(1)
+    .map((part) => prose(part));
+  const bullet = bullets.find((part) => /apply-issues/.test(part) && /apply-review/.test(part));
+  assert.ok(bullet, 'Linking needs one caller-side bullet naming apply-issues and apply-review');
+  assert.match(bullet, /tracker mode/i, 'the bullet names apply-review tracker mode');
+  assert.match(bullet, /created/, 'the bullet names a created pull request');
+  assert.match(bullet, /reused/, 'the bullet names a reused pull request');
+  assert.match(bullet, /target PR/i, 'the bullet names a pushed target PR');
+  assert.match(bullet, /one call per distinct pull request/i, 'one call per distinct pull request');
+  assert.match(bullet, /`pr-read`/, 'a target PR is linked from the pr-read url');
+  assert.match(bullet, /sameRepository/, 'the target PR link requires sameRepository');
+  assert.match(bullet, /\bopen\b/, 'the target PR link requires an open pull request');
+  assert.match(
+    bullet,
+    /(?:no|not|never)[^.]{0,80}`pr` run[^.]{0,60}(?:in|of) this session/i,
+    'no call after a pr run in this session',
+  );
+  assert.match(
+    bullet,
+    /without T3 running-environment context[^.]{0,80}links nothing/i,
+    'an orchestrator without T3 running-environment context links nothing',
+  );
+  assert.match(
+    bullet,
+    /one line[^.]{0,80}(?:never blocks|does not block|not block)|(?:never blocks|does not block)[^.]{0,80}one line/i,
+    'a link failure is one line and never blocks',
+  );
+
+  const prBullet = bullets.find((part) => part.startsWith('`{{SKILL:pr}}`: right after step 10'));
+  assert.ok(prBullet, 'the pr bullet keeps its opening anchor');
+  assert.match(
+    prBullet,
+    /links nothing[^.]*(?:caller|apply-issues)[^.]*link/i,
+    'the pr bullet points to caller-side linking for a delegated pr run',
+  );
+
+  const issues = source('src/tools/apply-issues.md');
+  const step3 = issues.indexOf('3. Commit the changes using resolved `language.git`');
+  const step4 = issues.indexOf('4. **Immediately after a successful push or PR creation:**');
+  const issuesLink = issues.search(/per `host-pr-watch`/);
+  assert.ok(step3 !== -1 && step4 !== -1, 'apply-issues keeps Phase 4 steps 3 and 4');
+  assert.ok(
+    issuesLink > step3 && issuesLink < step4,
+    'apply-issues places its "per `host-pr-watch`" link step between step 3 and step 4',
+  );
+  assert.equal(
+    issues.match(/per `host-pr-watch`/g)?.length,
+    1,
+    'apply-issues has exactly one link step',
+  );
+  const hostPrWatchFences = (slice) =>
+    [...slice.matchAll(LAZY_INCLUDE_RE)].filter((match) => match[1].trim() === 'host-pr-watch')
+      .length;
+  assert.equal(
+    hostPrWatchFences(issues.slice(step3, step4)),
+    1,
+    'apply-issues has exactly one host-pr-watch pointer between step 3 and step 4',
+  );
+  const issuesPhase5 = prose(
+    issues.slice(issues.indexOf('### Phase 5: Summary'), issues.indexOf('## Rules')),
+  );
+  assert.match(issuesPhase5, /link[^.]{0,80}fail/i, 'apply-issues Phase 5 names the link failure');
+  assert.match(issuesPhase5, /one line/i, 'apply-issues Phase 5 names it as one line');
+
+  const review = source('src/tools/apply-review-remote.md');
+  const phase4 = review.indexOf('### Phase 4 remote');
+  const rStep4 = review.indexOf('4. If a target PR is present:', phase4);
+  const rStep5 = review.indexOf('5. **Immediately after a successful push or PR creation**');
+  const reviewLink = review.search(/per\s+`host-pr-watch`/);
+  assert.ok(
+    phase4 !== -1 && rStep4 > phase4 && rStep5 !== -1,
+    'apply-review-remote keeps Phase 4 remote steps 4 and 5',
+  );
+  assert.ok(
+    reviewLink > rStep4 && reviewLink < rStep5,
+    'apply-review-remote places its link step between Phase 4 remote step 4 and step 5',
+  );
+  assert.equal(
+    hostPrWatchFences(review.slice(rStep4, rStep5)),
+    1,
+    'apply-review-remote has exactly one host-pr-watch pointer between step 4 and step 5',
+  );
+  const reviewPhase78 = prose(review.slice(review.indexOf('### Phase 7/8 remote')));
+  assert.match(reviewPhase78, /link[^.]{0,80}fail/i, 'Phase 7/8 remote names the link failure');
+  assert.match(reviewPhase78, /one line/i, 'Phase 7/8 remote names it as one line');
 });
 
 // Invariant: the non-T3 path is unchanged: Phase 2 step 2 still calls pr-checks-wait with the

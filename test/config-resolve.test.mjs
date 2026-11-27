@@ -1555,6 +1555,8 @@ const RETIRED_CASES = [
     tool: 'merge-gate',
     stops: ['prReview.bots', 'prReview.botWaitMinutes', 'prReview.maxRounds'],
   },
+  { tool: 'retro', stops: [] },
+  { tool: 'focus', stops: [] },
   { tool: 'plan', stops: [], unknown: true },
 ];
 
@@ -1605,6 +1607,30 @@ for (const { tool, mode, stops, reports = [], unknown = false } of RETIRED_CASES
     }
   });
 }
+
+test('retro and focus are known read-only callers: each resolves configured values, acts on no retired row, and carries no unknown-tool', async (t) => {
+  const { root } = plainDirectory(t);
+  write(
+    root,
+    SETUP_ADR,
+    setupDocument({
+      'language.chat': 'de',
+      'skills.include': 'humanizer, distill',
+      'worktree.baseBranch': 'main',
+      'prReview.bots': 'copilot',
+    }),
+  );
+  for (const tool of ['retro', 'focus']) {
+    const data = await resolved({ cwd: root, tool });
+    assert.equal(data.values['language.chat'].value, 'de', tool);
+    assert.deepEqual(data.values['skills.include'].items, ['humanizer', 'distill'], tool);
+    for (const key of ['worktree.baseBranch', 'prReview.bots']) {
+      const entry = data.retired.find((row) => row.key === key);
+      assert.equal(entry?.action, 'none', `${tool} ${key}`);
+    }
+    assert.equal(codes(data).includes('unknown-tool'), false, tool);
+  }
+});
 
 test('retired rows: deliver reports worktree.completion and never stops on it', async (t) => {
   const { root } = plainDirectory(t);

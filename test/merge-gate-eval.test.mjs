@@ -935,10 +935,12 @@ test('the version-stamp exception rejects every difference the version does not 
 });
 
 // The composed verdict, which is what every reporting caller actually reads. The two tests above
-// pin the waivers in isolation and the CLI cases in `test/merge-gate-eval-round.test.mjs` pin the
-// end-to-end states, and between them the composition was covered by nothing: the order the
-// branches are tried in, the labels the report prints for an accepted difference, and the
-// `missing-stamp` state, which no test reached at all.
+// pin the waivers in isolation and the `verify` CLI cases in
+// `test/merge-gate-eval-round-verify-corruption.test.mjs` and
+// `test/merge-gate-eval-round-verify-corpus.test.mjs` pin the end-to-end states, and between them
+// the composition was covered by nothing: the order the branches are tried in, the labels the
+// report prints for an accepted difference, and the `missing-stamp` state, which no test reached at
+// all.
 //
 // **The order is load-bearing, not incidental.** `missing-stamp` is decided before anything is
 // compared, because there is nothing to compare; an exact digest match is decided before the
