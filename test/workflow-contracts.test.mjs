@@ -29479,7 +29479,9 @@ test('no source contract names develop as a default base', () => {
 // it inventories through `pass-list`, prunes a record only through `pass-prune` with a
 // helper-verified `process-dead` proof (offered only for `liveness: dead`) or confirmed staleness,
 // removes unlisted trusted text only through `trusted-prune`, and reaches a kept issue-planning
-// worktree only after the operator has moved or discarded its preserved plan.
+// worktree only after the operator has moved or discarded its preserved plan, or under the
+// helper's `preserved-plan-superseded` proof; an unarchived plan (`archive-missing`) still sends
+// the operator to move or discard it.
 test('cleanup prunes pass records and trusted text only through the issue-buddy helper', () => {
   const cleanup = source('src/tools/cleanup.md');
   const text = prose(cleanup);
@@ -29496,7 +29498,8 @@ test('cleanup prunes pass records and trusted text only through the issue-buddy 
       'a pass record only through `pass-prune` (never `pass-close`) and trusted text only through `trusted-prune`',
       'Cleanup never judges orphanhood itself',
       '`ledger-absent-in-grace`',
-      'move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree for removal',
+      'without a `supersededPlan.reason` or with `archive-missing` (not archived yet), move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree for removal',
+      "the helper's proof `preserved-plan-superseded` can show it recoverable from the base branch",
     ],
     'the cleanup pass-record contract',
   );

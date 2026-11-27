@@ -1,6 +1,6 @@
 # Remove plan-preserved planning worktrees whose plan is already archived on the base
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #812
@@ -95,6 +95,7 @@ cleanup fragment, and prose plus tests in the existing cleanup and lifecycle con
   stays out of scope. Two variants were
   rejected because they could delete an edited draft that exists nowhere else: a status-only proof,
   and a proof that accepts any open status.
+
 - **The completion convention is stated once, in code.** The build-run recheck already enforces
   "preserve approved plan text and append only its completion report" (`normalizedPlan` and the
   `RECHECK_REQUIRED` checks in `src/scripts/build-run-core.mjs`). Extract that check into one pure
@@ -168,6 +169,7 @@ cleanup fragment, and prose plus tests in the existing cleanup and lifecycle con
 
   The plain `guardedUnlink` is not used. It is `guardTarget` plus a pathname unlink, and it admits
   only targets below `.effective-flow/`, while `worktree.baseDir` is configurable.
+
 - **Rare-path prose is loaded lazily.** The Phase 4 listing detail and the mapping from a failed
   proof reason to the operator's next action go into a new lazy fragment,
   `src/shared/cleanup-superseded-plans.md`. Its `when:` is "a proven item, or a blocked record whose
@@ -181,19 +183,19 @@ cleanup fragment, and prose plus tests in the existing cleanup and lifecycle con
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/effective-flow-state-worktree-core.mjs` | Header comment (preserved-plan release and apply value shapes). Proof derivation: one `-z` status call that includes ignored entries; file safety; raw blob OID; archive read; status check; bounded history match; completion-prefix match through the shared predicate. Proof attached to the facts. `cleanupPlan` emits proven items with `proof` and evidence, and blocked records with `supersededPlan.reason`. `worktreeDigestInput` binds the proof for proven items only. `requireItems`, `recomputeItem` and `cleanupApply` handle the object form. `claimAndRemove`/`removeClaimed`: re-proof, in-place check with restore, quarantine discard, condition-7 recheck, removal. Apply result `discardedPlan`. Sandbox preflight extended to the plan directory and the quarantine location in the worktree. |
-| `src/scripts/build-run-core.mjs` | Extract the existing completion check (status-masked prefix plus an optional `## Build completion`/`## Workflow-Abschluss` suffix) into one pure exported predicate, and use it in the existing recheck. No behaviour change. |
-| `src/tools/cleanup.md` | Frontmatter `description` (superseded case). Workflow call shape and result text (`proof`, `supersededPlan`, object form for proven `worktree:` items). Legacy-class paragraph on kept `issue-planning` worktrees. Phase 4: the new class and a lazy-include pointer. Phase 5: new `Superseded plans` ask; the `Worktrees` ask narrowed to unproven candidates. Phase 6: retained reason, the cleanup-only-claims sentence and the apply-outcome list (restored items). `contextBudget` re-measured from `node build.mjs`. |
-| `src/tools/deliver.md`, `src/tools/apply-review-commit-mechanics.md` (and every other tool whose built core grows) | They include `worktree-lifecycle.md` eagerly, so the new rows add lines to their built core. Re-measure `contextBudget` from `node build.mjs`. Keep the lifecycle additions to the new rows and one sentence. |
-| `src/shared/cleanup-superseded-plans.md` | New lazy fragment: how proven items are listed (worktree, plan path, archive path, base ref, match), and each `supersededPlan.reason` with its safe next action. A multi-plan worktree is reported as `dirty-entries`. For `content-diverged`, the next action is to diff the two copies: formatting-only differences are common, and such a copy can be discarded by hand. |
-| `src/shared/worktree-lifecycle.md` | Apply outcome table: rows for the restored item (`restored: true` with `PLAN_CHANGED`, `INTERRUPTED` or the thrown code, record back at `aborted`/`plan-preserved`), next to the existing rows that reconcile an interrupt or an in-flight claim to `cleanup-failed`. Transition table: add `aborted` `plan-preserved` `issue-planning` → `cleanup-in-progress` (claim inside `cleanup apply` only; it fills the gap the table already has for that claim) and `cleanup-in-progress` → `aborted` `plan-preserved` (restore by the claiming call while the plan is still in place). "Removal eligibility": cleanup's confirmed `preserved-plan-superseded` claim discards exactly the proven plan file under the lock, and the removal-time condition-7 facts must then hold fresh. The fully-gone route is unchanged. |
-| `docs/developer-guide/architecture.md` | Around line 544: a kept `issue-planning` worktree also becomes removable through the proof. |
-| `test/effective-flow-state-worktree.test.mjs` | New fixture tests (see Validation plan), next to "cleanup removes a kept issue-planning worktree with a preserved plan once the plan is gone". Its invariant comment ("cleanup never discards a plan") is rewritten to the new invariant. Fixture helpers stay in this file, or go to a new `test/support/` module if they grow. |
-| `test/workflow-contracts.test.mjs` | The pass-record contract test (around lines 29460–29484) pins the Phase 6 phrase "move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree for removal" and states that cleanup reaches a kept worktree only after the operator moved or discarded the plan. Update the pinned phrase and the invariant comment. |
-| `test/worktree-lifecycle-contract.test.mjs` | Adjust or extend the prose assertions on cleanup and lifecycle text this change edits. Pin both new transition-table rows. Each assertion names the invariant it protects. |
-| `test/build-run.test.mjs` (and the other existing `test/build-run-*.test.mjs` suites) | Only if needed: a direct test of the extracted predicate. The existing completion-recheck tests must pass unchanged. |
+| File                                                                                                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/effective-flow-state-worktree-core.mjs`                                                               | Header comment (preserved-plan release and apply value shapes). Proof derivation: one `-z` status call that includes ignored entries; file safety; raw blob OID; archive read; status check; bounded history match; completion-prefix match through the shared predicate. Proof attached to the facts. `cleanupPlan` emits proven items with `proof` and evidence, and blocked records with `supersededPlan.reason`. `worktreeDigestInput` binds the proof for proven items only. `requireItems`, `recomputeItem` and `cleanupApply` handle the object form. `claimAndRemove`/`removeClaimed`: re-proof, in-place check with restore, quarantine discard, condition-7 recheck, removal. Apply result `discardedPlan`. Sandbox preflight extended to the plan directory and the quarantine location in the worktree.   |
+| `src/scripts/build-run-core.mjs`                                                                                   | Extract the existing completion check (status-masked prefix plus an optional `## Build completion`/`## Workflow-Abschluss` suffix) into one pure exported predicate, and use it in the existing recheck. No behaviour change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `src/tools/cleanup.md`                                                                                             | Frontmatter `description` (superseded case). Workflow call shape and result text (`proof`, `supersededPlan`, object form for proven `worktree:` items). Legacy-class paragraph on kept `issue-planning` worktrees. Phase 4: the new class and a lazy-include pointer. Phase 5: new `Superseded plans` ask; the `Worktrees` ask narrowed to unproven candidates. Phase 6: retained reason, the cleanup-only-claims sentence and the apply-outcome list (restored items). `contextBudget` re-measured from `node build.mjs`.                                                                                                                                                                                                                                                                                            |
+| `src/tools/deliver.md`, `src/tools/apply-review-commit-mechanics.md` (and every other tool whose built core grows) | They include `worktree-lifecycle.md` eagerly, so the new rows add lines to their built core. Re-measure `contextBudget` from `node build.mjs`. Keep the lifecycle additions to the new rows and one sentence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `src/shared/cleanup-superseded-plans.md`                                                                           | New lazy fragment: how proven items are listed (worktree, plan path, archive path, base ref, match), and each `supersededPlan.reason` with its safe next action. A multi-plan worktree is reported as `dirty-entries`. For `content-diverged`, the next action is to diff the two copies: formatting-only differences are common, and such a copy can be discarded by hand.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `src/shared/worktree-lifecycle.md`                                                                                 | Apply outcome table: rows for the restored item (`restored: true` with `PLAN_CHANGED`, `INTERRUPTED` or the thrown code, record back at `aborted`/`plan-preserved`), next to the existing rows that reconcile an interrupt or an in-flight claim to `cleanup-failed`. Transition table: add `aborted` `plan-preserved` `issue-planning` → `cleanup-in-progress` (claim inside `cleanup apply` only; it fills the gap the table already has for that claim) and `cleanup-in-progress` → `aborted` `plan-preserved` (restore by the claiming call while the plan is still in place). "Removal eligibility": cleanup's confirmed `preserved-plan-superseded` claim discards exactly the proven plan file under the lock, and the removal-time condition-7 facts must then hold fresh. The fully-gone route is unchanged. |
+| `docs/developer-guide/architecture.md`                                                                             | Around line 544: a kept `issue-planning` worktree also becomes removable through the proof.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `test/effective-flow-state-worktree.test.mjs`                                                                      | New fixture tests (see Validation plan), next to "cleanup removes a kept issue-planning worktree with a preserved plan once the plan is gone". Its invariant comment ("cleanup never discards a plan") is rewritten to the new invariant. Fixture helpers stay in this file, or go to a new `test/support/` module if they grow.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `test/workflow-contracts.test.mjs`                                                                                 | The pass-record contract test (around lines 29460–29484) pins the Phase 6 phrase "move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree for removal" and states that cleanup reaches a kept worktree only after the operator moved or discarded the plan. Update the pinned phrase and the invariant comment.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `test/worktree-lifecycle-contract.test.mjs`                                                                        | Adjust or extend the prose assertions on cleanup and lifecycle text this change edits. Pin both new transition-table rows. Each assertion names the invariant it protects.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `test/build-run.test.mjs` (and the other existing `test/build-run-*.test.mjs` suites)                              | Only if needed: a direct test of the extracted predicate. The existing completion-recheck tests must pass unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## Implementation details
 
@@ -210,7 +212,7 @@ cleanup fragment, and prose plus tests in the existing cleanup and lifecycle con
    is present, and whose eligibility result is exactly `conditions: [7]` with empty `blockers`. Its
    removal-only condition-7 facts must also be clean.
 4. **Dirty entry.** Run one `git status --porcelain=v1 -z --untracked-files=all --ignored=matching
-   --ignore-submodules=none` in the proven worktree through the bounded runner. Require exactly one
+--ignore-submodules=none` in the proven worktree through the bounded runner. Require exactly one
    `??` entry, a path with exactly one segment below `<plan.dir>/` that matches
    `UNATTENDED_PLAN_NAME`, and no `!!` entry under `<plan.dir>/`. `lstat` the path without following
    links, and require a regular file inside the canonical worktree path.
@@ -220,7 +222,7 @@ cleanup fragment, and prose plus tests in the existing cleanup and lifecycle con
    Require exactly one regular-blob entry: not a symlink, not a gitlink. Read it and require
    `classifyPlanText(...).status === 'implemented'`.
 7. **Content match.** First try the completion prefix: `classifyPlanText(preserved).status ===
-   'open'`, both texts decode as valid UTF-8, and the shared predicate accepts the preserved text
+'open'`, both texts decode as valid UTF-8, and the shared predicate accepts the preserved text
    against the archived text. The predicate's own count requires exactly one canonical line on
    each side. If that
    fails, run one bounded history query from the base commit. The query is limited to the literal
@@ -319,7 +321,7 @@ Not relevant.
   and the condition report is unchanged.
 - **Fully gone worktree:** the existing gone route applies, and no proof is derived.
 - **Ignored files elsewhere in the worktree:** the existing behaviour is unchanged. `git worktree
-  remove` without `--force` deletes ignored files, which is why the core's ignored-endpoint check
+remove` without `--force` deletes ignored files, which is why the core's ignored-endpoint check
   exists for `partial-diff` records. The proof refuses only ignored entries under `<plan.dir>/`.
 - **Condition 7 fails only through a quarantine, ignored endpoint or hidden edit:** no proof is
   derived and no `supersededPlan` field is set. The existing condition report is unchanged.
@@ -389,10 +391,11 @@ Not relevant.
   The fixtures build a local `refs/remotes/origin/<base>` history with `update-ref` and no network
   remote: a squash-style commit that only adds the archived copy, plus a merge-style history for the
   blob-history case.
+
 - **Build-run:** the existing build-run completion tests pass unchanged after the predicate
   extraction.
 - **Contract:** `node --test test/workflow-contracts.test.mjs test/worktree-lifecycle-contract.test.mjs
-  test/context-budget.test.mjs test/issue-buddy-contract.test.mjs`. The Issue Buddy suite stays
+test/context-budget.test.mjs test/issue-buddy-contract.test.mjs`. The Issue Buddy suite stays
   unchanged.
 - **Full:** CI's order, `pnpm agent:check`, `pnpm test`, `node build.mjs`, `pnpm test:distribution`,
   through `t3-project`.
@@ -431,6 +434,7 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -494,6 +498,7 @@ Not relevant.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -502,15 +507,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 2 | 0 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 0 | 1 |
-| Error cases | 0 | 2 | 4 |
-| Testability | 0 | 0 | 3 |
-| Scope | 0 | 0 | 2 |
-| Maintainability | 0 | 0 | 3 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         2 |    0 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         0 |    1 |
+| Error cases     |        0 |         2 |    4 |
+| Testability     |        0 |         0 |    3 |
+| Scope           |        0 |         0 |    2 |
+| Maintainability |        0 |         0 |    3 |
 
 ### Findings
 
@@ -582,3 +587,87 @@ The summary above counts both rounds.
 ## Open points
 
 - No open points.
+
+## Build completion
+
+### Requirement
+
+`effective-flow cleanup` now removes a kept Issue Buddy `issue-planning` worktree
+(`aborted`/`plan-preserved`) whose only dirty entry is its untracked plan, once a helper-verified
+`preserved-plan-superseded` proof shows that the base holds an Implemented archive copy that keeps
+every preserved byte recoverable. Every other dirty state stays blocked by condition 7.
+
+### Architecture decisions
+
+Implemented as planned, with these deviations:
+
+- The new cleanup ask uses the header `Superseded`, because the build caps ask headers at 12
+  characters. The question and options are unchanged.
+- The proof is stricter than the plan on status: the archive copy's single canonical status line
+  must say Implemented, and the preserved copy's must say Not implemented.
+- Plan files are read with the 512 KiB bound plan-lint uses. An oversized preserved plan is
+  `unsafe-plan-file` and an oversized archive copy is `archive-not-implemented`; the fragment names
+  the bound.
+- An `ENOENT` preflight probe of the plan directory or worktree root at apply time is
+  `NOT_ELIGIBLE` with reason `plan-directory-missing`, not `SANDBOX_DENIED`.
+- A refusal before the quarantine rename restores the pre-claim record. An error that is not a
+  per-item error is then rethrown and ends the call, with the restored item reported.
+- The plan directory is re-checked as its own canonical path right before the rename. A narrow
+  path race between that check and the rename remains; Node has no `renameat`. It can only reach
+  bytes the base already holds.
+
+### Affected files
+
+- `src/scripts/effective-flow-state-worktree-core.mjs`: proof derivation, proven items, digest
+  binding, object-form apply values, re-proof under the lock, restore boundary, quarantine
+  discard, condition-7 recheck.
+- `src/scripts/build-run-core.mjs`: shared predicates `planCompletionMismatch` and
+  `canonicalPlanStatusLines`; the build-run recheck uses them unchanged.
+- `src/tools/cleanup.md`, `src/shared/cleanup-superseded-plans.md` (new lazy fragment),
+  `src/shared/worktree-lifecycle.md`.
+- `src/tools/deliver.md`, `src/tools/apply-review-commit-mechanics.md`: `contextBudget` only
+  (cleanup 1063, deliver 834, apply-review-commit-mechanics 697).
+- `docs/developer-guide/architecture.md`, `docs/user-guide/tools-setup.md`,
+  `docs/user-guide/troubleshooting.md`.
+- `test/effective-flow-state-worktree.test.mjs`, `test/build-run.test.mjs`,
+  `test/workflow-contracts.test.mjs`, `test/worktree-lifecycle-contract.test.mjs`.
+
+### Implementation details
+
+Plan steps 1–13 are implemented. The proof budget is `SUPERSEDED_PLAN_PROOF_BUDGET_MS` (30 s),
+which `deps.supersededPlanProofBudgetMs` can override, and the branch proofs keep their full
+budget. Proven items carry `proof`, the evidence fields, `conditions: []` and
+`waivedConditions: [7]`. Their digest binds the plan and archive blobs and the match, not the base
+commit.
+
+### Test results
+
+- **Full suite at the Phase 5 tree:** `pnpm test` ran 7046 tests: 6959 pass, 1 fail, 1 cancelled
+  and 85 skipped. Both failures are load timeouts in untouched files, proven pre-existing by a
+  base run: `test/host-driver.test.mjs` (portable host-driver Python tests) and
+  `test/merge-gate-eval-round-lifecycle.test.mjs`.
+- **Other checks at the Phase 5 tree:** `pnpm test:preflight`, `node build.mjs` and
+  `pnpm test:distribution` passed.
+- **After the review corrections (targeted):** 839 of 839 tests passed in
+  `test/effective-flow-state-worktree.test.mjs`, `test/worktree-lifecycle-contract.test.mjs`,
+  `test/workflow-contracts.test.mjs`, `test/context-budget.test.mjs` and
+  `test/issue-buddy-contract.test.mjs`. `node build.mjs` and `pnpm test:distribution` passed.
+- **`pnpm agent:check`:** it flagged only this plan file, which was unformatted on the base. It is
+  formatted at completion.
+- **Eval evidence:** `pnpm eval build-context|merge-gate|iterate verify` found no integrity
+  blockers. They report freshness debt, which this change leaves as visible debt.
+
+## Review findings
+
+**Date:** 2026-11-27
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    13 |
+| Open / Not implemented |     0 |
+
+All 13 findings were Notes: ten from the first review and three from the re-check of the
+corrections. A floor-hit check confirmed every fix with no new findings.

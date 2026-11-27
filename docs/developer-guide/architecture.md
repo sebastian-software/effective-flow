@@ -542,7 +542,10 @@ plans only issues it holds a per-issue planning claim for. `cleanup` alone remov
 killed pass, from the read-only `pass-list` inventory, through `pass-prune` (a helper-verified
 `process-dead` proof or confirmed staleness) and `trusted-prune` (trusted text no pass record
 lists); a kept `issue-planning` worktree (`aborted`, reason `plan-preserved`) becomes removable
-once its plan is moved or discarded. The claims are the state helper's
+once its plan is moved or discarded, or while it is there under the helper proof
+`preserved-plan-superseded`: the base's Implemented archive copy of the same name holds every
+preserved byte, so the confirmed `cleanup apply` discards that one plan under the record lock and
+removes the worktree. The claims are the state helper's
 `planning-claim` group (`effective-flow-state-planning-claim-core.mjs`), shared with issue-sourced
 `autopilot`, which claims in `run-init` and releases in `run-close`, and with `plan-issue`. The
 loopback TCP mutation mutex covers only short local state work, never a fetch or forge call, and
