@@ -941,7 +941,9 @@ pass is Quality-only.
 
 The shipped pilot runtime is a fourth dependency-free script subsystem. Its entry point, core,
 and protocol modules are copied byte-for-byte into every target, but all evidence belongs to the
-verified runtime root at `.effective-flow/model-tiering-pilot/`; none belongs in `src/`, `dist/`,
+verified runtime root at `.effective-flow/model-tiering-pilot/` and, for the helper's
+gate-observation capability files, `.effective-flow/pilot-observation-handles/`; none belongs in
+`src/`, `dist/`,
 the merge-gate behavioral-evaluation archive, or the tracked project-setup ADR. The protocol module
 is the executable authority for bounded schemas, limits, timing, aggregation, metrics, adoption
 gates, and enums. The build reconciles its policy projection with

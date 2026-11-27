@@ -1088,7 +1088,9 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   envelope and uses nonzero exit codes for structured failures. The core owns guarded local
   lifecycle, record, detailed-trace, anonymous gate-observation, incident (`record-incident`),
   reconciliation, aggregation, evaluation, purge, and discard operations under
-  `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`; the protocol module owns the
+  `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, plus the gate-observation
+  capability files under `<RUNTIME_STATE_ROOT>/.effective-flow/pilot-observation-handles/`; the
+  protocol module owns the
   immutable version, digest, limits, timing, metrics, gates, and enum registries. Reads never
   authenticate through an identity-bearing field; workflow, packet, and observation mutations use
   operation-scoped capabilities. `begin-baseline`, `begin-review`, `resume`, the reconciliation

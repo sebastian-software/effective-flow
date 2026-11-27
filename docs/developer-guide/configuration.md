@@ -28,7 +28,8 @@ runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, `wo
 in Phase 6),
 `merge-gate/` (the gate's delegation messages, plus `iterate`'s hidden-mode
 `merge-gate/thread-ledger.json`), `model-tiering-pilot/` (local pilot generations and their
-evidence), and, in hidden mode only, the local `project-setup.md` with the `plan/` and `concept/`
+evidence), `pilot-observation-handles/` (the pilot helper's capability files for merge-gate
+observations), and, in hidden mode only, the local `project-setup.md` with the `plan/` and `concept/`
 directories. The entire directory is ignored with one `.effective-flow/` line: in `.gitignore` in
 standard mode, or in the Git common directory's `info/exclude` in hidden mode.
 
@@ -386,7 +387,9 @@ and the qualification record is build metadata, not configuration. The existence
 activates Fast nor proves that the running host can discover or accept the representation.
 
 Pilot generation state and evidence are owned below
-`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never by a tracked configuration row.
+`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, and the helper's observation
+capability files below `<RUNTIME_STATE_ROOT>/.effective-flow/pilot-observation-handles/`, never by a
+tracked configuration row.
 Disabling the key stops new measurement and Fast admission but does not delete a generation, clear
 suspension, or authorize purge. The row also cannot authorize a detailed trace: only an explicit
 request in the current workflow run can produce the `detailOptIn: true` attestation, and that

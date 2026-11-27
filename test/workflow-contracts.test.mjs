@@ -28126,13 +28126,20 @@ test('merge-gate delegated-run entry accepts Host and Resumed wait with one Rela
 // Invariant: a T3-path gate run records exactly one observation across its suspensions: a suspend
 // writes the handle to the wisdom file and finalizes nothing, a resume restores it and reserves
 // nothing, the final ending finalizes it once, and a caller-side ending that deletes a wisdom file
-// still holding a handle finalizes it first.
+// still holding a handle finalizes it first. The handle holds only the identifiers and counters,
+// never a capability, which the helper keeps in its own capability file.
 test('pilot-measurement keeps one observation across host-pr-watch T3 suspensions', () => {
   const text = prose(source('src/shared/pilot-measurement.md'));
   assert.match(
     text,
-    /On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an (?:\*\*)?observation handle(?:\*\*)? to the wisdom file/,
+    /On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an (?:\*\*)?observation handle(?:\*\*)? to the wisdom file, holding only `generationId`, `observationId`, and the three counters\./,
   );
+  const suspended = section(
+    source('src/shared/pilot-measurement.md'),
+    '### Suspended observation',
+    '\n### ',
+  );
+  assert.doesNotMatch(suspended, /capability/i, 'the observation handle holds no capability');
   assert.match(
     text,
     /A `Resumed wait:` re-dispatch or wake restores the observation from that handle, keeps counting, and reserves nothing, so the gate run holds exactly one observation, which its final ending finalizes once and then removes the handle\./,

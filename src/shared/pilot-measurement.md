@@ -8,8 +8,9 @@ Use the shipped helper as
 `node <skill-root>/scripts/pilot-measurement.mjs <operation>`. Send exactly one JSON object on
 standard input and accept only its single JSON envelope on standard output. Diagnostics and pilot
 control alerts are value-free; never relay rejected input. The helper owns runtime guards,
-capability authentication, atomic reservation/finalization, incomplete evidence, suspension, and
-capacity controls. The workflow never reproduces those writes itself.
+custody and authentication of the observation capability, atomic reservation/finalization,
+incomplete evidence, suspension, and capacity controls. The workflow never reproduces those writes
+itself.
 
 ### Phase 0 observation preflight and reservation
 
@@ -65,10 +66,12 @@ before Phase 1 performs gate work.
    the other no-op cases are returned by reservation. Observer-only execution never invokes this
    operation.
 
-4. On a reservation, retain the returned `observationId`, capability, cohort, and ordinal only in
-   the current run's transient state. Never place the raw capability or observation identifier in
-   chat, a delegation message, a pull-request artifact, or another record, nor in the wisdom file
-   except as the handle of "Suspended observation". Start three counters at zero:
+4. On a reservation, the helper keeps the observation's capability in its own capability file and
+   never returns it. `generationId` and the returned `observationId` are non-secret references:
+   keep them, with cohort and ordinal, in the current run's working state until finalization,
+   because losing them loses the observation. Keep them out of chat, delegation messages, and
+   pull-request artifacts, and write them to the wisdom file only as the handle of "Suspended
+   observation". Start three counters at zero:
    `ciRepairDelegations`, `reviewerImplementationDelegations`, and
    `conflictResolutionAttempts`.
 5. If inventory or reservation fails, continue the merge gate with the same mode and outcome it
@@ -88,8 +91,8 @@ before Phase 1 performs gate work.
 ### Suspended observation
 
 On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an
-**observation handle** to the wisdom file, holding `generationId`, `observationId`, capability and
-the three counters. A `Resumed wait:` re-dispatch or wake restores the observation from that handle,
+**observation handle** to the wisdom file, holding only `generationId`, `observationId`, and the
+three counters. A `Resumed wait:` re-dispatch or wake restores the observation from that handle,
 keeps counting, and reserves nothing, so the gate run holds exactly one observation, which its final
 ending finalizes once and then removes the handle. Every caller-side ending that deletes a
 wisdom file still holding a handle first finalizes it under "Phase 6 observation finalization" with
@@ -153,8 +156,7 @@ terminal outcome `failed`; it never discards product changes or changes the gate
      "runtimeStateRoot": "<verified RUNTIME_STATE_ROOT>",
      "repositoryIdentity": "<verified repository identity>",
      "generationId": "<reserved generationId>",
-     "observationId": "<transient observationId>",
-     "capability": "<transient capability>",
+     "observationId": "<retained observationId>",
      "terminalOutcome": "reported-blocked",
      "ciRepairCorrections": 0,
      "reviewerCorrections": 0,
@@ -167,8 +169,9 @@ terminal outcome `failed`; it never discards product changes or changes the gate
 
    This is the valid typed shape for a pre-Phase-4 controlled stop; other endings replace only the
    values with their derived closed outcome, integer counter values, and final check evidence. The
-   helper authenticates the reservation and enforces exactly-once finalization. The three
-   left-to-right counter mappings above are exact; do not rename, merge, or infer counters.
+   helper authenticates the reservation from its capability file and enforces exactly-once
+   finalization. The three left-to-right counter mappings above are exact; do not rename, merge, or
+   infer counters.
 
 4. A finalization failure leaves the current merge/report result unchanged. Consume only its
    explicit `pilotControlOutcome`, `controlStatePersisted`, and `alert` metadata under Phase-0 step 6. Do not claim suspension or incomplete evidence without that confirmation. Apply an
@@ -176,4 +179,4 @@ terminal outcome `failed`; it never discards product changes or changes the gate
    flag confirm it. When metadata supplies it, emit only the stable value-free pilot-control alert.
    A `control-state-unpersistable` alert remains value-free and reports only that durable cross-run
    control could not be proven. Do not retry an ambiguous mutation and do not include observation
-   identity or capability in the final chat report.
+   identity in the final chat report.

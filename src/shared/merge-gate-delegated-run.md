@@ -578,9 +578,8 @@ gate run inline generates it at the start. Use
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
 - per "Draft ready for review": every `merge-proof-local` result, the class with its blocker count
   and `appendixTrust`, why no question was posed or the answer, and the ready step's result
-- when a pilot observation was reserved, its three anonymous correction counters; never its
-  observation identifier or capability outside the handle `pilot-measurement` keeps across a
-  `SUSPENDED host-pr-watch` return
+- when a pilot observation was reserved, its three anonymous correction counters; its identifiers
+  only in the handle `pilot-measurement` keeps across a `SUSPENDED host-pr-watch` return
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
   every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
   retain that every delegated `{{SKILL:iterate}}` round carried `Summary comment: suppressed`, so it

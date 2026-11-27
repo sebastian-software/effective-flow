@@ -1,6 +1,6 @@
 # Persist the pilot-observation capability in a helper-owned handle instead of model context
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #813
@@ -72,7 +72,7 @@ addressed by validated opaque identifiers; prose and documentation updated to ma
   the path from the `generationId` and `observationId`, both validated by the existing `opaque()`
   pattern (`:140`, `:307-310`). No caller supplies a path.
 - **Handle content:** one canonical JSON object `{schema, kind: 'gate-observation-handle',
-  generationId, observationId, capability}`. It is written with the pilot core's own exclusive-write
+generationId, observationId, capability}`. It is written with the pilot core's own exclusive-write
   discipline: `O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW` at mode `0600`, then fsync and a directory sync,
   as `writeExclusiveJson` does (`:523-538`). Directories are created at `0700` and checked
   component by component with symlink refusal (`directoryState`). After `guardedMkdir`
@@ -90,15 +90,16 @@ addressed by validated opaque identifiers; prose and documentation updated to ma
 - **Anomaly classification:** every `fault` persists a pilot-wide `evidence-gap` suspension
   (`:3330-3352`), so each anomaly has a fixed code:
 
-  | Anomaly | Code | Control outcome |
-  |---|---|---|
-  | Missing handle | `AUTHENTICATION_FAILED` | `none` |
-  | Wrong capability, mismatched identifiers, or a consumed marker whose `capabilityHash` differs | `AUTHENTICATION_FAILED` | `none` |
-  | Symlink, non-regular file, oversize, malformed JSON, unknown `kind`/`schema`, or extra or missing keys | `UNSAFE_STORAGE` | `evidence-gap` |
-  | Consumed marker on an open reservation | `UNSAFE_STORAGE` | `evidence-gap` |
+  | Anomaly                                                                                                | Code                    | Control outcome |
+  | ------------------------------------------------------------------------------------------------------ | ----------------------- | --------------- |
+  | Missing handle                                                                                         | `AUTHENTICATION_FAILED` | `none`          |
+  | Wrong capability, mismatched identifiers, or a consumed marker whose `capabilityHash` differs          | `AUTHENTICATION_FAILED` | `none`          |
+  | Symlink, non-regular file, oversize, malformed JSON, unknown `kind`/`schema`, or extra or missing keys | `UNSAFE_STORAGE`        | `evidence-gap`  |
+  | Consumed marker on an open reservation                                                                 | `UNSAFE_STORAGE`        | `evidence-gap`  |
 
   Exact-key validation applies to both handle kinds. Leftover `.tmp-*` files in a handle directory
   are removed by the generation removal step.
+
 - **Finalization authenticates from the handle (decided by score):** `finalize-gate-observation`
   accepts exactly its current keys minus `capability`, so a payload that still carries `capability`
   is `INVALID_PAYLOAD`. It reads the handle at the derived path and requires the handle's
@@ -150,6 +151,7 @@ addressed by validated opaque identifiers; prose and documentation updated to ma
     fail closed with `UNSAFE_STORAGE`, and the user re-runs the dry run.
 
   No new abandon operation is added, and cleanup is unchanged.
+
 - **Wisdom-file timing stays as it is (decided by score):** the run keeps `generationId`,
   `observationId`, cohort, ordinal and counters in its transient state. The wisdom file receives
   the observation handle only on a `SUSPENDED host-pr-watch` return. That handle now holds
@@ -183,24 +185,24 @@ addressed by validated opaque identifiers; prose and documentation updated to ma
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/pilot-measurement-core.mjs` | Add the handle path derivation, an ignore and tracking guard for the handle root, the exclusive handle write and the no-follow read. `startGateObservation` writes the handle before the reservation under the same lifecycle lock, rolls the handle back on reservation failure and drops `capability` from its output. `finalizeGateObservation` drops the `capability` input, authenticates from the handle and rewrites it to the consumed marker. Discard and purge remove the generation's handle directory. |
-| `src/shared/pilot-measurement.md` | Helper summary (`:10-12`): the helper also owns capability custody. Step 4 (`:68-73`): no capability is returned. `generationId` and `observationId` are non-secret references that the run keeps in its working state until finalization, and they stay out of chat, delegation messages and pull-request artifacts. "Suspended observation" (`:86-95`): the handle holds `generationId`, `observationId` and the counters. Phase 6 step 3 (`:145-169`): remove the `capability` key. Step 4 (`:171-177`): final-report wording. |
-| `src/shared/merge-gate-delegated-run.md` | Wisdom record bullet (`:582-584`): the identifiers appear only in the handle `pilot-measurement` keeps across a `SUSPENDED host-pr-watch` return, and no capability appears at all. |
-| `AGENTS.md` | "Execution profiles" pilot-state sentence (`:61`): append "and `.effective-flow/pilot-observation-handles/`". |
-| `src/shared/setup-execution-profiles.md` | `begin-baseline` disclosure (`:125-135`): one clause saying that an open merge-gate observation keeps its random capability in a helper-owned file below `.effective-flow/pilot-observation-handles/` until finalization. |
-| `test/pilot-measurement.test.mjs` | Gate-observation tests stop passing `reservation.capability`. New cases cover the handle lifecycle, missing, tampered and symlinked handles, the consumed marker and repeat finalization, and handle removal on discard and purge. |
-| `test/pilot-measurement-adoption.test.mjs` | Update gate-observation calls (`:290`, `:714`, `:1204-1218`, `:2453-2567`). Re-express the workflow-capability rejection (`:2548-2556`) as a rejected `capability` key. |
-| `test/pilot-measurement-cli.test.mjs` | Spawned CLI test (`:155-205`): reserve in one process and finalize in a second process with only the identifiers. Assert that no stdout or stderr carries the raw capability read from the handle file. |
-| `test/pilot-measurement-git.test.mjs` | Real-Git check (`:72-76`): `check-ignore --no-index` also reports `.effective-flow/pilot-observation-handles` as ignored. |
-| `test/pilot-measurement-contract.test.mjs` | Restate the invariant of "deletion remains generation-scoped" (`:132-140`) as "the generation directory plus that generation's handle directory". Pin handle removal to `pilot-observation-handles/<opaque generationId>/`, using only `unlink` and `rmdir`, never a recursive `rm`. Replace the `Never place the raw capability or observation identifier` pin (`:32`) with two pins: the new step-4 custody clause, and the unchanged exclusion of identifiers from chat, delegation messages and pull-request artifacts. Assert that the finalize payload has no `capability` key. |
-| `test/workflow-contracts.test.mjs` | Extend the "Suspended observation" test (`:28113-28140`) with an assertion that the handle holds no capability. |
-| `docs/developer-guide/model-tiering-pilot-protocol.md` | Reservation and finalization contract (`:425-450`): handle custody, consumed marker and key list without `capability`. Generation discard and purge remove the requested generation's handles. For an absent generation, the removal is bound to `observationHandlesDigest` (`:250-262`). The custody paragraph says that the capability check detects only a handle file inconsistent with its reservation, and that the identifiers are bearer references. Re-dispatch survival (`:394-399`). The "All owned state stays under" sentence (`:403-404`) names the handle root. |
-| `docs/user-guide/model-tiering-pilot.md` | `:13-18` ("Where evidence lives"): name `.effective-flow/pilot-observation-handles/` and its content, a random capability that is later reduced to its hash. `:44-48`: the helper keeps the capability, and it is never shown. The observation identifier is a non-secret reference that the run keeps until finalization. `:198-213`: purge and discard also remove the generation's handle directory. For an absent generation, the confirmed run echoes the dry run's `observationHandlesDigest`, and the directory names under the handle root are the non-secret generation ids to pass. |
-| `docs/developer-guide/configuration.md` | `:25-33` and `:388-389`: list `pilot-observation-handles/` beside `model-tiering-pilot/` as pilot-owned runtime state. |
-| `docs/developer-guide/build-system.md` | `:1084-1089`: the core also owns the handle root. |
-| `docs/developer-guide/architecture.md` | `:944`: name the handle root beside `model-tiering-pilot/`. |
+| File                                                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/pilot-measurement-core.mjs`               | Add the handle path derivation, an ignore and tracking guard for the handle root, the exclusive handle write and the no-follow read. `startGateObservation` writes the handle before the reservation under the same lifecycle lock, rolls the handle back on reservation failure and drops `capability` from its output. `finalizeGateObservation` drops the `capability` input, authenticates from the handle and rewrites it to the consumed marker. Discard and purge remove the generation's handle directory.                                                                            |
+| `src/shared/pilot-measurement.md`                      | Helper summary (`:10-12`): the helper also owns capability custody. Step 4 (`:68-73`): no capability is returned. `generationId` and `observationId` are non-secret references that the run keeps in its working state until finalization, and they stay out of chat, delegation messages and pull-request artifacts. "Suspended observation" (`:86-95`): the handle holds `generationId`, `observationId` and the counters. Phase 6 step 3 (`:145-169`): remove the `capability` key. Step 4 (`:171-177`): final-report wording.                                                             |
+| `src/shared/merge-gate-delegated-run.md`               | Wisdom record bullet (`:582-584`): the identifiers appear only in the handle `pilot-measurement` keeps across a `SUSPENDED host-pr-watch` return, and no capability appears at all.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `AGENTS.md`                                            | "Execution profiles" pilot-state sentence (`:61`): append "and `.effective-flow/pilot-observation-handles/`".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `src/shared/setup-execution-profiles.md`               | `begin-baseline` disclosure (`:125-135`): one clause saying that an open merge-gate observation keeps its random capability in a helper-owned file below `.effective-flow/pilot-observation-handles/` until finalization.                                                                                                                                                                                                                                                                                                                                                                     |
+| `test/pilot-measurement.test.mjs`                      | Gate-observation tests stop passing `reservation.capability`. New cases cover the handle lifecycle, missing, tampered and symlinked handles, the consumed marker and repeat finalization, and handle removal on discard and purge.                                                                                                                                                                                                                                                                                                                                                            |
+| `test/pilot-measurement-adoption.test.mjs`             | Update gate-observation calls (`:290`, `:714`, `:1204-1218`, `:2453-2567`). Re-express the workflow-capability rejection (`:2548-2556`) as a rejected `capability` key.                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `test/pilot-measurement-cli.test.mjs`                  | Spawned CLI test (`:155-205`): reserve in one process and finalize in a second process with only the identifiers. Assert that no stdout or stderr carries the raw capability read from the handle file.                                                                                                                                                                                                                                                                                                                                                                                       |
+| `test/pilot-measurement-git.test.mjs`                  | Real-Git check (`:72-76`): `check-ignore --no-index` also reports `.effective-flow/pilot-observation-handles` as ignored.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `test/pilot-measurement-contract.test.mjs`             | Restate the invariant of "deletion remains generation-scoped" (`:132-140`) as "the generation directory plus that generation's handle directory". Pin handle removal to `pilot-observation-handles/<opaque generationId>/`, using only `unlink` and `rmdir`, never a recursive `rm`. Replace the `Never place the raw capability or observation identifier` pin (`:32`) with two pins: the new step-4 custody clause, and the unchanged exclusion of identifiers from chat, delegation messages and pull-request artifacts. Assert that the finalize payload has no `capability` key.         |
+| `test/workflow-contracts.test.mjs`                     | Extend the "Suspended observation" test (`:28113-28140`) with an assertion that the handle holds no capability.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `docs/developer-guide/model-tiering-pilot-protocol.md` | Reservation and finalization contract (`:425-450`): handle custody, consumed marker and key list without `capability`. Generation discard and purge remove the requested generation's handles. For an absent generation, the removal is bound to `observationHandlesDigest` (`:250-262`). The custody paragraph says that the capability check detects only a handle file inconsistent with its reservation, and that the identifiers are bearer references. Re-dispatch survival (`:394-399`). The "All owned state stays under" sentence (`:403-404`) names the handle root.                |
+| `docs/user-guide/model-tiering-pilot.md`               | `:13-18` ("Where evidence lives"): name `.effective-flow/pilot-observation-handles/` and its content, a random capability that is later reduced to its hash. `:44-48`: the helper keeps the capability, and it is never shown. The observation identifier is a non-secret reference that the run keeps until finalization. `:198-213`: purge and discard also remove the generation's handle directory. For an absent generation, the confirmed run echoes the dry run's `observationHandlesDigest`, and the directory names under the handle root are the non-secret generation ids to pass. |
+| `docs/developer-guide/configuration.md`                | `:25-33` and `:388-389`: list `pilot-observation-handles/` beside `model-tiering-pilot/` as pilot-owned runtime state.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `docs/developer-guide/build-system.md`                 | `:1084-1089`: the core also owns the handle root.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `docs/developer-guide/architecture.md`                 | `:944`: name the handle root beside `model-tiering-pilot/`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ## Implementation details
 
@@ -404,6 +406,7 @@ plan pass:
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -524,6 +527,7 @@ plan pass:
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -532,15 +536,15 @@ plan pass:
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 3 | 0 |
-| Error cases | 0 | 1 | 5 |
-| Testability | 0 | 3 | 2 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 1 | 3 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         3 |    0 |
+| Error cases     |        0 |         1 |    5 |
+| Testability     |        0 |         3 |    2 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         1 |    3 |
 
 ### Findings
 

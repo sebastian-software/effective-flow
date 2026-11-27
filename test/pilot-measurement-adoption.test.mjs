@@ -287,7 +287,6 @@ function finalizeGateInput(fx, generationId, reservation, overrides = {}) {
     ...fx.common,
     generationId,
     observationId: reservation.observationId,
-    capability: reservation.capability,
     terminalOutcome: 'merged',
     ciRepairCorrections: 0,
     reviewerCorrections: 0,
@@ -2550,10 +2549,12 @@ test('start-gate-observation reports busy only for a held lock and finalize unde
   const before = snapshot(fx, generationId);
   for (const [label, input, code] of [
     ['lock contention', finalizeObservation, 'LOCKED'],
+    // The helper authenticates from its own capability file, so a supplied capability is a key
+    // outside the closed schema.
     [
       'capability',
       { ...finalizeObservation, capability: reservation.workflowCapability },
-      'AUTHENTICATION_FAILED',
+      'INVALID_PAYLOAD',
     ],
     ['payload', { ...finalizeObservation, terminalOutcome: 'unknown-outcome' }, 'INVALID_PAYLOAD'],
     ['missing generation', { ...finalizeObservation, generationId: 'Z'.repeat(32) }, 'NOT_FOUND'],
