@@ -366,7 +366,7 @@ after a controlled stop, or to `failed` after an error, and retains the worktree
 ### Prohibited on every path
 
 Nothing here rewrites history or bypasses hooks. Never use `--force`, `--force-with-lease`,
-`--no-verify`, `commit --amend`, an interactive `rebase`, a `squash` of existing commits,
+`--no-verify`, `commit --amend`, a `rebase` of any kind, a `squash` of existing commits,
 `reset --hard`, `checkout -f`, `clean`, or `push --delete`. Never switch, stash, or stage in the
 invocation checkout.
 
