@@ -4206,6 +4206,49 @@ test('cleanup lists and removes a released issue-planning worktree and its branc
   assert.equal(git(root, 'branch', '--list', ISSUE_PLANNING_BRANCH), '');
 });
 
+test('ordinary planning-worktree removal keeps ignored files found after the claim', async (t) => {
+  for (const operation of ['cleanup apply', 'worktree remove']) {
+    const root = repository(t);
+    const { worktree, record } = await initializedIssuePlanning(root);
+    writeFileSync(join(root, '.git', 'info', 'exclude'), '*.tmp\n');
+    if (operation === 'cleanup apply') {
+      await moveTo(root, record, 'cleanup-ready');
+      writeRecordFile(root, record.recordId, {
+        ...readRecord(root, record.recordId),
+        status: 'cleanup-failed',
+        reason: 'earlier removal did not complete',
+      });
+    }
+    const late = join(worktree.worktreePath, 'docs', 'plan', 'late.tmp');
+    const { runner, calls } = interceptingRunner(() => undefined);
+    const extra = {
+      runner,
+      onPhase: (name) => {
+        if (name !== 'afterClaim') return;
+        mkdirSync(dirname(late), { recursive: true });
+        writeFileSync(late, 'draft\n');
+      },
+    };
+    const envelope =
+      operation === 'cleanup apply'
+        ? await applyPlanned(root, await plan(root), extra)
+        : await call(
+            operation,
+            { cwd: root, executionRoot: root, sessionId: SESSION, recordIds: [record.recordId] },
+            extra,
+          );
+    const [result] = expectOk(envelope).items;
+    assert.equal(result?.code, 'REMOVE_FAILED', `${operation}: ${JSON.stringify(result)}`);
+    assert.match(readRecord(root).reason, /condition 7 fails: ignoredPlanEntries/);
+    assert.equal(readRecord(root).status, 'cleanup-failed');
+    assert.equal(readFileSync(late, 'utf8'), 'draft\n');
+    assert.equal(
+      calls.some((args) => args[0] === 'worktree' && args[1] === 'remove'),
+      false,
+    );
+  }
+});
+
 // Invariant: a released `issue-planning` record whose worktree is already gone (an earlier removal
 // removed it, then failed to delete the record) is retried by cleanup through the gone route,
 // whether its temporary branch still exists or the earlier attempt already deleted it. A half-gone
@@ -4888,6 +4931,96 @@ test('a superseded-plan discard that fails after the rename is cleanup-failed an
   assert.ok(existsSync(ignored.worktree.worktreePath));
 });
 
+test('a failed final ignored-plan scan keeps the worktree after discarding the plan', async (t) => {
+  const fx = await supersededWorktree(t);
+  const { item } = planEntry(await plan(fx.root), 'record-1');
+  let discarded = false;
+  const { runner, calls } = interceptingRunner((args) =>
+    discarded && args.includes('--ignored=matching')
+      ? { status: 128, stdout: Buffer.alloc(0), stderr: 'fatal: injected\n' }
+      : undefined,
+  );
+  const [result] = expectOk(
+    await applyProven(fx.root, item, {
+      runner,
+      onPhase: (name) => {
+        if (name === 'afterDiscard') discarded = true;
+      },
+    }),
+  ).items;
+  assert.deepEqual(
+    [result.code, result.discardedPlan, result.persisted?.persisted],
+    ['REMOVE_FAILED', PLAN_PATH, true],
+    JSON.stringify(result),
+  );
+  assert.match(readRecord(fx.root).reason, /condition 7 fails: ignoredPlanEntries/);
+  assert.equal(readRecord(fx.root).status, 'cleanup-failed');
+  assert.equal(existsSync(fx.planFile), false);
+  assert.ok(existsSync(fx.worktree.worktreePath));
+  assert.equal(
+    calls.some((args) => args[0] === 'worktree' && args[1] === 'remove'),
+    false,
+  );
+});
+
+test('the final ignored-plan scan still checks the proof directory after config changes', async (t) => {
+  const fx = await supersededWorktree(t);
+  const { item } = planEntry(await plan(fx.root), 'record-1');
+  const late = join(dirname(fx.planFile), 'late.tmp');
+  const [result] = expectOk(
+    await applyProven(fx.root, item, {
+      onPhase: (name) => {
+        if (name !== 'afterDiscard') return;
+        writeFileSync(
+          join(fx.root, 'AGENTS.md'),
+          '# Agents\n\n**Effective Flow project setup:** docs/adr/effective-flow-project-setup.md\n',
+        );
+        mkdirSync(join(fx.root, 'docs', 'adr'), { recursive: true });
+        writeFileSync(
+          join(fx.root, 'docs', 'adr', 'effective-flow-project-setup.md'),
+          '# Effective Flow project setup\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n| plan.dir | docs/new-plans |\n',
+        );
+        writeFileSync(join(fx.root, '.git', 'info', 'exclude'), '*.tmp\n');
+        writeFileSync(late, 'draft\n');
+      },
+    }),
+  ).items;
+  assert.deepEqual([result.code, result.discardedPlan], ['REMOVE_FAILED', PLAN_PATH]);
+  assert.match(readRecord(fx.root).reason, /condition 7 fails: ignoredPlanEntries/);
+  assert.equal(readFileSync(late, 'utf8'), 'draft\n');
+});
+
+test('a final quarantine metadata mismatch refuses unlink and keeps the worktree', async (t) => {
+  const fx = await supersededWorktree(t);
+  const { item } = planEntry(await plan(fx.root), 'record-1');
+  let quarantine;
+  let opened = false;
+  const [result] = expectOk(
+    await applyProven(fx.root, item, {
+      fs: {
+        rename: async (from, to) => {
+          await renamePath(from, to);
+          quarantine = to;
+        },
+        open: async (target, ...rest) => {
+          if (target === quarantine) opened = true;
+          return openPath(target, ...rest);
+        },
+        lstat: async (target, ...rest) => {
+          const info = await lstatPath(target, ...rest);
+          if (target === quarantine && opened) info.ctimeNs += 1n;
+          return info;
+        },
+      },
+    }),
+  ).items;
+  assert.deepEqual([result.code, result.quarantine], ['REMOVE_FAILED', quarantine]);
+  assert.equal(result.discardedPlan, undefined);
+  assert.equal(readRecord(fx.root).status, 'cleanup-failed');
+  assert.equal(readFileSync(quarantine, 'utf8'), OPEN_PLAN);
+  assert.ok(existsSync(fx.worktree.worktreePath));
+});
+
 // Invariant: the digest binds the archive blob, not the base commit: an advance of the local
 // `origin/<base>` that keeps the archive copy is no PREVIEW_MISMATCH and the item is removed, while
 // a changed archive copy is.
@@ -4914,9 +5047,14 @@ test('a superseded-plan rename or restore that fails ends restored or cleanup-fa
   const { item } = planEntry(await plan(inPlace.root), 'record-1');
   const before = readRecord(inPlace.root);
   const refusal = Object.assign(new Error('denied'), { code: 'EACCES' });
+  const probeDirs = [];
   const [kept] = expectOk(
     await applyProven(inPlace.root, item, {
       fs: {
+        open: async (target, ...rest) => {
+          if (String(target).includes('/.effective-flow-probe-')) probeDirs.push(dirname(target));
+          return openPath(target, ...rest);
+        },
         rename: async () => {
           throw refusal;
         },
@@ -4928,6 +5066,9 @@ test('a superseded-plan rename or restore that fails ends restored or cleanup-fa
     ['WRITE_FAILED', true, 'aborted'],
     JSON.stringify(kept),
   );
+  assert.ok(probeDirs.length > 0);
+  assert.equal(probeDirs.includes(dirname(inPlace.planFile)), false);
+  assert.equal(probeDirs.includes(inPlace.worktree.worktreePath), false);
   assert.deepEqual(readRecord(inPlace.root), before);
   assert.ok(existsSync(inPlace.planFile));
 
@@ -5036,34 +5177,4 @@ test('a superseded-plan discard restores the record before a whole-call error pr
     ['INTERNAL_ERROR', true, 'aborted'],
     JSON.stringify(envelope),
   );
-});
-
-// Invariant: a plan directory that vanished between the dry run and the preflight probe means the
-// plan moved, not a sandbox denial: the item is NOT_ELIGIBLE `plan-directory-missing`, no claim is
-// written and nothing is removed.
-test('a superseded-plan item whose plan directory is gone at the probe is NOT_ELIGIBLE', async (t) => {
-  const fx = await supersededWorktree(t);
-  const { item } = planEntry(await plan(fx.root), 'record-1');
-  const before = readRecord(fx.root);
-  const probes = `${dirname(fx.planFile)}/.effective-flow-probe-`;
-  const [result] = expectOk(
-    await applyProven(fx.root, item, {
-      fs: {
-        open: async (target, ...rest) => {
-          if (String(target).startsWith(probes)) {
-            throw Object.assign(new Error('gone'), { code: 'ENOENT' });
-          }
-          return openPath(target, ...rest);
-        },
-      },
-    }),
-  ).items;
-  assert.deepEqual(
-    [result.code, result.reason, result.conditions],
-    ['NOT_ELIGIBLE', 'plan-directory-missing', [7]],
-    JSON.stringify(result),
-  );
-  assert.deepEqual(readRecord(fx.root), before);
-  assert.ok(existsSync(fx.planFile));
-  assert.ok(existsSync(fx.worktree.worktreePath));
 });

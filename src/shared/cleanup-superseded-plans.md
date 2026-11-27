@@ -31,8 +31,6 @@ A blocked kept planning worktree with `supersededPlan.reason` stays retained; it
 
 **Apply outcomes:** an `ok` item names `discardedPlan` with the branch outcome; a `restored` item
 follows the lifecycle outcome table. A `REMOVE_FAILED` item with `quarantine` kept a plan that
-changed during its move, or could not be hashed there, in that release quarantine: inspect it
-before removing it yourself. One with `discardedPlan` and a failed condition 7 kept the worktree:
-the plan stays recoverable as `match` says; clean the worktree and rerun. `NOT_ELIGIBLE` with
-reason `plan-directory-missing` removed nothing: the plan moved since the dry run, so a fresh
-`cleanup plan` offers the record as an ordinary item.
+changed or could not be verified in quarantine: inspect it before removing it yourself. One with
+`discardedPlan` and a failed condition 7 kept the worktree: the plan stays recoverable as `match`
+says; clear the reported blocker and rerun cleanup.

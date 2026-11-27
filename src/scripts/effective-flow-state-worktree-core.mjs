@@ -1561,13 +1561,14 @@ async function hiddenWorktreeEntries(context, roots, root) {
 }
 
 // The ignored entries of the proven worktree of an `issue-planning` `record` in or around its plan
-// directory (`plan.dir`, else the whole worktree when the configuration cannot name it), sorted:
+// directories (configured and any `provenPlanDir`, else the whole worktree when the configuration
+// cannot name a directory), sorted:
 // `git status` never lists them, so the worktree looks clean once the preserved plan is gone, while
 // they hold bytes no copy in the base gives back and a removal would delete. It holds for every
 // path to a removal (the discard's recheck, a `cleanup-failed` retry, `worktree remove`). Empty for
 // every other purpose; null when Git cannot establish it. Only for a worktree whose common
 // directory is proven ours.
-async function ignoredPlanDirectoryEntries(context, record) {
+async function ignoredPlanDirectoryEntries(context, record, provenPlanDir) {
   if (record.purpose !== 'issue-planning') return [];
   const config = await cleanupConfiguration(context, { env: context.env });
   const planDir = config === null ? null : planDirectory(config);
@@ -1579,16 +1580,20 @@ async function ignoredPlanDirectoryEntries(context, record) {
   if (entries === null) return null;
   return entries
     .filter(
-      (entry) => entry.code === '!!' && (planDir === null || coversDirectory(planDir, entry.path)),
+      (entry) =>
+        entry.code === '!!' &&
+        (planDir === null ||
+          coversDirectory(planDir, entry.path) ||
+          (provenPlanDir !== null && coversDirectory(provenPlanDir, entry.path))),
     )
     .map((entry) => entry.path)
     .sort();
 }
 
 // The facts condition 7 of `evaluateEligibility` reads for the proven worktree of `record`: `clean`
-// (an empty `git status`) and the removal-only `quarantineRetained`, `ignoredEndpoints` and
-// `hiddenChanges`. Only for a worktree whose common directory is proven ours.
-async function conditionSevenFacts(context, roots, record) {
+// (an empty `git status`) and the removal-only `quarantineRetained`, `ignoredEndpoints`,
+// `hiddenChanges` and `ignoredPlanEntries`. Only for a worktree whose common directory is proven ours.
+async function conditionSevenFacts(context, roots, record, provenPlanDir = null) {
   const target = record.worktreePath;
   const status = await guardedGit(
     context,
@@ -1598,8 +1603,8 @@ async function conditionSevenFacts(context, roots, record) {
     clean: gitOk(status) && asBuffer(status.stdout).length === 0,
     quarantineRetained: await retainsQuarantine(context.fs, target),
     ignoredEndpoints: await ignoredLedgerEndpoints(context, roots, record),
-    ignoredPlanEntries: await ignoredPlanDirectoryEntries(context, record),
     hiddenChanges: await hiddenWorktreeEntries(context, roots, target),
+    ignoredPlanEntries: await ignoredPlanDirectoryEntries(context, record, provenPlanDir),
   };
 }
 
@@ -1609,7 +1614,7 @@ function failedConditionSevenFacts(facts) {
     ...(facts.clean ? [] : ['clean']),
     ...(facts.quarantineRetained ? ['quarantineRetained'] : []),
     ...(facts.ignoredEndpoints?.length === 0 ? [] : ['ignoredEndpoints']),
-    ...((facts.ignoredPlanEntries ?? []).length === 0 ? [] : ['ignoredPlanEntries']),
+    ...(facts.ignoredPlanEntries?.length === 0 ? [] : ['ignoredPlanEntries']),
     ...(facts.hiddenChanges?.length === 0 ? [] : ['hiddenChanges']),
   ];
 }
@@ -2808,14 +2813,8 @@ async function nearestDirectory(fs, target, stop) {
 
 // The directories Git writes to when removing `record`'s worktree and, for a temporary branch,
 // deleting its ref. For a `gone` worktree no Git call runs in its vanished path: it has no
-// administrative directory left to probe. A confirmed superseded plan at `planPath` adds its
-// directory and the worktree root, the two directories its quarantine rename writes.
-async function preflightDirectories(
-  context,
-  roots,
-  record,
-  { gone = false, planPath = null } = {},
-) {
+// administrative directory left to probe.
+async function preflightDirectories(context, roots, record, { gone = false } = {}) {
   const { fs } = context;
   const directories = [];
   const gitDir = gone
@@ -2835,9 +2834,6 @@ async function preflightDirectories(
   }
   const parent = await nearestDirectory(fs, path.dirname(record.worktreePath), '/');
   if (parent) directories.push(parent);
-  if (planPath !== null) {
-    directories.push(path.dirname(path.join(record.worktreePath, planPath)), record.worktreePath);
-  }
   return [...new Set(directories)];
 }
 
@@ -3349,26 +3345,7 @@ async function removeOne(context, roots, recordId, options, deps) {
     }
     gone = true;
   }
-  // A superseded plan is discarded only from a present worktree; its two directories are probed
-  // too, and one that is gone means the plan moved, not that the sandbox denied it.
-  const planPath = gone ? null : (options.supersededPlan?.planPath ?? null);
-  const denied = await preflight(context, roots, first.record, deps, { gone, planPath });
-  if (
-    denied &&
-    planPath !== null &&
-    denied.errno === 'ENOENT' &&
-    [
-      first.record.worktreePath,
-      path.dirname(path.join(first.record.worktreePath, planPath)),
-    ].includes(denied.directory)
-  ) {
-    return itemFailure(recordId, 'NOT_ELIGIBLE', {
-      status: first.record.status,
-      conditions: [7],
-      blockers: [],
-      reason: 'plan-directory-missing',
-    });
-  }
+  const denied = await preflight(context, roots, first.record, deps, { gone });
   if (denied) return itemFailure(recordId, 'SANDBOX_DENIED', denied);
   const cleanupRunId = `cleanup-${randomHex(deps)}`;
   const outcome = await withRecordLock(
@@ -3521,7 +3498,6 @@ async function removeClaimed(context, roots, paths, recordId, record, held, opti
   if (options.discardPlan) {
     const refused = await discardSupersededPlan(
       context,
-      roots,
       paths,
       recordId,
       record,
@@ -3532,6 +3508,7 @@ async function removeClaimed(context, roots, paths, recordId, record, held, opti
     if (refused !== null) return refused;
     const discardedPlan = options.discardPlan.evidence.planPath;
     try {
+      await phase(deps, 'afterDiscard', { recordId });
       return {
         ...(await removeClaimedWorktree(
           context,
@@ -3567,17 +3544,16 @@ async function removeClaimed(context, roots, paths, recordId, record, held, opti
 }
 
 // The discard of a confirmed superseded plan under the record lock and this actor's claim: null
-// once the plan file is gone and the removal-time condition-7 facts hold fresh, else the item's
-// result. The plan is checked in place (identity and raw blob of the proof under the lock), renamed
-// into a RELEASE_QUARANTINE_PREFIX entry of the worktree root, checked there again and unlinked.
+// once the plan file is gone, else the item's result. The plan is checked in place (identity and
+// raw blob of the proof under the lock), renamed into a RELEASE_QUARANTINE_PREFIX entry of the
+// worktree root, checked there again and unlinked.
 // Every outcome before the rename (an interrupt, a changed file or directory, a thrown error, a
 // failed rename while the file is still at its path) restores `options.preClaim` and reports
 // `restored: true`; only a failed restore write falls back to `cleanup-failed` (`restored: false`).
 // A thrown error outside PER_ITEM_ERRORS is restored first and still ends the call. After the
-// rename, a quarantine whose file changed or cannot be hashed is kept, which fails condition 7
-// until the user resolves it, and the record is `cleanup-failed`; so is a failing condition-7
-// recheck, with the plan recoverable from the base.
-async function discardSupersededPlan(context, roots, paths, recordId, record, held, options, deps) {
+// rename, a quarantine whose file cannot be verified is kept, which fails condition 7 until the
+// user resolves it, and the record is `cleanup-failed`.
+async function discardSupersededPlan(context, paths, recordId, record, held, options, deps) {
   const { evidence, identity } = options.discardPlan;
   const git = branchGitContext(context, { timedOut: false });
   const target = path.join(record.worktreePath, evidence.planPath);
@@ -3613,12 +3589,13 @@ async function discardSupersededPlan(context, roots, paths, recordId, record, he
     if (read.state === 'git-failed') {
       fail('GIT_FAILED', `the preserved plan ${evidence.planPath} could not be hashed`);
     }
-    return read.state === 'ok' && sameFile(read);
+    return read.state === 'ok' && sameFile(read) ? read : null;
   };
   const quarantine = path.join(
     record.worktreePath,
     `${RELEASE_QUARANTINE_PREFIX}${randomHex(deps, 8)}`,
   );
+  let preserved;
   try {
     await phase(deps, 'afterClaim', { recordId });
     if (options.signals.signal) {
@@ -3626,7 +3603,8 @@ async function discardSupersededPlan(context, roots, paths, recordId, record, he
     }
     // The file, and its directory as a canonical path inside the worktree, right before the rename.
     const directory = path.dirname(target);
-    if (!(await inPlace()) || (await canonical(context.fs, directory)) !== directory) {
+    preserved = await inPlace();
+    if (preserved === null || (await canonical(context.fs, directory)) !== directory) {
       return await restore('PLAN_CHANGED', { planPath: evidence.planPath });
     }
   } catch (error) {
@@ -3643,7 +3621,7 @@ async function discardSupersededPlan(context, roots, paths, recordId, record, he
     const message = `the preserved plan could not be moved: ${error?.code ?? error?.message}`;
     let still = false;
     try {
-      still = await inPlace();
+      still = (await inPlace()) !== null;
     } catch {
       still = false;
     }
@@ -3653,15 +3631,29 @@ async function discardSupersededPlan(context, roots, paths, recordId, record, he
   // From here on nothing is restored; a thrown error names the quarantine until the unlink and the
   // discarded plan after it.
   try {
+    const beforeRead = await context.fs.lstat(quarantine, { bigint: true }).catch(() => null);
     const quarantined = await readBoundedFile(context.fs, quarantine, MAX_PLAN_BYTES);
-    const blob = quarantined.state === 'ok' ? await rawBlobOid(git, quarantined.content) : null;
-    if (quarantined.state === 'ok' && blob === null) {
-      return await failed(
-        `the preserved plan in the quarantine ${quarantine} could not be hashed; quarantine kept`,
-        { quarantine },
-      );
-    }
-    if (quarantined.state !== 'ok' || !sameFile({ identity: quarantined.identity, blob })) {
+    const matches =
+      quarantined.state === 'ok' &&
+      quarantined.identity.dev === identity.dev &&
+      quarantined.identity.ino === identity.ino &&
+      quarantined.content.equals(preserved.content) &&
+      beforeRead?.isFile() &&
+      String(beforeRead.dev) === quarantined.identity.dev &&
+      String(beforeRead.ino) === quarantined.identity.ino &&
+      String(beforeRead.mtimeNs) === quarantined.identity.mtimeNs &&
+      beforeRead.size === BigInt(quarantined.bytes);
+    const beforeUnlink = matches
+      ? await context.fs.lstat(quarantine, { bigint: true }).catch(() => null)
+      : null;
+    if (
+      !beforeUnlink?.isFile() ||
+      beforeUnlink.dev !== beforeRead.dev ||
+      beforeUnlink.ino !== beforeRead.ino ||
+      beforeUnlink.ctimeNs !== beforeRead.ctimeNs ||
+      beforeUnlink.mtimeNs !== beforeRead.mtimeNs ||
+      beforeUnlink.size !== beforeRead.size
+    ) {
       return await failed(
         `the preserved plan changed on its way into the quarantine ${quarantine}, which is kept`,
         { quarantine },
@@ -3670,21 +3662,6 @@ async function discardSupersededPlan(context, roots, paths, recordId, record, he
     await context.fs.unlink(quarantine);
   } catch (error) {
     if (error && typeof error === 'object') error.quarantine = quarantine;
-    throw error;
-  }
-  try {
-    await phase(deps, 'afterDiscard', { recordId });
-    const facts = failedConditionSevenFacts(await conditionSevenFacts(context, roots, record));
-    // `ignoredPlanEntries` is one of those facts: an ignored file that appeared below the plan
-    // directory since the proof is invisible to `git status`, and the removal would delete it.
-    if (facts.length > 0) {
-      return await failed(
-        `the preserved plan ${evidence.planPath} was discarded, but condition 7 fails: ${facts.join(', ')}`,
-        { discardedPlan: evidence.planPath },
-      );
-    }
-  } catch (error) {
-    if (error && typeof error === 'object') error.discardedPlan = evidence.planPath;
     throw error;
   }
   return null;
@@ -3704,6 +3681,27 @@ async function removeClaimedWorktree(context, roots, paths, recordId, record, he
     const persisted = await markCleanupFailed(context, paths, record, reason, held, deps);
     return itemFailure(recordId, 'REMOVE_FAILED', { reason, persisted });
   } else {
+    if (record.purpose === 'issue-planning') {
+      const proof = await proveOwnWorktree(context, roots, record);
+      const discardedPlan = options.discardPlan?.evidence.planPath ?? null;
+      const provenPlanDir = discardedPlan === null ? null : path.posix.dirname(discardedPlan);
+      const facts = proof.commonDirMatches
+        ? await conditionSevenFacts(context, roots, record, provenPlanDir)
+        : null;
+      const failedFacts = facts === null ? null : failedConditionSevenFacts(facts);
+      if (failedFacts === null || failedFacts.length > 0) {
+        const failure =
+          failedFacts === null
+            ? 'the worktree identity could not be re-established before removal'
+            : `condition 7 fails: ${failedFacts.join(', ')}`;
+        const reason =
+          discardedPlan === null
+            ? failure
+            : `the preserved plan ${discardedPlan} was discarded, but ${failure}`;
+        const persisted = await markCleanupFailed(context, paths, record, reason, held, deps);
+        return itemFailure(recordId, 'REMOVE_FAILED', { reason, persisted });
+      }
+    }
     const removal = await runGit(context, roots.cwd, ['worktree', 'remove', record.worktreePath]);
     if (!gitOk(removal)) {
       const detail = gitFailureDetail(removal, 'git worktree remove failed');
