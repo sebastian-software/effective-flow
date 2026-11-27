@@ -3186,12 +3186,7 @@ test('no source outside the retired-key contract pairs a retired key with fallba
 // Each fragment is pinned by the *trigger token* of its decision point, never by the whole
 // sentence, so rewording the clause stays free while dropping the decision point fails.
 test('every merge-gate lazy pointer names the decision point that loads it', () => {
-  const triggers = new Map(
-    [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)].map((match) => [
-      match[1].trim(),
-      (match[2] ?? '').trim(),
-    ]),
-  );
+  const pointers = [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)];
 
   const pinned = [
     // Deferred by the context-slimming work:
@@ -3303,6 +3298,12 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
         'Phase 0 having resolved a non-observer merge or report mode immediately before Phase 1',
     },
     {
+      fragment: 'pilot-measurement',
+      trigger: /observer-only Phase 5\.5.*suspended observation handle/,
+      decision:
+        'an observer-only wake with a suspended observation handle before issue observation',
+    },
+    {
       // A delegated gate run learns its host only from the `Host: t3-code` input line, so a clause
       // naming only the T3 Code environment would leave every delegated run on T3 without the
       // fragment and waiting through its non-T3 path. Both halves are required.
@@ -3327,21 +3328,21 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
   ];
 
   for (const { fragment, trigger, decision } of pinned) {
-    const when = triggers.get(fragment);
+    const triggers = pointers
+      .filter((match) => match[1].trim() === fragment)
+      .map((match) => (match[2] ?? '').trim());
     assert.ok(
-      when !== undefined,
+      triggers.length > 0,
       `src/tools/merge-gate.md must keep its lazy-include pointer for ${fragment}`,
     );
-    assert.notEqual(
-      when,
-      '',
+    assert.ok(
+      triggers.every(Boolean),
       `the ${fragment} pointer in src/tools/merge-gate.md must carry a non-empty when: clause - ` +
         `without it the fragment ships with no documented moment to load it`,
     );
-    assert.match(
-      when,
-      trigger,
-      `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
+    assert.ok(
+      triggers.some((when) => trigger.test(when)),
+      `the ${fragment} pointer must name its decision point (${decision}); got: ${triggers.join('; ')}`,
     );
   }
 });
@@ -3439,7 +3440,10 @@ test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 
     ),
     'condition 1 must stay the merge authorization and be excluded only from the projection',
   );
-  assert.match(finalization, /`merged` only when a fresh Phase-5 read verifies the merge/);
+  assert.match(
+    finalization,
+    /`merged` only when a fresh Phase-5 read or the observer-only wake verifies the merge/,
+  );
   assert.match(
     finalization,
     /`failed` for a reserved merge-mode run that did not reach a verified merge/,
@@ -3453,9 +3457,9 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
   const fragment = source('src/shared/pilot-measurement.md');
   const phase6 = section(gate, '### Phase 6: Summary', '\n## ');
   ordered(
-    phase6,
-    'Before step 1',
-    '`## Phase 6 observation finalization`',
+    prose(phase6),
+    'Before step 1, finalize a reserved or restored pilot observation only if it has not already been finalized',
+    "per `pilot-measurement`'s Phase 6",
     '1. Delete the wisdom file',
   );
   assert.equal(
@@ -28648,13 +28652,20 @@ test('merge-gate delegated-run entry accepts Host and Resumed wait with one Rela
 // Invariant: a T3-path gate run records exactly one observation across its suspensions: a suspend
 // writes the handle to the wisdom file and finalizes nothing, a resume restores it and reserves
 // nothing, the final ending finalizes it once, and a caller-side ending that deletes a wisdom file
-// still holding a handle finalizes it first.
+// still holding a handle finalizes it first. The handle holds only the identifiers and counters,
+// never a capability, which the helper keeps in its own capability file.
 test('pilot-measurement keeps one observation across host-pr-watch T3 suspensions', () => {
   const text = prose(source('src/shared/pilot-measurement.md'));
   assert.match(
     text,
-    /On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an (?:\*\*)?observation handle(?:\*\*)? to the wisdom file/,
+    /On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an (?:\*\*)?observation handle(?:\*\*)? to the wisdom file, holding only `generationId`, `observationId`, and the three counters\./,
   );
+  const suspended = section(
+    source('src/shared/pilot-measurement.md'),
+    '### Suspended observation',
+    '\n### ',
+  );
+  assert.doesNotMatch(suspended, /capability/i, 'the observation handle holds no capability');
   assert.match(
     text,
     /A `Resumed wait:` re-dispatch or wake restores the observation from that handle, keeps counting, and reserves nothing, so the gate run holds exactly one observation, which its final ending finalizes once and then removes the handle\./,
@@ -28676,6 +28687,22 @@ test('pilot-measurement keeps one observation across host-pr-watch T3 suspension
     prose(source('src/shared/merge-gate-delegated-run.md')),
     /a `SUSPENDED host-pr-watch` return writes its handle per "Suspended observation" instead/,
   );
+});
+
+test('an observer-only wake finalizes the suspended observation before issue observation', () => {
+  const phase = section(
+    source('src/shared/merge-gate-delegated-run.md'),
+    '### Phase 5.5: Observe linked issues after merge',
+    '### Phase 6:',
+  );
+  ordered(phase, 'pilot-measurement', 'Observer-only wake', 'merge-gate-issue-observation');
+  const wake = prose(
+    section(source('src/shared/pilot-measurement.md'), '### Observer-only wake', '\n### '),
+  );
+  assert.match(wake, /observer-only[^.]*observation handle[^.]*wisdom file/);
+  assert.match(wake, /restore[^.]*finalize[^.]*exactly once/i);
+  assert.match(wake, /`merged`[^.]*unavailable check evidence/);
+  assert.match(wake, /never reserve/i);
 });
 
 // Invariant: on T3 the unchanged-resume cap does not strand a stale-verdict re-trigger. A bot wait
