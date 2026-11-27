@@ -914,8 +914,7 @@ async function writeObservationHandle(context, generationId, observationId, capa
     observationHandleRoot(context),
     observationHandleDirectory(context, generationId),
   ]) {
-    if (await directoryState(target)) continue;
-    await guardedMkdir(context, target, deps);
+    if (!(await directoryState(target))) await guardedMkdir(context, target, deps);
     await syncDirectory(context, path.dirname(target), deps);
   }
   const target = observationHandlePath(context, generationId, observationId);

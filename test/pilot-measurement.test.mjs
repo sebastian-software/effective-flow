@@ -963,6 +963,39 @@ test('a failed capability-file write reserves nothing and consumes no ordinal', 
   });
 });
 
+test('a reservation retry syncs both handle parents before writing the capability', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const handles = handleDirectory(fx, generationId);
+  const afterMkdir = failingOnce(
+    fx,
+    ({ args }) => args.includes('rev-parse') && existsSync(handles),
+  );
+  await assert.rejects(() => reserveGateObservation(fx, generationId, afterMkdir), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.deepEqual(readdirSync(handles), []);
+
+  let handleGuardSeen = false;
+  let emptyDirectoryGuards = 0;
+  const beforeCapabilityWrite = failingOnce(fx, ({ args }) => {
+    if (args.includes(HANDLE_ROOT_ARG)) handleGuardSeen = true;
+    return (
+      handleGuardSeen &&
+      args.includes('rev-parse') &&
+      args.includes('--show-toplevel') &&
+      readdirSync(handles).length === 0 &&
+      ++emptyDirectoryGuards === 2
+    );
+  });
+  await assert.rejects(() => reserveGateObservation(fx, generationId, beforeCapabilityWrite), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.deepEqual(readdirSync(handles), []);
+  const reserved = await reserveGateObservation(fx, generationId);
+  assert.equal(reserved.ordinal, 1);
+});
+
 // Invariant: a reservation never stays without its record: a failed state or reservation write
 // removes the capability file it just wrote.
 test('a failed state or reservation write rolls the capability file back', async (t) => {
