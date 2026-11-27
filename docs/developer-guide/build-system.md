@@ -111,6 +111,8 @@ validation records limited evidence (checks that need no Git, such as format and
 test files that name or import a changed path, with the full suite left to pull-request CI) instead
 of bypassing the preflight with another full-suite run.
 
+When validation runs through the shared `t3-project` runner, the harness's own command timeout (for example the Claude Code Bash tool's foreground or background timeout) counts from the start of the call and includes the runner's capacity wait, not only the run. Set `--max-wait` so that the harness timeout still comfortably covers the longest wait it allows, including the overrun the runtime instructions document, plus the command's run time, and run a full suite in the background with a timeout sized the same way. A call the harness interrupts is no validation result; before repeating it, follow the runner's instructions in `/opt/t3-project-runtime/INSTRUCTIONS.md`, which own its flags, limits and recovery.
+
 ## Placeholder and directive syntax
 
 The sources use two kinds of placeholders that the build resolves – their expansion is never
