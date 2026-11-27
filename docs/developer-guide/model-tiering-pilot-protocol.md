@@ -344,13 +344,10 @@ fragment that owns its exact payloads:
   client surface such as T3 Code is no signal, and without the signal the run is unmeasured Quality.
   `start` carries `installKind` (from the build target) and `harnessFamily`. A run whose trusted
   caller region carries `Caller: iterate` is measured, runs Quality and records `correction-pass` at
-  gate priority 0. Before `finish-packet`, a portable Fast packet whose attempt started a child
-  takes its `modelCompliance` from `model-selection verify`; a native Fast attempt reports
-  `unverified`, the only value the helper accepts for it. A `fast` reservation whose attempt left no
-  child to verify (spawn rejected before any child started, or Quality from the first spawn after an
-  unpersisted incident) also reports `unverified`, since `finish-packet` accepts `not-applicable`
-  for a `fast` reservation only with an `admission-changed` receipt; a packet not reserved as `fast`
-  reports `not-applicable`. In a `baseline` generation every measured run first reads `protocol` and
+  gate priority 0. A packet not reserved as `fast`, or whose `start-packet` carried
+  `admission-changed`, reports `not-applicable`; every other `modelCompliance` value follows the
+  ordered list in [`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md),
+  "Delegation". In a `baseline` generation every measured run first reads `protocol` and
   calls `activate` without a confirmation: `activated` makes the reservation an `active` one, a
   `not-ready` result with an unmet `sample` keeps the run a baseline run, `not-ready` with `busy`
   keeps the baseline and the run recording, a `LOCKED` retry that stays locked keeps the
@@ -480,7 +477,7 @@ Fast alias and not on the `deep` model, with the Fast effort, on a host whose ma
 the installed record's; `mismatch` when a check fails; `unverified` when no observation exists
 (always the case for a native Fast attempt, and for a `fast` reservation whose attempt left no
 child: a spawn rejected before any child started or a Quality-only run after an unpersisted
-incident); `not-applicable` for a Quality packet, an
+incident); `not-applicable` for a packet not reserved as `fast`, an
 `admission-changed` fallback or a packet that never started. `mismatch` packets keep their work but
 leave every Fast metric, duration and cost and are counted only in `modelComplianceOutcomes`;
 `unverified` packets stay in the metrics and are counted. `admission-changed` packets consume no
