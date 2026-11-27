@@ -564,7 +564,7 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
 ### Phase 7: Completion
 
 1. Write the plan file.
-2. Format only the new plan file if a formatter for Markdown is clearly configured; then rerun the Phase 5 mechanical check on the final file, now including the review placeholders.
+2. Format only the new plan file if a formatter for Markdown is clearly configured (an unattended run formats per `unattended-planning` "Completion" step 1 instead); then rerun the Phase 5 mechanical check on the final file, now including the review placeholders.
 3. **Publication.** When the `plan-publication` pointer below applies, run that contract, handing
    it the plan file's absolute and repository-relative paths, this run's state (`interactive` or
    `non-interactive`), and the calling workflow `plan`. Run the worktree-record exit self-check.

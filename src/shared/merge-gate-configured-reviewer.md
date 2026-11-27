@@ -266,7 +266,7 @@ Phase 3 under the digest rule of "Answers and returns".
 **On the T3 path of `host-pr-watch`,** evaluate before every checks suspend of Phase 2 step 2 and on
 every checks resume at an unchanged head. A resume that meets the conditions enters Phase 3 in the recorded round, ahead of
 every wake class at that head – progress, unchanged, or changed only by a new pending check – and of
-the "Bounds" stop for an all-optional pending set, which then decides the following suspend. It
+the "No-wake stop" of `host-pr-watch`, which then decides the following suspend. It
 resets the unchanged count to zero, and the re-suspension after an early Phase 3 without head
 movement stays in that round.
 

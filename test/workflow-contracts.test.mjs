@@ -28373,6 +28373,151 @@ test('every sleep, --watch, pr-checks-wait, Monitor or ScheduleWakeup occurrence
   }
 });
 
+// Invariant: the T3 section states that a non-required job never wakes the session and that a run
+// which must wait for one, where no tool rule governs the wait, hands back to the user instead of
+// polling, and it leaves wake classification to the merge-gate and iterate rules. The paragraph
+// sits between the wait rule and **The tools.**, so it reads as a qualification of the wait rule.
+// A comment a job posts may wake the session, but no rule relies on that wake.
+test('host-pr-watch T3 section hands a wait on a non-required job back to the user', () => {
+  const raw = hostPrWatchT3Section();
+  const heading = raw.indexOf('**Checks that are not required.**');
+  assert.notEqual(heading, -1, 'the T3 section must carry the non-required-checks paragraph');
+  const waitRule = raw.indexOf('**The host owns every pull-request wait.**');
+  assert.notEqual(waitRule, -1, 'the T3 section must carry the wait rule');
+  assert.ok(waitRule < heading, 'the paragraph follows the wait rule');
+  const tools = raw.indexOf('**The tools.**');
+  assert.ok(heading < tools, 'the paragraph precedes **The tools.**');
+  const paragraph = prose(raw.slice(heading, tools));
+  assert.match(paragraph, /non-required check that passes never wakes the session/);
+  assert.match(
+    paragraph,
+    /Where no tool rule below governs the wait, a run that must wait for such a check hands back to the user/,
+  );
+  assert.match(paragraph, /classified by the `merge-gate` and `iterate` wake rules below/);
+  assert.match(paragraph, /may wake the session like any new comment, but no rule relies on it/);
+});
+
+// Invariant (#848): on T3 no merge-gate suspension waits on a pending set whose only completion
+// signal never wakes the session. One "No-wake stop" paragraph between "Bot order" and "Suspend"
+// applies before every suspension, first or resumed, and for kind `checks` after `## Early entry`;
+// the stop is stated once ("Bounds" keeps no `required: false` copy); the caller's Watch warning
+// covers only the cases that can still stall.
+test('host-pr-watch T3 merge-gate path stops instead of suspending when no pending signal can wake the session', () => {
+  const raw = hostPrWatchT3Section();
+  const stopAt = raw.indexOf('**No-wake stop.**');
+  assert.notEqual(stopAt, -1, 'the T3 section must carry the "No-wake stop" paragraph');
+  assert.ok(raw.indexOf('**Bot order**') < stopAt, 'the "No-wake stop" follows "Bot order"');
+  assert.ok(stopAt < raw.indexOf('**Suspend.**'), 'the "No-wake stop" precedes "Suspend"');
+  const stop = prose(boundedSlice(raw, '**No-wake stop.**', '**Suspend.**'));
+  assert.match(stop, /Before any suspension, first or resumed/, 'applies to every suspension');
+  assert.match(
+    stop,
+    near('for kind `checks` after `## Early entry`', '`merge-gate-configured-reviewer`', 80),
+    'for kind checks it runs after Early entry of the configured-reviewer route',
+  );
+  assert.match(stop, /"Report-and-stop, run side" instead of suspending/, 'takes the stop path');
+  assert.match(
+    stop,
+    near(
+      '`mergeGate.requireAllChecks: true`',
+      'every check of a kind `checks` pending set reports `required: false`',
+      120,
+    ),
+    'case (a): requireAllChecks with every pending check non-required',
+  );
+  assert.match(
+    stop,
+    /every pending bot is running by its configured `\.check`/,
+    'case (b): every pending bot is running by its configured check',
+  );
+  assert.match(
+    stop,
+    near('every pending bot is running', 'at least one matching entry being `PENDING`', 160),
+    'case (b) needs a matching PENDING entry',
+  );
+  assert.match(
+    stop,
+    near(
+      'every matching `PENDING` entry reports `required: false`',
+      'no re-trigger answer is outstanding',
+      80,
+    ),
+    'case (b) needs every matching PENDING entry non-required and no re-trigger outstanding',
+  );
+  assert.match(
+    stop,
+    near('quoted as data', 'what the same read already makes actionable', 80),
+    'the report quotes what is already actionable as data',
+  );
+  assert.match(
+    stop,
+    /for kind `checks` each check failing as Phase 2 step 4 defines it/,
+    'the report names failing checks for kind checks',
+  );
+  assert.match(
+    stop,
+    /for kind `bot` each has run bot with items step 5 would hand over/,
+    'the report names has-run bots with items for kind bot',
+  );
+  assert.match(
+    stop,
+    near('by login with their count', 'never their text', 200),
+    'bot items are named by login with their count, never their text',
+  );
+  assert.match(
+    stop,
+    /re-entry helps once the no-wake checks or bots have completed/,
+    'the report says when re-entry helps',
+  );
+
+  const pending = boundedSlice(raw, '**Pending read**', '**Bot order**');
+  assert.match(
+    prose(pending),
+    near('A non-empty set suspends', 'subject to the "No-wake stop"', 160),
+    'the pending read routes a non-empty set through the "No-wake stop"',
+  );
+
+  const bounds = boundedSlice(raw, '**Bounds.**', '**Report-and-stop, run side.**');
+  assert.doesNotMatch(
+    prose(bounds),
+    /required: false/,
+    '"Bounds" keeps no copy of the non-required rule',
+  );
+
+  const inline = prose(boundedSlice(raw, '**Inline run.**', '### iterate: top-level wait'));
+  assert.match(inline, /the "No-wake stop"/, 'the inline run names the "No-wake stop"');
+  assert.doesNotMatch(inline, /optional-check rules/, 'the inline run drops the old rule name');
+
+  const accept = prose(boundedSlice(raw, '**Accept**', '**Watch.**'));
+  assert.match(
+    accept,
+    /the "No-wake stop" ends the run before one/,
+    'the caller accepts that the "No-wake stop" ends the run before a suspension',
+  );
+
+  const watch = prose(boundedSlice(raw, '**Watch.**', '**Wakes and requests.**'));
+  assert.doesNotMatch(
+    watch,
+    /where none of the pending checks is required/,
+    'the Watch warning drops the unconditional check clause',
+  );
+  assert.doesNotMatch(
+    watch,
+    /has-run signal is a configured `\.check` that is not required/,
+    'the Watch warning drops the unconditional bot clause',
+  );
+  assert.match(
+    watch,
+    near('no pending check is required', 'at least one is of unstated requiredness', 80),
+    'the Watch warning covers checks of unstated requiredness',
+  );
+  assert.match(
+    watch,
+    near('configured `\\.check` has not reported yet', 'reports no requiredness', 80),
+    'the Watch warning covers a bot check that has not reported or states no requiredness',
+  );
+});
+
 // Invariant: the fragment names the host tools unqualified, as the host's deferred-tool mechanism
 // loads them, never with an `mcp__` prefix.
 test('host-pr-watch names watch, link and unwatch tools unqualified without an mcp__ prefix', () => {
@@ -28677,6 +28822,244 @@ test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-res
     bounds,
     near('Any other pending bot or check at the cap', 'keeps report-and-stop', 20),
     'every other pending bot or check at the cap keeps report-and-stop',
+  );
+});
+
+// The "### iterate: top-level wait" section: its slice runs from its heading to the next heading of
+// level 1-3, or to the end of the file only when none follows, and the heading must exist so a
+// missing heading fails instead of cutting from the wrong place.
+function hostPrWatchIterateWait() {
+  const text = hostPrWatchSource();
+  const heading = '### iterate: top-level wait';
+  const start = text.indexOf(heading);
+  assert.notEqual(start, -1, `${HOST_PR_WATCH_PATH} must carry the heading ${heading}`);
+  const next = text.slice(start + heading.length).search(/\n#{1,3} /);
+  return prose(next === -1 ? text.slice(start) : text.slice(start, start + heading.length + next));
+}
+
+// Invariant (#849): a top-level iterate run suspends in a watch only while a still-running reviewer
+// can actually wake it - a pending required check of its configured `mergeGate.bots.<login>.check`;
+// every other running-reviewer state hands back instead of asking, the gate lives only in this
+// fragment, and the hand-back replaces the T3 question.
+test('host-pr-watch iterate wait gates the watch on a pending required check and hands back instead of asking otherwise', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'wake-capable\\W+only when a pending check entry matching its configured `mergeGate\\.bots\\.<login>\\.check`',
+      'reports `required: true`',
+      80,
+    ),
+    'wake-capable only with a pending matching entry of the configured check reporting required: true',
+  );
+  assert.match(wait, /not wake-capable when no entry matches its check/i, 'no matching entry');
+  assert.match(wait, near('not wake-capable', 'reports `required: false`', 200), 'required: false');
+  assert.match(
+    wait,
+    near('not wake-capable', 'states no requiredness \\(Forgejo, or a missing field\\)', 200),
+    'unstated requiredness (Forgejo or missing field)',
+  );
+  assert.match(
+    wait,
+    near('not wake-capable', 'only through a trigger comment', 200),
+    'a trigger-comment-only running state',
+  );
+  assert.match(
+    wait,
+    near(
+      '`merge-gate` caller\'s warning under "Watch\\."',
+      'unstated requiredness counts as not wake-capable here',
+      80,
+    ),
+    'the deliberate divergence from the merge-gate caller warning',
+  );
+  assert.match(
+    wait,
+    near(
+      'none is wake-capable, the run hands back instead of asking',
+      'replaces step 4\'s T3 question and the Rules\' "ask once per Phase 1\\.5"',
+      120,
+    ),
+    "the hand-back replaces step 4's T3 question and the Rules' ask-once",
+  );
+  const iterate = prose(source('src/tools/iterate.md'));
+  assert.doesNotMatch(iterate, /wake-capable/i, 'iterate.md carries no copy of the gate');
+  assert.doesNotMatch(iterate, /neutral wake/i, 'iterate.md carries no copy of the neutral wake');
+});
+
+// Invariant (#849): the wake gate is not a one-time check - it decides every re-suspend, and a
+// still-running reviewer re-suspends only when one still running is wake-capable.
+test('host-pr-watch iterate wait runs the gate again before every re-suspend', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'a reviewer still running: the gate decides each re-suspend',
+      'Re-suspend when one still running is wake-capable',
+      20,
+    ),
+    'the gate decides each re-suspend of a still-running reviewer',
+  );
+  assert.match(
+    wait,
+    near('Re-suspend when one still running is wake-capable', 'otherwise hand back', 120),
+    'a still-running reviewer re-suspends only when one still running is wake-capable, otherwise hand back',
+  );
+});
+
+// Invariant (#849): the hand-back is a watchless suspension that tells the user exactly what is
+// running and on what evidence, promises no wake, offers continue, proceed or stop, and reuses the
+// existing Proceed, step 7 and report contracts instead of restating "Checks that are not required.".
+test('host-pr-watch iterate wait defines the hand-back as a watchless suspension with continue, proceed or stop', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(wait, /A hand-back is a suspension without a watch/i, 'no watch');
+  assert.match(
+    wait,
+    near("Unwatch first while this run's watch is on", 'print one visible line', 80),
+    'unwatch first, then one visible line',
+  );
+  assert.match(
+    wait,
+    near(
+      'naming each running reviewer with its evidence',
+      '\\(the check name and its stated requiredness, or the trigger comment\\)',
+      80,
+    ),
+    'each running reviewer with its evidence',
+  );
+  assert.match(
+    wait,
+    /no event is guaranteed to wake the session/i,
+    'no event is guaranteed to wake the session',
+  );
+  assert.match(wait, /offering continue, proceed or stop/i, 'continue, proceed or stop');
+  assert.match(
+    wait,
+    /A request to continue is classified like a wake/i,
+    'continue is classified like a wake',
+  );
+  assert.match(
+    wait,
+    near("continues as Phase 1\\.5's `Proceed` does", 'step 7 records the branch as proceeded', 80),
+    "proceed is Phase 1.5's Proceed and step 7 records it",
+  );
+  assert.match(wait, /stop ends the run with step 5's report/i, "stop ends with step 5's report");
+  assert.match(
+    wait,
+    /Estimates and polling follow "Checks that are not required\."/i,
+    'refers to the existing paragraph instead of restating it',
+  );
+});
+
+// Invariant (#849): an answered `Wait` calls `watch_pull_request`; a hand-back ends when a re-read
+// finds a wake-capable running reviewer - asking the T3 question only if this run never asked it,
+// otherwise one more watch call - and a watch starts with exactly one call while re-suspends with the
+// watch on call nothing, so the old "never call the watch again" rule is gone.
+test('host-pr-watch iterate wait leaves the hand-back through the question or one more watch call', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    /When the T3 question is answered `Wait`, call `watch_pull_request`/i,
+    'an answered Wait calls watch_pull_request',
+  );
+  assert.match(
+    wait,
+    near(
+      'When a re-read finds a wake-capable running reviewer, the hand-back ends',
+      'ask the T3 question if this run has never asked it',
+      80,
+    ),
+    'the hand-back ends on a wake-capable running reviewer; the question is asked if never asked',
+  );
+  assert.match(
+    wait,
+    /otherwise call `watch_pull_request` once more and suspend as on `Wait`/i,
+    'otherwise one more watch call and suspend as on Wait',
+  );
+  assert.match(
+    wait,
+    near(
+      'A watch starts with exactly one `watch_pull_request` call, on `Wait` or on leaving a hand-back',
+      're-suspends while it stays on call nothing',
+      20,
+    ),
+    'a watch starts with exactly one call; re-suspends while it stays on call nothing',
+  );
+  assert.doesNotMatch(
+    wait,
+    /re-suspend without asking again or calling the watch again/i,
+    'the old never-ask-again, never-watch-again rule is gone',
+  );
+});
+
+// Invariant (#849): a neutral wake - same head, nothing new from people or failures, and a required
+// check newly passed - neither adds to nor resets the unchanged count; non-required checks and
+// merge-state changes other than a new conflict never affect it, each read's check states from
+// Phase 1's read on are recorded before every suspension as the next baseline, together with the
+// unchanged-wake count, and the bound on neutral wakes is stated.
+test('host-pr-watch iterate wait defines the neutral wake and its bound', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'An unchanged wake is neutral when its re-read also shows an unchanged head, no new comment, review or thread, no newly failed required check and no new conflict',
+      'at least one required check newly passed: passed now, and not passed or absent in the previous read',
+      80,
+    ),
+    'the neutral-wake conditions',
+  );
+  assert.match(
+    wait,
+    near(
+      'Non-required checks, failures included, and other merge-state changes do not affect this',
+      'A neutral wake neither adds to nor resets the count',
+      40,
+    ),
+    'non-required checks and other merge-state changes do not affect it; neutral neither adds nor resets',
+  );
+  assert.match(
+    wait,
+    near(
+      "Record each read's check states, starting with Phase 1's read, and the unchanged-wake count in the wisdom file with what Phase 1\\.5 step 7 records",
+      "before every suspension, the check states as the next comparison's baseline",
+      20,
+    ),
+    "check states from Phase 1's read on and the unchanged-wake count, recorded with step 7's record before every suspension, the check states as the baseline",
+  );
+  assert.match(
+    wait,
+    near(
+      'Neutral wakes are bounded: a required check newly passes a bounded number of times per head',
+      'a re-run read only after it passes again reads as passed in both reads, so its wake counts',
+      80,
+    ),
+    'the bound on neutral wakes: per head, and a re-run counts once it passes again',
+  );
+});
+
+// Invariant (#849): the cap of three consecutive counted unchanged wakes is retained - it ends the
+// run with step 5's report - every non-neutral unchanged wake, such as an unrelated comment, counts
+// toward the cap, and a wake that changed a reviewer's state or evidence resets the count.
+test('host-pr-watch iterate wait keeps the cap of three counted unchanged wakes and its reset', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near('after three consecutive counted unchanged wakes', "end the run with step 5's report", 40),
+    "three consecutive counted unchanged wakes end the run with step 5's report",
+  );
+  assert.match(
+    wait,
+    near(
+      'A neutral wake neither adds to nor resets the count',
+      'every other unchanged wake counts',
+      40,
+    ),
+    'every non-neutral unchanged wake counts toward the cap',
+  );
+  assert.match(
+    wait,
+    /A wake that changed a reviewer's state or evidence resets the count/i,
+    'a changed wake resets the count',
   );
 });
 
@@ -30411,7 +30794,8 @@ test('Phase 6 reports every early round from its append-only entry', () => {
 });
 
 // Invariant: on T3 a verdict wake enters early in the recorded round, ahead of every wake class at
-// an unchanged head and of the all-optional stop, so an early round costs no extra round there.
+// an unchanged head and of the "No-wake stop", which decides only the suspend that follows, so an
+// early round costs no extra round there.
 test('a T3 checks resume enters early in the recorded round ahead of every wake class', () => {
   const early = earlyEntrySection();
   assert.match(
@@ -30427,7 +30811,16 @@ test('a T3 checks resume enters early in the recorded round ahead of every wake 
     near('enters Phase 3 in the recorded round', 'ahead of every wake class', 20),
   );
   assert.match(early, near('progress, unchanged', 'changed only by a new pending check', 20));
-  assert.match(early, near('"Bounds" stop', 'all-optional pending set', 20));
+  assert.match(
+    early,
+    near('ahead of every wake class', '"No-wake stop" of `host-pr-watch`', 200),
+    'early entry precedes every wake class and the "No-wake stop" of host-pr-watch',
+  );
+  assert.match(
+    early,
+    near('"No-wake stop" of `host-pr-watch`', 'then decides the following suspend', 40),
+    'the "No-wake stop" then decides the following suspend',
+  );
   assert.match(early, near('resets the unchanged count to zero', 'stays in that round', 120));
 });
 
@@ -30588,5 +30981,42 @@ test('a possibly applied PR comment write is re-read on its own target and never
   assert.match(
     section(watch, 'Bounds.', 'Report-and-stop'),
     near('For an unconfirmed re-trigger', 'no review absent from the recorded baseline', 40),
+  );
+});
+
+// Pins the two named performers in each fragment plus the removal of the old exclusivity phrase,
+// not a full set comparison.
+test('every fragment lists the same workflows that may resolve a conflict on a head branch', () => {
+  const comments = source('src/shared/pr-review-comments.md');
+  const windows = {
+    'src/shared/pr-review-comments.md': boundedSlice(
+      comments,
+      'A head branch that **conflicts**',
+      'is reported instead of performed.',
+    ),
+    'src/shared/worktree-integration.md': boundedSlice(
+      source('src/shared/worktree-integration.md'),
+      '**Update existing PRs:**',
+      '1. **Mark the plan as implemented',
+    ),
+    'src/shared/merge-gate-conflict-resolution.md': boundedSlice(
+      source('src/shared/merge-gate-conflict-resolution.md'),
+      '## Conflict-resolution delegation contract',
+      'with its own stated substitutions.',
+    ),
+  };
+  for (const [path, slice] of Object.entries(windows)) {
+    const text = prose(slice);
+    assert.ok(text.includes('{{SKILL:merge-gate}}'), `${path} names merge-gate`);
+    assert.ok(
+      text.includes('autopilot-delivery-conflict'),
+      `${path} names autopilot-delivery-conflict`,
+    );
+  }
+  assert.ok(
+    !prose(section(comments, '### No history rewriting')).includes(
+      'no other workflow resolves a conflict',
+    ),
+    'the old exclusivity phrase is gone',
   );
 });

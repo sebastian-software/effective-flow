@@ -392,8 +392,12 @@ whether to **wait** for it, **proceed** anyway, or **abort**. "Wait" is one boun
 one fresh read, not a poll loop; if the reviewer is still running after that, the run ends with a
 report instead of waiting again. In a top-level run on T3 Code the option reads "Wait – watch and
 resume on PR events": the run ends the turn, and each PR event
-resumes it with a fresh read, with no time bound (you can say continue or stop). Three consecutive
-wakes that change no reviewer's state end the run with the same report. The watch is removed before the final report, and
+resumes it with a fresh read, with no time bound (you can say continue or stop). A passing check
+that is not required never wakes the session, so the run watches only while a running reviewer's
+configured check is pending and reported as required. Otherwise it does not ask: it names each
+running reviewer with its evidence and hands back, and you can say continue (re-read), proceed or
+stop. Three consecutive wakes that change no reviewer's state end the run with the same report; a
+wake whose only news is a required check passing does not count. The watch is removed before the final report, and
 a top-level run links the pull request to the thread after its push. Other hosts keep the bounded
 wait. A run that cannot be asked returns `ABORT: review still in flight`
 and names the reviewers. Runs delegated by [`/effective-flow merge-gate`](tools-deliver.md) are
