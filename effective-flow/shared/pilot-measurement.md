@@ -76,8 +76,10 @@ before Phase 1 performs gate work.
    `ciRepairDelegations`, `reviewerImplementationDelegations`, and
    `conflictResolutionAttempts`.
 5. If inventory or reservation fails, continue the merge gate with the same mode and outcome it
-   would otherwise have had. Never retry a mutation whose envelope says it may have succeeded, and
-   never turn an observation failure into a merge blocker.
+   would otherwise have had. On `UNSAFE_RUNTIME_ROOT`, this dispatch's final report names the
+   skipped observation in one value-free line with the code, its closed `details.reason`, and
+   `details.subcommand` when present. Never retry a mutation whose envelope says it may have
+   succeeded, and never turn an observation failure into a merge blocker.
 6. Consume only the helper envelope's explicit `pilotControlOutcome`, `controlStatePersisted`, and
    `alert` metadata. Report a suspension or incomplete-evidence state only when the outcome names
    it and `controlStatePersisted` is `true`; never infer either from an exit code, missing receipt,

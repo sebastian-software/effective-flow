@@ -93,8 +93,7 @@ export function buildForgejoCommandPlan(operation, input, repository) {
   switch (operation) {
     // Class B: tea renderer output; the authority for its keys is tea's `modules/print`, not
     // `modules/structs`. Colors arrive without a leading `#` and `index` arrives stringified.
-    // See the GitHub case in `remote-tracker-github-core.mjs` for why this plan exists without a
-    // registered operation.
+    // Shared by public label-list reads and the label-create pre-check.
     // `--exclude-org` scopes the pre-check to repository labels: an organization label of the same
     // name must not suppress creating the repository-scoped one, because the worst case of a
     // redundant repository label is cosmetic while the worst case of the opposite is an issue that
@@ -478,6 +477,9 @@ export function buildForgejoCommandPlan(operation, input, repository) {
     // a client-side setting rather than the account the forge attributes a write to. The two can
     // differ, and a caller that separates its own comments from a person's would then claim a
     // stranger's comment as its own.
+    // Class A: raw repository JSON; visibility uses the shared boolean-private normalizer.
+    case 'repository-visibility-read':
+      return teaApiReadPlan(repository, `repos/${owner}/${repo}`);
     case 'viewer-read':
       return mutationPlan('tea', ['api', 'user', '--include', '--login', repository.login ?? host]);
     // Class A: raw API JSON (`modules/structs.RepoCollaboratorPermission`), whose `permission` and

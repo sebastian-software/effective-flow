@@ -386,9 +386,10 @@ channel and preserve this analysis's exact terminal output and read-only authori
 5. Ensure that a language-matching `## Plan-Review` / `## Plan review` section exists in file mode
    or `### Plan-Review` / `### Plan review` in issue mode. Older issue comments missing these
    sections are normalized in place; do not reject them or create another comment.
-6. Except for the explicit open-points normalization above, preserve existing artifact content,
-   order, marker, and complete language. Pass that concrete language to any delegated reviewer;
-   the delegate does not resolve configuration independently.
+6. Except for the explicit open-points normalization above and the duplicate result-line rewrite
+   of `plan-contract`, preserve existing artifact content, order, marker, and complete language.
+   Pass that concrete language to any delegated reviewer; the delegate does not resolve
+   configuration independently.
 
 ### Phase 2: Identify findings
 
@@ -477,7 +478,7 @@ After each decision or direct correction:
    - Open points → each decision-oriented, concrete, and with a note on
      how the review is continued later.
 3. Update the matching plan-review section in the artifact language and at its adapter's heading
-   level:
+   level, keeping its single result line per `plan-contract`:
    - German uses `**Ergebnis:** Freigegeben` / `**Ergebnis:** Überarbeitung nötig`.
    - English uses `**Result:** Approved` / `**Result:** Revision required`.
    - Use the approved value if no critical findings and no

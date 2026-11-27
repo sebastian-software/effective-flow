@@ -351,8 +351,8 @@ then run `git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' 
 `passId`, `creationOid` = `collect.baseOid`); a failed step stops the pass. Then require
 `git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
 `consent-check` when it applies. Every plan file, lint and publication of this pass uses
-`PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 5
-preserves a plan in it: then transition its record `active` → `aborted` with reason
+`PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 4 or
+Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason
 `plan-preserved`, keep it and report its path and issue. The claim is released either way.
 Run no raw fetch or plan-branch read; WP3/WP4 own bounded Git reads.
 Dry-run reports recovery without completing it. Publishing processes only `authorizedRecovery`,
@@ -363,10 +363,11 @@ in its returned order and up to remaining `limits.plans`:
 - For an authorized orphan, call `plan-publication.mjs inspect-branch` with
   `{cwd, runState: "unattended", visibility: "standard", issue, planDir, branch: headRef,
 branchPrefix, remote: "origin", baseBranch, expectedBaseOid: collect.baseOid}`. It returns only
-  `{baseOid, branchTip, planFile, blobOid, reviewResult, openPointCount}`. Build fixed text below
-  from these bound enums/numbers, then call `complete-branch --apply` with that same input plus
-  `{title, body, expectedTipOid: <inspected branchTip>}`. Pass no `planFile`, `commitMessage` or
-  model prose to completion. A moved tip/base stops; only confirmed success is recordable.
+  `{baseOid, branchTip, planFile, blobOid, reviewResult, openPointCount}`. Then call
+  `complete-branch --apply` with that same input plus `{languageGit, languageForge,
+expectedTipOid: <inspected branchTip>}`; WP4 derives the forge text from the branch blob as in
+  Phase 5. Pass no `planFile`, forge text or model prose to completion. A moved tip/base stops;
+  only confirmed success is recordable.
 
 Record a recovered publication with `verdict-record` input
 `{cwd, passId, issue, fingerprint, verdict: "published", mode, reason,
@@ -455,9 +456,20 @@ No issue prose is in the handoff. WP2 owns the new-file name/header, internal re
 questions as blocking points and no-publication boundary. Require terminal `DONE` or `ABORT`;
 the returned summary grants no publication authority and proves no artifact metadata.
 
+The delegated orchestrator relays the planner's terminal line verbatim. After any planner `ABORT`
+other than `NESTED_SPAWN_UNAVAILABLE`, still run the verification below, which here also admits
+zero new plans; a mutation or ambiguous identity stays a pass stop. With exactly one verified new
+plan, run `publication-metadata` as below and `plan-publication.mjs scan` with
+`{cwd, runState: "unattended", planFile: <relative plan path>}`, reading only its finding ids;
+classify from these two helper results through the ordered mapping, never from the abort text
+(a non-empty `data.blocking` from that `scan` is item 4; a `publication-metadata` refusal is
+item 5, because an interrupted planner can leave metadata unwritten and the refusal names no
+failed check; anything else is item 5), preserve the plan as Phase 5 preserves an unpublished one,
+and skip Phase 5. Without a new plan, item 5 applies and nothing is preserved.
+
 Verify no HEAD/index/tracked/unrelated-path mutation or overwrite in `PLANNING_ROOT` and exactly one
 new regular untracked canonical plan directly under its `plan.dir`, associated with this issue.
-Call only
+Besides that abort path's one `scan`, call only
 `plan-lint.mjs publication-metadata` with `{cwd, planDir, files: [<relative plan path>],
 expectedLanguage: <resolved language.workflow de|en>}`. Require a constant-safe successful envelope
 whose projection is exactly `{planFile, blobOid, reviewResult: "approved"|"revision-required",
@@ -473,19 +485,15 @@ independently; a prior snapshot or equal contents does not prove ownership.
 
 ## Phase 5: Publish
 
-Use fixed localized forge text only. English title and `commitMessage` are exactly
-`docs: plan issue #<N>`; German descriptive words are `docs: Issue #<N> planen`.
-English body: `Plan for issue #<N>; review result: <approved|revision required>; open points: <n>.`
-German body: `Plan für Issue #<N>; Review-Ergebnis: <freigegeben|Überarbeitung nötig>; offene Punkte: <n>.`
-Title/commit use `language.git`; body uses `language.forge`. Map only validated `reviewResult`
-enums and `openPointCount` into these templates. Do not copy plan/issue/title/comment prose,
-local paths, closing keywords or markers. WP4 alone appends its plan marker and `Refs #<N>`.
-`revision-required` and positive open-point counts remain publishable; implementation waits for
-clarification, which the fixed body makes explicit.
+Pass no forge text. WP4 derives the title, commit subject and body from the verified plan bytes,
+sanitizes them, appends its plan marker and `Refs #<N>`, and returns none of that text;
+`languageGit` and `languageForge` carry the resolved `language.git` and `language.forge`. Never
+copy plan/issue/title/comment prose into a call. `revision-required` and positive open-point counts
+remain publishable; implementation waits for clarification, which the body's review line states.
 
 Call `plan-publication.mjs publish --apply` with exactly
 `{cwd, runState: "unattended", visibility: "standard", issue, planDir, planFile, branchPrefix,
-remote: "origin", baseBranch, title, body, commitMessage, expectedBaseOid: collect.baseOid,
+remote: "origin", baseBranch, languageGit, languageForge, expectedBaseOid: collect.baseOid,
 expectedBlobOid: <metadata blobOid>}`. WP4 scans, runs hooks, creates the single-file plumbing
 commit, compares its actual plan blob before push, pushes create-only and confirms the draft PR.
 Do not implement those mechanics here or retry an ambiguous create. A `BASE_CHANGED` without
@@ -523,13 +531,15 @@ Apply this order with operation, phase and safe details, not a code-only allowli
    authorize later recovery.
 4. **Issue-content failures only:** malformed readiness or demonstrable new/authorized plan
    faults (plan-content scan, issue-header mismatch, invalid structure/encoding or missing/invalid
-   review metadata) may record `failed`. Prove origin using operation/phase/safe details.
+   review metadata, or any refusal with `details.source: "derived"`, which WP4 raises on forge
+   text it derived from the plan) may record `failed`. Prove origin using operation/phase/safe
+   details.
    `SCAN_BLOCKED` for a hook-modified commit message is not plan content; `INVALID_CONTENT` with
    `details.reason: blob` is an integrity failure. Neither spends an issue retry.
 5. **Default environment/integrity stop:** base/tip/blob drift (`BASE_CHANGED`, except the first
    pre-mutation one, which `issue-buddy-base-move` assesses for its single assessed re-publish,
    flagged when unresolved or moved again; `TIP_CHANGED`; `BLOB_CHANGED`),
-   Git/forge/network/runtime/journal errors, hook or fixed-template/input contract faults, blob
+   Git/forge/network/runtime/journal errors, hook, base-move-flag or input-contract faults, blob
    integrity, `PUSH_REJECTED` without confirmed success, unknown codes or unknown origins stop the
    pass without an issue failure/retry. Do not retry or silently replan.
 6. **Persistence:** never bypass `verdict-record`, its pending intent or reconciliation with a

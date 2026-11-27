@@ -23,15 +23,14 @@ builds the plan commit on the assessed tip itself.
 3. **`republish: true`.** Re-run `plan-lint.mjs publication-metadata` with the same input. Its
    projection, `blobOid` included, must equal the first run's; a different projection stops with
    `BLOB_CHANGED`, a failed re-run with its own code, both under item 5 and without publication.
-   Then call `publish --apply` once, with the unchanged input and fixed texts plus
-   `expectedBaseOid: <toBaseOid>` and `allowNewerBase: true`; an `overlap` or `undecidable` verdict
-   also passes `baseMove: {fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths}`
-   from the envelope, rendered as the fixed "Unresolved base move" flag. A base that moved again
-   still publishes on `toBaseOid`, the newer move flagged unassessed as `furtherBaseMove`. Map the
-   result by the ordered outcome mapping: its `BASE_CHANGED` is an item-5 stop keeping the entry; a
-   check first run here maps as items 3 and 4 define; a `body` refusal the flag causes
-   (`SCAN_BLOCKED` on the body, `INVALID_INPUT` or `MARKER_INVALID` from flag path text) is an
-   item-5 input-contract stop, not a recorded `failed`. A flagged PR is a normal `published`
+   Then call `publish --apply` once, with the unchanged input plus `expectedBaseOid: <toBaseOid>`
+   and `allowNewerBase: true`; an `overlap` or `undecidable` verdict also passes
+   `baseMove: {fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths}` from the
+   envelope, rendered as the fixed "Unresolved base move" flag. A base that moved again still
+   publishes on `toBaseOid`, the newer move flagged unassessed as `furtherBaseMove`. Map the result
+   by the ordered outcome mapping: its `BASE_CHANGED` is an item-5 stop keeping the entry; a check
+   first run here maps as items 3 and 4 define; a refusal with `details.source: "base-move-flag"`
+   is an item-5 input-contract stop, not a recorded `failed`. A flagged PR is a normal `published`
    outcome; review reconciles it.
 4. **`republish: false`** (`not-ancestor`, `same-issue-plan` or `plan-identity`). Stop as item 5
    does: preserve the plan and its planning worktree (Phase 2) and record the pass failure

@@ -96,6 +96,12 @@ Model selection site: `concept-review/analysis-fan-out` (`shared/model-selection
 
 - `effective-delivery`
 - `effective-product`
+- `effective-writing` – route-when-relevant for the wording of the concept text; only findings
+  about who acts, who decides or where data lives are applied directly, and only when the concept
+  or verified context supplies the answer; style-only findings stay Notes
+
+If `effective-writing` is unavailable, name who acts and who decides wherever the concept states an
+action or a decision.
 
 ## Hard scope boundary
 
@@ -186,7 +192,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 The generic artifact-level **judgment** of this tool comes from `effective-delivery`; the
 **product judgment** and the judgment about which decision deserves an ADR both come from
-`effective-product`. Effective Flow remains the artifact orchestrator (interactive loop,
+`effective-product`. The wording of the concept text comes from `effective-writing` per
+`## Recommended skills`: the judgment handoff names it, with its one-line fallback, beside the
+relevance-gate owners. Effective Flow remains the artifact orchestrator (interactive loop,
 persistence, status, roadmap and open-points normalization). The following building block applies:
 
 ## Delegating the domain judgment to central skills
@@ -319,9 +327,11 @@ use cases, scope, and technical direction; a first version that is not viable; m
 unrealistic technical direction; data protection and security surface; and feasibility. If the
 concept crosses a declared specialist boundary, bring in the responsible owner via the relevance
 gate — browser/UI detail and browser-facing disclosure duties to `effective-web`, system and
-data-model architecture to `effective-engineering`; a narrow concept stays narrow. If a skill is
-missing, the minimal generic fallback from the building block applies instead of a local full
-checklist.
+data-model architecture to `effective-engineering`, and a second entry point to the same business
+rules or data, or a new runtime component that shares them, to `effective-engineering` as well; a
+narrow concept stays narrow. The wording of the concept text routes to `effective-writing` per
+`## Recommended skills`. If a skill is missing, the minimal generic fallback from the building
+block applies instead of a local full checklist.
 
 Split the reported findings into two groups:
 
@@ -329,6 +339,18 @@ Split the reported findings into two groups:
   Incorporate it directly and document it in `## Concept review`.
 - **Decision-requiring:** a decision significantly affects the product, scope, risk, or later
   implementation. Clarify the point in Phase 3.
+
+A wording finding in the directly applied scope of the `effective-writing` bullet is directly
+incorporable when the concept or verified context supplies its answer, and decision-requiring
+otherwise. While the second-entry-point condition above holds, a missing
+`## Risks and open questions` entry for a runtime, call path or owning component that the concept
+marks open is directly incorporable, and a runtime, call path or owning component that the concept
+leaves unstated, or marks decided without a user or verified source, is decision-requiring. Such an
+item always gets the Phase 3 option "Record as open", which writes the artifact-language marker
+`open` (German: `offen`) into `## Technical direction` plus that Risks entry and blocks nothing; the
+review never invents a mechanism. A style-only wording finding is recorded in the findings of
+`## Concept review` with severity Note, is not applied, and counts in the summary table under the
+area of the statement it touches, or under Risks when none fits.
 
 ### Phase 3: Clarify decisions
 

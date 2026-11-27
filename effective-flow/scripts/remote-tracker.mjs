@@ -8,9 +8,11 @@ import {
   errorEnvelope,
   executeOperation,
   isMutationOperation,
+  resolveInputFile,
   REMOTE_TRACKER_OPERATIONS,
   RemoteTrackerError,
 } from './remote-tracker-core.mjs';
+import { gitBaseEnv } from './runtime-state-guard.mjs';
 
 // The closed argv: exactly `<operation>` or `<operation> --apply`, the operation first and one of
 // REMOTE_TRACKER_OPERATIONS, and `--apply` only for a forge mutation. Anything else is refused
@@ -116,7 +118,13 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     const { apply } = parseArgv(argv);
     const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
     const baseRunner = io.runner ?? createProcessRunner();
-    envelope = await executeOperation(operation, input, {
+    const resolvedInput = await resolveInputFile(input, {
+      operation,
+      apply,
+      runner: baseRunner,
+      env: gitBaseEnv(process.env),
+    });
+    envelope = await executeOperation(operation, resolvedInput, {
       apply,
       runner: (call) => {
         if (call.processGroup === true && removeTermination === undefined) {

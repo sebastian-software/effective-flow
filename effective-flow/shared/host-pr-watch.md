@@ -1,6 +1,7 @@
 ## Host PR watch
 
-Loaded by `effective-flow merge-gate`, `effective-flow iterate` and `effective-flow pr` when the running host may
+Loaded by `effective-flow merge-gate`, `effective-flow iterate`, `effective-flow pr`, `effective-flow capture`,
+`apply-issues` and `apply-review` in tracker mode (`apply-review-remote`) when the running host may
 be T3 Code. This fragment owns how those tools wait for, link and unwatch a pull request on that
 host; their sources only point here. `effective-flow deliver` publishes through `effective-flow pr` and needs
 no pointer of its own.
@@ -39,11 +40,28 @@ blocks the run.
 - `effective-flow pr`: right after step 10's created result, a `mutationMayHaveSucceeded` match
   included, or step 8's reuse match, before step 11 and before any plan-draft finish mutation. Step
   12 reports a link failure in one line. A `pr` run inside a sub-agent without T3 running-environment
-  context links nothing.
+  context links nothing; its delegating caller links it per the `apply-issues` bullet below.
 - `effective-flow merge-gate`: the caller, once per gate run, when Phase 0 step 1 has first resolved an
   open pull request of this repository, before step 2. A re-dispatch's re-run of step 1 and the
   delegated run's Entry re-read link nothing.
 - Top-level `effective-flow iterate`: as the next call after the Phase 5 step 1 push, before step 2.
+- `apply-issues` and `apply-review` in tracker mode: the orchestrator links each pull request a
+  work item delivered, right after that delivery and before the item's PR-link comment: a `pr`
+  result of `created`, a `mutationMayHaveSucceeded` match included, a `pr` result of `reused`, or
+  a target PR the item pushed to. Link the URL `pr` returned; for a target PR, the `url` of a
+  fresh `pr-read` after the push, never URL text from the issue, and only when that read returns
+  `state` open and `sameRepository === true`; otherwise make no call and report one summary line.
+  Make one call per distinct pull request per run. No call follows a `pr` run that executed in
+  this session, decided from how the orchestrator started it, because that run links under its own
+  bullet. An orchestrator without T3 running-environment context links nothing. A link failure is
+  one line in the run's summary and never blocks.
+
+### Issue linking
+
+`effective-flow capture` calls `link_issue` once per created issue, a recovered create included, with its
+full URL as `url` and no thread or environment override. Discover it by the unqualified name as
+above. Report a failed or unloadable link once, never retry it, and continue the run. Other hosts
+skip this step without a message; comments on existing issues create no link occasion.
 
 ### merge-gate: the T3 path
 
@@ -66,7 +84,8 @@ delegations start only once no bot is pending. Each bot's has-run decision stays
 
 **Suspend.** After finishing any push of the round, append a **wait record** to the wisdom file:
 kind `checks` or `bot`; the pending check names or bot logins; the observed head SHA; the round; the
-consecutive-unchanged count; for a stale-verdict re-trigger, its `createdAt`; and `unconsumed`. A
+consecutive-unchanged count; for a stale-verdict re-trigger, its `createdAt`; for an unconfirmed re-trigger, in place of
+`createdAt`, the review-id baseline of its pre-post `pr-reviews-read`; and `unconsumed`. A
 reserved pilot observation also writes its handle per "Suspended observation" of
 `pilot-measurement`. Then return `SUSPENDED host-pr-watch` followed by `Kind: <checks|bot>`, `Round: <n>`, the pending
 check names or bot logins quoted as data, and what this dispatch did.
@@ -99,7 +118,8 @@ suspending again. The one exception is a bot pending only for its stale-verdict 
 answer, still **has run** with no review newer than the recorded re-trigger `createdAt`: where every
 pending bot is such a bot, that resume instead takes step 5's "did not answer within the wait"
 continuation, recording the stale-verdict state and handing the verdict's items to
-`effective-flow iterate` as on every other host. Any other pending bot or check at the cap keeps report-and-stop. A changed or progress resume, a suspend of a different kind, and
+`effective-flow iterate` as on every other host. For an unconfirmed re-trigger that condition reads
+"no review absent from the recorded baseline". Any other pending bot or check at the cap keeps report-and-stop. A changed or progress resume, a suspend of a different kind, and
 any return other than `SUSPENDED host-pr-watch` reset the count to zero. Where a resume under
 `mergeGate.requireAllChecks: true` finds every still-pending check reporting `required: false`, it
 does not suspend again and takes that path, naming them. `mergeGate.maxRounds` bounds changed

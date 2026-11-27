@@ -301,7 +301,7 @@ The complete external contract — connection discovery with its fail-closed rul
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
-**Load on demand:** Read `shared/plan-contract.md`, when the canonical planning comment's compact outcome checkpoint is written or reviewed.
+**Load on demand:** Read `shared/plan-contract.md`, when the canonical planning comment's compact outcome checkpoint is written or reviewed, or its plan-review section is written.
 
 **Load on demand:** Read `shared/outcome-continuation.md`, when issue planning continues an existing outcome, prior continuation history is unknown, or the proposed approach/decomposition materially expands.
 
@@ -738,6 +738,11 @@ Complete this entire phase for the active issue before starting another issue:
    the `tracker-target` write discipline: preview the payload, re-read the exact comment
    immediately before the update, compare it verbatim, and treat a missing capability, a missing or
    ambiguous comment, or a changed body as the same fail-closed stop.
+
+   If the planning comment is too long or quote-heavy to spell literally, use the remote-helper
+   contract's input-file form for the `planning-comment-build` / `issue-comment` /
+   `issue-comment-update` call.
+
 2. If the freshly persisted baseline contains a proposed decomposition, re-read that exact comment
    and confirm its body hash. Parse the body through `decomposition-records-parse` and reject any
    noncanonical, duplicate, or invalid record before showing the parent and every exact child title,

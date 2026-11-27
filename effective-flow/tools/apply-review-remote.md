@@ -348,6 +348,11 @@ Per implementable finding, in its verified execution root:
    uses `container: null` and `containerMechanism: null`; a legacy finding may retain its optional
    epic/mechanism. Reject malformed, duplicate, mismatched, or stale receipt state rather than
    overwriting body prose or dropping the handoff.
+   On T3 Code, link the pull request steps 3 and 4 delivered (created, reused or pushed) per
+   `host-pr-watch`.
+
+**Load on demand:** Read `shared/host-pr-watch.md`, when the running environment identifies T3 Code and steps 3 and 4 delivered (created, reused or pushed) a finding's pull request, before step 5.
+
 5. **Immediately after a successful push or PR creation**, optionally write the PR link through the
    helper's comment payload/mutation, or through the external connection's create-comment
    capability. Direct findings have no container state. For a legacy finding: Do not set a native
@@ -380,6 +385,8 @@ incomplete until merge reconciliation. `wontfix` findings keep their existing de
 
 Final validation and summary as in local mode; the summary additionally names the resolved tracker
 target, direct finding references, created PRs, any optional legacy container mechanism/epic, and
-findings retained for post-merge reconciliation.
+findings retained for post-merge reconciliation. On T3 Code, each pull-request link that failed, or
+was not made because the target PR is not open or not of this repository, is one line of the
+summary, never a run failure.
 
 Returning per-finding implementation, PR and review adapters retain the caller's overview. Eligible cross-agent progress uses each hop's own immediate-parent context under `shared/subagent-progress.md`; same-session calls integrate directly. Preserve failed/unassessed outcomes, roots, receipts and terminal joins.

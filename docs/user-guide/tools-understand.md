@@ -43,6 +43,17 @@ offers for a decision carries a [fit score](glossary.md#fit-score) for your cont
 `n/10 – <reason>`, while "Decide later" stays unscored; the scores appear only in the dialog and
 are never written into the concept.
 
+**Second entry points:** When the concept gives the same business rules or data a second entry point
+(or adds a runtime component that shares them), its technical direction names the new entry
+point's or component's runtime, call path and owning component, each marked decided or open; only
+what you or the repository settle counts as decided. If the review finds one of them unstated or
+marked decided without a source, one option in its dialog is "Record as open": it writes "open"
+(in a German concept "offen") into the technical direction plus a matching entry in the risks and
+open questions, and blocks nothing. The wording of the concept text is checked with the
+`effective-writing` skill when it is available; only fixes about who acts, who decides or where
+data lives that the concept or the repository (verified context) already answers are applied
+without asking.
+
 **Interplay:** concept → deep concept review → `/effective-flow plan` per work package →
 `/effective-flow build`. The concept workflows never write a plan file themselves; the handoff is
 the ready-to-paste call in the roadmap.
@@ -157,8 +168,9 @@ your context, shown as `n/10 – <reason>`, instead of marking one option as rec
 later" stays unscored, and the scores stay in the dialog and are never written into the plan.
 
 **Revising an existing plan:** `/effective-flow plan <plan-file>` on a plan file it already
-wrote does not start a new dated file — it revises that file in place. The earlier plan review
-stays intact as a dated subsection; a new one is appended, not overwritten. On an implemented or
+wrote does not start a new dated file — it revises that file in place. The plan keeps a single
+review-result line, which each review pass updates in place; earlier passes stay readable as dated
+history subsections without a result line. On an implemented or
 archived plan, `plan` asks once whether to revise it in place (which moves an archived file back
 to `<plan.dir>/` and resets its status), start a new plan instead, or abort. If the revision
 would change the `**Recommended workflow:**` value, `plan` reports the new classification and asks
@@ -493,9 +505,11 @@ killed leaves its claims and its pass record behind; they block only their own i
 [`autopilot`](tools-automation.md) run, the pass adopts that run's claim; only one pass can adopt
 it.
 
-Issue-derived text stays inside the delegated planning context. The publication title, commit
-message, and body use fixed templates; the body reports only the issue number, review result, and
-open-point count. A published plan pull request is a draft and must be continued through
+Issue-derived text stays inside the delegated planning context. The publication helper derives the
+title (`docs: plan <plan title>`), the commit subject, and the body from the plan file itself and
+sanitizes them: the body names the issue number, the plan path, the recommended workflow, the
+requirement summary, the review result, and the open-point count. The orchestrator never sees that
+text. A published plan pull request is a draft and must be continued through
 `/effective-flow build <plan-file>` after restoring the plan file from its pull-request branch.
 When a plan cannot be published, the pass keeps its planning worktree with the plan and names it;
 the issue stays plannable. Move the plan out of that worktree or delete it, then run

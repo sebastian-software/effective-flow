@@ -1,7 +1,8 @@
 {
   "schemaVersion": 1,
-  "version": "1.80.0",
+  "version": "1.81.0",
   "exposedTools": [
+    "capture",
     "concept",
     "investigate",
     "plan",
@@ -736,6 +737,7 @@
         "autopilot",
         "backlog-audit",
         "build",
+        "capture",
         "cleanup",
         "commit",
         "concept",
@@ -856,6 +858,10 @@
         {
           "tool": "build",
           "scope": "tools.pr"
+        },
+        {
+          "tool": "capture",
+          "scope": "tools.capture"
         },
         {
           "tool": "cleanup",
@@ -2266,6 +2272,7 @@
         "autopilot",
         "backlog-audit",
         "build",
+        "capture",
         "cleanup",
         "commit",
         "concept",
@@ -2570,6 +2577,10 @@
         {
           "tool": "build",
           "scope": "tools.pr"
+        },
+        {
+          "tool": "capture",
+          "scope": "tools.capture"
         },
         {
           "tool": "cleanup",
@@ -3135,6 +3146,7 @@
         "autopilot",
         "backlog-audit",
         "build",
+        "capture",
         "cleanup",
         "commit",
         "concept",
@@ -3265,6 +3277,10 @@
         {
           "tool": "build",
           "scope": "tools.pr"
+        },
+        {
+          "tool": "capture",
+          "scope": "tools.capture"
         },
         {
           "tool": "cleanup",
@@ -3893,6 +3909,7 @@
         "autopilot",
         "backlog-audit",
         "build",
+        "capture",
         "cleanup",
         "commit",
         "concept",
@@ -4013,6 +4030,10 @@
         {
           "tool": "build",
           "scope": "tools.pr"
+        },
+        {
+          "tool": "capture",
+          "scope": "tools.capture"
         },
         {
           "tool": "cleanup",

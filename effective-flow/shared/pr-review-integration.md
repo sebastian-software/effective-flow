@@ -92,6 +92,27 @@ is absent the helper inherits the process working directory — but an Effective
 sets it. A `cwd` that is not an existing directory fails with a structured error naming the path,
 never as a missing-CLI error.
 
+**Load on demand:** Read `shared/runtime-state-safety.md`, when the remote-tracker input file is about to be written.
+
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the remote-tracker input file is about to be written.
+
+**Input files.** If a payload is too long or quote-heavy for a literal here-string, guard both paths
+in `.effective-flow/remote-tracker/inputs/` below `RUNTIME_STATE_ROOT`. Write the complete payload
+(including `cwd`) to a scratch file with the harness file-writing tool, only while absent and
+never via shell redirection, heredoc, `echo` or `printf`.
+Use a separate local Node hashing step for the lowercase SHA-256 of the exact UTF-8 file bytes,
+then rename without clobbering to `.effective-flow/remote-tracker/inputs/<run-token>-<n>-<sha256>.json`.
+Pick one 1–8 character lowercase alphanumeric token per run and its lowest free positive `n`
+(at most five digits, no leading zero).
+Send `{"inputFile": "<absolute path>"}` in the same one-command shape. A dry run keeps the file;
+after approval, repeat that same literal path for `--apply`; the `--apply` call or a non-mutation
+call removes its own verified file even if the operation then fails. Do not change it between
+preview and `--apply`; a digest mismatch stops consumption and dispatch. Any retry or corrected
+payload gets a new file and a new dry run. This is the compliant alternative to wrappers:
+`bash <file>` and every other indirection remain forbidden.
+
+**Load on demand:** Read `shared/remote-tracker-operations.md`, when a step must choose a remote-tracker operation or input keys its workflow does not spell out, or a helper call returned `INVALID_PAYLOAD` or `INVALID_REFERENCE` for an unknown operation or input field.
+
 Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes
 additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`,
 and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API
@@ -374,10 +395,17 @@ build, `review-create`, `review-thread-reply`, `pr-comment`, and `pr-update-body
 published text name Effective Flow; the helper refuses such text on each of them. A marker is then
 no evidence; `effective-flow iterate` reads its processed-thread ledger instead.
 
+**A possibly applied write is never re-sent blindly.** A `review-thread-reply`, `pr-comment` or
+`review-create` that fails with `mutationMayHaveSucceeded: true`, other than a
+`effective-flow merge-gate` trigger post, is re-read on its own target before any repeat, and the last
+read of that target before the write is its recovery baseline.
+
+**Load on demand:** Read `shared/pr-write-recovery.md`, when a `review-thread-reply`, `pr-comment` or `review-create` failed with `mutationMayHaveSucceeded: true`, other than a merge-gate trigger post.
+
 ### No history rewriting
 
 New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –
-consistent with `effective-flow pr` and "Updating existing PRs" in the delivery
+consistent with `effective-flow pr` and "Update existing PRs" in the delivery
 and worktree integration. No `commit --amend`, no rebase, no squash, no force-push.
 If the push is rejected because of diverged remote history, stop and report the conflict
 instead of overwriting history.
@@ -417,6 +445,9 @@ second time.
 In hidden mode (`visibility: hidden`), pass that value: nothing is stamped, and
 `effective-flow iterate`'s processed-thread ledger records the answered thread instead.
 
+On a failure with `mutationMayHaveSucceeded: true`, read `shared/pr-write-recovery.md` before any
+repeat: a repeated reply always requires a re-read of the thread first.
+
 ### Resolve a thread
 
 Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
@@ -445,6 +476,9 @@ references in its text, and report the reduced fidelity; do not improvise a prov
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
 `pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
 `effective-flow iterate` reads as its own already-processed work.
+
+On a failure of the submission or of that fallback comment with `mutationMayHaveSucceeded: true`,
+read `shared/pr-write-recovery.md` before any repeat.
 
 ## Security disclosure gate
 
@@ -477,6 +511,14 @@ observation:
 The classification is a judgment, not a taxonomy: it rests on the reviewer signal plus the finding
 text. The conservative default is the safeguard, at the price of occasionally withholding a
 harmless finding.
+
+### Capture drafts
+
+For `effective-flow capture`, apply conservative and escalate-only classification (`local-only` means
+`flagged`) and "Silence in public artifacts". Local dedup, Local-first persistence, the
+Publication offer `ask`, and Pre-commit use do not apply: the session retains the source and a
+skipped flagged draft is repeated in full in chat. The separate per-draft disclosure confirmation
+for both creating an issue and commenting lives in `capture.md`.
 
 ### Local dedup
 
@@ -732,7 +774,9 @@ not reached through a target-gated include here and is loaded through this point
   acceptance-lens finding without a code location goes there too, its `file`
   (`<source>#criterion-<key8>` or `adr#<key8>`) taking the place of `path:line` in its
   `Signature`. The review body stays human-facing prose and carries no idempotency key; on the
-  explicit entry point it carries the acceptance summary when stream 2d ran.
+  explicit entry point it carries the acceptance summary when stream 2d ran. On a failure of that
+  comment with `mutationMayHaveSucceeded: true`, read `shared/pr-write-recovery.md` before any
+  repeat.
 - **Every published finding, inline or outside the diff, carries its key.** Below the stamped
   marker, its body holds the finding's stable ID, its severity, its problem and recommendation
   prose, and — as its last line — the idempotency key in the canonical finding-issue form of
@@ -758,6 +802,9 @@ Parse the `Signature` lines of the marked results with the helper's `signature-p
 compare the normalized values it returns; never hand-roll the normalization. A finding whose
 normalized signature already appears under this fragment's marker is not published again. No new
 persistence is introduced — the pull request itself is the state.
+
+Take a `pr-reviews-read` immediately before `review-create` as that write's recovery baseline. It
+serves only `shared/pr-write-recovery.md` and is no part of signature de-duplication.
 
 ### Automatic trigger after delivery
 

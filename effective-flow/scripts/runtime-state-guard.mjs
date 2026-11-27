@@ -41,6 +41,8 @@ import path from 'node:path';
 import process from 'node:process';
 
 export const RUNTIME_STATE_DIR = '.effective-flow';
+export const INPUT_FILE = /^[a-z0-9][a-z0-9-]{0,78}\.json$/;
+export const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 
 export class RuntimeStateError extends Error {
   constructor(code, message, options) {
@@ -413,6 +415,117 @@ export async function ensureGuardedDirectory(context, target) {
 }
 
 export const O_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
+const O_NONBLOCK = fsConstants.O_NONBLOCK ?? 0;
+
+function sameFile(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+export async function readRuntimeInputFile(
+  inputFile,
+  segments,
+  remove,
+  context,
+  errorFactory,
+  { namePattern = INPUT_FILE, verifyBytes, strict = false } = {},
+) {
+  const reject = (kind, message, cause) => {
+    throw errorFactory(kind, message, cause);
+  };
+  if (typeof inputFile !== 'string' || !path.isAbsolute(inputFile))
+    reject('path', 'inputFile must be an absolute path');
+  const name = path.basename(inputFile);
+  const root = path.resolve(path.dirname(inputFile), ...segments.map(() => '..'));
+  if (!namePattern.test(name) || path.join(root, ...segments, name) !== inputFile)
+    reject('path', `inputFile must name <runtime root>/${segments.join('/')}/<name>.json`);
+
+  try {
+    await resolveRuntimeRoot(context, root);
+    let current = context.cwd;
+    for (const segment of segments) {
+      current = path.join(current, segment);
+      let info;
+      try {
+        info = await lstat(current);
+      } catch (error) {
+        if (error?.code === 'ENOENT') reject('path', 'inputFile does not exist');
+        throw error;
+      }
+      if (info.isSymbolicLink() || !info.isDirectory())
+        reject('directory', 'an input directory component is not a real directory');
+    }
+    const target = path.join(current, name);
+    let expected;
+    try {
+      expected = await lstat(target);
+    } catch (error) {
+      if (error?.code === 'ENOENT') reject('path', 'inputFile must be a regular file');
+      throw error;
+    }
+    if (!expected.isFile()) reject('path', 'inputFile must be a regular file');
+
+    if (strict || !remove) await guardTarget(context, target);
+
+    let handle;
+    try {
+      handle = await open(target, fsConstants.O_RDONLY | O_NOFOLLOW | (strict ? O_NONBLOCK : 0));
+    } catch (error) {
+      if (error?.code === 'ELOOP' || error?.code === 'ENOENT')
+        reject('path', 'inputFile must be a regular file');
+      throw error;
+    }
+    let text;
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || !sameFile(opened, expected))
+        reject('path', 'inputFile must be a regular file');
+      if (opened.size > MAX_INPUT_BYTES) reject('path', 'inputFile exceeds the input bound');
+      if (strict) {
+        const buffer = Buffer.alloc(opened.size + 1);
+        let length = 0;
+        while (length < buffer.length) {
+          const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
+          if (bytesRead === 0) break;
+          length += bytesRead;
+        }
+        if (length !== opened.size) reject('path', 'inputFile size changed while reading');
+        const bytes = buffer.subarray(0, length);
+        if (verifyBytes) await verifyBytes(bytes, name);
+        text = bytes.toString('utf8');
+
+        if (remove) {
+          await guardTarget(context, target);
+          try {
+            const currentInfo = await lstat(target);
+            if (!currentInfo.isFile() || !sameFile(currentInfo, opened))
+              reject('path', 'inputFile changed before removal');
+            await unlink(target);
+          } catch (error) {
+            if (error?.code === 'ENOENT') reject('path', 'inputFile changed before removal');
+            throw error;
+          }
+        }
+      } else {
+        text = await handle.readFile('utf8');
+        if (Buffer.byteLength(text) > MAX_INPUT_BYTES)
+          reject('path', 'inputFile exceeds the input bound');
+      }
+    } finally {
+      await handle.close();
+    }
+    if (remove && !strict) await guardedUnlink(context, target);
+    try {
+      return JSON.parse(text);
+    } catch {
+      reject('path', 'inputFile must contain one JSON object');
+    }
+  } catch (error) {
+    if (error instanceof RuntimeStateError) {
+      reject('guard', error.message, error);
+    }
+    throw error;
+  }
+}
 const WRITE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW;
 
 // Writes `content` to a fresh temporary sibling (exclusive, never following a symlink, mode 0600)

@@ -25,10 +25,16 @@ recorded outcome and reported guidance, never in a stop.
    ambiguous, mismatched, or under-capable external connection is an `unobservable` post-merge
    outcome, not a reason to roll back or hide the merge.
 2. Give auto-close automation the fixed 30-second grace period from "Post-merge observation" in the
-   loaded `issue-post-merge-observation` fragment. Use the bounded `issue-state-wait` helper
-   operation for forge issues. For an external issue use one connection-native monitor with the same
-   bound, or exactly one 30-second wait and one fresh read. Never model-poll. Record each issue as
-   terminal, open, timed out, or unobservable.
+   loaded `issue-post-merge-observation` fragment. For a forge issue make exactly one call
+   `node <skill-root>/scripts/remote-tracker.mjs issue-state-wait <<< '{"cwd":"<RUNTIME_STATE_ROOT>","issue":<issue number>}'`,
+   with the verified absolute `RUNTIME_STATE_ROOT` as `cwd` and, as `issue`, the number of the
+   receipt item's canonical `#<n>` reference without the `#`, as a JSON number, never the stored
+   `"#<n>"` string. Send no timeout, wait or polling field; the helper's 30-second maximum is fixed.
+   Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out
+   literally: no shell variable, no pipe, no trailing command, no compound command, and every `'`
+   inside the JSON, untrusted text included, spelled as `'\''`. For an external issue use one
+   connection-native monitor with the same bound, or exactly one 30-second wait and one fresh read.
+   Never model-poll. Record each issue as terminal, open, timed out, or unobservable.
 
    **A terminal outcome additionally records _how_ the issue became terminal, because terminal is
    not the same as done.** Steps 5 and 6 are the writes that record delivery — they strip the

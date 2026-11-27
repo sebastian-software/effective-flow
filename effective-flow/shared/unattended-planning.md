@@ -148,13 +148,16 @@ terminate as `ABORT: <diagnostic>` without a fallback question or write elsewher
 
 ### Entry: `plan-review` autopilot file review
 
-Only under the three scored control lines, an Automation caller may also delegate one existing
-plan: an absolute path below `<plan.dir>/` (never the archive), its SHA-256, and the three base
-controls plus the three scored lines, each exactly once. The caller has already verified both
-roots, the canonical open status and that identity. Before normalization, recompute the file's
-SHA-256 and require it to equal the supplied value and the status to be open; otherwise return
-`ABORT: unattended review input invalid` or, for an implemented plan,
-`ABORT: unattended implemented plan`. In-place revision of exactly that file is allowed; every
+Only under the three scored control lines, an Automation caller may also delegate one existing plan:
+an absolute path below `<plan.dir>/` (never the archive), its SHA-256, and the three base controls
+plus the three scored lines, each exactly once. The caller has already verified both roots, the
+canonical open status and that identity. This entry's `EXECUTION_ROOT` is the registered worktree of
+`RUNTIME_STATE_ROOT`'s Git common directory that contains the supplied plan path, the worktree
+record with the longest such physical path, validated as step 4 of Entry `plan` validates an
+`Execution root:` path; otherwise return `ABORT: unattended review input invalid`. Before
+normalization, recompute the file's SHA-256 and require it to equal the supplied value and the
+status to be open; otherwise return `ABORT: unattended review input invalid` or, for an implemented
+plan, `ABORT: unattended implemented plan`. In-place revision of exactly that file is allowed; every
 other rule of the file-review entry above applies unchanged. Without the scored lines an existing
 plan stays invalid input.
 
@@ -213,9 +216,30 @@ P-DPR stays Yes, so the deep review always runs. Every other site keeps its outc
 
 ### Completion
 
-Finish formatting and final mechanical plan-lint before reporting success. Read the final
-canonical review-result field outside code fences in the preserved artifact language and
-normalize only the response value:
+This Completion applies to every entry that ends in `DONE`: `plan`, the `plan-review` file
+delegation and the `plan-review` autopilot file review. Before reporting success, in this order:
+
+1. Write any forced `Revision required` (blocking open points, a skipped judgment) into the
+   artifact, finish formatting, then run the final mechanical plan-lint. `plan` entry only: then
+   run `node <skill-root>/scripts/plan-publication.mjs scan` with
+   `{cwd: <retained verified EXECUTION_ROOT>, runState: "unattended", planFile: <plan path relative to EXECUTION_ROOT>}`
+   as one JSON object on standard input through a quoted here-document (`<<'JSON'`), and read
+   `data.blocking`, not the exit code. Empty: continue with step 2. Non-empty: in one correction
+   round, read every listed line before the first edit (or edit bottom-up, since ids carry line
+   numbers), reword each once, rerun this step's formatting and final lint, and scan again; inside
+   the "Decided by score" block reword only a JSON string value, keeping labels and scores. Findings
+   left by that rescan return exactly `ABORT: unattended plan content blocked: <id>, <id>` with the
+   remaining ids in `data.blocking` order, at most the first 20 followed by `(+<k> more)`, never a
+   matched value or plan text. A nonzero exit, an envelope that does not parse or `ok: false` is a
+   terminal `ABORT: <diagnostic>` naming the error code when the envelope carries one. Name
+   forbidden publication strings by description (for example "the co-author trailer", "an
+   attribution footer", "an agent session link"), never literally, and reword any literal the scan
+   blocks.
+2. Run `node <skill-root>/scripts/plan-lint.mjs publication-metadata` with
+   `{cwd: <retained verified EXECUTION_ROOT>, planDir: <resolved plan.dir, relative to EXECUTION_ROOT>, files: [<plan path relative to EXECUTION_ROOT>], expectedLanguage: <workflow= value of the received Language context: control line>}`.
+3. Normalize `Review result` from step 2's `reviewResult` (`approved` → `Approved`,
+   `revision-required` → `Revision required`); there is no separate read of the file. The table
+   documents the artifact forms that `reviewResult` classifies:
 
 | Artifact field                      | Response value      |
 | ----------------------------------- | ------------------- |
@@ -224,10 +248,22 @@ normalize only the response value:
 | `**Ergebnis:** Freigegeben`         | `Approved`          |
 | `**Ergebnis:** Überarbeitung nötig` | `Revision required` |
 
+The agent that owns the run consolidates once, and only when step 2 returns
+`PUBLICATION_METADATA_INVALID` **and** the plan has more than one line outside code fences that
+begins with `**Result:**` / `**Ergebnis:**`: it reduces those lines to one per the single
+review-result rule of `plan-contract`, keeping as current the line directly below the plan-review
+heading, set to (1) the forced `Revision required` when it applies; (2) otherwise the value this
+run's final review pass decided; (3) only when this run recorded no decision of its own, that line's
+existing value, or the value of the last such line in document order when no result line sits below
+the heading, and then runs step 2 again. Any other cause or code is a terminal `ABORT: <diagnostic>`
+with no consolidation: `PUBLICATION_METADATA_INVALID` without duplicate result lines, a second
+failure, `INVALID_PAYLOAD`, `UNSAFE_PATH`, `NOT_FOUND` or `COMMAND_FAILED`.
+
 Blocking open points or any skipped judgment force `Revision required` in both the artifact's
 own language and the normalized response. Keep the complete artifact in its own language; no
-translation of labels, headings or review prose for this response. A missing/invalid final result
-or failed final lint is a terminal operational `ABORT: <diagnostic>`.
+translation of labels, headings or review prose for this response. After the single
+consolidation in step 2, a missing/invalid final result or failed final lint is a terminal
+operational `ABORT: <diagnostic>`.
 
 Return these machine-stable lines and terminate with `DONE` per `completion-protocol`:
 

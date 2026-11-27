@@ -619,6 +619,123 @@ export function publicationMetadataFromText(text, { expectedLanguage } = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Forge fields
+
+const REQUIREMENT_HEADINGS = new Set([
+  ...mappingRow('Requirement').de,
+  ...mappingRow('Requirement').en,
+]);
+const LIST_ITEM = /^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]+|$)/;
+const TASK_BOX = /^\[[ xX]\](?:[ \t]+|$)/;
+const WORKFLOW_LEADING_WORD = /^(Feature|Bugfix|Refactoring|Documentation)(?![\p{L}\p{N}_-])/u;
+const WORKFLOW_SKILLS = Object.freeze({
+  build: 'Feature',
+  fix: 'Bugfix',
+  refactor: 'Refactoring',
+  docs: 'Documentation',
+});
+const WORKFLOW_SKILL_SPAN = /^[/$]?effective-flow[ \t]+(build|fix|refactor|docs)$/;
+
+// A line that cannot be prose: a list item, blockquote, table row, heading, HTML block or
+// indented code. Blank and fenced lines are handled by the callers.
+function startsNonProse(entry) {
+  return (
+    LIST_ITEM.test(entry.text) ||
+    /^ {0,3}>/.test(entry.text) ||
+    /^\s*\|/.test(entry.text) ||
+    headingLevel(entry) !== null ||
+    /^ {0,3}</.test(entry.text) ||
+    /^(?: {4}|\t)/.test(entry.text)
+  );
+}
+
+const isBlank = (entry) => entry.text.trim() === '';
+
+// The first prose paragraph of a section body: consecutive non-empty lines outside fences, opened
+// by a line that is no other block, and joined with single spaces. A line directly after another
+// block continues that block, and an indented line after a list item belongs to the item, so
+// neither opens a paragraph. A later line that opens another block ends it; an indented line
+// continues it.
+function firstProseParagraph(body) {
+  let inList = false;
+  for (let index = 0; index < body.length; index += 1) {
+    const entry = body[index];
+    if (entry.inFence || isBlank(entry)) continue;
+    if (startsNonProse(entry)) {
+      inList = LIST_ITEM.test(entry.text) || (inList && /^[ \t]/.test(entry.text));
+      continue;
+    }
+    const previous = body[index - 1];
+    const opensBlock =
+      previous === undefined ||
+      previous.inFence ||
+      isBlank(previous) ||
+      headingLevel(previous) !== null;
+    const indented = /^[ \t]/.test(entry.text);
+    if (!opensBlock || (inList && indented)) continue;
+    const lines = [entry.text.trim()];
+    for (let cursor = index + 1; cursor < body.length; cursor += 1) {
+      const next = body[cursor];
+      if (next.inFence || isBlank(next)) break;
+      if (startsNonProse(next) && !/^(?: {4}|\t)/.test(next.text)) break;
+      lines.push(next.text.trim());
+    }
+    return lines.join(' ');
+  }
+  return null;
+}
+
+// The text of the first non-empty list item, its marker and task box removed and its indented
+// continuation lines joined with single spaces.
+function firstListItem(body) {
+  for (let index = 0; index < body.length; index += 1) {
+    const entry = body[index];
+    if (entry.inFence || !LIST_ITEM.test(entry.text)) continue;
+    const lines = [entry.text.replace(LIST_ITEM, '').replace(TASK_BOX, '').trim()];
+    for (let cursor = index + 1; cursor < body.length; cursor += 1) {
+      const next = body[cursor];
+      if (next.inFence || isBlank(next) || !/^[ \t]/.test(next.text)) break;
+      if (LIST_ITEM.test(next.text.trimStart())) break;
+      lines.push(next.text.trim());
+    }
+    const text = lines.filter((line) => line !== '').join(' ');
+    if (text !== '') return text;
+  }
+  return null;
+}
+
+function workflowLabel(value) {
+  if (value === null) return null;
+  const leading = value.match(WORKFLOW_LEADING_WORD);
+  if (leading) return leading[1];
+  for (const span of codeSpanRanges(value)) {
+    const inner = value
+      .slice(span.start, span.end)
+      .replace(/^`+|`+$/g, '')
+      .trim();
+    const skill = inner.match(WORKFLOW_SKILL_SPAN);
+    if (skill) return WORKFLOW_SKILLS[skill[1]];
+  }
+  return null;
+}
+
+// The raw values a pull request derives from a plan: the H1 title, the summary (the Requirement
+// section's first prose paragraph, else its first list item) and the workflow label (`Feature`,
+// `Bugfix`, `Refactoring` or `Documentation`). Each is null when absent. Pure and unsanitized: the publication helper
+// sanitizes and bounds every value before it reaches a forge. Classification and
+// `publicationMetadataFromText` do not use it.
+export function planForgeFields(text) {
+  const inventory = inventoryLines(text);
+  const outside = inventory.filter((entry) => !entry.inFence);
+  const [requirement] = sections(inventory, REQUIREMENT_HEADINGS);
+  const summary = requirement
+    ? (firstProseParagraph(requirement) ?? firstListItem(requirement))
+    : null;
+  const workflow = workflowLabel(headerField(outside, HEADER_FIELD_LABELS.workflow));
+  return { title: extractTitle(outside), summary, workflow };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Payload validation and path containment
 
 function toPosix(value) {

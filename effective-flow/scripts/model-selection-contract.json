@@ -239,6 +239,28 @@
       ]
     },
     {
+      "id": "capture/draft",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "capture/reference-check",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
       "id": "triage/architecture-context",
       "downAllowed": true,
       "panel": false,

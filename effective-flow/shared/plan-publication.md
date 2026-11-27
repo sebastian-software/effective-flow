@@ -188,6 +188,10 @@ never repeats a secret. State "no findings" explicitly when there are none. Ther
 no second question, and answering "Publish" is the explicit acknowledgement of every finding it
 listed.
 
+The unattended `plan` entry runs this `scan` with `runState` `unattended` on its own plan before
+completion (`unattended-planning`), so a plan-content `SCAN_BLOCKED` in a later publish is a rare
+integrity signal.
+
 ### The single question
 
 Ask exactly once, naming the remote, the base branch, the branch, that the pull request is a draft,
@@ -337,11 +341,13 @@ after a controlled stop, or to `failed` after an error, and retains the worktree
   line after that prose.
 - **At delivery**, the implementing run's `effective-flow pr` derives the final title and body in its
   step 9 and keeps the marker line.
+- **Unattended Issue Buddy plans** get the same title and body shape, plus the recommended workflow
+  and review status, rendered inside the `plan-publication.mjs` helper from the plan bytes.
 
 ### Prohibited on every path
 
 Nothing here rewrites history or bypasses hooks. Never use `--force`, `--force-with-lease`,
-`--no-verify`, `commit --amend`, an interactive `rebase`, a `squash` of existing commits,
+`--no-verify`, `commit --amend`, a `rebase` of any kind, a `squash` of existing commits,
 `reset --hard`, `checkout -f`, `clean`, or `push --delete`. Never switch, stash, or stage in the
 invocation checkout.
 

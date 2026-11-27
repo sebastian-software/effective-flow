@@ -1,12 +1,12 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, triage, issue-buddy, backlog-audit, apply, build, fix, refactor, docs, maintain, iterate, review, retro, focus, deliver, commit, pr, merge-gate, autopilot, setup, cleanup, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|triage|issue-buddy|backlog-audit|apply|build|fix|refactor|docs|maintain|iterate|review|retro|focus|deliver|commit|pr|merge-gate|autopilot|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: capture, concept, investigate, plan, open-plans, plan-issue, triage, issue-buddy, backlog-audit, apply, build, fix, refactor, docs, maintain, iterate, review, retro, focus, deliver, commit, pr, merge-gate, autopilot, setup, cleanup, version."
+argument-hint: "[capture|concept|investigate|plan|open-plans|plan-issue|triage|issue-buddy|backlog-audit|apply|build|fix|refactor|docs|maintain|iterate|review|retro|focus|deliver|commit|pr|merge-gate|autopilot|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.80.0 (059b1aea)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.81.0 (167a9762)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -39,6 +39,11 @@ Some retired tool names stay invocable as **deprecated aliases**. They are delib
 ## Tools
 
 The tools are grouped below by usage intent.
+
+### Record work
+_turn a described problem or idea into tracker issues_
+
+- `effective-flow capture` — Turns a described problem or idea into tracker issues after a preview you approve.
 
 ### Understand what to do
 _Analysis & planning before code_

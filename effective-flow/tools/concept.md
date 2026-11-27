@@ -101,6 +101,12 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 ## Recommended skills
 
 - `effective-product`
+- `effective-writing` – route-when-relevant for the wording of the concept text; only findings
+  about who acts, who decides or where data lives are applied directly, and only when the concept
+  or verified context supplies the answer; style-only findings stay Notes
+
+If `effective-writing` is unavailable, name who acts and who decides wherever the concept states an
+action or a decision.
 
 ## Hard scope boundary
 
@@ -188,8 +194,13 @@ no skill directory or none fits, this step is a no-op — continue without an er
 The **product judgment** of this tool — problem framing, audience, use-case selection, first-version
 scope, and prioritization — is owned by the central skill `effective-product`; the technical
 direction crosses `effective-engineering` and, for browser products, `effective-web` only when the
-concrete concept touches those boundaries. Effective Flow remains the artifact orchestrator. The
-following building block applies:
+concrete concept touches those boundaries. The wording of the concept text routes to
+`effective-writing` per `## Recommended skills`: the judgment handoff names it, with its one-line
+fallback, beside the relevance-gate owners and asks it first for findings in the directly applied
+scope of the `effective-writing` bullet. The handoff also names a second entry point to the same
+business rules or data, or a new runtime component that shares them, as the trigger to bring in
+`effective-engineering` (Phase 3).
+Effective Flow remains the artifact orchestrator. The following building block applies:
 
 ## Delegating the domain judgment to central skills
 
@@ -348,6 +359,12 @@ Use the structural template from the concept contract, and observe:
 - `### Non-goals` under `## Scope` is mandatory and must not be empty — it is what keeps the concept shallow.
 - `## Technical direction` names direction, not design: platform, stack candidates with a one-line
   rationale each, coarse architecture, external systems, and the data outline in prose.
+- When the concept gives the same business rules or data a second entry point, or adds a runtime
+  component beside existing ones that shares them, state the new entry point's or component's
+  runtime, call path and owning component in `## Technical direction`, each as decided or open in
+  the artifact language (German: `entschieden` or `offen`), and bring in `effective-engineering`.
+  An item is decided only when the user or verified repository context fixes it; a candidate the
+  concept proposes counts as open.
 - `## Roadmap and work packages` carries only its empty state at this point; the deep review fills
   it.
 - `## Concept review` carries only the not-yet-reviewed result at this point.
@@ -358,16 +375,19 @@ Use the structural template from the concept contract, and observe:
 Obtain the judgment of the written concept per "Judgment handoff" and normalize it into this
 scorecard:
 
-| Criterion      | Target                                                                |
-| -------------- | --------------------------------------------------------------------- |
-| Completeness   | every mandatory section filled, non-goals present and non-empty       |
-| Shallowness    | no work breakdown, no code, no schedule, no interface specification   |
-| Evidence       | verified repository context and assumptions are distinguishable       |
-| Decidability   | a reader can tell from the concept whether they want this application |
-| Scope boundary | exactly one new file under `<concept.dir>/`, nothing else changed     |
-| Language       | one complete language including the status marker                     |
+| Criterion      | Target                                                                       |
+| -------------- | ---------------------------------------------------------------------------- |
+| Completeness   | every mandatory section filled, non-goals present and non-empty              |
+| Shallowness    | no work breakdown, no code, no schedule, no interface specification          |
+| Evidence       | verified context, proposals, assumptions and open points are distinguishable |
+| Decidability   | a reader can tell from the concept whether they want this application        |
+| Scope boundary | exactly one new file under `<concept.dir>/`, nothing else changed            |
+| Language       | one complete language including the status marker                            |
 
 If a criterion is not met, revise the concept or ask the user for the missing information.
+Wording findings outside the scorecard follow the `effective-writing` bullet under
+`## Recommended skills`; style-only Notes go into one combined `## Risks and open questions` entry,
+written only when such Notes come back.
 
 ### Phase 5: Offer the deep review
 

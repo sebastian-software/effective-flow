@@ -29,6 +29,27 @@ is absent the helper inherits the process working directory — but an Effective
 sets it. A `cwd` that is not an existing directory fails with a structured error naming the path,
 never as a missing-CLI error.
 
+**Load on demand:** Read `shared/runtime-state-safety.md`, when the remote-tracker input file is about to be written.
+
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the remote-tracker input file is about to be written.
+
+**Input files.** If a payload is too long or quote-heavy for a literal here-string, guard both paths
+in `.effective-flow/remote-tracker/inputs/` below `RUNTIME_STATE_ROOT`. Write the complete payload
+(including `cwd`) to a scratch file with the harness file-writing tool, only while absent and
+never via shell redirection, heredoc, `echo` or `printf`.
+Use a separate local Node hashing step for the lowercase SHA-256 of the exact UTF-8 file bytes,
+then rename without clobbering to `.effective-flow/remote-tracker/inputs/<run-token>-<n>-<sha256>.json`.
+Pick one 1–8 character lowercase alphanumeric token per run and its lowest free positive `n`
+(at most five digits, no leading zero).
+Send `{"inputFile": "<absolute path>"}` in the same one-command shape. A dry run keeps the file;
+after approval, repeat that same literal path for `--apply`; the `--apply` call or a non-mutation
+call removes its own verified file even if the operation then fails. Do not change it between
+preview and `--apply`; a digest mismatch stops consumption and dispatch. Any retry or corrected
+payload gets a new file and a new dry run. This is the compliant alternative to wrappers:
+`bash <file>` and every other indirection remain forbidden.
+
+**Load on demand:** Read `shared/remote-tracker-operations.md`, when a step must choose a remote-tracker operation or input keys its workflow does not spell out, or a helper call returned `INVALID_PAYLOAD` or `INVALID_REFERENCE` for an unknown operation or input field.
+
 Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes
 additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`,
 and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API
@@ -112,6 +133,7 @@ Rules for every publisher, on whichever tracker target the run resolved:
 - **Local first:** the withheld findings are persisted in a local report below
   `.effective-flow/review/` before any tracker mutation. That report is the authoritative record
   for them; it stays in the gitignored runtime state of the main checkout and is never committed.
+  Capture drafts use the exemption in `security-disclosure-gate`, "Capture drafts".
 - **Confirmation before publication:** publication happens only after an explicit user decision in
   that run, taken with knowledge of the disclosure consequence. Keeping them local is the default;
   an unanswered, skipped, or non-interactive run publishes nothing from the withheld set.
@@ -122,7 +144,7 @@ Rules for every publisher, on whichever tracker target the run resolved:
   relevant and stays local.
 - **Scope:** the gate covers the publication of review findings. It does not sanitize branch names,
   commit subjects, or pull request bodies of a later fix; that disclosure decision belongs to the
-  delivering workflow and its user.
+  delivering workflow and its user. Capture drafts follow the scope in `security-disclosure-gate`.
 
 Durable-work admission runs before this disclosure gate. The gate governs only the destination of
 an already admitted finding. It never removes a finding, changes its
@@ -133,6 +155,8 @@ severity, or narrows the active finding scope.
 Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not. This binds every publisher on every tracker target, the forge and an external tool alike.
 
 ### Remote prose language
+
+A writer whose run never reads the target thread's text (`triage`, `capture`) uses `language.forge`.
 
 Resolve `language.forge` once per remote run and pass it to all issue/comment writers. Preserve
 the clear language of an existing issue or thread when editing/replying; otherwise use the

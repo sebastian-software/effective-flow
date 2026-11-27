@@ -69,24 +69,30 @@ The record keeps its status; a recovered tip the adoption already appended, repo
 From the `resume` result the run continues without asking for the selection again:
 
 - **Skipped:** `upstream-status` and `fast-forward` (step 1.1), the selection, its confirmation and
-  `bind-manifest` (step 1.3), steps 1.4, 2, 3, 4.1 and 4.2, `worktree.setup`, and `ledger init`
-  (step 4.6).
+  `bind-manifest` (step 1.3), steps 1.4, 2, 3, 4.1 and 4.2 (of step 3 only the step 3.3
+  classification runs, below), `worktree.setup`, and `ledger init` (step 4.6).
 - **Runs, in this order:**
   1. Step 1.1's source evidence, recorded fresh; steps 4.5, 5 and 7 compare against it.
   2. Step 1.2, with hidden mode when the current visibility or `resume.visibility` is hidden.
-  3. A fresh delivery execution-location receipt for the record's worktree and branch: origin
+  3. Step 1.1's writer observation, carrying the provider override on every helper call, then the step 3.3 classification with `head` the record's
+     branch, `base` `resume.base.branch`, and `source` that fresh observation. Every stop of
+     either, an `unsupported` result, an unanswered provider question, or a helper or
+     `publication-preflight` error envelope, is a controlled stop before step 4.3: move the
+     adopted record back to `aborted` with one `worktree transition`, never leaving it `active`.
+     The ledger keeps its entries, so a later run in a supported context resumes it the same way.
+  4. A fresh delivery execution-location receipt for the record's worktree and branch: origin
      `effective-flow-created`, workflow `deliver`, purpose `partial-diff`, creation OID
      `resume.base.oid` (the record's `creationOid`), setup status `externally managed` (the
      original run finished setup; this run never repeats it), and expected `HEAD` `resume.tip`.
-  4. Step 4.3. Its fresh result is this delivery's only verification evidence.
-  5. `ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0;
+  5. Step 4.3. Its fresh result is this delivery's only verification evidence.
+  6. `ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0;
      anything else is a failure that retains the artifacts. It is also the verification proof link.
-  6. Step 4.5.
-  7. Step 5 from group `resume.next` over `resume.remainingGroups` in order, with `ledger append`
+  7. Step 4.5.
+  8. Step 5 from group `resume.next` over `resume.remainingGroups` in order, with `ledger append`
      after each verified commit.
-  8. Step 6, its committed-handoff evidence covering every group: the ledger's commits and this
+  9. Step 6, its committed-handoff evidence covering every group: the ledger's commits and this
      run's.
-  9. Step 7, naming the resumed record.
+  10. Step 7, naming the resumed record.
 - **From the ledger:** `resume.language` for both languages, `resume.base` for the base, and for
   step 7 the selection from `resume.selection` and the commit list: `resume.groups` with this run's
   commit OIDs filled in (`committed` and `remainingGroups` are views of it).

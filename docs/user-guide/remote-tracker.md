@@ -528,6 +528,14 @@ review from the one that opened the thread, submitted after it. A dismissal alon
 The gate stops handing a settled thread to `iterate`, no longer lets it block the merge, and lists it
 in the report with its URL as left unresolved because the provider cannot resolve review threads.
 
+A `review-thread-reply` whose outcome the adapter could not observe reports `retryable: false` and
+`mutationMayHaveSucceeded: true`, as a failed `issue-close` does: the CLI or `tea` transport itself
+failed, or on Gitea the forge answered `5xx`. The forge may already have stored the reply, so a
+repeat would post it twice. The caller re-reads the thread and looks for a new reply by the
+authenticated account before it writes anything again – never a blind retry. On GitHub the same
+holds for `review-create`, whose failed CLI call may already have published the review; the caller
+re-reads the review list first. `tea`-backed forges refuse `review-create` before any request.
+
 **Reading review threads costs one request per review, plus one.** Forgejo exposes no flat
 review-comment listing at any nesting level, so the read enumerates `…/pulls/{index}/reviews` and
 then asks each review for its comments – `ceil(N/50) + N` requests for `N` reviews, the same fan-out
@@ -571,6 +579,14 @@ conversation comments, with the selected login and repository and a JSON body on
 successful applied call returns the raw created-comment JSON object in `data.result`, including
 the provider's comment `id`. Missing transport flags produce `UNSUPPORTED_CAPABILITY` before
 creation; support for the human `tea comment` renderer is not required.
+
+A `pr-comment` whose outcome the adapter could not observe reports `retryable: false` and
+`mutationMayHaveSucceeded: true` on both forges: the CLI or `tea` transport failed, the forge
+answered `5xx`, or on GitHub it answered `408` or `429`. The comment may already exist, so the
+caller re-reads the pull request's comments before it posts again and never retries blindly. Any
+other `4xx` refusal the forge stated, such as a 403 or 422, stays a non-retryable rejection without
+that flag; on GitHub, `gh api` reports that status in its `(HTTP 4xx)` summary. `issue-comment`
+stays retryable on those failures.
 
 What a Forgejo `pr-status-read` does **not** report is worth knowing before you configure the gate
 against it:
@@ -755,6 +771,12 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 ## Plan pull-request operations
 
 ## Issue Buddy and repository visibility
+
+For an `autopilot` plan source, `repository-visibility-read` recognizes private repositories on
+both GitHub and Forgejo. On a private Forgejo repository a security blocker becomes a neutral
+appendix on a draft pull request, just as on private GitHub, instead of withholding the push.
+An unavailable or unknown visibility remains treated as public. The Forgejo capability follows
+the probed `tea api` transport; the shared normalizer reads the boolean `private` field.
 
 `/effective-flow issue-buddy` uses the remote tracker in a controlled, unattended path. Before it
 collects issues, it performs one read-only `repository-visibility-read` operation and records
@@ -1180,3 +1202,17 @@ or tracker access was unavailable.
 - [Troubleshooting](./troubleshooting.md) – missing or unauthenticated CLI, unresolved external
   connection
 - [Glossary](./glossary.md) – finding, tracker target
+
+## Capture
+
+`effective-flow capture` is the interactive issue entry point before triage and planning. It accepts
+one description or up to ten findings on a configured remote GitHub or Forgejo tracker; hidden,
+local, external and unset modes stop before tracker access. See [Record work](tools-record.md) for
+the complete preview, revision, duplicate and disclosure procedure.
+
+The public read-only `label-list` operation has capability `labelList`. It paginates on both forges
+and uses repository labels only on Forgejo (`--exclude-org`); tea's "failed to list repository
+labels" warning fails the read instead of pretending the list is empty. Capture proposes only
+exact existing non-internal names and never calls `label-create`. Comments use `language.forge`
+because this writer never reads the target thread's text. Tracker writes are performed by the
+capture helper itself from the stored, hash-bound preview, with an apply ledger preventing repeats.
