@@ -189,6 +189,7 @@ const REMOTE_OPERATIONS = new Set([
   'sf-label-migrate',
   'pr-read',
   'pr-acceptance-sources',
+  'issue-acceptance-criteria',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',
@@ -324,6 +325,8 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   // The composite acceptance read starts with `pr-read`; its issue and permission reads check
   // their own capabilities as they run.
   'pr-acceptance-sources': 'pullRequestRead',
+  // Its issue reads gate the call; each permission read checks its own capability as it runs.
+  'issue-acceptance-criteria': 'issueRead',
   'pr-comments-read': 'prCommentsRead',
   // A named entry, never an absent one. The operation gate tests `capabilities[key] === false`, so
   // an operation missing from this table is waved through unprobed on every provider — which for a
@@ -5451,18 +5454,27 @@ function headingText(raw) {
 // by two or more spaces, or by any tab) never contributes; indented non-list lines continue the
 // open item. A heading of the section's level or higher ends the section, a deeper one only ends
 // the open item. An unindented lazy continuation line (Markdown's paragraph continuation without
-// indentation) is not supported: it ends the open item instead of extending it.
+// indentation) is not supported: it ends the open item instead of extending it. `positions[i]` is
+// item `i`'s 1-based section (one per matching heading) and its 1-based raw ordinal within that
+// section, counted before any empty or duplicate item is dropped, as Merge Gate's locator counts.
 function sectionListItems(text, { headings, level }) {
   const lines = String(text ?? '')
     .replace(/\r\n?/g, '\n')
     .split('\n');
   const items = [];
+  const positions = [];
   let headingFound = false;
   let sectionLevel = null;
+  let section = 0;
+  let ordinal = 0;
   let fence = null;
   let open = null;
   const close = () => {
-    if (open !== null) items.push(open);
+    if (open !== null) {
+      items.push(open);
+      ordinal += 1;
+      positions.push({ section, ordinal });
+    }
     open = null;
   };
   for (const line of lines) {
@@ -5491,6 +5503,8 @@ function sectionListItems(text, { headings, level }) {
       ) {
         sectionLevel = headingLevel;
         headingFound = true;
+        section += 1;
+        ordinal = 0;
       }
       continue;
     }
@@ -5509,23 +5523,33 @@ function sectionListItems(text, { headings, level }) {
     close();
   }
   close();
-  return { items, headingFound };
+  return { items, positions, headingFound };
 }
 
-function boundedCriteria(texts, limit) {
+// `outcomes[i]` says what became of `texts[i]`: `kept` (with its criterion), `empty`, or
+// `duplicate` (with the index of the kept first occurrence of its key). It stops at the item that
+// would exceed `limit`, so `outcomes` may be shorter than `texts`.
+function classifyCriteria(texts, limit) {
   const criteria = [];
-  const seen = new Set();
+  const outcomes = [];
+  const firstIndex = new Map();
   let truncated = false;
-  for (const raw of texts) {
+  for (const [index, raw] of texts.entries()) {
     const text = normalizeCriterionText(raw);
-    if (text === '') continue;
+    if (text === '') {
+      outcomes.push({ kind: 'empty' });
+      continue;
+    }
     const { key, key8 } = criterionKey(text);
-    if (seen.has(key)) continue;
+    if (firstIndex.has(key)) {
+      outcomes.push({ kind: 'duplicate', of: firstIndex.get(key) });
+      continue;
+    }
     if (criteria.length >= limit) {
       truncated = true;
       break;
     }
-    seen.add(key);
+    firstIndex.set(key, index);
     // `key`/`key8` stay over the raw normalized text, so neutralizing display text never moves a
     // criterion's identity; `displayText` passes the appendix's shared `sanitizeField` rules. A
     // criterion cut at the display bound is flagged, never silently shortened: the reviewer sees
@@ -5533,9 +5557,26 @@ function boundedCriteria(texts, limit) {
     const sanitized = sanitizeField(text).text;
     const displayTruncated = sanitized.length > ACCEPTANCE_SOURCE_BOUNDS.displayLineChars;
     const displayText = sanitized.slice(0, ACCEPTANCE_SOURCE_BOUNDS.displayLineChars);
-    criteria.push({ key, key8, text, displayText, displayTruncated });
+    const criterion = { key, key8, text, displayText, displayTruncated };
+    criteria.push(criterion);
+    outcomes.push({ kind: 'kept', criterion });
   }
+  return { criteria, truncated, outcomes };
+}
+
+function boundedCriteria(texts, limit) {
+  const { criteria, truncated } = classifyCriteria(texts, limit);
   return { criteria, truncated };
+}
+
+// One walk over an issue body's criteria section, shared by the criteria extractor and the
+// `issue-acceptance-criteria` projection; it adds the raw `positions` and per-item `outcomes`.
+function walkIssueCriteria(body, limit) {
+  const { items, positions, headingFound } = sectionListItems(body, {
+    headings: ISSUE_CRITERIA_HEADINGS,
+  });
+  const texts = items.map((item) => item.match(MARKDOWN_CHECKBOX)?.[2] ?? item);
+  return { headingFound, positions, ...classifyCriteria(texts, limit) };
 }
 
 // An issue's stated criteria (`merge-gate-issue-observation.md`): the top-level list items under a
@@ -5545,9 +5586,34 @@ export function extractIssueAcceptanceCriteria(
   body,
   limit = ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource,
 ) {
-  const { items, headingFound } = sectionListItems(body, { headings: ISSUE_CRITERIA_HEADINGS });
-  const texts = items.map((item) => item.match(MARKDOWN_CHECKBOX)?.[2] ?? item);
-  return { headingFound, ...boundedCriteria(texts, limit) };
+  const { headingFound, criteria, truncated } = walkIssueCriteria(body, limit);
+  return { headingFound, criteria, truncated };
+}
+
+// The `issue-acceptance-criteria` projection of one walk: every item up to the bound at its raw
+// section and ordinal. An empty or repeated item stays as `dropped: true` without display text; a
+// repeat names its kept first occurrence's ordinal in `duplicateOf`, plus that occurrence's section
+// in `duplicateOfSection` when it lies in an earlier section. An empty item names neither.
+function issueCriteriaProjection(positions, outcomes) {
+  return outcomes.map((outcome, index) => {
+    const { section, ordinal } = positions[index];
+    if (outcome.kind === 'kept') {
+      return {
+        section,
+        ordinal,
+        displayText: outcome.criterion.displayText,
+        displayTruncated: outcome.criterion.displayTruncated,
+        dropped: false,
+      };
+    }
+    const entry = { section, ordinal, displayText: null, displayTruncated: false, dropped: true };
+    const first = outcome.kind === 'duplicate' ? positions[outcome.of] : null;
+    if (first !== null) {
+      entry.duplicateOf = first.ordinal;
+      if (first.section !== section) entry.duplicateOfSection = first.section;
+    }
+    return entry;
+  });
 }
 
 // A plan's criteria: the top-level checkbox items under `## Acceptance criteria` or
@@ -6893,6 +6959,49 @@ function receiptIssueNumber(item, repository) {
   return parseReference(item.issue, { expectedKind: 'issue', repository }).number;
 }
 
+// One issue as an acceptance source, shared by `pr-acceptance-sources` and
+// `issue-acceptance-criteria`: the issue read, its author's permission, and, only when that author
+// holds write permission, the bounded body's criteria from the closed heading set, with each
+// applied bound pushed to `context.truncated` (body bytes, display truncation, criteria per
+// source). `walk` keeps the raw item positions for the projection. Any read failure throws.
+async function acceptanceIssueSource(context, number) {
+  const { record } = await acceptanceForgeRead(context, 'issue-read', { number });
+  const author = record.author?.login ?? null;
+  const permission = await acceptanceAuthorPermission(context, author);
+  if (!isSourceTrustPermission(permission)) {
+    return { number, trust: 'untrusted-author', author, headingFound: false, criteria: [] };
+  }
+  const source = `issue-${number}`;
+  const body = truncateUtf8(
+    typeof record.body === 'string' ? record.body : '',
+    ACCEPTANCE_SOURCE_BOUNDS.issueBodyBytes,
+  );
+  if (body.truncated) {
+    context.truncated.push({
+      source,
+      bound: 'issueBodyBytes',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.issueBodyBytes,
+    });
+  }
+  const walk = walkIssueCriteria(body.text, ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource);
+  noteCriterionDisplayTruncation(context, source, walk.criteria);
+  if (walk.truncated) {
+    context.truncated.push({
+      source,
+      bound: 'criteriaPerSource',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource,
+    });
+  }
+  return {
+    number,
+    trust: 'trusted',
+    author,
+    headingFound: walk.headingFound,
+    criteria: walk.criteria,
+    walk,
+  };
+}
+
 // The issues a valid receipt lists, at most `ACCEPTANCE_SOURCE_BOUNDS.issues`. An issue body counts
 // only when its own author holds write permission; criteria come from the closed heading set.
 async function acceptanceIssues(context, receipt) {
@@ -6906,54 +7015,118 @@ async function acceptanceIssues(context, receipt) {
   }
   const issues = [];
   for (const item of items) {
-    const number = receiptIssueNumber(item, context.repository);
-    const { record } = await acceptanceForgeRead(context, 'issue-read', { number });
-    const author = record.author?.login ?? null;
-    const permission = await acceptanceAuthorPermission(context, author);
-    if (!isSourceTrustPermission(permission)) {
+    const issue = await acceptanceIssueSource(
+      context,
+      receiptIssueNumber(item, context.repository),
+    );
+    issues.push({
+      reference: item.issue,
+      number: issue.number,
+      relationship: item.relationship,
+      trust: issue.trust,
+      author: issue.author,
+      headingFound: issue.headingFound,
+      criteria: issue.criteria,
+    });
+  }
+  return issues;
+}
+
+// The per-number failures `issue-acceptance-criteria` turns into an `unreadable` entry: a missing
+// or transferred issue, a pull-request number or another unusable payload, and a failed read. Any
+// other error, such as a lost authentication, fails the whole call.
+const ISSUE_CRITERIA_UNREADABLE_CODES = new Set([
+  'COMMAND_FAILED',
+  'INVALID_PAYLOAD',
+  'TARGET_NOT_FOUND',
+]);
+// The keys the dispatcher itself reads to select the repository and probe, accepted beside the
+// operation's own `cwd` and `numbers`.
+const ISSUE_CRITERIA_INPUT_KEYS = Object.freeze([
+  'cwd',
+  'numbers',
+  'repository',
+  'remote',
+  'provider',
+  'teaLogins',
+  'probe',
+]);
+
+// Validated before the first provider call, so a malformed request never costs a probe or a read.
+function validateIssueAcceptanceCriteriaInput(input) {
+  const unknown = Object.keys(input).filter((key) => !ISSUE_CRITERIA_INPUT_KEYS.includes(key));
+  if (unknown.length > 0) {
+    fail('INVALID_PAYLOAD', 'issue-acceptance-criteria accepts only cwd and numbers', {
+      keys: unknown,
+    });
+  }
+  requireString(input.cwd, 'cwd');
+  const { numbers } = input;
+  if (!Array.isArray(numbers) || numbers.length === 0) {
+    fail('INVALID_PAYLOAD', 'numbers must be a non-empty array', { field: 'numbers' });
+  }
+  for (const number of numbers) {
+    if (!Number.isSafeInteger(number) || number <= 0) {
+      fail('INVALID_PAYLOAD', 'numbers must contain positive integers', { field: 'numbers' });
+    }
+  }
+  if (new Set(numbers).size !== numbers.length) {
+    fail('INVALID_PAYLOAD', 'numbers must be distinct', { field: 'numbers' });
+  }
+}
+
+// `issue-acceptance-criteria`: read-only and writes nothing. The stated criteria of the first
+// `ACCEPTANCE_SOURCE_BOUNDS.issues` numbers, in order, under the same author trust gate and bounds
+// as `pr-acceptance-sources`, projected with their raw section and ordinal; never an issue body or
+// a criterion's raw `text`. One number's read failure becomes its `unreadable` entry.
+async function executeIssueAcceptanceCriteria(input, repository, runner, probe) {
+  const context = {
+    repository,
+    runner,
+    probe,
+    commands: [],
+    permissions: new Map(),
+    truncated: [],
+  };
+  const numbers = input.numbers.slice(0, ACCEPTANCE_SOURCE_BOUNDS.issues);
+  if (input.numbers.length > numbers.length) {
+    context.truncated.push({
+      source: 'numbers',
+      bound: 'issues',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.issues,
+    });
+  }
+  const issues = [];
+  for (const number of numbers) {
+    let issue;
+    try {
+      issue = await acceptanceIssueSource(context, number);
+    } catch (error) {
+      if (
+        !(error instanceof RemoteTrackerError) ||
+        !ISSUE_CRITERIA_UNREADABLE_CODES.has(error.code)
+      )
+        throw error;
       issues.push({
-        reference: item.issue,
         number,
-        relationship: item.relationship,
-        trust: 'untrusted-author',
-        author,
+        trust: 'unreadable',
+        code: error.code,
         headingFound: false,
         criteria: [],
       });
       continue;
     }
-    const source = `issue-${number}`;
-    const body = truncateUtf8(
-      typeof record.body === 'string' ? record.body : '',
-      ACCEPTANCE_SOURCE_BOUNDS.issueBodyBytes,
-    );
-    if (body.truncated) {
-      context.truncated.push({
-        source,
-        bound: 'issueBodyBytes',
-        limit: ACCEPTANCE_SOURCE_BOUNDS.issueBodyBytes,
-      });
-    }
-    const extracted = extractIssueAcceptanceCriteria(body.text);
-    noteCriterionDisplayTruncation(context, source, extracted.criteria);
-    if (extracted.truncated) {
-      context.truncated.push({
-        source,
-        bound: 'criteriaPerSource',
-        limit: ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource,
-      });
-    }
     issues.push({
-      reference: item.issue,
       number,
-      relationship: item.relationship,
-      trust: 'trusted',
-      author,
-      headingFound: extracted.headingFound,
-      criteria: extracted.criteria,
+      trust: issue.trust,
+      headingFound: issue.headingFound,
+      criteria:
+        issue.walk === undefined
+          ? []
+          : issueCriteriaProjection(issue.walk.positions, issue.walk.outcomes),
     });
   }
-  return issues;
+  return { result: { issues, truncated: context.truncated }, commands: context.commands };
 }
 
 // The pull request head changed since the review started: the whole operation fails closed.
@@ -7245,6 +7418,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
     // and never reaches the list with the filter silently dropped.
     if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
     if (operation === 'pr-acceptance-sources') validatePrAcceptanceInput(input);
+    if (operation === 'issue-acceptance-criteria') validateIssueAcceptanceCriteriaInput(input);
     if (
       operation === 'pr-status-read' &&
       input.includeCheckIdentity !== undefined &&
@@ -7371,6 +7545,22 @@ export async function executeOperation(operation, input = {}, options = {}) {
     // command the tracker itself ran; the runtime-state guard's checks for a snapshot are not listed.
     if (operation === 'pr-acceptance-sources') {
       const collected = await executePrAcceptanceSources(input, activeRepository, runner, probe);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: { result: collected.result, commands: collected.commands },
+        dryRun: false,
+      };
+    }
+    // Several issue and permission reads, so it lists every forge command it ran, as above.
+    if (operation === 'issue-acceptance-criteria') {
+      const collected = await executeIssueAcceptanceCriteria(
+        input,
+        activeRepository,
+        runner,
+        probe,
+      );
       return {
         ok: true,
         operation,
