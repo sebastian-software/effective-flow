@@ -1,6 +1,6 @@
 # Forbid every rebase of a delivery branch with an open PR and name the merge alternative
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #792
@@ -107,13 +107,13 @@ work, never with a closing keyword.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/worktree-integration.md` | Reword the "Update existing PRs" paragraph: no rebase of any kind at any point of the run, the qualified `creationOid` reason, and the merge-commit alternative made by no workflow other than `{{SKILL:merge-gate}}` and autopilot's delivery-base step. |
-| `src/shared/plan-publication.md` | In "Prohibited on every path", replace "an interactive `rebase`" with "a `rebase` of any kind"; the backticked token stays `rebase`. |
-| `src/shared/pr-review-comments.md` | In "No history rewriting" (line 329), correct the cross-reference label "Updating existing PRs" to "Update existing PRs"; nothing else changes. |
-| `docs/user-guide/worktree-and-delivery.md` | In "Updating existing pull requests" (lines 360–365), forbid a rebase of any kind and add one sentence on how new base commits reach the branch. |
-| `test/worktree-lifecycle-contract.test.mjs` | Add one guard test, named after the invariant, that asserts the owning paragraph's clauses on the flattened fragment text. |
+| File                                        | Description                                                                                                                                                                                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/worktree-integration.md`        | Reword the "Update existing PRs" paragraph: no rebase of any kind at any point of the run, the qualified `creationOid` reason, and the merge-commit alternative made by no workflow other than `{{SKILL:merge-gate}}` and autopilot's delivery-base step. |
+| `src/shared/plan-publication.md`            | In "Prohibited on every path", replace "an interactive `rebase`" with "a `rebase` of any kind"; the backticked token stays `rebase`.                                                                                                                      |
+| `src/shared/pr-review-comments.md`          | In "No history rewriting" (line 329), correct the cross-reference label "Updating existing PRs" to "Update existing PRs"; nothing else changes.                                                                                                           |
+| `docs/user-guide/worktree-and-delivery.md`  | In "Updating existing pull requests" (lines 360–365), forbid a rebase of any kind and add one sentence on how new base commits reach the branch.                                                                                                          |
+| `test/worktree-lifecycle-contract.test.mjs` | Add one guard test, named after the invariant, that asserts the owning paragraph's clauses on the flattened fragment text.                                                                                                                                |
 
 ## Implementation details
 
@@ -133,10 +133,10 @@ work, never with a closing keyword.
      pushed normally, and no workflow other than `{{SKILL:merge-gate}}` and autopilot's
      delivery-base step (`autopilot-delivery-conflict`, within its own bound) makes that merge;
    - a rejected normal push because of diverged remote history still stops and reports (unchanged).
-   Keep the paragraph a bold-labelled paragraph at its current position, keep the label
-   `**Update existing PRs:**`, and add no new heading. Name tools with the `{{SKILL:X}}`
-   placeholder, as `pr-review-comments.md` (line 336) does (`build-system.md`, "Placeholder and
-   directive syntax").
+     Keep the paragraph a bold-labelled paragraph at its current position, keep the label
+     `**Update existing PRs:**`, and add no new heading. Name tools with the `{{SKILL:X}}`
+     placeholder, as `pr-review-comments.md` (line 336) does (`build-system.md`, "Placeholder and
+     directive syntax").
 2. In `src/shared/plan-publication.md`, "Prohibited on every path" (line 365), change
    "an interactive `rebase`" to "a `rebase` of any kind". The ban-list test compares only the
    backticked tokens, so it stays green; confirm with `pnpm test`.
@@ -167,9 +167,9 @@ work, never with a closing keyword.
    - `creationOid` near "condition 6", and, on the `lifecycle` text, that condition 6 of
      `worktree-lifecycle.md` is the `creationOid` ancestry condition;
    - the existing "new commits" and diverged-history stop clauses still present.
-   Follow the file's `assert.match` / `assertClauses` style; the test name states the invariant
-   (`AGENTS.md`, "Writing prompt text", point 5). The current paragraph text is pinned by no test,
-   so no other assertion has to move.
+     Follow the file's `assert.match` / `assertClauses` style; the test name states the invariant
+     (`AGENTS.md`, "Writing prompt text", point 5). The current paragraph text is pinned by no test,
+     so no other assertion has to move.
 6. Run `pnpm format` on the touched files, then CI's order: `pnpm agent:check`, `pnpm test`,
    `node build.mjs`, `pnpm test:distribution`.
 
@@ -213,7 +213,7 @@ work, never with a closing keyword.
 - [ ] `test/worktree-lifecycle-contract.test.mjs` contains a guard test whose name states the
       `creationOid` ancestry invariant and which fails for each mutation of the validation plan.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` (including its `Always-loaded core
-      (lines/budget)` report, with no `contextBudget` line changed) and `pnpm test:distribution`
+(lines/budget)` report, with no `contextBudget` line changed) and `pnpm test:distribution`
       all pass, and the built `shared/worktree-integration.md` of every target contains
       "no rebase of any kind".
 
@@ -278,6 +278,7 @@ work, never with a closing keyword.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -378,6 +379,7 @@ work, never with a closing keyword.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -392,15 +394,15 @@ summary counts all three judgments.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 3 | 3 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 1 |
-| Testability | 0 | 0 | 4 |
-| Scope | 0 | 0 | 5 |
-| Maintainability | 0 | 1 | 3 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         3 |    3 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    1 |
+| Testability     |        0 |         0 |    4 |
+| Scope           |        0 |         0 |    5 |
+| Maintainability |        0 |         1 |    3 |
 
 ### Findings
 

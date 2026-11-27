@@ -360,9 +360,13 @@ can reassess it. Effective Flow never force-removes a worktree.
 ### Updating existing pull requests
 
 If an already opened pull request needs subsequent changes, they always come as **new
-commits** on the same branch – never via `commit --amend`, interactive rebase, squash, or
+commits** on the same branch – never via `commit --amend`, a rebase of any kind, squash, or
 force-push. If a normal push fails because of diverged remote history, Effective Flow stops and
-reports the conflict, instead of overwriting the history.
+reports the conflict, instead of overwriting the history. A branch that has fallen behind or
+conflicts with its base is brought forward only by a merge commit, made by
+[`/effective-flow merge-gate`](./tools-deliver.md#effective-flow-merge-gate-pr-reference) or, before
+an autopilot delivery, by autopilot's [delivery-base step](./tools-automation.md#end-states), never
+by a rebase.
 
 ## Plan file: status change at the delivery point
 
