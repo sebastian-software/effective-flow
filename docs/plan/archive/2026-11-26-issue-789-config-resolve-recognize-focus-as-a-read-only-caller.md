@@ -1,6 +1,6 @@
 # config-resolve: recognize focus as a read-only caller
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #789
@@ -75,11 +75,11 @@ change (#783 / PR #785).
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/config-resolve-core.mjs` | Append the `focus` entry with an empty successor set and a one-line read-only-caller comment to `SUCCESSOR_SETS`, as its last element: after `merge-gate`, or directly under `retro` if PR #785 has landed, sharing one plural comment. |
-| `test/config-resolve.test.mjs` | Add `{ tool: 'focus', stops: [] }` to `RETIRED_CASES` directly before the `plan` row, so the parametrized retired-row test pins action `none` and no `unknown-tool` for `focus`; add one value test that `focus` resolves its configured `language.chat` and `skills.include` (or extend #785's `retro` value test to cover both tools, if present). |
-| `test/workflow-contracts.test.mjs` | Add `['focus', null, []]` to the pinned `SUCCESSOR_SETS` snapshot, at the same position as in the source. |
+| File                                  | Description                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/config-resolve-core.mjs` | Append the `focus` entry with an empty successor set and a one-line read-only-caller comment to `SUCCESSOR_SETS`, as its last element: after `merge-gate`, or directly under `retro` if PR #785 has landed, sharing one plural comment.                                                                                                              |
+| `test/config-resolve.test.mjs`        | Add `{ tool: 'focus', stops: [] }` to `RETIRED_CASES` directly before the `plan` row, so the parametrized retired-row test pins action `none` and no `unknown-tool` for `focus`; add one value test that `focus` resolves its configured `language.chat` and `skills.include` (or extend #785's `retro` value test to cover both tools, if present). |
+| `test/workflow-contracts.test.mjs`    | Add `['focus', null, []]` to the pinned `SUCCESSOR_SETS` snapshot, at the same position as in the source.                                                                                                                                                                                                                                            |
 
 ## Implementation details
 
@@ -93,6 +93,7 @@ change (#783 / PR #785).
      shared comment `// Read-only callers: they act on no retired row.` above both rows.
 
    Leave `RETIRED_EXEMPT_TOOLS`, `successorSetFor` and `classifyRetiredRows` unchanged.
+
 2. In `test/config-resolve.test.mjs`, insert `{ tool: 'focus', stops: [] }` into `RETIRED_CASES`
    (`test/config-resolve.test.mjs:1539-1559`) immediately before `{ tool: 'plan', stops: [], unknown: true }`
    (after the `retro` row, if present). The oracle-coverage test
@@ -216,9 +217,11 @@ Not relevant: no UI.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-BAT","question":"How should the plan handle the focus value test, given that value resolution is tool-independent and open PR #785 adds the same-shaped retro test and comment?","options":["Keep and merge on second landing","Drop the value test","Keep as written"],"escape":[],"stop":null,"scores":[{"label":"Keep and merge on second landing","score":9,"reason":"Covers the issue outcome that focus returns its configured values and removes the duplicate risk whichever change lands first; its edge over dropping the test is that the stated outcome stays tested."},{"label":"Drop the value test","score":5,"reason":"The RETIRED_CASES row already pins the focus-specific behaviour, but the explicit returns-the-configured-values outcome would stay unchecked."},{"label":"Keep as written","score":3,"reason":"Knowingly allows duplicate comments and value tests if focus merges before #785, against the state-a-contract-once rule."}]},{"site":"S-DEC","question":"How should the plan order the focus and retro (PR #785) entries and handle the merge when either change lands first?","options":["Order by landing","Require #785 first","Fixed order with PR note","Decide later"],"escape":["Decide later"],"stop":null,"scores":[{"label":"Order by landing","score":9,"reason":"Each plan keeps its own acceptance criterion at its landing and nothing blocks the draft PR; its edge is that it neither waits on an uncontrolled merge nor overrides an archived criterion."},{"label":"Require #785 first","score":4,"reason":"Avoids every ordering question but blocks this implementation indefinitely on an open PR whose merge timing nobody here controls."},{"label":"Fixed order with PR note","score":3,"reason":"Knowingly breaks PR #785 archived ends-with-retro criterion if focus lands first and needs an action on a PR this run cannot edit."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -227,15 +230,15 @@ Not relevant: no UI.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 0 |
-| Testability | 0 | 0 | 1 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 0 | 4 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    0 |
+| Testability     |        0 |         0 |    1 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         0 |    4 |
 
 ### Findings
 

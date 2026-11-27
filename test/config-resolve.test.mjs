@@ -1555,6 +1555,7 @@ const RETIRED_CASES = [
     tool: 'merge-gate',
     stops: ['prReview.bots', 'prReview.botWaitMinutes', 'prReview.maxRounds'],
   },
+  { tool: 'focus', stops: [] },
   { tool: 'plan', stops: [], unknown: true },
 ];
 
@@ -1605,6 +1606,28 @@ for (const { tool, mode, stops, reports = [], unknown = false } of RETIRED_CASES
     }
   });
 }
+
+test('focus is a known read-only caller: it resolves configured values, acts on no retired row, and carries no unknown-tool', async (t) => {
+  const { root } = plainDirectory(t);
+  write(
+    root,
+    SETUP_ADR,
+    setupDocument({
+      'language.chat': 'de',
+      'skills.include': 'humanizer, distill',
+      'worktree.baseBranch': 'old',
+      'prReview.bots': 'old',
+    }),
+  );
+  const data = await resolved({ cwd: root, tool: 'focus' });
+  assert.equal(data.values['language.chat'].value, 'de');
+  assert.deepEqual(data.values['skills.include'].items, ['humanizer', 'distill']);
+  for (const key of ['worktree.baseBranch', 'prReview.bots']) {
+    const entry = data.retired.find((row) => row.key === key);
+    assert.equal(entry?.action, 'none', key);
+  }
+  assert.equal(codes(data).includes('unknown-tool'), false);
+});
 
 test('retired rows: deliver reports worktree.completion and never stops on it', async (t) => {
   const { root } = plainDirectory(t);
