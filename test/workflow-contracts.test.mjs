@@ -30515,3 +30515,40 @@ test('a possibly applied PR comment write is re-read on its own target and never
     near('For an unconfirmed re-trigger', 'no review absent from the recorded baseline', 40),
   );
 });
+
+// Pins the two named performers in each fragment plus the removal of the old exclusivity phrase,
+// not a full set comparison.
+test('every fragment lists the same workflows that may resolve a conflict on a head branch', () => {
+  const comments = source('src/shared/pr-review-comments.md');
+  const windows = {
+    'src/shared/pr-review-comments.md': boundedSlice(
+      comments,
+      'A head branch that **conflicts**',
+      'is reported instead of performed.',
+    ),
+    'src/shared/worktree-integration.md': boundedSlice(
+      source('src/shared/worktree-integration.md'),
+      '**Update existing PRs:**',
+      '1. **Mark the plan as implemented',
+    ),
+    'src/shared/merge-gate-conflict-resolution.md': boundedSlice(
+      source('src/shared/merge-gate-conflict-resolution.md'),
+      '## Conflict-resolution delegation contract',
+      'with its own stated substitutions.',
+    ),
+  };
+  for (const [path, slice] of Object.entries(windows)) {
+    const text = prose(slice);
+    assert.ok(text.includes('{{SKILL:merge-gate}}'), `${path} names merge-gate`);
+    assert.ok(
+      text.includes('autopilot-delivery-conflict'),
+      `${path} names autopilot-delivery-conflict`,
+    );
+  }
+  assert.ok(
+    !prose(section(comments, '### No history rewriting')).includes(
+      'no other workflow resolves a conflict',
+    ),
+    'the old exclusivity phrase is gone',
+  );
+});
