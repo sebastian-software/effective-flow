@@ -1,7 +1,8 @@
 ## Superseded preserved plans in cleanup
 
 A `worktree:` item with `proof: "preserved-plan-superseded"` is a kept `issue-planning` worktree
-(`aborted`, reason `plan-preserved`) whose only dirty entry is its preserved plan `planPath`, and
+(`aborted`, reason `plan-preserved`) whose only dirty entry is its preserved plan `planPath`, with
+no ignored entries anywhere in the worktree, and
 whose base `origin/<baseRef>` at `baseCommit`, read from the local remote-tracking ref without a
 fetch, holds the Implemented archive copy `archivePath`. `match` says where every preserved byte
 stays recoverable:

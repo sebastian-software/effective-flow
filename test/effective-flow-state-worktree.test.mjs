@@ -4552,11 +4552,11 @@ test('a superseded-plan proof that fails names its reason and removes nothing', 
       (fx) => writeFileSync(join(fx.worktree.worktreePath, 'base.txt'), 'changed\n'),
     ],
     [
-      'dirty-entries: ignored entry under plan.dir',
+      'dirty-entries: ignored entry outside plan.dir',
       {},
       (fx) => {
         writeFileSync(join(fx.root, '.git', 'info', 'exclude'), '*.tmp\n');
-        writeFileSync(join(dirname(fx.planFile), 'draft.tmp'), 'x');
+        writeFileSync(join(fx.worktree.worktreePath, 'draft.tmp'), 'x');
       },
     ],
     [
@@ -4963,7 +4963,7 @@ test('a failed final ignored-plan scan keeps the worktree after discarding the p
   );
 });
 
-test('the final ignored-plan scan still checks the proof directory after config changes', async (t) => {
+test('the final ignored-plan scan and retries protect the former plan directory after config changes', async (t) => {
   const fx = await supersededWorktree(t);
   const { item } = planEntry(await plan(fx.root), 'record-1');
   const late = join(dirname(fx.planFile), 'late.tmp');
@@ -4987,6 +4987,34 @@ test('the final ignored-plan scan still checks the proof directory after config 
   ).items;
   assert.deepEqual([result.code, result.discardedPlan], ['REMOVE_FAILED', PLAN_PATH]);
   assert.match(readRecord(fx.root).reason, /condition 7 fails: ignoredPlanEntries/);
+  assert.equal(readFileSync(late, 'utf8'), 'draft\n');
+  const blocked = planEntry(await plan(fx.root), 'record-1');
+  assert.equal(blocked.item, undefined);
+  assert.deepEqual(blocked.blocked?.conditions, [7]);
+
+  rmSync(late);
+  const ordinary = planEntry(await plan(fx.root), 'record-1').item;
+  assert.ok(ordinary);
+  writeFileSync(late, 'draft\n');
+  const applied = await call('cleanup apply', {
+    cwd: fx.root,
+    executionRoot: fx.root,
+    items: { [ordinary.itemId]: ordinary.itemDigest },
+  });
+  assert.deepEqual(
+    [applied.ok, applied.outcome.code, applied.outcome.conditions],
+    [false, 'PREVIEW_MISMATCH', [7]],
+  );
+
+  const [direct] = expectOk(
+    await call('worktree remove', {
+      cwd: fx.root,
+      executionRoot: fx.root,
+      sessionId: SESSION,
+      recordIds: ['record-1'],
+    }),
+  ).items;
+  assert.deepEqual([direct.ok, direct.code, direct.conditions], [false, 'NOT_ELIGIBLE', [7]]);
   assert.equal(readFileSync(late, 'utf8'), 'draft\n');
 });
 
