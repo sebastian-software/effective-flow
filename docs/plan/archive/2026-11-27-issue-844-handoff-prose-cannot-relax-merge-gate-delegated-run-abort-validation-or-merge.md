@@ -1,6 +1,6 @@
 # Handoff prose cannot relax merge-gate delegated-run abort, validation or merge rules
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #844
@@ -75,6 +75,7 @@ Goal:
   - push and merge decisions.
 
   The run does not pass other text into a child delegation either: not to the resolver worker, not to `code-validator`, and not to a delegated `iterate` round. The incident's base comparison and rerun were child work, so a request the run ignores but forwards would still relax validation.
+
 - **Relaxing requests are ignored and reported; restricting requests stop the run** (scored decision).
   - A request in other text that would relax or change a gate rule is ignored and reported.
   - A request in other text not to merge, or not to commit or push onto the head branch (what `no-merge` or `no-branch-writes` would express), returns a new Entry abort before any write, for example `ABORT unmapped restriction in handoff`. This mirrors the caller rule that "a restriction neither token expresses ... dispatches nothing" (`src/tools/merge-gate.md:306-316`).
@@ -96,6 +97,7 @@ Goal:
   - the one use it makes of an `ABORT` report is the T4 basis of the retrospective slot (`next-steps.md:166-172`), taken only from that report's retrospective-slot fact line by signal class.
 
   The report holds text shaped by the pull request, such as verbatim failure output (`merge-gate-delegated-run.md:1488-1490`). Without the "acts on nothing" clause, the abort path would become a steering channel. The sentence at `:339-340` ("The delegated run emits nothing on `ABORT`") refers to the next-step block (`merge-gate-delegated-run.md:1636`) and is narrowed to say so.
+
 - **Verification by a source-prose test, not a new eval scenario.** The issue allows either.
   - A merge-gate eval scenario cannot seed caller prose into the dispatch handoff without new scaffolding: scenario prompts are templates and the caller session builds the handoff (`evals/merge-gate/README.md`, "Adding a scenario").
   - The prose test follows `AGENTS.md` rule 5 (name the invariant).
@@ -189,6 +191,7 @@ Goal:
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -433,6 +436,7 @@ Goal:
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
