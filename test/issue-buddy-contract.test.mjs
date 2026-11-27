@@ -198,7 +198,7 @@ test('Issue Buddy passes no forge text, lets the helper derive it, and preserves
 test('Issue Buddy lists only confirmed publications for the protected plan release', () => {
   assert.match(
     prose,
-    /From a confirmed `publish --apply` success envelope only, append `\{path: planFile, blobOid, commitOid, baseOid\}` to this pass's published-plan list; the plan is removed only through the protected release at the Phase 2 exit, never by a hash check and an unlink/,
+    /from that same confirmed\s+`publish --apply` success envelope only, append `\{path: planFile, blobOid, commitOid, baseOid\}`\s+to this pass's published-plan list before any publish-limit check; the plan is removed only\s+through the protected release at the Phase 2 exit, never by a hash check and an unlink/,
   );
   assert.match(
     prose,

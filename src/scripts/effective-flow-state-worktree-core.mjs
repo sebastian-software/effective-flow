@@ -3272,7 +3272,19 @@ async function releasePublishedPlans(context, record, plans, planRelease, option
     });
   }
   const released = await releasePresentPlans(context, record, plans, planRelease.present, deps);
-  if (!released.ok) return released;
+  if (!released.ok) {
+    // An anchored release whose quarantine could not be cleared has already taken the plan files
+    // out of the worktree: the failure carries the release fields, so none is reported preserved.
+    if (released.code === 'WRITE_FAILED' && released.anchorRef) {
+      return {
+        ...released,
+        planReleased: true,
+        releasedPaths: [...planRelease.present],
+        absentPaths: [...planRelease.absent],
+      };
+    }
+    return released;
+  }
   return {
     ok: true,
     summary: {
@@ -3415,37 +3427,45 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
     release = outcome.summary;
   }
   const withRelease = (item) => (release === null ? item : { ...item, ...release });
-  if (record.status === 'active') {
-    record = { ...record, status: 'cleanup-ready', reason: null, updatedAt: timestamp(deps) };
-    await writeRecord(context, paths, record, held);
-  }
-  if (release !== null) {
-    const fresh = await gatherFacts(context, roots, await listWorktrees(context), record, {
-      ownLock: held.token,
-    });
-    const again = assessEligibility(fresh, { statuses: CLAIMABLE_STATUSES, removal: true });
-    if (again.conditions.length > 0 || again.blockers.length > 0) {
+  try {
+    if (record.status === 'active') {
+      record = { ...record, status: 'cleanup-ready', reason: null, updatedAt: timestamp(deps) };
+      await writeRecord(context, paths, record, held);
+    }
+    if (release !== null) {
+      const fresh = await gatherFacts(context, roots, await listWorktrees(context), record, {
+        ownLock: held.token,
+      });
+      const again = assessEligibility(fresh, { statuses: CLAIMABLE_STATUSES, removal: true });
+      if (again.conditions.length > 0 || again.blockers.length > 0) {
+        return withRelease(
+          itemFailure(recordId, 'NOT_ELIGIBLE', { status: record.status, ...again }),
+        );
+      }
+    }
+    if (options.signals.signal) {
       return withRelease(
-        itemFailure(recordId, 'NOT_ELIGIBLE', { status: record.status, ...again }),
+        itemFailure(recordId, 'INTERRUPTED', {
+          signal: options.signals.signal,
+          status: record.status,
+        }),
       );
     }
+    record = {
+      ...record,
+      status: 'cleanup-in-progress',
+      cleanupRunId,
+      claimedAt: timestamp(deps),
+      updatedAt: timestamp(deps),
+    };
+    await writeRecord(context, paths, record, held);
+  } catch (error) {
+    // A throw between the release and the claim would otherwise lose the release fields.
+    if (release !== null && error && typeof error === 'object' && error.itemDetails === undefined) {
+      error.itemDetails = withRelease({ status: record.status });
+    }
+    throw error;
   }
-  if (options.signals.signal) {
-    return withRelease(
-      itemFailure(recordId, 'INTERRUPTED', {
-        signal: options.signals.signal,
-        status: record.status,
-      }),
-    );
-  }
-  record = {
-    ...record,
-    status: 'cleanup-in-progress',
-    cleanupRunId,
-    claimedAt: timestamp(deps),
-    updatedAt: timestamp(deps),
-  };
-  await writeRecord(context, paths, record, held);
   const claimed = record;
   try {
     return withRelease(

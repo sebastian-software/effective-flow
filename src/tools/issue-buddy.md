@@ -379,14 +379,13 @@ when: `publish --apply` fails with `BASE_CHANGED` and no `details.state`, and th
 
 Record `published` only
 from confirmed success, with the Phase-2 verdict-record shape; append its confirmed
-`{issue, number, headRef, url}` to `pullRequestsOpened` and consume one plan slot.
-When no slot remains, set `cutOff: publish-limit` and proceed to Phase 6.
-
-From a confirmed `publish --apply` success envelope only, append
-`{path: planFile, blobOid, commitOid, baseOid}` to this pass's published-plan list; the plan is
-removed only through the protected release at the Phase 2 exit, never by a hash check and an
-unlink. Changed, ambiguous, earlier, failed, unpublished or push/create-uncertain plans are never
-listed: they are preserved, and so is the planning worktree that holds them.
+`{issue, number, headRef, url}` to `pullRequestsOpened`, and, from that same confirmed
+`publish --apply` success envelope only, append `{path: planFile, blobOid, commitOid, baseOid}`
+to this pass's published-plan list before any publish-limit check; the plan is removed only
+through the protected release at the Phase 2 exit, never by a hash check and an unlink. Changed,
+ambiguous, earlier, failed, unpublished or push/create-uncertain plans are never listed: they are
+preserved, and so is the planning worktree that holds them. Then consume one plan slot; when no
+slot remains, set `cutOff: publish-limit` and proceed to Phase 6, whose release still runs.
 Never force-push, force-clean or delete an earlier survivor.
 
 ## Ordered outcome mapping
