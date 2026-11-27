@@ -1,6 +1,6 @@
 # Name the failed runtime-root check behind UNSAFE_RUNTIME_ROOT
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #798
@@ -92,18 +92,18 @@ are unchanged; CI order passes.
 
 ## Affected files
 
-| File | Description |
-| --- | --- |
-| `src/scripts/pilot-measurement-core.mjs` | Add `UNSAFE_RUNTIME_ROOT_REASONS`; accept and validate `options.details` in `PilotMeasurementError`; set a reason at every `UNSAFE_RUNTIME_ROOT` site in `gitCall` and `repositoryGuard`; distinguish check-ignore status 1; copy `details` in `controlError`; emit `error.details` in `errorEnvelope`. |
-| `src/scripts/pilot-measurement.mjs` | No logic change expected: it serializes the core's envelope as is. Keep the stdout and stderr lines unchanged, because `test/pilot-measurement-contract.test.mjs` matches them, and stderr gains no details. Touch it only if verification shows the envelope is rebuilt there. |
-| `test/pilot-measurement-git.test.mjs` | One test per reason against the real-Git fixtures and fake runners, plus the redaction invariant test. |
-| `test/pilot-measurement-cli.test.mjs` | One CLI-level test that a rejected root exposes `error.details.reason` in the stdout envelope, with exit status 3, code and message unchanged, and an unchanged stderr line. |
-| `test/pilot-measurement-adoption.test.mjs` | Extend the existing `repository identity` neutral-failure row (around line 1936) to assert `details.reason` `identity-mismatch` through `finalize`'s rewrap. |
-| `test/pilot-measurement-contract.test.mjs` | Update a source-text regex only if a guard call line it matches changes (around lines 133-136); the `check-ignore` regex must still match. Add the assertion that the protocol guide lists exactly `UNSAFE_RUNTIME_ROOT_REASONS`. |
-| `test/pilot-measurement-timing.test.mjs` | No change: its rejecting-runner `finalize` fault (around lines 402-445) must keep passing unedited. |
-| `test/workflow-contracts.test.mjs` | One assertion pinning the new `pilot-measurement.md` sentence (a pilot failure reports the closed `details.reason`). |
-| `src/shared/pilot-measurement.md` | One sentence in step 5, which handles a failed inventory or reservation. |
-| `docs/developer-guide/model-tiering-pilot-protocol.md` | Document the optional `error.details` of `UNSAFE_RUNTIME_ROOT`, its closed reasons and `subcommand`, and that it carries no path or Git output, next to the existing envelope and failure-class description (around lines 560-585); clarify "retryable" in the Neutral row. |
+| File                                                   | Description                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/pilot-measurement-core.mjs`               | Add `UNSAFE_RUNTIME_ROOT_REASONS`; accept and validate `options.details` in `PilotMeasurementError`; set a reason at every `UNSAFE_RUNTIME_ROOT` site in `gitCall` and `repositoryGuard`; distinguish check-ignore status 1; copy `details` in `controlError`; emit `error.details` in `errorEnvelope`. |
+| `src/scripts/pilot-measurement.mjs`                    | No logic change expected: it serializes the core's envelope as is. Keep the stdout and stderr lines unchanged, because `test/pilot-measurement-contract.test.mjs` matches them, and stderr gains no details. Touch it only if verification shows the envelope is rebuilt there.                         |
+| `test/pilot-measurement-git.test.mjs`                  | One test per reason against the real-Git fixtures and fake runners, plus the redaction invariant test.                                                                                                                                                                                                  |
+| `test/pilot-measurement-cli.test.mjs`                  | One CLI-level test that a rejected root exposes `error.details.reason` in the stdout envelope, with exit status 3, code and message unchanged, and an unchanged stderr line.                                                                                                                            |
+| `test/pilot-measurement-adoption.test.mjs`             | Extend the existing `repository identity` neutral-failure row (around line 1936) to assert `details.reason` `identity-mismatch` through `finalize`'s rewrap.                                                                                                                                            |
+| `test/pilot-measurement-contract.test.mjs`             | Update a source-text regex only if a guard call line it matches changes (around lines 133-136); the `check-ignore` regex must still match. Add the assertion that the protocol guide lists exactly `UNSAFE_RUNTIME_ROOT_REASONS`.                                                                       |
+| `test/pilot-measurement-timing.test.mjs`               | No change: its rejecting-runner `finalize` fault (around lines 402-445) must keep passing unedited.                                                                                                                                                                                                     |
+| `test/workflow-contracts.test.mjs`                     | One assertion pinning the new `pilot-measurement.md` sentence (a pilot failure reports the closed `details.reason`).                                                                                                                                                                                    |
+| `src/shared/pilot-measurement.md`                      | One sentence in step 5, which handles a failed inventory or reservation.                                                                                                                                                                                                                                |
+| `docs/developer-guide/model-tiering-pilot-protocol.md` | Document the optional `error.details` of `UNSAFE_RUNTIME_ROOT`, its closed reasons and `subcommand`, and that it carries no path or Git output, next to the existing envelope and failure-class description (around lines 560-585); clarify "retryable" in the Neutral row.                             |
 
 ## Implementation details
 
@@ -226,7 +226,7 @@ Not relevant.
 ## Validation plan
 
 - `node --test test/pilot-measurement-git.test.mjs test/pilot-measurement-cli.test.mjs
-  test/pilot-measurement-adoption.test.mjs test/pilot-measurement-contract.test.mjs` while iterating.
+test/pilot-measurement-adoption.test.mjs test/pilot-measurement-contract.test.mjs` while iterating.
 - `node --test test/workflow-contracts.test.mjs` after the prose edit, to confirm the
   `pilot-measurement.md` section assertions still hold.
 - Then CI's order: `pnpm agent:check`, `pnpm test`, `node build.mjs` (read the
@@ -259,9 +259,11 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-CLR","question":"Where should the shared-prose instruction about reporting details.reason (and not retrying on identity-mismatch / tracked-runtime-state) be added?","options":["pilot-measurement.md only","Both fragments","pilot-measurement-workflow.md only","Decide later"],"escape":["Decide later"],"scores":[{"label":"pilot-measurement.md only","score":7,"reason":"Places the sentence at the merge-gate inventory-error handling where the observed failure occurs, matches the issue literally, and adds no prompt length to build/refactor/fix runs."},{"label":"Both fragments","score":6,"reason":"Broader coverage for build/refactor/fix, but exceeds the issue scope, costs prompt length on three workflows and partly duplicates the existing never-re-send rule."},{"label":"pilot-measurement-workflow.md only","score":3,"reason":"Misses the merge-gate path that never loads this fragment and only restates an existing no-retry rule."}]},{"site":"S-BAT","question":"How should the plan treat a runner that rejects (throws) during the guard Git calls?","options":["Leave rejections unmapped","Reclassify rejections","Fault after write","Decide later"],"escape":["Decide later"],"scores":[{"label":"Leave rejections unmapped","score":9,"reason":"The production runner never rejects, so the issue spawn-error case arrives as a result with error and maps to git-unavailable; this keeps every failure class and the timing test intact, which is its edge over reclassifying."},{"label":"Reclassify rejections","score":4,"reason":"Uniform reasons, but it turns post-write rejections from a persisted fault into a neutral error without suspension and requires reworking a deliberate test for a case the production runner never produces."},{"label":"Fault after write","score":2,"reason":"Reshapes the neutral/fault contract for guard failures after a write, well outside the scope of naming the failed check."}]},{"site":"S-DEC","question":"How should the merge-gate sentence handle the no-retry part across dispatches?","options":["Wisdom-file line","Current dispatch only","Report now, defer no-retry","Decide later"],"escape":["Decide later"],"scores":[{"label":"Wisdom-file line","score":5,"reason":"Only option that enforces no-retry across dispatches, but it adds a new wisdom-file record, a preflight skip branch and a contract test, paid in prompt length on every run, to avoid one cheap read-only call."},{"label":"Current dispatch only","score":8,"reason":"One honest sentence that fits the existing structure: there is no in-dispatch retry path and each re-dispatch reports the reason again, so the only cost is a repeated report, without a no-op clause."},{"label":"Report now, defer no-retry","score":6,"reason":"Same prompt text as current-dispatch-only while keeping the no-retry ask on record, but a follow-up issue for skipping one cheap read-only call costs more tracking than it returns."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -270,15 +272,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 1 | 3 | 3 |
-| Testability | 0 | 1 | 0 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 0 | 5 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        1 |         3 |    3 |
+| Testability     |        0 |         1 |    0 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         0 |    5 |
 
 ### Findings
 
@@ -327,3 +329,61 @@ counts both rounds; this round adds two Important and five Note findings, all re
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-27
+**Workflow:** `effective-flow build`, unattended under `effective-flow autopilot` run
+`ap-20261126T230940Z-96747c67`
+
+### Requirement
+
+Every `UNSAFE_RUNTIME_ROOT` error of the pilot-measurement helper names the failed check through a
+closed, value-free `details.reason` (plus `details.subcommand` for `git-failed`), while code, exit
+status 3, message and the no-path rule stay unchanged.
+
+### Architecture decisions
+
+- Implemented as planned, including the three scored decisions.
+- `gitCall` keeps `allowed = [0]` and takes an optional status-to-reason map; the `check-ignore`
+  guard passes `{ 1: 'not-ignored' }`. Other statuses stay `git-failed` with the subcommand.
+- The `PilotMeasurementError` constructor refuses an `UNSAFE_RUNTIME_ROOT` without valid closed
+  details (review hardening), so a missed lookup is a programming error, never a reasonless error.
+
+### Affected files
+
+- `src/scripts/pilot-measurement-core.mjs`
+- `src/shared/pilot-measurement.md`
+- `docs/developer-guide/model-tiering-pilot-protocol.md`
+- `test/pilot-measurement-git.test.mjs`, `test/pilot-measurement-cli.test.mjs`,
+  `test/pilot-measurement-adoption.test.mjs`, `test/pilot-measurement-contract.test.mjs`,
+  `test/workflow-contracts.test.mjs`
+- `src/scripts/pilot-measurement.mjs` and `test/pilot-measurement-timing.test.mjs` are unchanged.
+
+### Test results
+
+- Targeted: the five pilot-measurement test files (108 pass) and `test/workflow-contracts.test.mjs`
+  (623 pass), run after the last correction.
+- Full run before the review corrections: `pnpm test` reported 8 timeout-shaped failures in
+  untouched suites on a host at load average about 58 (`host-driver`, `issue-buddy-pass`,
+  `merge-gate-eval-round`, `merge-gate-eval-round-lifecycle`, `protected-validation-operator`).
+  All pass on the unchanged base and pass again by identity on this change at normal load; their
+  attribution stays unknown. `node build.mjs` (no budget violation), `pnpm test:distribution` and
+  `pnpm eval merge-gate verify` (freshness debt only) passed.
+
+### Review result
+
+The Node.js review found four Notes, no Critical or Important findings; all four were fixed and
+re-checked. No findings were offloaded.
+
+## Review findings
+
+**Date:** 2026-11-27
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     4 |
+| Open / Not implemented |     0 |

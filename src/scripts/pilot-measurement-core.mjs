@@ -77,6 +77,33 @@ export const PILOT_MEASUREMENT_ERROR_CODES = Object.freeze([
   'PROFILE_UNAVAILABLE',
 ]);
 
+// Closed, value-free reasons an UNSAFE_RUNTIME_ROOT error names in `details.reason`; a
+// `git-failed` reason also names its bare Git subcommand. Neither ever carries a path or Git output.
+export const UNSAFE_RUNTIME_ROOT_REASONS = Object.freeze([
+  'git-unavailable',
+  'git-failed',
+  'not-directory',
+  'toplevel-mismatch',
+  'identity-mismatch',
+  'path-resolution',
+  'tracked-runtime-state',
+  'not-ignored',
+]);
+const GIT_SUBCOMMANDS = Object.freeze(['rev-parse', 'ls-files', 'check-ignore']);
+const ROOT_DETAILS = Object.freeze(
+  Object.fromEntries(
+    UNSAFE_RUNTIME_ROOT_REASONS.map((reason) => [reason, Object.freeze({ reason })]),
+  ),
+);
+const GIT_FAILED_DETAILS = Object.freeze(
+  Object.fromEntries(
+    GIT_SUBCOMMANDS.map((subcommand) => [
+      subcommand,
+      Object.freeze({ reason: 'git-failed', subcommand }),
+    ]),
+  ),
+);
+
 const EXIT_CODES = Object.freeze({
   INVALID_OPERATION: 2,
   INVALID_PAYLOAD: 2,
@@ -237,12 +264,40 @@ const CONTROL_NEUTRAL_CODES = new Set([
 ]);
 const RECEIPT_FAULT = Symbol('pilot-measurement-receipt-fault');
 
+// A programming error in a `details` shape; never mapped to a runtime-root reason.
+class InvalidErrorDetails extends Error {}
+
+function validDetails(code, details) {
+  if (code !== 'UNSAFE_RUNTIME_ROOT' || !isObject(details)) return false;
+  const keys = Object.keys(details);
+  if (!UNSAFE_RUNTIME_ROOT_REASONS.includes(details.reason)) return false;
+  if (details.reason === 'git-failed') {
+    return (
+      keys.length === 2 &&
+      keys.includes('subcommand') &&
+      GIT_SUBCOMMANDS.includes(details.subcommand)
+    );
+  }
+  return keys.length === 1;
+}
+
 export class PilotMeasurementError extends Error {
   constructor(code, options = {}) {
+    // This module is the only raiser of UNSAFE_RUNTIME_ROOT, so every one must name its check.
+    const needsDetails = options.details !== undefined || code === 'UNSAFE_RUNTIME_ROOT';
+    if (needsDetails && !validDetails(code, options.details)) {
+      throw new InvalidErrorDetails('pilot measurement error details are outside the closed set');
+    }
     super(ERROR_MESSAGES[code] ?? ERROR_MESSAGES.WRITE_FAILED, { cause: options.cause });
     this.name = 'PilotMeasurementError';
     this.code = code;
     this.exitCode = EXIT_CODES[code] ?? 1;
+    if (options.details !== undefined) {
+      this.details =
+        options.details.reason === 'git-failed'
+          ? GIT_FAILED_DETAILS[options.details.subcommand]
+          : ROOT_DETAILS[options.details.reason];
+    }
     if (options.pilotControlOutcome !== undefined) {
       this.pilotControlOutcome = options.pilotControlOutcome;
       this.controlStatePersisted = options.controlStatePersisted;
@@ -443,10 +498,20 @@ function asText(value) {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
 }
 
-async function gitCall(runner, cwd, args, allowed = [0]) {
-  if (typeof runner !== 'function') fail('UNSAFE_RUNTIME_ROOT');
+function unsafeRoot(reason, cause) {
+  fail('UNSAFE_RUNTIME_ROOT', { details: ROOT_DETAILS[reason], cause });
+}
+
+// A rejecting runner stays uncaught here; `statusReasons` maps a non-allowed exit status to a
+// caller-named reason. The status is only compared, never reported.
+async function gitCall(runner, cwd, args, allowed = [0], statusReasons = {}) {
+  if (typeof runner !== 'function') unsafeRoot('git-unavailable');
   const result = await runner({ executable: 'git', args: ['-C', cwd, ...args], cwd });
-  if (result?.error || !allowed.includes(result?.status)) fail('UNSAFE_RUNTIME_ROOT');
+  if (result?.error) unsafeRoot('git-unavailable');
+  if (!allowed.includes(result?.status)) {
+    if (Object.hasOwn(statusReasons, result?.status)) unsafeRoot(statusReasons[result.status]);
+    fail('UNSAFE_RUNTIME_ROOT', { details: GIT_FAILED_DETAILS[args[0]] });
+  }
   return asText(result.stdout).trim();
 }
 
@@ -458,24 +523,27 @@ async function repositoryGuard(input, deps, { mutation = false } = {}) {
   let identity;
   try {
     root = await realpath(input.runtimeStateRoot);
-    if (!(await stat(root)).isDirectory()) fail('UNSAFE_RUNTIME_ROOT');
+    if (!(await stat(root)).isDirectory()) unsafeRoot('not-directory');
     const top = await realpath(await gitCall(deps.runner, root, ['rev-parse', '--show-toplevel']));
-    if (top !== root) fail('UNSAFE_RUNTIME_ROOT');
+    if (top !== root) unsafeRoot('toplevel-mismatch');
     const common = await gitCall(deps.runner, root, [
       'rev-parse',
       '--path-format=absolute',
       '--git-common-dir',
     ]);
     identity = await realpath(common);
-    if (identity !== (await realpath(input.repositoryIdentity))) fail('UNSAFE_RUNTIME_ROOT');
+    if (identity !== (await realpath(input.repositoryIdentity))) unsafeRoot('identity-mismatch');
   } catch (error) {
-    if (error instanceof PilotMeasurementError) throw error;
-    fail('UNSAFE_RUNTIME_ROOT', { cause: error });
+    if (error instanceof PilotMeasurementError || error instanceof InvalidErrorDetails) throw error;
+    unsafeRoot('path-resolution', error);
   }
   const tracked = await gitCall(deps.runner, root, ['ls-files', '--', '.effective-flow/']);
-  if (tracked !== '') fail('UNSAFE_RUNTIME_ROOT');
+  if (tracked !== '') unsafeRoot('tracked-runtime-state');
   for (const target of ['.effective-flow', '.effective-flow/model-tiering-pilot']) {
-    await gitCall(deps.runner, root, ['check-ignore', '--no-index', '-q', '--', target], [0]);
+    // `check-ignore -q` exits 1 for a path that is not ignored; any other failure is `git-failed`.
+    await gitCall(deps.runner, root, ['check-ignore', '--no-index', '-q', '--', target], [0], {
+      1: 'not-ignored',
+    });
   }
   if (mutation) {
     const memory = await readJson(path.join(root, '.effective-flow', 'memory.json'), {
@@ -1797,6 +1865,7 @@ export function errorEnvelope(operation, error) {
     operation: PILOT_MEASUREMENT_OPERATIONS.includes(operation) ? operation : null,
     error: { code: normalized.code, message: normalized.message, exitCode: normalized.exitCode },
   };
+  if (normalized.details !== undefined) envelope.error.details = { ...normalized.details };
   if (normalized.pilotControlOutcome !== undefined) {
     envelope.pilotControlOutcome = normalized.pilotControlOutcome;
     envelope.controlStatePersisted = normalized.controlStatePersisted;
@@ -3314,6 +3383,7 @@ function controlError(error, pilotControlOutcome, controlStatePersisted) {
       : new PilotMeasurementError('WRITE_FAILED', { cause: error });
   return new PilotMeasurementError(normalized.code, {
     cause: normalized,
+    details: normalized.details,
     pilotControlOutcome,
     controlStatePersisted,
     alert: pilotControlOutcome === 'control-state-unpersistable' ? 'value-free' : 'none',

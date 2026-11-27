@@ -559,11 +559,11 @@ as 0 bytes.
 `finalize`, `start-gate-observation`, and `finalize-gate-observation` classify every failure,
 validation included, into exactly one class:
 
-| Class       | Codes                                                                                                                                                                                                    | Result                                                                                                       |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Neutral     | `INVALID_PAYLOAD`, `AUTHENTICATION_FAILED`, `LOCKED`, `UNSAFE_RUNTIME_ROOT`, `MIGRATION_REQUIRED`, `PROTOCOL_DRIFT`, and `NOT_FOUND` from a generation or record read                                    | Retryable error with `pilotControlOutcome: "none"`; no suspension                                            |
-| Passthrough | `CAPACITY_EXHAUSTED`                                                                                                                                                                                     | Unchanged; the capacity handler suspends exactly once                                                        |
-| Fault       | `NOT_FOUND` from the timing-receipt read, and every other code, including `UNSAFE_STORAGE`, `WRITE_FAILED`, `INCOMPLETE_EVIDENCE`, and `INVALID_STATE`; a non-helper error is reported as `WRITE_FAILED` | Persists `finalization-failed` (`finalize`) or `evidence-gap` (gate observations), keeping the original code |
+| Class       | Codes                                                                                                                                                                                                    | Result                                                                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Neutral     | `INVALID_PAYLOAD`, `AUTHENTICATION_FAILED`, `LOCKED`, `UNSAFE_RUNTIME_ROOT`, `MIGRATION_REQUIRED`, `PROTOCOL_DRIFT`, and `NOT_FOUND` from a generation or record read                                    | Retryable error with `pilotControlOutcome: "none"`; no suspension. An `UNSAFE_RUNTIME_ROOT` retry succeeds only once the check its `details.reason` names passes |
+| Passthrough | `CAPACITY_EXHAUSTED`                                                                                                                                                                                     | Unchanged; the capacity handler suspends exactly once                                                                                                            |
+| Fault       | `NOT_FOUND` from the timing-receipt read, and every other code, including `UNSAFE_STORAGE`, `WRITE_FAILED`, `INCOMPLETE_EVIDENCE`, and `INVALID_STATE`; a non-helper error is reported as `WRITE_FAILED` | Persists `finalization-failed` (`finalize`) or `evidence-gap` (gate observations), keeping the original code                                                     |
 
 `finalize` checks that the generation exists before it takes its lock, so a missing generation is
 neutral. Its classification runs after that lock is released, because persisting control state
@@ -582,6 +582,18 @@ after the suspension write completed still reports the mapped outcome as persist
 Once a JSON object input is dispatched to one of these four operations, its errors carry the
 control fields in the error envelope. Input that is not a JSON object fails `INVALID_PAYLOAD`, and
 an unknown operation fails `INVALID_OPERATION`, before dispatch and without control fields.
+
+An `UNSAFE_RUNTIME_ROOT` error envelope also carries `error.details`, after `exitCode`, naming the
+failed runtime-root check; no other code carries `details`, and the code, exit status 3 and message
+stay constant. Its `details.reason` is one closed value from `UNSAFE_RUNTIME_ROOT_REASONS`:
+`git-unavailable`, `git-failed`, `not-directory`, `toplevel-mismatch`, `identity-mismatch`,
+`path-resolution`, `tracked-runtime-state`, `not-ignored`. Only `git-failed` adds
+`details.subcommand`: `rev-parse`, `ls-files` or `check-ignore`. Neither field carries a path, Git
+argument, exit status, stdout or stderr. A missing runner or a spawn error is `git-unavailable`, a
+`check-ignore` exit 1 is `not-ignored`, and an unresolvable path, including a missing root or
+identity, is `path-resolution`, so it and `identity-mismatch` both point at the supplied root or
+identity. The control operations above copy `details` through their rewrap;
+the CLI writes it to the stdout envelope only, and stderr keeps `<code>: <message>`.
 
 The persisted protocol digest binds every generation, and an unrecognized digest fails the
 stored-state check with `UNSAFE_STORAGE`. The exceptions are the prior protocols a release

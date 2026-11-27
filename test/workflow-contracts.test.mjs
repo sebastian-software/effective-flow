@@ -3484,6 +3484,22 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
   assert.match(preflight, /never turn an observation failure into a merge blocker/);
 });
 
+// Invariant: a merge-gate pilot failure reports the closed `details.reason` of
+// UNSAFE_RUNTIME_ROOT in the dispatch's final report, as one value-free line.
+test('merge-gate pilot failure reports the closed details.reason of UNSAFE_RUNTIME_ROOT', () => {
+  const preflight = prose(
+    section(
+      source('src/shared/pilot-measurement.md'),
+      '### Phase 0 observation preflight and reservation',
+      '\n### ',
+    ),
+  );
+  assert.match(
+    preflight,
+    /If inventory or reservation fails, .*On `UNSAFE_RUNTIME_ROOT`, this dispatch's final report names the skipped observation in one value-free line with the code, its closed `details\.reason`, and `details\.subcommand` when present\./,
+  );
+});
+
 // Invariant: the deferred configured-reviewer route keeps its single lazy edge and exact headings,
 // and the retained Phase-4 shells stay fail-closed without it.
 test('the configured-reviewer route stays reachable through exact retained workflow shells', () => {
