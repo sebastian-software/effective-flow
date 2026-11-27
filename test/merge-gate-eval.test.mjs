@@ -68,6 +68,7 @@ import { reportRecord } from '../evals/iterate/_scaffold/report-channel.mjs';
 import {
   BODY_TRANSCRIPTION_OPERATIONS,
   bodyTranscriptionFinding,
+  decisiveCalls,
   decisiveFindings,
   fixtureIndependentFindings,
   greenStatusPosition,
@@ -1434,17 +1435,26 @@ async function assertArchivedRunsReadable(archive, scenario, runs) {
         ? scenario === 'unreported-checks-at-phase-four'
         : evaluator.usesLifecycleSchema(scenario),
     );
-    // For a suite whose evaluator names decisive calls, a counted call from a wrong root is a
-    // finding the re-evaluation below reports, not a structural defect to stop at first.
-    if ((evaluator.decisiveCalls?.({ scenario, records }) ?? []).length === 0) {
-      assertRuntimeRoot(scenario, run, records);
-    }
-
     const fixturePath = join(archive.fixtures, `${scenario}.json`);
     const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
     const metadata = existsSync(run.metadataPath)
       ? JSON.parse(readFileSync(run.metadataPath, 'utf8'))
       : null;
+    // A merge-gate run recorded against a fixture that still defined
+    // `issue-lifecycle-receipt-parse` and `body-hash` was answered by those stubs, so its calls to
+    // them are no deviation of that run.
+    const bodyTranscriptionScoped =
+      archive === MERGE_GATE_ARCHIVE && metadata?.fixtureDigest !== digestFile(fixturePath);
+    // For a suite whose evaluator names decisive calls, a counted call from a wrong root is a
+    // finding the re-evaluation below reports, not a structural defect to stop at first. A run
+    // whose inline-body calls are fixture-scoped reports no such finding, so it keeps the root
+    // check.
+    if (
+      bodyTranscriptionScoped ||
+      (evaluator.decisiveCalls?.({ scenario, records }) ?? []).length === 0
+    ) {
+      assertRuntimeRoot(scenario, run, records);
+    }
     const projectRoot =
       metadata?.projectRoot ?? `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
     const evaluated = evaluateEvidence(archive.suite, {
@@ -1468,14 +1478,12 @@ async function assertArchivedRunsReadable(archive, scenario, runs) {
       [],
       `${run.name}: shared evaluator rejected the archived evidence`,
     );
-    // The body-transcription finding is scoped by fixture digest, as `verify` scopes it: a run
-    // recorded against a fixture that still defined `issue-lifecycle-receipt-parse` and `body-hash`
-    // was answered by those stubs, so its calls to them are no deviation of that run. Every other
-    // finding still holds the archived run to the current fixture.
-    const fixtureScoped =
-      archive === MERGE_GATE_ARCHIVE && metadata?.fixtureDigest !== digestFile(fixturePath)
-        ? new Set(BODY_TRANSCRIPTION_OPERATIONS.map(bodyTranscriptionFinding))
-        : new Set();
+    // The body-transcription finding is scoped by fixture digest, as `verify` scopes it (see
+    // `bodyTranscriptionScoped` above). Every other finding still holds the archived run to the
+    // current fixture.
+    const fixtureScoped = bodyTranscriptionScoped
+      ? new Set(BODY_TRANSCRIPTION_OPERATIONS.map(bodyTranscriptionFinding))
+      : new Set();
     assert.deepEqual(
       evaluated.findings.filter((finding) => !fixtureScoped.has(finding)),
       [],
@@ -2705,7 +2713,8 @@ test(
 
 // The evaluator's two dispatch branches asked of synthetic logs, so each shape they separate is
 // pinned before any round exists. The logs use the legacy record schema both scenarios' fixtures
-// select, rooted in one synthetic project.
+// select, rooted in one synthetic project unless an entry states its own `cwd` (`null` is what the
+// stub records for a caller that stated no directory).
 const SYNTHETIC_PROJECT =
   '/tmp/effective-flow-merge-gate-eval/rounds/unit/slots/x/slot-1/attempt-1/project';
 const CALLER_PHASE_ZERO = ['reference-parse', 'pr-read', 'probe'];
@@ -2728,7 +2737,8 @@ function syntheticLegacyLog(operations) {
         operation: typeof entry === 'string' ? entry : entry.operation,
         apply: typeof entry === 'string' ? false : entry.apply,
         at: '2026-10-16T00:00:00.000Z',
-        cwd: SYNTHETIC_PROJECT,
+        cwd:
+          typeof entry === 'object' && Object.hasOwn(entry, 'cwd') ? entry.cwd : SYNTHETIC_PROJECT,
       }),
     )
     .map((line) => `${line}\n`)
@@ -2816,6 +2826,69 @@ test('a fixture-compatible gate run that calls an inline-body operation gets a d
       .map((line) => JSON.parse(line));
     assert.equal(fixtureIndependentFindings({ scenario, records }).includes(finding), false);
   }
+});
+
+// Invariant: an inline-body call is judged whatever root it ran from. The evaluator names it
+// through `decisiveCalls`, so a missing (`null`) or wrong `cwd` on it, or on any other record of
+// its log, is no runtime-root validity problem that a retry would discard. The aborted-run
+// assertions only pin that the finding also stands there: `assessAbortedEvidence` never applies
+// the root rule. A log without such a call keeps the runtime-root rule in full.
+test('an inline-body call from a missing or wrong runtime root keeps its decisive finding', () => {
+  const scenario = 'merge-proceeds';
+  const wrongRoot = '/tmp/effective-flow-merge-gate-eval/elsewhere/project';
+  for (const operation of BODY_TRANSCRIPTION_OPERATIONS) {
+    const finding = bodyTranscriptionFinding(operation);
+    for (const cwd of [null, wrongRoot]) {
+      const label = `${operation} from ${cwd}`;
+      const operations = [...CALLER_PHASE_ZERO, { operation, apply: false, cwd }];
+      const records = syntheticLegacyLog(operations)
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+      assert.deepEqual(
+        decisiveCalls({ scenario, records }).map((record) => record.operation),
+        [operation],
+        label,
+      );
+
+      const current = evaluateSynthetic(scenario, operations);
+      assert.deepEqual(current.validityProblems, [], label);
+      assert.ok(current.findings.includes(finding), `${label}: ${current.findings}`);
+
+      const aborted = decisiveSynthetic(scenario, operations);
+      assert.deepEqual(aborted.unjudgeable, [], label);
+      assert.ok(aborted.decisiveFindings.includes(finding), label);
+    }
+
+    // A correctly rooted inline-body call exempts the log when another record states no root.
+    const otherUnrooted = [
+      'reference-parse',
+      { operation: 'pr-read', apply: false, cwd: null },
+      'probe',
+      operation,
+    ];
+    const exempted = evaluateSynthetic(scenario, otherUnrooted);
+    assert.deepEqual(exempted.validityProblems, [], `${operation} beside an unrooted pr-read`);
+    assert.ok(exempted.findings.includes(finding), `${operation}: ${exempted.findings}`);
+  }
+
+  const clean = [
+    'reference-parse',
+    'pr-read',
+    { operation: 'probe', apply: false, cwd: wrongRoot },
+  ];
+  const records = syntheticLegacyLog(clean)
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(decisiveCalls({ scenario, records }), []);
+  assert.deepEqual(evaluateSynthetic(scenario, clean).validityProblems, [
+    `record ${clean.length} ran from ${wrongRoot}, expected ${SYNTHETIC_PROJECT}`,
+  ]);
+  const unrooted = [{ operation: 'reference-parse', apply: false, cwd: null }];
+  assert.deepEqual(evaluateSynthetic(scenario, unrooted).validityProblems, [
+    'record 1 states no runtime root',
+  ]);
 });
 
 test('fixture drift does not infer merge-gate refusals or omissions from the replacement fixture', () => {

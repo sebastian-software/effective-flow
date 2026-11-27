@@ -735,7 +735,8 @@ correlated `complete` events are not additional calls.
   and it proves nothing about the scenario. A `cwd` pointing somewhere outside the sandbox fails for
   the same reason. One such run, twenty-one records and every one of them null, had already been
   counted toward the five-of-five bar; the `recensor` review bot found it by reading the logs, which
-  is precisely the work an assertion should have been doing.
+  is precisely the work an assertion should have been doing. The one exception is a log with an
+  inline-body call, below.
 - **With no archived runs at all, the assertions skip with a loud reason rather than passing.** They
   never report success for a scenario nobody ran. Skipping rather than failing is deliberate: a
   permanently red `pnpm test` in every checkout that has not spent quota on a run — CI included,
@@ -767,13 +768,19 @@ correlated `complete` events are not additional calls.
   `receiptContext` and those two fields, `linked-issue-open-points` with a multiline body holding
   quotes and backslashes, and no fixture defines either inline-body operation. Both are in the
   suite's `alwaysAllowedOperations`, so such a call is recorded as the evaluator's finding, also for
-  an aborted run, rather than discarded as a validity problem and retried away. The finding applies
-  only to runs whose stamped fixture digest matches the current fixture: archived runs recorded
-  against the fixtures that still defined both stubs keep their fixture-independent verdict, and
-  their calls stay readable. That archived evidence is freshness debt until the suite is
-  re-recorded. One limit is accepted: the stub selects envelopes by operation name and the call log
-  records no input, so no run can show that the gate actually sent `receiptContext`; the contract
-  assertions in `test/workflow-contracts.test.mjs` cover that wiring instead.
+  an aborted run, rather than discarded as a validity problem and retried away. Such a call is
+  judged whatever root it ran from: the evaluator names it through `decisiveCalls`, so a missing or
+  wrong `cwd` in its log is no runtime-root validity problem. The finding applies only to runs
+  whose stamped fixture digest matches the current fixture: archived runs recorded against the
+  fixtures that still defined both stubs keep their fixture-independent verdict, and their calls
+  stay readable. That archived evidence is freshness debt until the suite is re-recorded. Two
+  limits are accepted. `verify` skips the runtime-root rule for such a drifted-fixture log too,
+  although it carries no finding, because the shared scaffold hands `decisiveCalls` no
+  `fixtureCompatible`; `pnpm test` still checks that log's root through the archived-run
+  assertions, and closing the gap in `verify` needs the shared scaffold to pass that flag. And the
+  stub selects envelopes by operation name and the call log records no input, so no run can show
+  that the gate actually sent `receiptContext`; the contract assertions in
+  `test/workflow-contracts.test.mjs` cover that wiring instead.
 - **A call to an operation the shipped helper does not support at all passes.** The real helper
   refuses an unknown name with `INVALID_PAYLOAD: unknown operation: <name>`, so a run that guesses
   at an invented capability probe gets an error in the sandbox and would get an error in
@@ -1064,6 +1071,9 @@ fixture. Four behaviours are load-bearing:
   `issue-tracker-forge` contract relies on. An **archived run** is held to the stricter rule instead,
   and a null there fails the scenario assertions, because a run that never passed the runtime root
   leaves the helper on whatever directory it inherited and so evidences nothing about the sandbox.
+  The exception is a log with an inline-body call, judged whatever root it ran from; for such a
+  log recorded against an older fixture, `verify` skips the rule while the archived-run assertions
+  keep it (see the inline-body failure mode above).
   Both record shapes are contracts pinned by `test/eval-fixture-fidelity.test.mjs` — the stub's null
   tolerance included — because they are what every scenario assertion reads.
 - **An undefined operation fails loudly**, naming the operation and the set the fixture does define.

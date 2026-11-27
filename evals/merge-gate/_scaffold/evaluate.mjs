@@ -873,10 +873,11 @@ function appliedMutationFindings(records) {
 
 // The inline-body operations a gate run never calls: Phase 0 and the Phase 5.5 entry take the body
 // hash and the lifecycle receipt from the helper's own `pr-read` with `receiptContext`, so a call to
-// either means the run handed a transcribed body to the parser. The suite always allows both, so
-// such a call is recorded as this finding instead of being retried away as a validity problem. It
-// is judged only against the current fixture (`findings`, `decisiveFindings`): archived runs whose
-// stamped fixture still defined these stubs keep their fixture-independent verdict.
+// either means the run handed a transcribed body to the parser. The suite always allows both, and
+// `decisiveCalls` exempts the log from the runtime-root rule, so such a call is recorded as this
+// finding instead of being retried away as a validity problem. It is judged only against the
+// current fixture (`findings`, `decisiveFindings`): archived runs whose stamped fixture still
+// defined these stubs keep their fixture-independent verdict.
 export const BODY_TRANSCRIPTION_OPERATIONS = Object.freeze([
   'issue-lifecycle-receipt-parse',
   'body-hash',
@@ -1141,6 +1142,20 @@ export function validityProblems({ scenario, records, fixture }) {
   if (flipped < 1) return ['the fixture has no flipped status element'];
   const problem = phaseFourInvalidity(records, flipped);
   return problem ? [problem] : [];
+}
+
+// The start records that fail the run by their mere presence, which the generic half asks for
+// before it applies the runtime-root rule: a call to an inline-body operation is the
+// body-transcription finding whatever `cwd` it stated, so a wrong or missing root on it must not
+// turn the regression into invalid evidence that a retry would discard. A log without such a call
+// keeps the runtime-root rule in full. One limit: the generic half does not hand this function
+// `fixtureCompatible`, so `verify` also exempts a drifted-fixture log whose inline-body calls the
+// old stubs answered and which carries no finding; only the archived-run assertions in
+// `test/merge-gate-eval.test.mjs` still check that log's root.
+export function decisiveCalls({ records }) {
+  return startRecords(records).filter((record) =>
+    BODY_TRANSCRIPTION_OPERATIONS.includes(record.operation),
+  );
 }
 
 export function parseAuxiliary(text, projectRoot) {
