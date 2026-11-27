@@ -23,7 +23,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { mkdir as makeDirectory, open as openPath } from 'node:fs/promises';
+import { mkdir as makeDirectory, open as openPath, rmdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -4732,6 +4732,109 @@ test('remove: a refused plan release ends as a preserved planning worktree', asy
   const blocked = planEntry(await plan(root), record.recordId);
   assert.equal(blocked.item, undefined);
   assert.deepEqual(blocked.blocked?.conditions, [7]);
+});
+
+test('remove: publishedPlans puts back every plan when anchoring fails', async (t) => {
+  const { root, base, worktree, record, entries } = await publishedPlanning(t);
+  const second = 'docs/plan/2026-11-27-issue-8-second-plan.md';
+  const secondContent = '# Second plan\n';
+  const { commitOid, blobs } = publicationCommit(t, root, base, { [second]: secondContent });
+  const files = { [PLAN_PATH]: PLAN_CONTENT, [second]: secondContent };
+  writeFileSync(join(worktree.worktreePath, second), secondContent);
+  const { runner } = interceptingRunner((args) => {
+    const updateRef = args.indexOf('update-ref');
+    if (updateRef < 0 || !args[updateRef + 1]?.startsWith(RELEASE_REFS)) return;
+    for (const file of Object.keys(files)) {
+      assert.equal(existsSync(join(worktree.worktreePath, file)), false);
+    }
+    return { status: 1, stdout: Buffer.alloc(0), stderr: Buffer.from('fatal: injected failure\n') };
+  });
+  const [item] = expectOk(
+    await removeWithPlans(
+      root,
+      record,
+      [...entries, { path: second, blobOid: blobs[second], commitOid, baseOid: base }],
+      { runner },
+    ),
+  ).items;
+  assert.deepEqual([item.code, item.status], ['GIT_FAILED', 'active']);
+  assert.match(item.message, /injected failure/);
+  assert.equal(item.quarantinePath, undefined);
+  assert.deepEqual(quarantines(worktree), []);
+  assertNothingReleased(root, worktree, files);
+});
+
+test('remove: publishedPlans retains the anchor and blocks removal when quarantine clearing fails', async (t) => {
+  const { root, worktree, record, entries, blobs } = await publishedPlanning(t);
+  const fs = {
+    rmdir: async (target) => {
+      if (target.startsWith(join(worktree.worktreePath, '.effective-flow-release-'))) {
+        throw new Error('injected quarantine removal failure');
+      }
+      await rmdir(target);
+    },
+  };
+  const [item] = expectOk(await removeWithPlans(root, record, entries, { fs })).items;
+  assert.deepEqual([item.code, item.status], ['WRITE_FAILED', 'active']);
+  assert.deepEqual(releaseRefs(root), [item.anchorRef]);
+  assert.equal(git(root, 'rev-parse', `${item.anchorRef}:${PLAN_PATH}`), blobs[PLAN_PATH]);
+  assert.equal(existsSync(join(worktree.worktreePath, PLAN_PATH)), false);
+  assert.ok(item.quarantinePath);
+  assert.deepEqual(readdirSync(item.quarantinePath), []);
+  assert.equal(readRecord(root).status, 'active');
+  const [later] = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  ).items;
+  assert.deepEqual([later.code, later.conditions], ['NOT_ELIGIBLE', [7]]);
+});
+
+test('remove: publishedPlans reports the release when a late untracked file blocks removal', async (t) => {
+  const { root, base, worktree, record, entries, blobs } = await publishedPlanning(t);
+  const absent = 'docs/plan/2026-11-27-issue-8-absent-plan.md';
+  const publication = publicationCommit(t, root, base, { [absent]: '# Already absent\n' });
+  const lateFile = join(worktree.worktreePath, 'late.txt');
+  const fs = {
+    rmdir: async (target) => {
+      await rmdir(target);
+      if (target.startsWith(join(worktree.worktreePath, '.effective-flow-release-'))) {
+        writeFileSync(lateFile, 'late untracked file\n');
+      }
+    },
+  };
+  const [item] = expectOk(
+    await removeWithPlans(
+      root,
+      record,
+      [
+        ...entries,
+        {
+          path: absent,
+          blobOid: publication.blobs[absent],
+          commitOid: publication.commitOid,
+          baseOid: base,
+        },
+      ],
+      { fs },
+    ),
+  ).items;
+  assert.deepEqual(
+    [item.code, item.conditions, item.status],
+    ['NOT_ELIGIBLE', [7], 'cleanup-ready'],
+  );
+  assert.equal(item.planReleased, true);
+  assert.deepEqual(item.releasedPaths, [PLAN_PATH]);
+  assert.deepEqual(item.absentPaths, [absent]);
+  assert.equal(git(root, 'rev-parse', `${item.anchorRef}:${PLAN_PATH}`), blobs[PLAN_PATH]);
+  assert.equal(readRecord(root).status, 'cleanup-ready');
+  assert.match(git(root, 'worktree', 'list', '--porcelain'), /issue-planning/);
+  assert.deepEqual(quarantines(worktree), []);
+  assert.equal(existsSync(join(worktree.worktreePath, PLAN_PATH)), false);
+  assert.equal(readFileSync(lateFile, 'utf8'), 'late untracked file\n');
 });
 
 // Invariant (plan release): a failure after the release (here a failing `git worktree remove`)
