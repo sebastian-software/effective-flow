@@ -99,6 +99,14 @@ wisdom file still holding a handle first finalizes it under "Phase 6 observation
 the pre-Phase-4 unavailable check evidence and the outcome `reported-blocked` in `report` mode,
 `failed` in `merge` mode.
 
+### Observer-only wake
+
+When a `Resumed wait:` re-dispatch or inline wake enters observer-only mode with an observation
+handle in its wisdom file, restore the identifiers and counters and finalize exactly once before
+issue observation. Use `merged` from the fresh Phase-0 merge proof and unavailable check evidence.
+Then remove the wisdom handle and do not finalize again in Phase 6. An observer-only run without a
+handle does nothing here; never reserve in this mode.
+
 ### Correction counters
 
 Increment a counter only after the corresponding correction work was actually dispatched:
@@ -125,7 +133,7 @@ below. An unexpected workflow failure after reservation uses the same best-effor
 terminal outcome `failed`; it never discards product changes or changes the gate result.
 
 1. Derive the closed terminal outcome:
-   - `merged` only when a fresh Phase-5 read verifies the merge;
+   - `merged` only when a fresh Phase-5 read or the observer-only wake verifies the merge;
    - in `report` mode, evaluate a measurement-only projection of Phase-4 conditions 2–10 against
      the same ordered fresh observation batch and the existing no-check-list waiver semantics.
      Record `reported-ready` when all nine pass and `reported-blocked` with the stable domain

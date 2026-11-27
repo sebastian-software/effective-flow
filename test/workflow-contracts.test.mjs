@@ -28163,6 +28163,22 @@ test('pilot-measurement keeps one observation across host-pr-watch T3 suspension
   );
 });
 
+test('an observer-only wake finalizes the suspended observation before issue observation', () => {
+  const phase = section(
+    source('src/shared/merge-gate-delegated-run.md'),
+    '### Phase 5.5: Observe linked issues after merge',
+    '### Phase 6:',
+  );
+  ordered(phase, 'pilot-measurement', 'Observer-only wake', 'merge-gate-issue-observation');
+  const wake = prose(
+    section(source('src/shared/pilot-measurement.md'), '### Observer-only wake', '\n### '),
+  );
+  assert.match(wake, /observer-only[^.]*observation handle[^.]*wisdom file/);
+  assert.match(wake, /restore[^.]*finalize[^.]*exactly once/i);
+  assert.match(wake, /`merged`[^.]*unavailable check evidence/);
+  assert.match(wake, /never reserve/i);
+});
+
 // Invariant: on T3 the unchanged-resume cap does not strand a stale-verdict re-trigger. A bot wait
 // pending only for the re-trigger's answer (still has run, no review newer than the recorded
 // `createdAt`) takes configured-reviewer step 5's "did not answer within the wait" hand-over to
