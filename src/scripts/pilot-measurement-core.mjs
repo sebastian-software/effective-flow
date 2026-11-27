@@ -4427,14 +4427,17 @@ async function finalizeGateObservation(input, deps) {
           deps,
         );
         if (handle === null) fail('AUTHENTICATION_FAILED');
-        const consume = () =>
-          consumeObservationHandle(
+        const consume = async () => {
+          // A surviving consumed marker always implies a durable finalized record.
+          await syncDirectory(context, directory, deps);
+          await consumeObservationHandle(
             context,
             input.generationId,
             input.observationId,
             reservation.capabilityHash,
             deps,
           );
+        };
         if (handle.kind === CONSUMED_HANDLE_KIND) {
           // A consumed marker proves an earlier finalization; beside an open reservation it is
           // corrupt storage.
@@ -4467,8 +4470,6 @@ async function finalizeGateObservation(input, deps) {
           input.generationId,
           deps,
         );
-        // A surviving consumed marker always implies a durable finalized record.
-        await syncDirectory(context, directory, deps);
         await consume();
         return finalized;
       },

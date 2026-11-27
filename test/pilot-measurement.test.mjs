@@ -1034,6 +1034,50 @@ test('a failed consumed-marker write still finalizes and a repeat call completes
   );
 });
 
+test('a finalize retry must sync the record directory before consuming the handle', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const reserved = await reserveGateObservation(fx, generationId);
+  const record = observationRecordPath(fx, generationId, reserved.observationId);
+  const input = gateFinalizationInput(fx, generationId, reserved.observationId);
+  const recordPublished = ({ args }) =>
+    args.includes('rev-parse') &&
+    JSON.parse(readFileSync(record, 'utf8')).kind === 'gate-observation';
+
+  await assert.rejects(
+    () => executeOperation('finalize-gate-observation', input, failingOnce(fx, recordPublished)),
+    { code: 'UNSAFE_RUNTIME_ROOT' },
+  );
+  const finalized = readFileSync(record, 'utf8');
+  assert.equal(JSON.parse(finalized).kind, 'gate-observation');
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle',
+  );
+
+  let handleRead = false;
+  const retryDeps = failingOnce(fx, (call) => {
+    if (call.args.includes(HANDLE_ROOT_ARG)) handleRead = true;
+    return handleRead && recordPublished(call);
+  });
+  await assert.rejects(() => executeOperation('finalize-gate-observation', input, retryDeps), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle',
+  );
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, fx.deps)).result.status,
+    'finalized',
+  );
+  assert.equal(readFileSync(record, 'utf8'), finalized);
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle-consumed',
+  );
+});
+
 function writeLeftoverHandles(fx, generationId, name = `${'H'.repeat(32)}.json`) {
   const directory = handleDirectory(fx, generationId);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
