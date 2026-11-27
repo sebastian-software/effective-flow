@@ -602,7 +602,7 @@ criterion, so Merge Gate can reach `complete`. Everything else stays as today.
 - the read-only remote-tracker operation `issue-acceptance-criteria`, over the shared per-issue
   function `acceptanceIssueSource(context, number)`;
 - per-number isolation of only `COMMAND_FAILED`, `INVALID_PAYLOAD` and `TARGET_NOT_FOUND`;
-- raw per-section ordinals, with `dropped` and `duplicateOf`;
+- raw per-section ordinals, with `dropped`, `duplicateOf` and `duplicateOfSection`;
 - a gate in `pr.md` step 9 on the receipt, checked with one literal
   `issue-lifecycle-receipt-parse` call;
 - the lazy fragment `src/shared/pr-criteria-coverage.md`;
@@ -610,11 +610,9 @@ criterion, so Merge Gate can reach `complete`. Everything else stays as today.
 
 `src/shared/merge-gate-issue-observation.md` is untouched.
 
-Deviation (accepted, fail-closed): an item that repeats one from an _earlier section_ is
-`dropped` without `duplicateOf`, because `duplicateOf` is an ordinal within one section. It
-therefore gets the not-covered phrase, and that issue stays `undetermined`.
-`docs/user-guide/tools-deliver.md` lists this as a known limitation. Same-section duplicates
-follow the plan.
+No deviation from the plan remains. An item that repeats one from an _earlier section_ also
+carries `duplicateOfSection`, the section of its first occurrence, next to `duplicateOf`, and
+`pr` mirrors that line's status like a same-section repeat.
 
 **Affected files:**
 
@@ -669,9 +667,9 @@ generically.
   They remain evidence debt for the pull request.
 
 **Review result:** `effective-flow-nodejs-reviewer` reported 5 Notes. F1, F2, F4 and F5 were
-fixed in one incorporation pass, and a scoped re-check confirmed them with no new findings. F3 is
-the cross-section duplicate deviation above, closed as an accepted limitation. No findings were
-offloaded.
+fixed in one incorporation pass, and a scoped re-check confirmed them with no new findings. F3
+(a repeat from an earlier section lacked a pointer to its first occurrence) was fixed by carrying
+that occurrence's section as `duplicateOfSection`. No findings were offloaded.
 
 ## Review findings
 
@@ -682,7 +680,8 @@ offloaded.
 
 | Status                 | Count |
 | ---------------------- | ----: |
-| Fixed                  |     4 |
+| Fixed                  |     5 |
 | Open / Not implemented |     0 |
 
-One further Note (F3) was closed as an accepted, documented fail-closed limitation.
+All five Notes are fixed; F3 was fixed by carrying the first occurrence's section on a
+cross-section repeat.

@@ -15457,25 +15457,24 @@ test('issue-acceptance-criteria: empty and duplicate items keep raw ordinals and
   ]);
 });
 
-test('issue-acceptance-criteria: two criteria headings are two sections, ordinals restart, a cross-section repeat has no duplicateOf', async () => {
+test("issue-acceptance-criteria: two criteria headings are two sections, ordinals restart, a cross-section repeat names its first occurrence's section and ordinal", async () => {
   const body =
     '## Acceptance criteria\n- alpha\n- beta\n\n## Other\n\n## Akzeptanzkriterien\n- gamma\n- alpha\n';
   const { result } = await criteriaRun({ issues: { 17: criteriaIssue(body) } });
-  assert.deepEqual(
-    result.issues[0].criteria.map((criterion) => [
-      criterion.section,
-      criterion.ordinal,
-      criterion.dropped,
-      criterion.duplicateOf,
-    ]),
-    [
-      [1, 1, false, undefined],
-      [1, 2, false, undefined],
-      [2, 1, false, undefined],
-      [2, 2, true, undefined],
-    ],
-  );
-  assert.ok(!('duplicateOf' in result.issues[0].criteria[3]));
+  assert.deepEqual(result.issues[0].criteria, [
+    { section: 1, ordinal: 1, displayText: 'alpha', displayTruncated: false, dropped: false },
+    { section: 1, ordinal: 2, displayText: 'beta', displayTruncated: false, dropped: false },
+    { section: 2, ordinal: 1, displayText: 'gamma', displayTruncated: false, dropped: false },
+    {
+      section: 2,
+      ordinal: 2,
+      displayText: null,
+      displayTruncated: false,
+      dropped: true,
+      duplicateOf: 1,
+      duplicateOfSection: 1,
+    },
+  ]);
 });
 
 test('issue-acceptance-criteria: numbers beyond the issues bound are cut with an issues note', async () => {

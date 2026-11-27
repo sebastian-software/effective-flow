@@ -6779,7 +6779,8 @@ test('pr maps referenced issue acceptance criteria into the derived body through
   );
   assert.match(
     fragment,
-    /\`section\`, \`ordinal\`, \`displayText\`, \`displayTruncated\`, \`dropped\` and \`duplicateOf\`/,
+    /\`section\`, \`ordinal\`, \`displayText\`, \`displayTruncated\`, \`dropped\`, \`duplicateOf\` and \`duplicateOfSection\`/,
+    'the brief carries every criterion key, the cross-section pointer included',
   );
   assert.match(
     fragment,
@@ -6794,7 +6795,8 @@ test('pr maps referenced issue acceptance criteria into the derived body through
   );
   assert.match(
     fragment,
-    /A \`duplicateOf\` line repeats the status of the line with that ordinal verbatim/,
+    /A \`duplicateOf\` line repeats verbatim the status of its referenced line: the line with that ordinal in the section \`duplicateOfSection\` names, or in its own section when that key is absent/,
+    'a repeat mirrors the referenced line, across sections too',
   );
   assert.match(fragment, /The section makes no verification or test-result claim/);
   const check = prose(

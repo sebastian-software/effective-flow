@@ -343,8 +343,6 @@ final report names it in one line. The section's format is owned by
 - The section reflects the branch when `pr` derived it and is not updated after later pushes.
 - A direct `pr` run without a receipt reads no criteria.
 - A reused pull request keeps its description and gets no section.
-- A criterion repeated in a different section of the same issue is dropped without a pointer to
-  its first occurrence, so it shows `not covered`.
 
 `pr` never starts validation and never invents evidence. When there is nothing trustworthy to show,
 the description carries no section and the final report says why on its verification line:

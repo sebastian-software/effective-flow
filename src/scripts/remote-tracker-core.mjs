@@ -5592,8 +5592,8 @@ export function extractIssueAcceptanceCriteria(
 
 // The `issue-acceptance-criteria` projection of one walk: every item up to the bound at its raw
 // section and ordinal. An empty or repeated item stays as `dropped: true` without display text; a
-// repeat of an item in the same section names that kept first occurrence's ordinal in
-// `duplicateOf`. A repeat of an item from an earlier section carries none and so stays not covered.
+// repeat names its kept first occurrence's ordinal in `duplicateOf`, plus that occurrence's section
+// in `duplicateOfSection` when it lies in an earlier section. An empty item names neither.
 function issueCriteriaProjection(positions, outcomes) {
   return outcomes.map((outcome, index) => {
     const { section, ordinal } = positions[index];
@@ -5608,7 +5608,10 @@ function issueCriteriaProjection(positions, outcomes) {
     }
     const entry = { section, ordinal, displayText: null, displayTruncated: false, dropped: true };
     const first = outcome.kind === 'duplicate' ? positions[outcome.of] : null;
-    if (first !== null && first.section === section) entry.duplicateOf = first.ordinal;
+    if (first !== null) {
+      entry.duplicateOf = first.ordinal;
+      if (first.section !== section) entry.duplicateOfSection = first.section;
+    }
     return entry;
   });
 }
