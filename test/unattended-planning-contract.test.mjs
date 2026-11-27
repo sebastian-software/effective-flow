@@ -648,6 +648,7 @@ test('the envelope lists every control and fail-closed abort, and rejects misord
     'ABORT: unattended implemented plan',
     'ABORT: unattended review input invalid',
     'ABORT: unattended sub-agent failed',
+    'ABORT: unattended plan content blocked',
   ])
     includesLiteral(unattended, literal);
   const entry = contractSection(unattended, '### Entry: `plan`', '### Entry: `plan-review`');
@@ -1076,4 +1077,52 @@ test('the autopilot file review resolves its execution root from the checkout th
     at < section.indexOf("Before normalization, recompute the file's SHA-256"),
     'execution root resolution precedes the digest recomputation',
   );
+});
+
+// Invariant (issue #799): only the `plan` entry scans its own plan with unattended strictness after
+// the final lint and before the step 2 metadata call that binds the blob, corrects in exactly one
+// round, and fails closed with finding ids only, so plan content the later publish would refuse
+// never returns `DONE`.
+test('the plan entry self-scans its plan in Completion step 1 with one bounded correction round', () => {
+  const unattended = shared('unattended-planning');
+  const completion = contractSection(unattended, '### Completion');
+  for (const literal of [
+    '`plan` entry only: then run `node <skill-root>/scripts/plan-publication.mjs scan` with `{cwd: <retained verified EXECUTION_ROOT>, runState: "unattended", planFile: <plan path relative to EXECUTION_ROOT>}`',
+    "as one JSON object on standard input through a quoted here-document (`<<'JSON'`)",
+    'read `data.blocking`, not the exit code. Empty: continue with step 2.',
+    "in one correction round, read every listed line before the first edit (or edit bottom-up, since ids carry line numbers), reword each once, rerun this step's formatting and final lint, and scan again",
+    'inside the "Decided by score" block reword only a JSON string value, keeping labels and scores',
+    'Findings left by that rescan return exactly `ABORT: unattended plan content blocked: <id>, <id>` with the remaining ids in `data.blocking` order, at most the first 20 followed by `(+<k> more)`, never a matched value or plan text',
+    'A nonzero exit, an envelope that does not parse or `ok: false` is a terminal `ABORT: <diagnostic>` naming the error code when the envelope carries one',
+  ])
+    includesLiteral(completion, literal);
+  // The scan sits inside step 1, after the final lint and before the step 2 metadata call.
+  const finalLint = completion.indexOf('then run the final mechanical plan-lint');
+  const scan = completion.indexOf('`node <skill-root>/scripts/plan-publication.mjs scan`');
+  const stepTwo = completion.indexOf(
+    '2. Run `node <skill-root>/scripts/plan-lint.mjs publication-metadata`',
+  );
+  assert.ok(
+    finalLint !== -1 && finalLint < scan && scan < stepTwo,
+    'the self-scan must follow the final lint and precede the step 2 metadata call',
+  );
+  // One correction round: a single rescan, then the content-blocked abort.
+  assert.equal(completion.match(/scan again/g)?.length, 1, 'exactly one rescan');
+  // The descriptive-naming rule is stated once, here, with no second copy under src/.
+  const rule = 'Name forbidden publication strings by description';
+  includesLiteral(completion, rule);
+  const copies = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (
+        entry.name.endsWith('.md') &&
+        readFileSync(path, 'utf8').replace(/\s+/g, ' ').includes(rule)
+      )
+        copies.push(path);
+    }
+  };
+  walk(SRC);
+  assert.deepEqual(copies, [join(SRC, 'shared', 'unattended-planning.md')]);
 });

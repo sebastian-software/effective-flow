@@ -66,6 +66,45 @@ Report every duration from host timestamps only: thread `createdAt` and `updated
 `startedAt` and `completedAt`, PR check completion times and wake times. Never derive a duration
 from a requested timeout or an estimate.
 
+### Waits for work started during a run
+
+This section covers tests, builds and other work that the thread or its native sub-agents start
+during a run. Launched T3 threads keep `t3_thread_wait`, and PR waits keep the rules in "When a run
+needs its own thread"; `Monitor` and background waits are not PR waits.
+
+A native sub-agent brief that the maintainer or the owning thread writes by hand carries the rule
+below. Shipped worker briefs follow their `src/` contracts; a gap there goes to a separate `src/`
+issue, never into an edit of the build under test during a run. The rule covers sub-agent briefs,
+not the launch prompt.
+
+The rule has three cases. The first applies to sub-agents and the owning thread alike. The second
+and third apply to the owning thread only; a sub-agent's own `Monitor` or background command counts
+as a wait it may not start:
+
+- a bounded command whose result is needed in the same turn runs directly in the foreground, and
+  the tool returns its result. Bounded means expected to finish within the foreground tool timeout.
+  Claude Bash defaults to 120000 ms, so a longer bounded command passes an explicit `timeout`, at
+  most 600000 ms. Longer work goes to the owning thread's background wait or is handed back;
+- a managed background command runs through Claude Bash `run_in_background`, and `Monitor` is only
+  for a run that has to react to a stream of events, not for one completion;
+- the T3 thread that owns the task and can resume from it loads `t3_background_wait` with
+  `ToolSearch` by that unqualified name, whatever prefix the host adds to it, passes the returned
+  task ID in `taskIds`, ends its turn and resumes on the task's completion notification. Only work
+  that ends on its own is registered, never a dev server or a watcher. A wait that is no longer
+  needed is cleared by passing the same `taskIds` with `waiting: false`; the call does not stop the
+  task, which is stopped separately.
+
+A native sub-agent is not reliably woken by background work it started, so it starts no background
+work it would have to wait for. It runs bounded work in the foreground, or hands back to the owning
+thread a command it has not started, together with what to check. The owning thread starts that
+command, registers it and waits, so it is the only waiter and a sub-agent never waits next to it.
+
+Shell polling loops and detached helper processes are no substitute for a wait: no repeated `sleep`,
+`read -t` or status checks, and no `&`, `nohup` or `tail -f` keep-alive. In one manual run several
+sub-agents polled completion markers with `read -t 10 < <(tail -f /dev/null)`; each timeout left a
+`tail` process running, and these piled up although a `Monitor` already ran for the same test run.
+When the native wait is unavailable, report the blocker instead of improvising one.
+
 ## Waiting for a job that is not required
 
 That a passing measurement job that is not required never wakes a watching session, and the
