@@ -1,6 +1,6 @@
 # Name the modelCompliance value for Quality packets at the finish-packet call
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #796
@@ -34,12 +34,12 @@ Workflow rationale: Bugfix. The defect is wrong orchestrator behaviour (a reject
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/execution-profiles.md` | Rewrite the `modelCompliance` sentences of the `**Delegation.**` paragraph as a short ordered decision list, `not-applicable` case first. |
-| `src/shared/pilot-measurement-workflow.md` | Extend the `finish-packet` bullet with the decisive condition: a packet not reserved as `fast`, or whose `start-packet` carried `admission-changed`, sends `not-applicable`; every other packet takes its value from the `execution-profiles` delegation rule. |
-| `test/execution-profile-workflow-contract.test.mjs` | Add a named-invariant contract test: the call site and the owning rule agree that a packet not reserved as `fast` sends `not-applicable`, and the owning list starts with that case. |
-| `docs/developer-guide/model-tiering-pilot-protocol.md` | Replace the full mapping restatement (lines 347–353) with one sentence naming the `not-applicable` condition plus a pointer to the `execution-profiles.md` "Delegation" rule; on line 483 replace "a Quality packet" with "a packet not reserved as `fast`". |
+| File                                                   | Description                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/execution-profiles.md`                     | Rewrite the `modelCompliance` sentences of the `**Delegation.**` paragraph as a short ordered decision list, `not-applicable` case first.                                                                                                                      |
+| `src/shared/pilot-measurement-workflow.md`             | Extend the `finish-packet` bullet with the decisive condition: a packet not reserved as `fast`, or whose `start-packet` carried `admission-changed`, sends `not-applicable`; every other packet takes its value from the `execution-profiles` delegation rule. |
+| `test/execution-profile-workflow-contract.test.mjs`    | Add a named-invariant contract test: the call site and the owning rule agree that a packet not reserved as `fast` sends `not-applicable`, and the owning list starts with that case.                                                                           |
+| `docs/developer-guide/model-tiering-pilot-protocol.md` | Replace the full mapping restatement (lines 347–353) with one sentence naming the `not-applicable` condition plus a pointer to the `execution-profiles.md` "Delegation" rule; on line 483 replace "a Quality packet" with "a packet not reserved as `fast`".   |
 
 ## Implementation details
 
@@ -47,15 +47,15 @@ Workflow rationale: Bugfix. The defect is wrong orchestrator behaviour (a reject
 
 1. Write the contract test first (fix workflow, failing-test step). It reads both fragments with the file's existing `source`, `flat` and `section` helpers and asserts:
    - owner: take the unflattened `section(initialPhase, '**Delegation.**', '**Requirements check.**')` slice, cut item 1 from the `/^1\. /m` match up to the `/^2\. /m` match, flatten only for the text checks, and assert that item 1 contains `not-applicable` and "not reserved as `fast`", that the slice's first `` `unverified` `` lies after item 1's end (`ordered()` alone cannot prove this, since it only follows first matches), and that the list numbers `[...slice.matchAll(/^(\d+)\. /gm)]` are exactly `1`, `2`, `3`, `4` (`ordered()` on plain `'1. '` substrings would neither anchor to list items nor pin the count);
-   - call site: cut `section(timing, 'Call \`finish-packet\` once', '\n- ')` on the raw text (the bullet up to the next "- Validation, review…" bullet), apply `flat()` before every text check below, since the bullet wraps across indented lines, and assert that it names `not-applicable` together with "not reserved as `fast`" and `admission-changed`, matching owner item 1, and still names the `execution-profiles` delegation rule;
+   - call site: cut `section(timing, 'Call \`finish-packet\` once', '\n- ')`on the raw text (the bullet up to the next "- Validation, review…" bullet), apply`flat()`before every text check below, since the bullet wraps across indented lines, and assert that it names`not-applicable`together with "not reserved as`fast`" and `admission-changed`, matching owner item 1, and still names the `execution-profiles` delegation rule;
    - single source: the same flattened call-site slice contains none of `` `unverified` ``, `` `verify` `` or `` `model-selection` ``, so the `fast` entries are not restated there.
-   The test title names the invariant, for example "finish-packet call site and execution-profiles agree on not-applicable for a packet not reserved as fast". Confirm it fails against the current prose.
+     The test title names the invariant, for example "finish-packet call site and execution-profiles agree on not-applicable for a packet not reserved as fast". Confirm it fails against the current prose.
 2. In `src/shared/execution-profiles.md`, keep the `**Delegation.**` paragraph's spawn sentences unchanged and replace the `modelCompliance` sentences (from "Before `finish-packet`, …" to "… reports `not-applicable`.") with one lead sentence and an ordered list of four entries:
    1. not reserved as `fast` (selected `quality` at `start`), or its `start-packet` carried `admission-changed` → `not-applicable`;
    2. reserved as `fast`, Fast attempt started a child on a portable build → the `model-selection` `verify` value (`unverified` on an `INVALID_*` error);
    3. reserved as `fast`, native Fast attempt → `unverified`;
    4. reserved as `fast`, no child to verify (spawn rejected before any child started, or Quality from the first spawn after an unpersisted incident) → `unverified` on every build.
-   The lead sentence says the first matching entry wins. Do not restate which packets are classified `quality` (`baseline`, `not-ready`, `profile-unavailable`, `correction-pass`): that classification is owned by `pilot-measurement-workflow.md:129–131` and `:156–158`, and the helper decides on the reserved profile, the receipt's `fallback` and the install kind, never on which packets ran Quality. Define entry 1 only by the reserved profile and the `admission-changed` receipt, never by "ran Quality": entry 4 also runs Quality yet must send `unverified`. Do not name a pilot that is "not active": a generation other than `baseline` or `active` reserves nothing (`pilot-measurement-workflow.md:75`), so no `finish-packet` is sent. Keep the existing technical terms verbatim (`start-packet`, `admission-changed`, `model-selection` `verify`, `INVALID_*`) so existing assertions and readers keep matching.
+      The lead sentence says the first matching entry wins. Do not restate which packets are classified `quality` (`baseline`, `not-ready`, `profile-unavailable`, `correction-pass`): that classification is owned by `pilot-measurement-workflow.md:129–131` and `:156–158`, and the helper decides on the reserved profile, the receipt's `fallback` and the install kind, never on which packets ran Quality. Define entry 1 only by the reserved profile and the `admission-changed` receipt, never by "ran Quality": entry 4 also runs Quality yet must send `unverified`. Do not name a pilot that is "not active": a generation other than `baseline` or `active` reserves nothing (`pilot-measurement-workflow.md:75`), so no `finish-packet` is sent. Keep the existing technical terms verbatim (`start-packet`, `admission-changed`, `model-selection` `verify`, `INVALID_*`) so existing assertions and readers keep matching.
 3. In `src/shared/pilot-measurement-workflow.md`, keep the bullet's existing clause "`modelCompliance` with the packet's value from the `execution-profiles` delegation rule" unchanged and append one sentence stating the full entry-1 condition, for example: "A packet not reserved as `fast`, or whose `start-packet` carried `admission-changed`, sends `not-applicable`." The `admission-changed` half is named because the `start-packet` bullet directly above (`pilot-measurement-workflow.md:179–181`) re-sends a `fast` packet with that fallback, and such a packet still looks `fast` to the orchestrator (decided by score; see "Assumptions and open points"). The clause must stay because `FRAGMENT_KEYS` in `test/execution-profile-workflow-contract.test.mjs:108–113` extracts the documented `finish-packet` keys between "Call `finish-packet` once" and "with the packet"; dropping that phrase makes `section()` throw. No `fast` entry of the list is repeated at the call site.
 4. In `docs/developer-guide/model-tiering-pilot-protocol.md`, replace the restatement from "Before `finish-packet`, a portable Fast packet …" to "… a packet not reserved as `fast` reports `not-applicable`." (lines 347–353) with one sentence: a packet not reserved as `fast`, or whose `start-packet` carried `admission-changed`, reports `not-applicable`, and every other value follows the ordered list in `src/shared/execution-profiles.md` "Delegation". Leave the JSON protocol mirror between the guide's protocol markers (lines 26–32, read by `parsePilotMeasurementDocumentationProjection` in `build.mjs:1370–1382`) unchanged. The value definitions at lines 478–485 stay as metric semantics on purpose, with one wording fix: on line 483 change "`not-applicable` for a Quality packet" to "`not-applicable` for a packet not reserved as `fast`", because a `fast` reservation with no child also runs Quality yet records `unverified`. No test reads this prose; `test/build-lib.test.mjs` reads only the marker block.
 5. Run `pnpm format`, then CI's order: `pnpm agent:check`, `pnpm test`, `node build.mjs`, `pnpm test:distribution`. Both fragments are reached only through ` ```lazy-include ` pointers (`src/shared/build-delegated-run.md`, `src/tools/fix.md`, `src/tools/refactor.md`), so no `contextBudget:` line should change; confirm in the `Always-loaded core (lines/budget)` report of `node build.mjs`.
@@ -123,6 +123,7 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -156,6 +157,7 @@ Not relevant.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -164,15 +166,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 1 | 2 |
-| Testability | 0 | 2 | 4 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 0 | 3 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         1 |    2 |
+| Testability     |        0 |         2 |    4 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         0 |    3 |
 
 ### Findings
 

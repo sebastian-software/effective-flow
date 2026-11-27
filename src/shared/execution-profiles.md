@@ -320,14 +320,18 @@ A Fast spawn passes only its Fast reference's own values, never the spawn site's
 native Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on native Codex
 the `-fast` sidecar without per-spawn `model` or `reasoning_effort`, on a portable build the routed
 worker contract with exactly the `model-selection` `fast` values of the rendered Fast tier line.
-The Quality spawn and every correction pass the site's tier. Before `finish-packet`, a packet whose
-Fast attempt started a child on a portable build takes its `modelCompliance` from `model-selection`
-`verify`, which returns it for every well-formed request (an `INVALID_*` error records
-`unverified`); a native Fast attempt reports `unverified`. A packet reserved as `fast` whose Fast
-attempt left no child to verify, because its spawn was rejected before any child started or it ran
-Quality from its first spawn after an unpersisted incident, also reports `unverified` on every
-build. Only a packet not reserved as `fast`, or one whose `start-packet` carried
-`admission-changed`, reports `not-applicable`.
+The Quality spawn and every correction pass the site's tier. Before `finish-packet`, a packet takes
+its `modelCompliance` from the first matching entry:
+
+1. A packet not reserved as `fast` (selected `quality` at `start`), or one whose `start-packet`
+   carried `admission-changed`, reports `not-applicable`.
+2. A packet reserved as `fast` whose Fast attempt started a child on a portable build takes the
+   `model-selection` `verify` value, which it returns for every well-formed request (an `INVALID_*`
+   error records `unverified`).
+3. A packet reserved as `fast` with a native Fast attempt reports `unverified`.
+4. A packet reserved as `fast` whose Fast attempt left no child to verify, because its spawn was
+   rejected before any child started or it ran Quality from its first spawn after an unpersisted
+   incident, reports `unverified` on every build.
 
 **Requirements check.** For a packet whose Fast attempt returned without a fallback, repairing a
 mismatch is its single `requirements-mismatch` transition below, before `finish-packet`. Every
