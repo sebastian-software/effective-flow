@@ -28274,6 +28274,30 @@ test('every sleep, --watch, pr-checks-wait, Monitor or ScheduleWakeup occurrence
   }
 });
 
+// Invariant: the T3 section states that a non-required job never wakes the session and that a run
+// which must wait for one, where no tool rule governs the wait, hands back to the user instead of
+// polling, and it leaves wake classification to the merge-gate and iterate rules. The paragraph
+// sits between the wait rule and **The tools.**, so it reads as a qualification of the wait rule.
+// A comment a job posts may wake the session, but no rule relies on that wake.
+test('host-pr-watch T3 section hands a wait on a non-required job back to the user', () => {
+  const raw = hostPrWatchT3Section();
+  const heading = raw.indexOf('**Checks that are not required.**');
+  assert.notEqual(heading, -1, 'the T3 section must carry the non-required-checks paragraph');
+  const waitRule = raw.indexOf('**The host owns every pull-request wait.**');
+  assert.notEqual(waitRule, -1, 'the T3 section must carry the wait rule');
+  assert.ok(waitRule < heading, 'the paragraph follows the wait rule');
+  const tools = raw.indexOf('**The tools.**');
+  assert.ok(heading < tools, 'the paragraph precedes **The tools.**');
+  const paragraph = prose(raw.slice(heading, tools));
+  assert.match(paragraph, /non-required check that passes never wakes the session/);
+  assert.match(
+    paragraph,
+    /Where no tool rule below governs the wait, a run that must wait for such a check hands back to the user/,
+  );
+  assert.match(paragraph, /classified by the `merge-gate` and `iterate` wake rules below/);
+  assert.match(paragraph, /may wake the session like any new comment, but no rule relies on it/);
+});
+
 // Invariant: the fragment names the host tools unqualified, as the host's deferred-tool mechanism
 // loads them, never with an `mcp__` prefix.
 test('host-pr-watch names watch, link and unwatch tools unqualified without an mcp__ prefix', () => {
