@@ -1,6 +1,6 @@
 # Replace the t3-project runner guidance in build-system.md with neutral wording
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
@@ -73,12 +73,12 @@ product source under `src/`, no test, no build file and no shipped behaviour.
     time, also for a full suite run in the background;
   - an interrupted call is no validation result;
   - the environment's own documentation owns its flags, limits and recovery.
-  It drops the product name, the flag, the host path and the Claude Code Bash tool example. The
-  current paragraph also covers a documented overrun ("including the overrun the runtime
-  instructions document"), which was the substance of #794. The new text does not restate it. The
-  issue names that relation as copied runner contract that can drift. The paragraph's last
-  sentence already defers limits and recovery, the overrun included, to the environment's own
-  documentation, which owns that contract.
+    It drops the product name, the flag, the host path and the Claude Code Bash tool example. The
+    current paragraph also covers a documented overrun ("including the overrun the runtime
+    instructions document"), which was the substance of #794. The new text does not restate it. The
+    issue names that relation as copied runner contract that can drift. The paragraph's last
+    sentence already defers limits and recovery, the overrun included, to the environment's own
+    documentation, which owns that contract.
 - **No new guard test.** The acceptance grep is a one-time check. A permanent test against
   host-specific strings in developer docs would be new policy that the issue does not ask for (see
   Assumptions).
@@ -112,6 +112,7 @@ product source under `src/`, no test, no build file and no shipped behaviour.
 
    Wrap it at about 100 columns like the Git paragraph above it (lines 104–112). Add no fenced
    code and no new heading.
+
 3. Leave the heading on line 102 and the Git prerequisites paragraph (lines 104–112) unchanged.
 4. Change no other file. `AGENTS.md` and `src/` already have no hits for the acceptance grep.
 
@@ -264,3 +265,21 @@ Not relevant: no user interface.
 ## Open points
 
 - No open points.
+
+## Test results
+
+- Acceptance grep for `t3-project`, `/opt/t3-project-runtime` and `--max-wait` over
+  `docs/developer-guide/build-system.md`, `AGENTS.md` and `src/`: no output, exit 1.
+- Section and paragraph extractions (`awk … | tr -s ' \n' ' '` with `grep -F`): the required
+  strings are present, and the old sentence is gone.
+- The heading `## Test environment prerequisites` is byte-identical to the base, and `AGENTS.md:35`
+  still links to its anchor.
+- Scope check: only `docs/developer-guide/build-system.md` and this plan file changed.
+- `pnpm test test/session-contracts.test.mjs test/workflow-contracts.test.mjs test/focus-contracts.test.mjs test/build-lib.test.mjs test/test-capabilities.test.mjs`
+  (preflight first): 1079 tests, 1078 pass, 0 fail, 1 skipped.
+- `pnpm agent:check`: the first run flagged only this plan file's formatting. The file was
+  formatted with oxfmt, and the check was run again.
+
+## Review findings
+
+- The docs workflow has no review phase. The pull request review covers the change.
