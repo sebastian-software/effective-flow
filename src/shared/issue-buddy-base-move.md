@@ -21,8 +21,9 @@ builds the plan commit on the assessed tip itself.
    this issue, copied from it: `issue`, `fromBaseOid`, `toBaseOid`, `verdict`, `reason`,
    `commitCount`, `changedPathCount`, `citedPathCount`, `citedPaths` and `overlappingPaths`.
 3. **`republish: true`.** Re-run `plan-lint.mjs publication-metadata` with the same input. Its
-   projection, `blobOid` included, must equal the first run's; a different projection stops with
-   `BLOB_CHANGED`, a failed re-run with its own code, both under item 5 and without publication.
+   projection, `blobOid` included, must equal the projection Phase 4 retained; a different
+   projection stops with `BLOB_CHANGED`, a failed re-run with its own code, both under item 5 and
+   without publication.
    Then call `publish --apply` once, with the unchanged input plus `expectedBaseOid: <toBaseOid>`
    and `allowNewerBase: true`; an `overlap` or `undecidable` verdict also passes
    `baseMove: {fromBaseOid, toBaseOid, verdict, reason, commitCount, overlappingPaths}` from the

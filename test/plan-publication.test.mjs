@@ -574,6 +574,9 @@ test('attribution: the generation-attribution patterns, case-insensitively', () 
     cat('claude', '.ai/code/session_1'),
     cat('Co-Authored', '-By: Someone <a@b.test>'),
     cat('co-authored', '-by: x'),
+    // Invariant (issue #799): a code span is no exemption, so the observed plan bullet that quotes
+    // the trailer key with its colon blocks, while its descriptive rewording below does not.
+    cat('- Edge case: a commit carrying `Co-Authored', '-By:` is rejected.'),
   ]) {
     assert.deepEqual(classesOf(text), ['attribution'], text);
   }
@@ -582,6 +585,7 @@ test('attribution: the generation-attribution patterns, case-insensitively', () 
     cat('claude', '.ai/cod'),
     cat('Co-Authored', '-By trailer is forbidden'),
     'The Claude Code harness is a target.',
+    '- Edge case: a commit carrying the co-author trailer is rejected.',
   ]) {
     assert.deepEqual(classesOf(harmless), [], harmless);
   }

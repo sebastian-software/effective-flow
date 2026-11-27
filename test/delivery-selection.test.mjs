@@ -16,6 +16,7 @@ import {
   NON_INTERACTIVE_FETCH_ENV,
   nonInteractiveFetchEnv,
   parsePorcelainV2Z,
+  PUBLICATION_PREFLIGHT_REASONS,
   snapshotScope,
   UPSTREAM_FETCH_TIMEOUT_MS,
   validateLiteralPath,
@@ -590,4 +591,320 @@ test('the exported fetch guard refuses option-like remotes and malformed refs be
     'check-ref-format',
     'refs/heads/--upload-pack=x',
   ]);
+});
+
+// Invariant for the publication-preflight tests below: the isolated delivery topology is kept.
+// An unsupported writer is rejected before any mutation, and an admitted provider helper opens the
+// pull request from the delivery branch, never from the source branch.
+const PUBLICATION_PREFLIGHT_FIXTURE = {
+  source: { branch: 'work' },
+  base: 'main',
+  head: 'effective-flow/deliver/add-widget',
+};
+
+test('publication-preflight is a dispatched read-only operation', () => {
+  assert.ok(DELIVERY_SELECTION_OPERATIONS.includes('publication-preflight'));
+  assert.ok(!DELIVERY_SELECTION_DRY_RUN_OPERATIONS.includes('publication-preflight'));
+});
+
+test('publication-preflight rejects an unsupported host-tool writer before any mutation', async () => {
+  const payload = {
+    ...PUBLICATION_PREFLIGHT_FIXTURE,
+    hostPolicy: 'restricted',
+    writer: {
+      kind: 'host-tool',
+      name: 'pull_request_create',
+      explicitHead: false,
+      boundBranch: 'work',
+    },
+  };
+  const reasons = [
+    'host-policy-restricted',
+    'host-tool-not-supported-by-pr',
+    'host-tool-no-explicit-head',
+    'host-tool-bound-to-other-branch',
+  ];
+
+  const result = await executeOperation('publication-preflight', payload);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.dryRun, false);
+  assert.equal(result.data.status, 'unsupported');
+  assert.equal(result.data.scope, 'pair');
+  assert.equal(result.data.head, 'effective-flow/deliver/add-widget');
+  assert.equal(result.data.base, 'main');
+  assert.equal(result.data.writer, 'host-tool');
+  assert.equal(result.data.hostPolicy, 'restricted');
+  assert.deepEqual(result.data.reasons, reasons);
+
+  const script = fileURLToPath(new URL('../src/scripts/delivery-selection.mjs', import.meta.url));
+  const cli = spawnSync(process.execPath, [script, 'publication-preflight'], {
+    input: JSON.stringify(payload),
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  assert.equal(cli.status, 0, cli.stderr);
+  const envelope = JSON.parse(cli.stdout);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.status, 'unsupported');
+  assert.deepEqual(envelope.data.reasons, reasons);
+});
+
+test('publication-preflight admits a provider helper and keeps the delivery branch as the head', async () => {
+  const result = await executeOperation('publication-preflight', {
+    ...PUBLICATION_PREFLIGHT_FIXTURE,
+    hostPolicy: 'unrestricted',
+    writer: { kind: 'provider-helper', probe: { ok: true, pullRequestCreate: true } },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.data.status, 'supported');
+  assert.equal(result.data.scope, 'pair');
+  assert.equal(result.data.writer, 'provider-helper');
+  assert.deepEqual(result.data.reasons, []);
+  assert.equal(result.data.head, 'effective-flow/deliver/add-widget');
+  assert.equal(result.data.base, 'main');
+  assert.notEqual(result.data.head, 'work');
+  assert.notEqual(result.data.base, 'work');
+});
+
+// Invariant: the classifier's input schema is closed, so a writer the orchestrator described
+// incompletely or with an unknown shape never reads as supported. Malformed input is the helper's
+// INVALID_PAYLOAD envelope with exit code 2, through executeOperation and through the CLI.
+test('publication-preflight rejects malformed input as INVALID_PAYLOAD with exit code 2', async () => {
+  const helper = { kind: 'provider-helper', probe: { ok: true, pullRequestCreate: true } };
+  const valid = { hostPolicy: 'unrestricted', writer: helper, source: { branch: 'work' } };
+  const malformed = [
+    ['not an object', []],
+    ['unknown top-level key', { ...valid, extra: true }],
+    ['missing hostPolicy', { writer: helper, source: { branch: 'work' } }],
+    ['unknown hostPolicy', { ...valid, hostPolicy: 'open' }],
+    ['head without base', { ...valid, head: 'effective-flow/deliver/add-widget' }],
+    ['base without head', { ...valid, base: 'main' }],
+    ['empty head', { ...valid, head: '', base: 'main' }],
+    ['unknown writer kind', { ...valid, writer: { kind: 'git-push' } }],
+    ['helper writer with an extra key', { ...valid, writer: { ...helper, name: 'x' } }],
+    [
+      'null probe under an unrestricted policy',
+      { ...valid, writer: { kind: 'provider-helper', probe: null } },
+    ],
+    [
+      'failed probe without a code',
+      {
+        ...valid,
+        writer: { kind: 'provider-helper', probe: { ok: false, pullRequestCreate: null } },
+      },
+    ],
+    [
+      'successful probe carrying a code',
+      {
+        ...valid,
+        writer: {
+          kind: 'provider-helper',
+          probe: { ok: true, code: 'AUTH_FAILED', pullRequestCreate: true },
+        },
+      },
+    ],
+    [
+      'pullRequestCreate omitted',
+      { ...valid, writer: { kind: 'provider-helper', probe: { ok: true } } },
+    ],
+    [
+      'pullRequestCreate not a boolean or null',
+      {
+        ...valid,
+        writer: { kind: 'provider-helper', probe: { ok: true, pullRequestCreate: 'yes' } },
+      },
+    ],
+    [
+      'host tool with a non-boolean explicitHead',
+      {
+        ...valid,
+        hostPolicy: 'restricted',
+        writer: { kind: 'host-tool', name: 'pr_tool', explicitHead: 'no', boundBranch: null },
+      },
+    ],
+    [
+      'host tool without boundBranch',
+      {
+        ...valid,
+        hostPolicy: 'restricted',
+        writer: { kind: 'host-tool', name: 'pr_tool', explicitHead: false },
+      },
+    ],
+    ['source without branch', { ...valid, source: {} }],
+    ['empty source branch', { ...valid, source: { branch: '' } }],
+  ];
+  for (const [label, payload] of malformed) {
+    const result = await executeOperation('publication-preflight', payload);
+    assert.equal(result.ok, false, label);
+    assert.equal(result.error.code, 'INVALID_PAYLOAD', label);
+    assert.equal(result.error.exitCode, 2, label);
+  }
+
+  const script = fileURLToPath(new URL('../src/scripts/delivery-selection.mjs', import.meta.url));
+  const cli = spawnSync(process.execPath, [script, 'publication-preflight'], {
+    input: JSON.stringify({ ...valid, hostPolicy: 'open' }),
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  assert.equal(cli.status, 2, cli.stderr);
+  assert.equal(JSON.parse(cli.stdout).error.code, 'INVALID_PAYLOAD');
+});
+
+// Invariant: every unsupported result lists every applicable reason in one fixed order, so the
+// stop report is deterministic and no reason hides another.
+test('publication-preflight reports every applicable reason in the fixed order', async () => {
+  assert.deepEqual(PUBLICATION_PREFLIGHT_REASONS, [
+    'head-is-source-branch',
+    'head-is-base',
+    'host-policy-restricted',
+    'helper-probe-failed',
+    'pull-request-create-unsupported',
+    'host-tool-not-supported-by-pr',
+    'host-tool-no-explicit-head',
+    'host-tool-bound-to-other-branch',
+  ]);
+  // Head equals source and base at once, under a restricted policy, with a failed probe that also
+  // reported no pull-request creation: reasons 1 to 5 together.
+  const helper = await executeOperation('publication-preflight', {
+    hostPolicy: 'restricted',
+    writer: {
+      kind: 'provider-helper',
+      probe: { ok: false, code: 'UNSUPPORTED_CAPABILITY', pullRequestCreate: false },
+    },
+    source: { branch: 'main' },
+    head: 'main',
+    base: 'main',
+  });
+  assert.equal(helper.ok, true, JSON.stringify(helper));
+  assert.equal(helper.data.status, 'unsupported');
+  assert.deepEqual(helper.data.reasons, PUBLICATION_PREFLIGHT_REASONS.slice(0, 5));
+
+  // Head equals the source branch only; a host tool bound elsewhere adds reasons 6 to 8.
+  const tool = await executeOperation('publication-preflight', {
+    hostPolicy: 'restricted',
+    writer: { kind: 'host-tool', name: 'pr_tool', explicitHead: false, boundBranch: 'other' },
+    source: { branch: 'work' },
+    head: 'work',
+    base: 'main',
+  });
+  assert.deepEqual(tool.data.reasons, [
+    'head-is-source-branch',
+    'host-policy-restricted',
+    'host-tool-not-supported-by-pr',
+    'host-tool-no-explicit-head',
+    'host-tool-bound-to-other-branch',
+  ]);
+});
+
+// Invariant: a skipped helper call (`probe: null`, only under a restricted policy) is not a failed
+// probe: it contributes neither probe reason, so a restricted helper writer without a host tool
+// yields host-policy-restricted alone.
+test('publication-preflight treats a null probe as skipped, not failed', async () => {
+  const result = await executeOperation('publication-preflight', {
+    hostPolicy: 'restricted',
+    writer: { kind: 'provider-helper', probe: null },
+    source: { branch: 'work' },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.data.status, 'unsupported');
+  assert.deepEqual(result.data.reasons, ['host-policy-restricted']);
+  assert.equal(result.data.probeCode, null);
+});
+
+// Invariant: without head and base the classifier runs in writer scope (the deliver step 1.1
+// observation): it echoes null head and base and never evaluates a head-dependent reason, so a
+// host tool's bound branch cannot be judged before the delivery branch exists.
+test('publication-preflight separates writer scope from pair scope', async () => {
+  const writer = { kind: 'host-tool', name: 'pr_tool', explicitHead: true, boundBranch: 'work' };
+  const early = await executeOperation('publication-preflight', {
+    hostPolicy: 'restricted',
+    writer,
+    source: { branch: 'work' },
+  });
+  assert.equal(early.data.scope, 'writer');
+  assert.equal(early.data.head, null);
+  assert.equal(early.data.base, null);
+  assert.deepEqual(early.data.reasons, ['host-policy-restricted', 'host-tool-not-supported-by-pr']);
+
+  const pair = await executeOperation('publication-preflight', {
+    hostPolicy: 'restricted',
+    writer,
+    source: { branch: 'work' },
+    head: 'effective-flow/deliver/add-widget',
+    base: 'main',
+  });
+  assert.equal(pair.data.scope, 'pair');
+  assert.deepEqual(pair.data.reasons, [
+    'host-policy-restricted',
+    'host-tool-not-supported-by-pr',
+    'host-tool-bound-to-other-branch',
+  ]);
+
+  // A host tool bound to the head itself is still unsupported: pr has no host-tool transport.
+  const bound = await executeOperation('publication-preflight', {
+    hostPolicy: 'restricted',
+    writer: { ...writer, boundBranch: 'effective-flow/deliver/add-widget' },
+    source: { branch: 'work' },
+    head: 'effective-flow/deliver/add-widget',
+    base: 'main',
+  });
+  assert.equal(bound.data.status, 'unsupported');
+  assert.deepEqual(bound.data.reasons, ['host-policy-restricted', 'host-tool-not-supported-by-pr']);
+
+  const helper = await executeOperation('publication-preflight', {
+    hostPolicy: 'unrestricted',
+    writer: { kind: 'provider-helper', probe: { ok: true, pullRequestCreate: true } },
+    source: { branch: 'work' },
+  });
+  assert.equal(helper.data.scope, 'writer');
+  assert.equal(helper.data.status, 'supported');
+});
+
+// Invariant: a failed repository-resolve or probe blocks the run with the helper's stable error
+// code, so the stop report can carry the helper's structured remediation.
+test('publication-preflight carries the helper code with helper-probe-failed', async () => {
+  for (const code of ['CLI_MISSING', 'AUTH_FAILED', 'UNSUPPORTED_CAPABILITY', 'UNKNOWN_HOST']) {
+    const result = await executeOperation('publication-preflight', {
+      hostPolicy: 'unrestricted',
+      writer: { kind: 'provider-helper', probe: { ok: false, code, pullRequestCreate: null } },
+      ...PUBLICATION_PREFLIGHT_FIXTURE,
+    });
+    assert.equal(result.data.status, 'unsupported', code);
+    assert.deepEqual(result.data.reasons, ['helper-probe-failed'], code);
+    assert.equal(result.data.probeCode, code);
+  }
+});
+
+// Invariant: the classifier applies the helper's own capability gate (`=== false`): a probe that
+// did not report pull-request creation is supported, and only an explicit false blocks.
+test('publication-preflight blocks only an explicit pullRequestCreate false', async () => {
+  const run = (pullRequestCreate) =>
+    executeOperation('publication-preflight', {
+      hostPolicy: 'unrestricted',
+      writer: { kind: 'provider-helper', probe: { ok: true, pullRequestCreate } },
+      ...PUBLICATION_PREFLIGHT_FIXTURE,
+    });
+  const unreported = await run(null);
+  assert.equal(unreported.data.status, 'supported');
+  assert.deepEqual(unreported.data.reasons, []);
+  const unsupported = await run(false);
+  assert.equal(unsupported.data.status, 'unsupported');
+  assert.deepEqual(unsupported.data.reasons, ['pull-request-create-unsupported']);
+});
+
+// Invariant: a detached source has no branch to collide with, so only the head-versus-base
+// comparison applies.
+test('publication-preflight compares only head and base for a detached source', async () => {
+  const run = (head) =>
+    executeOperation('publication-preflight', {
+      hostPolicy: 'unrestricted',
+      writer: { kind: 'provider-helper', probe: { ok: true, pullRequestCreate: true } },
+      source: { branch: null },
+      head,
+      base: 'main',
+    });
+  const fresh = await run('effective-flow/deliver/add-widget');
+  assert.equal(fresh.data.status, 'supported');
+  const onBase = await run('main');
+  assert.deepEqual(onBase.data.reasons, ['head-is-base']);
 });
