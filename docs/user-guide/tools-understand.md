@@ -486,6 +486,11 @@ plan is still published on the tip that was checked, and the paragraph adds that
 move was not assessed. The pass stops without a pull request when the base history was rewritten,
 when the base already holds or may hold a plan for the same issue, or when the plan or the tip
 changed. The plan and its planning worktree are kept.
+The planning run in that worktree runs no build, install, test or formatter command. In publishing
+mode the pass formats the plan itself with the project's installed formatter before publication,
+and publishes it as written when the project names no Markdown formatter. A named formatter that
+cannot be called directly stops the pass before planning (`FORMATTER_UNAVAILABLE`); install a
+formatter that your host instructions allow to be called directly.
 Publication is allowed only for a public repository. Private and unknown repositories remain
 dry-run-only; the one exception is a run that you start with
 [`autopilot`](tools-automation.md#trust-model) on a single issue, which is your consent to publish
