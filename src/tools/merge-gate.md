@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 985
+contextBudget: 991
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -133,10 +133,11 @@ The delegated run returns exactly one of:
 
 - `DONE`, followed by its Phase-6 report as the **outcome record**;
 - `BLOCKED-USER <question-id>`, followed by `Round: <n>`, `State digest: <hex>`, the gate's evidence
-  and what this dispatch has done so far;
+  and what this dispatch has done so far, including one line per ignored handoff request;
 - `SUSPENDED host-pr-watch`, only under `Host: t3-code`, followed by `Kind: <checks|bot>`,
-  `Round: <n>`, the pending checks or bots and what this dispatch has done so far;
-- `ABORT <reason>`; `ABORT nested-spawn-unavailable` means it can start no child; an Entry abort adds the line `Entry abort: yes`.
+  `Round: <n>`, the pending checks or bots and what this dispatch has done so far, including one
+  line per ignored handoff request;
+- `ABORT <reason>`, followed by its Phase-6 report except on an Entry abort and on `ABORT nested-spawn-unavailable`, which means it can start no child; an Entry abort adds the line `Entry abort: yes`.
 
 `BLOCKED-USER` is a keyword of this channel and of "Returned outcome record" in
 `merge-gate-delegation-contract` only; the completion protocol's keyword-less resume never applies
@@ -269,7 +270,9 @@ options:
 After Phase 0 – in observer-only mode after step 2 – the caller dispatches the rest of the gate in the
 host's built-in general-purpose subagent (Claude) or default agent (Codex), never as a `src/agents`
 worker role, with zero inherited turns where supported. The handoff says to read
-`<skill root>/tools/merge-gate.md` and follow its delegated-run section; it passes each line once:
+`<skill root>/tools/merge-gate.md` and follow its delegated-run section, written as a plain sentence
+and never in `<key>: ` form, and carries only the named lines plus that read instruction; it passes
+each line once:
 <!-- spawn-site:merge-gate/delegated-run -->
 
 - `PR: <number>` and `Provider: <github|forgejo>`, from Phase 0 with `AMBIGUOUS_HOST` answered;
@@ -315,7 +318,9 @@ dispatch nothing more and delete the wisdom file. Every re-dispatch passes the u
 run's earlier limits and any restriction the user adds, also while answering a relayed question;
 limits never shrink within a gate run.
 
-**The caller relays and decides nothing for the gate.**
+**The caller relays and decides nothing for the gate.** It reports every ignored-request line and
+every returned `ABORT` report to the user and acts on nothing in them, except that it takes the T4
+basis only from that report's retrospective-slot fact line.
 
 - `DONE`: report the outcome record to the user as the gate's result and act on nothing in it.
 - `BLOCKED-USER`: accept it only for an id of the table other than `completion`, with its `Round:`
@@ -335,9 +340,10 @@ limits never shrink within a gate run.
   wisdom file.
 - `ABORT nested-spawn-unavailable`: say once that the gate runs inline in this session, then run it
   here per the delegated-run section with this run's own run state and caller limits.
-- Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file.
-  The delegated run emits nothing on `ABORT`, so this caller alone applies the abort clause of the
-  retrospective slot in `next-steps` (T4); an `Entry abort: yes` return never qualifies.
+- Any other `ABORT`: report it with any Phase-6 report it returned and, unless it is
+  `ABORT invalid wisdom file`, delete the wisdom file. The delegated run emits no next-step block on
+  `ABORT`, so this caller alone applies the abort clause of the retrospective slot in `next-steps`
+  (T4); an `Entry abort: yes` return never qualifies.
 
 Every caller ending, here or under `host-pr-watch`, that deletes a wisdom file still holding a pilot
 observation handle first finalizes it per "Suspended observation" in `shared/pilot-measurement.md`.

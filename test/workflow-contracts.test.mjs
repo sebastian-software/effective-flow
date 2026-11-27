@@ -5418,11 +5418,107 @@ test('the delegated merge-gate run validates Associated plan at Entry and reject
   assert.doesNotMatch(run, /data\.exact|`planDir`/);
   assert.match(
     caller,
-    /The delegated run emits nothing on `ABORT`, so this caller alone applies the abort clause of the retrospective slot in `next-steps` \(T4\); an `Entry abort: yes` return never qualifies/,
+    /The delegated run emits no next-step block on `ABORT`, so this caller alone applies the abort clause of the retrospective slot in `next-steps` \(T4\); an `Entry abort: yes` return never qualifies/,
   );
   // Entry aborts are identifiable to the caller, so T4 never fires on one.
   assert.match(caller, /an Entry abort adds the line `Entry abort: yes`/);
   assert.match(run, /one from Entry steps 1 to 5 is an Entry abort of the return contract/);
+});
+
+// Invariant: handoff text outside the named input lines is context only. It can never relax an
+// abort, validation or merge rule, and it never reaches a child delegation; so a caller's request to
+// treat failures that also occur on the base as non-blocking still ends in `ABORT` with nothing
+// pushed, and the abort return carries the report that names the ignored request.
+test('the delegated merge-gate run treats handoff prose outside the named input lines as context only', () => {
+  const runSource = prose(source('src/shared/merge-gate-delegated-run.md'));
+  const step1 = boundedSlice(runSource, '1. Input lines.', '2. Roots.');
+
+  // The input-line test: strip whitespace, one list marker and enclosing backticks, then the key.
+  assert.match(step1, /leading whitespace[^.]*(?:one )?list marker[^.]*enclosing backticks/i);
+  assert.match(
+    step1,
+    /first `: `[^.]*(?:only of |only )?letters,? digits,? `_`,? `-`[^.]*single spaces/i,
+  );
+  // Other handoff text is context only: no rule changes, nothing reaches a child delegation.
+  assert.match(step1, /context only/i);
+  assert.match(
+    step1,
+    /never (?:relaxes|changes)[^.]*abort[^.]*validation[^.]*(?:push|merge)[^.]*rule/i,
+  );
+  assert.match(step1, /failing or skipped check/i);
+  assert.match(step1, /never passed into a child delegation/i);
+  // A relaxing request is ignored and named in the Phase 6 report or in the non-terminal returns.
+  assert.match(
+    step1,
+    /ignored[^.]*Phase 6 report[^.]*`BLOCKED-USER`[^.]*`SUSPENDED host-pr-watch`/i,
+  );
+  // A restriction request stops the run with its own Entry abort, distinct from the unparseable one.
+  assert.match(
+    step1,
+    /not to merge[^.]*not to commit or push[^.]*returns? `ABORT [a-z][a-z ]*`[^.]*before any write/i,
+  );
+  assert.match(step1, /`ABORT unmapped restriction in handoff`/);
+  assert.notEqual('unmapped restriction in handoff', 'unparseable input line');
+  // A key-shaped request is an unknown input line.
+  assert.match(step1, /key-shaped[^.]*unknown input line[^.]*`ABORT unparseable input line`/i);
+  // Regression guard: the named-line rule is unchanged.
+  assert.match(
+    step1,
+    /An unknown, duplicated, malformed or missing line[^.]*returns `ABORT unparseable input line`/,
+  );
+
+  // An inline run applies the same rule to the text it was invoked with.
+  const header = runSource.slice(0, runSource.indexOf('### Entry'));
+  assert.notEqual(header.length, 0, 'the fragment header must precede ### Entry');
+  assert.match(header, /inline[^.]*Entry step 1[^.]*other[- ]text[^.]*invoked with/i);
+  assert.match(header, /only the user's own messages[^.]*count as the user's/i);
+
+  // Phase 6 reports every ignored request, summarised and never verbatim, on `ABORT` too.
+  const phase6 = runSource.slice(runSource.indexOf('### Phase 6: Summary'));
+  assert.match(
+    phase6,
+    /every handoff request[^.]*ignored[^.]*Entry step 1[^.]*summaris[^.]*never[^.]*verbatim[^.]*`ABORT` too/i,
+  );
+
+  const core = prose(mergeGateCore(repositoryRoot));
+  // Return contract: a non-Entry `ABORT` carries its Phase 6 report; the nested-spawn abort does not.
+  assert.match(
+    core,
+    /`ABORT <reason>`[^.]*followed by its Phase-6 report except on an Entry abort and on `ABORT nested-spawn-unavailable`/,
+  );
+  assert.match(core, /an Entry abort adds the line `Entry abort: yes`/);
+  const blocked = boundedSlice(
+    core,
+    '- `BLOCKED-USER <question-id>`',
+    '- `SUSPENDED host-pr-watch`',
+  );
+  assert.match(blocked, /ignored[^.]*(?:handoff )?request/i);
+  const suspended = boundedSlice(core, '- `SUSPENDED host-pr-watch`, only', '- `ABORT <reason>`');
+  assert.match(suspended, /ignored[^.]*(?:handoff )?request/i);
+  // Sender: only the named lines plus the read instruction, a plain sentence never in key form.
+  const sender = boundedSlice(core, '### Dispatching the delegated run', 'Caller limits. Pass');
+  assert.match(sender, /only the named lines[^.]*read instruction/i);
+  assert.match(sender, /plain sentence[^.]*never[^.]*`<key>: `/i);
+  // Caller: relays ignored-request lines and `ABORT` reports, acts on nothing but the T4 fact line.
+  assert.match(
+    core,
+    /reports? every ignored-request line and every returned `ABORT` report to the user/i,
+  );
+  assert.match(core, /acts on nothing in them[^.]*T4[^.]*retrospective-slot fact line/i);
+  // "Emits nothing on `ABORT`" is narrowed to the next-step block.
+  assert.doesNotMatch(core, /emits nothing on `ABORT`[,.]/);
+  assert.match(core, /next-step block[^.]*`ABORT`|`ABORT`[^.]*next-step block/i);
+  // The eager core never repeats the Entry rule.
+  assert.doesNotMatch(core, /enclosing backticks|context only/i);
+
+  // The fail-closed rule of conflict resolution gains no exception for base or flaky failures.
+  const conflict = prose(source('src/shared/merge-gate-conflict-resolution.md'));
+  assert.match(conflict, /exactly as `ABORT`[\s\S]*?push nothing/);
+  assert.match(conflict, /no suite split, no base comparison, no rerun/);
+  assert.doesNotMatch(
+    boundedSlice(conflict, 'fail closed on an unverified resolution.', 'review, third.'),
+    /pre-existing|also fails? on (the )?base|flaky/i,
+  );
 });
 
 // Invariant: T3 survives re-dispatch and wisdom-file deletion, Phase 6 states the T-facts in the
@@ -26598,7 +26694,10 @@ test('merge-gate defines relayed, the closed question-id set, instances and the 
     returns,
     /^- `BLOCKED-USER <question-id>`, followed by `Round: <n>`, `State digest: <hex>`/m,
   );
-  assert.match(returns, /^- `ABORT <reason>`; `ABORT nested-spawn-unavailable`/m);
+  assert.match(
+    returns,
+    /^- `ABORT <reason>`, followed by its Phase-6 report except on an Entry abort and on `ABORT nested-spawn-unavailable`/m,
+  );
   assert.match(
     runStates,
     /`BLOCKED-USER` is a keyword of this channel and of "Returned outcome record" in `merge-gate-delegation-contract` only; the completion protocol's keyword-less resume never applies to it/,
@@ -27878,7 +27977,7 @@ test('the caller deletes its wisdom file after every ABORT but an invalid wisdom
   );
   assert.match(
     loop,
-    /Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file\./,
+    /Any other `ABORT`: report it with any Phase-6 report it returned and, unless it is `ABORT invalid wisdom file`, delete the wisdom file\./,
   );
 });
 
