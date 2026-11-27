@@ -72,17 +72,18 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 
 The [pragmatic test and release policy](../adr/pragmatic-test-release-policy.md) owns package
 acceptance and experimental capability activation. The full unit/integration population runs in
-the three shards of the `unit-tests` matrix job, and the required `Format, test and build` job gates
-on all of them: its first step fails unless every shard succeeded. It then runs format, build guards
-and distribution/installation smoke. Shellcheck and generated README checks remain required;
-advisory jobs keep their status.
+the three shards of the `unit-tests` matrix job; format, build guards, distribution/installation
+smoke and eval evidence run in the parallel `Build checks` job. The required `Format, test and
+build` job gates on both: its only step fails unless every shard and the checks succeeded.
+Shellcheck and generated README checks remain required; advisory jobs keep their status.
 
-Its final `Behavioural eval evidence` step runs `pnpm eval <tool> verify --mode report` for all
-five suites: `merge-gate`, `iterate`, `next-steps`, `build-context` and `focus`. Every suite reports
-in the summary even if an earlier verifier fails. Ordinary and release PRs use the same policy:
-stale, absent or incomplete coverage is visible debt; invalid archives, inconsistent internal
-stamps, surplus, unknown results and verifier failures block. Valid negative outcomes remain
-visible for applicability/security triage. Known reachable security-critical defects block delivery.
+The `Build checks` job's final `Behavioural eval evidence` step runs
+`pnpm eval <tool> verify --mode report` for all five suites: `merge-gate`, `iterate`, `next-steps`,
+`build-context` and `focus`. Every suite reports in the summary even if an earlier verifier fails.
+Ordinary and release PRs use the same policy: stale, absent or incomplete coverage is visible debt;
+invalid archives, inconsistent internal stamps, surplus, unknown results and verifier failures
+block. Valid negative outcomes remain visible for applicability/security triage. Known reachable
+security-critical defects block delivery.
 
 `pnpm eval <tool> verify --mode strict` retains full suite acceptance semantics. It remains a
 manual capability-qualification check, not a universal package-release prerequisite. Source drift
@@ -299,9 +300,9 @@ The `pull_request` rule requires **zero** approving reviews. What closes the acc
 pull request exists at all, not that someone signed it off; with a single maintainer a required
 review would only mean self-approval. Required status checks are `Format, test and build` and
 `Shellcheck`, without the strict up-to-date policy, which would make every merge invalidate the
-other open pull requests. The sharded `Unit tests (<i>/3)` jobs are not required contexts
-themselves: `Format, test and build` waits for them under `if: always()` and fails unless all of
-them succeeded, so the required checks stay unchanged. The managers job is deliberately **not**
+other open pull requests. The sharded `Unit tests (<i>/3)` jobs and `Build checks` are not
+required contexts themselves: `Format, test and build` waits for them under `if: always()` and
+fails unless all of them succeeded, so the required checks stay unchanged. The managers job is deliberately **not**
 required: it exercises externally published DALO and Skills CLI releases, so requiring it would let
 an unrelated upstream release block every merge, the release pull request included.
 

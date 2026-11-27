@@ -1,6 +1,6 @@
 ---
 description: "Takes one or more issues of the resolved tracker target — GitHub/Forgejo or an external tool — (individually, as a list or as a container issue with sub-issues), analyzes and classifies the content and routes sufficiently specified issues to {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}} (one PR per issue). Insufficiently specified issues are skipped and marked for {{SKILL:plan-issue}}. Status updates run as issue comments."
-contextBudget: 1005
+contextBudget: 1015
 ---
 
 # Effective Flow Apply Issues
@@ -391,6 +391,13 @@ Issues with the same target PR run sequentially so that new commits are created 
    required PR-link/failure lifecycle comment. Preserve PR receipts and completed code milestones
    while explicitly retaining unfinished parent acceptance; a continuation blocker is not missing
    planning detail and never automatically adds Needs-Planning or routes to another workflow.
+   On T3 Code, link the pull request this step created, reused or pushed per `host-pr-watch`.
+
+```lazy-include
+host-pr-watch
+when: the running environment identifies T3 Code and step 3 created, reused or pushed a work item's pull request, before step 4
+```
+
 4. **Immediately after a successful push or PR creation:** write the PR-link comment through the
    helper and set label `effective-flow-issue-done`; on an external target use the resolved
    connection under the `tracker-target` write discipline. Do **not** set a native sub-item to done
@@ -440,6 +447,8 @@ Report to the user:
 - created PRs with URL
 - skipped issues (`effective-flow-needs-planning`) with the reason each one was not implementable
 - container entries retained for post-merge reconciliation, if containers were processed
+- on T3 Code, each pull-request link that failed, or was not made because the target PR is not
+  open or not of this repository, in one line, which does not fail the run
 
 Then delete the wisdom file and **return** that report plus the run's end state — the created pull
 requests/skipped issues, each pull request's count of findings its PR review publication published, verified source association, complete basis, checkpoint/decision and observed outcomes — to `{{SKILL:apply}}`, which closes the run with its own

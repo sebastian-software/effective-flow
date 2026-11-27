@@ -275,12 +275,13 @@ test('detect: without a manifest test command nothing is detected', () => {
 // Detection conditions
 
 // Invariant: this repository's own CI is not recognized by the quick detector, so it falls back to
-// full validation. The test pins the exact per-job reasons, so a change that makes either job
+// full validation. The test pins the exact per-job reasons, so a change that makes any job
 // detectable, or undetected for a different reason, is a deliberate decision. The sharded
-// `unit-tests` job carries a templated matrix name and runs `pnpm test` with a shard flag instead
-// of the bare command; the YAML subset reads the matrix values as strings, so `dynamic-matrix`
-// does not fire. The required `build` job gates on the shards under `if: always()` and no longer
-// runs the suite itself. The `step-before-test` path stays covered by the synthetic cases below.
+// `unit-tests` job carries a templated matrix name and runs `pnpm test:shard`, which is not the
+// manifest's `test` script, so it has no test step; the YAML subset reads the matrix values as
+// strings, so `dynamic-matrix` does not fire. The `checks` job runs the build checks and no test
+// step. The required `build` job gates on both under `if: always()` and runs no suite itself. The
+// `step-before-test` path stays covered by the synthetic cases below.
 test("detect: this repository's own ci.yml jobs are undetected, so it falls back to full validation", () => {
   const text = readFileSync(new URL('.github/workflows/ci.yml', ROOT), 'utf8');
   const files = { 'package.json': readFileSync(new URL('package.json', ROOT), 'utf8') };
@@ -291,9 +292,15 @@ test("detect: this repository's own ci.yml jobs are undetected, so it falls back
   assert.equal(result.status, 'undetected', JSON.stringify(result));
   const shards = jobOf(result, 'unit-tests');
   assert.equal(shards.status, 'undetected');
-  assert.deepEqual(shards.reasons, ['templated-name', 'test-command-not-bare']);
+  assert.deepEqual(shards.reasons, ['templated-name', 'no-test-step']);
   assert.equal(shards.step, null);
   assert.deepEqual(shards.expectedInstances, []);
+  const checks = jobOf(result, 'checks');
+  assert.equal(checks.jobName, 'Build checks');
+  assert.equal(checks.status, 'undetected');
+  assert.deepEqual(checks.reasons, ['no-test-step']);
+  assert.equal(checks.step, null);
+  assert.deepEqual(checks.expectedInstances, []);
   const build = jobOf(result, 'build');
   assert.equal(build.jobName, 'Format, test and build');
   assert.equal(build.status, 'undetected');

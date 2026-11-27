@@ -1227,3 +1227,57 @@ test('cleanup offers proven delivery branches as their own lazily detailed class
   ]);
   assert.doesNotMatch(flatCleanup, /gc\.pruneExpire/, 'the report wording stays lazy');
 });
+
+test('a delivery branch with an open PR is never rebased, so creationOid stays an ancestor of its tip', () => {
+  const flatDelivery = flatten(delivery);
+  const start = flatDelivery.indexOf('**Update existing PRs:**');
+  const end = flatDelivery.indexOf('1. **Mark the plan as implemented');
+  assert.notEqual(start, -1, 'missing the "Update existing PRs" paragraph label');
+  assert.notEqual(
+    end,
+    -1,
+    'missing the "Mark the plan as implemented" step that ends the paragraph',
+  );
+  assert.ok(
+    end > start,
+    'the "Update existing PRs" paragraph must precede the "Mark the plan" step',
+  );
+  const paragraph = flatDelivery.slice(start, end);
+
+  assert.doesNotMatch(
+    paragraph,
+    /interactive rebase/,
+    'the paragraph must not qualify the rebase ban as interactive only',
+  );
+  assertClauses(paragraph, [
+    [/no rebase of any kind/, 'the unqualified rebase ban ("no rebase of any kind")'],
+    [/at any point of the run/, 'the run-wide scope ("at any point of the run")'],
+    [/new commits/, 'follow-up changes as new commits on the same branch'],
+    [
+      /stop and report the conflict instead of overwriting history/,
+      'the diverged-history stop clause',
+    ],
+  ]);
+  assert.doesNotMatch(
+    paragraph,
+    /(?<!\bno )(?<!\bnot )(?<!\bnever )(?<!`)(?:rebase|force-push|force push)/i,
+    'every mention of a rebase or force-push in the paragraph must be a prohibition (`no rebase`, `no force-push`)',
+  );
+  assertClauses(paragraph, [
+    [
+      /merge commit of `origin\/<base>`[^.]*pushed normally/,
+      'the merge alternative: a merge commit of `origin/<base>` pushed normally',
+    ],
+    [/\{\{SKILL:merge-gate\}\}/, 'merge-gate named as the performer of the merge'],
+    [
+      /creationOid.{0,400}condition 6|condition 6.{0,400}creationOid/,
+      'the creationOid reason tied to condition 6',
+    ],
+  ]);
+
+  assert.match(
+    flatten(lifecycle),
+    /6\. `creationOid` is a commit and an ancestor of the branch tip/,
+    'condition 6 of the lifecycle must be the creationOid ancestry condition',
+  );
+});

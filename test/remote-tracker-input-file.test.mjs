@@ -122,6 +122,17 @@ test('file and inline envelopes match, and only the named input is consumed', as
   }
 });
 
+// Invariant: `apply` comes only from argv, never from the payload, so an input file that carries
+// `"apply": true` is still a dry run when the call has no `--apply`.
+test('an apply key inside the input file never turns a dry run into a write', async (context) => {
+  const root = repository(context);
+  const reference = writeInput(root, { ...comment(root), apply: true });
+  const preview = await call(['issue-comment'], reference);
+  assert.equal(preview.envelope.ok, true, JSON.stringify(preview.envelope.error));
+  assert.equal(preview.envelope.dryRun, true);
+  assert.deepEqual(preview.forge, []);
+});
+
 test('the exact same apply reference refuses any changed bytes after preview', async (context) => {
   const root = repository(context);
   const reference = writeInput(root, comment(root));

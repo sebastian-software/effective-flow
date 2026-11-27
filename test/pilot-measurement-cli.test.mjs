@@ -119,6 +119,31 @@ test('oversized stdin is rejected before JSON processing with the capacity exit 
   assert.equal(result.stderr, 'CAPACITY_EXHAUSTED: pilot measurement capacity is exhausted\n');
 });
 
+// Invariant: a rejected runtime root names its failed check in the stdout envelope only; code,
+// exit status, message and the stderr line stay unchanged.
+test('a rejected runtime root exposes its closed reason in the stdout envelope only', (t) => {
+  const fixture = repository(t);
+  const nested = join(fixture.root, 'nested');
+  mkdirSync(nested);
+  const result = runCli(
+    ['inventory'],
+    { runtimeStateRoot: nested, repositoryIdentity: fixture.repositoryIdentity },
+    { cwd: fixture.root },
+  );
+  assert.equal(result.status, 3, result.stderr);
+  const envelope = parseSingleEnvelope(result);
+  assert.deepEqual(envelope.error, {
+    code: 'UNSAFE_RUNTIME_ROOT',
+    message: 'pilot measurement runtime guard rejected the target',
+    exitCode: 3,
+    details: { reason: 'toplevel-mismatch' },
+  });
+  assert.equal(
+    result.stderr,
+    'UNSAFE_RUNTIME_ROOT: pilot measurement runtime guard rejected the target\n',
+  );
+});
+
 test('begin-baseline performs the guarded filesystem effect and returns no raw local data', (t) => {
   const fixture = repository(t);
   const input = {

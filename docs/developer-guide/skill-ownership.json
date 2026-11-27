@@ -101,7 +101,9 @@
         { "consumer": "docs-writer", "classification": "delegate" },
         { "consumer": "marketing-writer", "classification": "delegate" },
         { "consumer": "iterate", "classification": "route-when-relevant" },
-        { "consumer": "pr", "classification": "route-when-relevant" }
+        { "consumer": "pr", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
       ]
     },
     {

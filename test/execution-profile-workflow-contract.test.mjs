@@ -2040,6 +2040,45 @@ test('build selects Fast only for the first attempt and transitions to Quality e
   ordered(policySource, '## Escalation transfer', '## Initial implementation phase');
 });
 
+// Invariant (issue #796): the `finish-packet` call site names the `not-applicable` modelCompliance
+// value for a packet not reserved as `fast` and does not restate the `unverified` selection; the
+// `execution-profiles` delegation rule stays its single owner, as a numbered list whose first item
+// is the `not-applicable` case.
+test('finish-packet call site and execution-profiles agree on not-applicable for a packet not reserved as fast', () => {
+  const timing = section(fragment, '### Packet timing', '### Finalization');
+
+  const delegation = section(initialPhase, '**Delegation.**', '**Requirements check.**');
+  const first = delegation.match(/^1\. /m);
+  const second = delegation.match(/^2\. /m);
+  assert.ok(first, 'the delegation rule has no list item 1');
+  assert.ok(second, 'the delegation rule has no list item 2');
+  const item1 = flat(delegation.slice(first.index, second.index));
+  for (const clause of ['`not-applicable`', 'not reserved as `fast`', '`admission-changed`']) {
+    assert.ok(item1.includes(clause), `delegation item 1 is missing: ${clause}`);
+  }
+  assert.ok(
+    delegation.indexOf('`unverified`') > second.index - 1,
+    'the first `unverified` mention must come after item 1',
+  );
+  assert.deepEqual(
+    [...delegation.matchAll(/^(\d+)\. /gm)].map((match) => match[1]),
+    ['1', '2', '3', '4'],
+  );
+
+  const callSite = flat(section(timing, 'Call `finish-packet` once', '\n- '));
+  for (const clause of [
+    '`not-applicable`',
+    'not reserved as `fast`',
+    '`admission-changed`',
+    'the `execution-profiles` delegation rule',
+  ]) {
+    assert.ok(callSite.includes(clause), `the finish-packet call site is missing: ${clause}`);
+  }
+  for (const owned of ['`unverified`', '`verify`', '`model-selection`']) {
+    assert.ok(!callSite.includes(owned), `the call site restates the owner's term: ${owned}`);
+  }
+});
+
 // Invariant: no correction seam after Phase 2 (validator, review, final validator, conflict,
 // retry, completion) can reach a Fast worker; each names the routed Quality implementer.
 test('every correction seam after the initial phase is Quality-only', () => {

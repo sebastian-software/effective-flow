@@ -1,7 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 580
+contextBudget: 590
 ---
 
 # Effective Flow Issue Buddy
@@ -225,8 +225,8 @@ then run `git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' 
 `passId`, `creationOid` = `collect.baseOid`); a failed step stops the pass. Then require
 `git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
 `consent-check` when it applies. Every plan file, lint and publication of this pass uses
-`PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 5
-preserves a plan in it: then transition its record `active` → `aborted` with reason
+`PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 4 or
+Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason
 `plan-preserved`, keep it and report its path and issue. The claim is released either way.
 Run no raw fetch or plan-branch read; WP3/WP4 own bounded Git reads.
 Dry-run reports recovery without completing it. Publishing processes only `authorizedRecovery`,
@@ -327,9 +327,19 @@ No issue prose is in the handoff. WP2 owns the new-file name/header, internal re
 questions as blocking points and no-publication boundary. Require terminal `DONE` or `ABORT`;
 the returned summary grants no publication authority and proves no artifact metadata.
 
+The delegated orchestrator relays the planner's terminal line verbatim. After any planner `ABORT`
+other than `NESTED_SPAWN_UNAVAILABLE`, still run the verification below, which here also admits
+zero new plans; a mutation or ambiguous identity stays a pass stop. With exactly one verified new
+plan, run `publication-metadata` as below and `plan-publication.mjs scan` with
+`{cwd, runState: "unattended", planFile: <relative plan path>}`, reading only its finding ids;
+classify from these two helper results through the ordered mapping, never from the abort text
+(item 4 only for a helper-proven content fault such as a non-empty `data.blocking` or invalid
+metadata, otherwise item 5), preserve the plan as Phase 5 preserves an unpublished one, and skip
+Phase 5. Without a new plan, item 5 applies and nothing is preserved.
+
 Verify no HEAD/index/tracked/unrelated-path mutation or overwrite in `PLANNING_ROOT` and exactly one
 new regular untracked canonical plan directly under its `plan.dir`, associated with this issue.
-Call only
+Besides that abort path's one `scan`, call only
 `plan-lint.mjs publication-metadata` with `{cwd, planDir, files: [<relative plan path>],
 expectedLanguage: <resolved language.workflow de|en>}`. Require a constant-safe successful envelope
 whose projection is exactly `{planFile, blobOid, reviewResult: "approved"|"revision-required",
