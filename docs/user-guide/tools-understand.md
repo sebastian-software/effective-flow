@@ -43,6 +43,17 @@ offers for a decision carries a [fit score](glossary.md#fit-score) for your cont
 `n/10 – <reason>`, while "Decide later" stays unscored; the scores appear only in the dialog and
 are never written into the concept.
 
+**Second entry points:** When the concept gives the same business rules or data a second entry point
+(or adds a runtime component that shares them), its technical direction names the new entry
+point's or component's runtime, call path and owning component, each marked decided or open; only
+what you or the repository settle counts as decided. If the review finds one of them unstated or
+marked decided without a source, one option in its dialog is "Record as open": it writes "open"
+(in a German concept "offen") into the technical direction plus a matching entry in the risks and
+open questions, and blocks nothing. The wording of the concept text is checked with the
+`effective-writing` skill when it is available; only fixes about who acts, who decides or where
+data lives that the concept or the repository (verified context) already answers are applied
+without asking.
+
 **Interplay:** concept → deep concept review → `/effective-flow plan` per work package →
 `/effective-flow build`. The concept workflows never write a plan file themselves; the handoff is
 the ready-to-paste call in the roadmap.

@@ -233,7 +233,21 @@ delegation and the `plan-review` autopilot file review. Before reporting success
    package-manager-generated bin shim (such as `node_modules/.bin/<name>`) counts; a package
    manager, `pnpm exec`, `npx`, a runner, an install, a download or an executable that accepts no
    path never does. Otherwise leave the plan unformatted and add `formatter: unavailable` to
-   `Notes:`. Then run the final mechanical plan-lint.
+   `Notes:`. Then run the final mechanical plan-lint. `plan` entry only: then
+   run `node <skill-root>/scripts/plan-publication.mjs scan` with
+   `{cwd: <retained verified EXECUTION_ROOT>, runState: "unattended", planFile: <plan path relative to EXECUTION_ROOT>}`
+   as one JSON object on standard input through a quoted here-document (`<<'JSON'`), and read
+   `data.blocking`, not the exit code. Empty: continue with step 2. Non-empty: in one correction
+   round, read every listed line before the first edit (or edit bottom-up, since ids carry line
+   numbers), reword each once, rerun this step's formatting and final lint, and scan again; inside
+   the "Decided by score" block reword only a JSON string value, keeping labels and scores. Findings
+   left by that rescan return exactly `ABORT: unattended plan content blocked: <id>, <id>` with the
+   remaining ids in `data.blocking` order, at most the first 20 followed by `(+<k> more)`, never a
+   matched value or plan text. A nonzero exit, an envelope that does not parse or `ok: false` is a
+   terminal `ABORT: <diagnostic>` naming the error code when the envelope carries one. Name
+   forbidden publication strings by description (for example "the co-author trailer", "an
+   attribution footer", "an agent session link"), never literally, and reword any literal the scan
+   blocks.
 2. Run `node <skill-root>/scripts/plan-lint.mjs publication-metadata` with
    `{cwd: <retained verified EXECUTION_ROOT>, planDir: <resolved plan.dir, relative to EXECUTION_ROOT>, files: [<plan path relative to EXECUTION_ROOT>], expectedLanguage: <workflow= value of the received Language context: control line>}`.
 3. Normalize `Review result` from step 2's `reviewResult` (`approved` → `Approved`,

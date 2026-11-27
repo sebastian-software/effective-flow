@@ -111,6 +111,8 @@ validation records limited evidence (checks that need no Git, such as format and
 test files that name or import a changed path, with the full suite left to pull-request CI) instead
 of bypassing the preflight with another full-suite run.
 
+When validation runs through the shared `t3-project` runner, the harness's own command timeout (for example the Claude Code Bash tool's foreground or background timeout) counts from the start of the call and includes the runner's capacity wait, not only the run. Set `--max-wait` so that the harness timeout still comfortably covers the longest wait it allows, including the overrun the runtime instructions document, plus the command's run time, and run a full suite in the background with a timeout sized the same way. A call the harness interrupts is no validation result; before repeating it, follow the runner's instructions in `/opt/t3-project-runtime/INSTRUCTIONS.md`, which own its flags, limits and recovery.
+
 ## Placeholder and directive syntax
 
 The sources use two kinds of placeholders that the build resolves – their expansion is never
@@ -1078,6 +1080,9 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   a mutation dry run keeps it, and a consuming call removes it after verification. An abandoned
   dry run leaves its file until it is removed by hand. Mutations are dry runs unless `--apply` is present;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
+  The operation reference lives in `src/shared/remote-tracker-operations.md`; adding, removing or
+  re-keying an operation requires a matching row, enforced by
+  `test/remote-tracker-operations-reference.test.mjs`.
 - **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
   with one closed-schema JSON object on standard input. The entry point emits one stable JSON
   envelope and uses nonzero exit codes for structured failures. The core owns guarded local
@@ -1517,7 +1522,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 81 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 82 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -2153,6 +2158,8 @@ record; an `INVALID_*` error records `unverified`. A Fast
   - (e) The orchestrator does not itself read the bulk input the spawn reads, so work actually
     moves. For `pr/body-draft` that bulk is the full diff and the plan content; `--stat`,
     `--name-only` and commit messages stay allowed.
+    The criteria `pr` step 9 reads with `issue-acceptance-criteria` are small quoted data the
+    brief carries (`src/shared/pr-criteria-coverage.md`), not bulk input.
 
   `pr/body-draft` (the PR body draft in `pr` step 9) is the first real `mechanical` site; the
   no-op `merge-gate-delegated-run/nested-spawn-probe` is the only other one.

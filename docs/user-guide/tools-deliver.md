@@ -330,6 +330,20 @@ are not reported. The section follows `language.forge`; check, scope and limitat
 the workflow wrote it. Derived description prose makes no test claims of its own, and a description
 you supplied stays unchanged, with the section following it.
 
+**Acceptance criteria section:** When the workflow that hands the branch over supplies its
+issue-lifecycle receipt for the forge, a derived description for a new pull request, or for a plan's
+draft that `pr` finishes, gets an "Acceptance criteria" section after the prose. For each issue the
+receipt references whose author is trusted, `pr` reads the issue's acceptance criteria and lists
+each one with either a pointer to the commit, file or behaviour that covers it or `not covered`.
+The section makes no verification claim. It is skipped in hidden mode, and when the read fails the
+final report names it in one line. The section's format is owned by
+`src/shared/pr-criteria-coverage.md`. Known limits:
+
+- A criterion that needs a check result, such as passing CI, is never marked covered.
+- The section reflects the branch when `pr` derived it and is not updated after later pushes.
+- A direct `pr` run without a receipt reads no criteria.
+- A reused pull request keeps its description and gets no section.
+
 `pr` never starts validation and never invents evidence. When there is nothing trustworthy to show,
 the description carries no section and the final report says why on its verification line:
 

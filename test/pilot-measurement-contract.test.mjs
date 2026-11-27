@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
+import { UNSAFE_RUNTIME_ROOT_REASONS } from '../src/scripts/pilot-measurement-core.mjs';
 import { mergeGateWithDelegatedRun } from './support/merge-gate-source.mjs';
 
 const ROOT = new URL('..', import.meta.url);
@@ -162,4 +163,16 @@ test('closed schemas reject unknown keys and final records omit raw timing conti
   ]) {
     assert.doesNotMatch(finalizedRecord, new RegExp(forbidden));
   }
+});
+
+// Invariant: the protocol guide lists exactly UNSAFE_RUNTIME_ROOT_REASONS, so its copy of the
+// closed reason set cannot drift from the export.
+test('the protocol guide lists exactly the exported UNSAFE_RUNTIME_ROOT_REASONS', () => {
+  const guide = source('docs/developer-guide/model-tiering-pilot-protocol.md').replace(/\s+/g, ' ');
+  const listed = guide.match(/one closed value from `UNSAFE_RUNTIME_ROOT_REASONS`: ([^.]+)\./);
+  assert.ok(listed, 'the guide must list the closed runtime-root reasons');
+  assert.deepEqual(
+    [...listed[1].matchAll(/`([^`]+)`/g)].map((match) => match[1]),
+    [...UNSAFE_RUNTIME_ROOT_REASONS],
+  );
 });

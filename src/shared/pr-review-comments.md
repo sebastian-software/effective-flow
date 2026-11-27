@@ -326,7 +326,7 @@ when: a `review-thread-reply`, `pr-comment` or `review-create` failed with `muta
 ### No history rewriting
 
 New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –
-consistent with `{{SKILL:pr}}` and "Updating existing PRs" in the delivery
+consistent with `{{SKILL:pr}}` and "Update existing PRs" in the delivery
 and worktree integration. No `commit --amend`, no rebase, no squash, no force-push.
 If the push is rejected because of diverged remote history, stop and report the conflict
 instead of overwriting history.
