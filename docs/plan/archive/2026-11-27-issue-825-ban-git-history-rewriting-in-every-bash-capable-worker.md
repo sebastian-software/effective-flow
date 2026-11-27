@@ -1,6 +1,6 @@
 # Ban Git history rewriting in every Bash-capable worker
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #825
@@ -52,13 +52,13 @@ A worker runs in a delivery worktree whose branch may already have an open pull 
 - **Fixed fragment text.** The fragment, the baseline delta and the tests all pin this text, so it is fixed here rather than left to the implementer:
 
   > **Git history.** Never rewrite or move back the Git history of the checkout, branches and remote you were handed: no `rebase` of any kind, including `pull --rebase` or a `pull` under `pull.rebase`; no `commit --amend`; no squash; no `reset --hard` at all and no `reset` of any other mode to an earlier commit; no command that points an existing branch at another commit, such as `branch -f`, `checkout -B` or `update-ref`; and no force-push in any form, `--force-with-lease` included. Report a rejected push, or a branch that is behind or conflicts with its base, to the orchestrator instead of updating it. Git commands inside a temporary or fixture repository you create yourself are not covered.
-
   - "Of any other mode to an earlier commit" keeps `git reset -- <path>` (unstaging) allowed. `reset --hard` stays banned without exception, because workers leave the run's work uncommitted in the delivery worktree (`src/shared/caller-owned-commit.md:14-21`) and a `reset --hard` would destroy it.
   - "Points an existing branch at another commit" keeps an ordinary `git commit`, `git fetch` and a fast-forward allowed.
   - The fixture clause keeps legitimate test work possible. Several tests create temporary repositories and run `reset --hard`, `commit --amend`, `update-ref` or a rebase inside them, for example `test/effective-flow-state-worktree.test.mjs:679` and `test/autopilot-delivery-base.test.mjs:267`.
   - The rejected-push clause mirrors `src/shared/worktree-integration.md:389-390`.
   - "Instead of updating it" also rules out a worker-made merge of the base, which matches `worktree-integration.md:386-390`.
   - Every item of the issue's list (`rebase`, `commit --amend`, squash, `reset --hard`, force-push) is kept. The list was widened because a model could read the shorter one as exhaustive: `reset --soft`/`--mixed` to an earlier commit followed by a new commit, `branch -f`, `pull --rebase` and `--force-with-lease` would drop `creationOid` just as well. `plan-publication.md:368-370` already names `reset --hard` and `--force-with-lease` explicitly.
+
 - **Unconditional, including direct invocation.** A user can start a native worker directly. The ban then also refuses that user's explicit rebase request. This is deliberate and matches `merge-conflict-resolver`.
 - **Non-goal: worker commit and push authority.** Orchestrators own the commits: `src/tools/build.md:373`, `src/tools/refactor.md:408`, `src/tools/maintain.md:91`, and `src/shared/caller-owned-commit.md:14-21`. No worker source forbids a plain `git commit` or `git push`.
   - This plan bans only rewriting and moving back history, which also covers rewriting a commit a worker made itself.
@@ -201,9 +201,11 @@ Not relevant: no user interface.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-BAT","question":"Which agents receive the eager worker-git-history include (and are enforced by the guard test)?","options":["Write-capable workers","Every agent except the resolver","Claude Bash criterion only","Decide later"],"escape":["Decide later"],"scores":[{"label":"Write-capable workers","score":8,"reason":"Its criterion follows real shell and write capability on Claude and Codex, so it closes the code-documenter workspace-write gap for one extra name, though portable reviewers stay uncovered."},{"label":"Every agent except the resolver","score":6,"reason":"This covers portable reviewers that run in shell-capable general-purpose subagents, but it puts a redundant ban into five read-only reviewers and widens the baseline delta and pinned stdout."},{"label":"Claude Bash criterion only","score":5,"reason":"It matches the issue's scope exactly and has the smallest delta, but it knowingly leaves code-documenter's Codex workspace-write shell without the ban and records that gap only as a limitation."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review

@@ -30,6 +30,10 @@ task-tracking
 delegation-mandate
 ```
 
+```include
+worker-git-history
+```
+
 ## Recommended skills
 
 - `effective-delivery`

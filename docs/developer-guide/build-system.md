@@ -816,7 +816,10 @@ forwarding alias a rename ships, and the `contextBudget` line every tool needs.
    [`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md). Every spawn
    instruction the tool writes carries a spawn-site marker and a row in the spawn-site table of
    `src/shared/model-tiers.md` (see "Model tiers"); a new worker role needs no row of its own,
-   because a `role:` entry resolves to its `tier:`.
+   because a `role:` entry resolves to its `tier:`. A new agent whose `claude.tools` contains
+   `Bash`, or whose `codex.sandbox_mode` is not `read-only`, also embeds the eager
+   `worker-git-history` include after `delegation-mandate`;
+   `test/worker-git-history-contract.test.mjs` enforces it.
 7. If the tool writes into the repository or onto the forge, decide how it behaves in hidden mode
    (`visibility: hidden`, see [`configuration.md`](configuration.md#hidden-mode)). Its artifacts
    must stay under the forced local directories and out of every staged path. Its commit messages,
@@ -2135,8 +2138,10 @@ record; an `INVALID_*` error records `unverified`. A Fast
   by the parent-only compact-checkpoint instruction, then that instruction's exact approved
   conditional-checkpoint replacement (`delegation-mandate-conditional-checkpoint`) within the
   worker-start bullet, and the executable model-selection sentence on the mandate's workflow
-  boundary. Each selected edit must match exactly once, and its resulting body must equal the
-  working body byte for byte; unrelated drift fails. A base worker added since the pinned base
+  boundary. The `worker-git-history` delta inserts that fragment's paragraph between the
+  `model-tiers` pointer and `## Recommended skills` in every write-capable worker except the
+  merge-conflict resolver. Each selected edit must match exactly once, and its resulting body must
+  equal the working body byte for byte; unrelated drift fails. A base worker added since the pinned base
   passes only when `EXPECTED_ADDED_WORKERS` names it, it is absent at base and present in both
   working native inventories; it has no bytes to compare, and any other membership change fails.
   These
