@@ -28,6 +28,7 @@ export const DELIVERY_SELECTION_OPERATIONS = Object.freeze([
   'upstream-status',
   'fast-forward',
   'committed-range',
+  'publication-preflight',
 ]);
 
 // Operations that only preview their write unless the caller passes `apply: true`.
@@ -2950,6 +2951,132 @@ export async function committedRange(input, options = {}) {
   };
 }
 
+// Every reason `publication-preflight` can return, in the fixed order it reports them.
+export const PUBLICATION_PREFLIGHT_REASONS = Object.freeze([
+  'head-is-source-branch',
+  'head-is-base',
+  'host-policy-restricted',
+  'helper-probe-failed',
+  'pull-request-create-unsupported',
+  'host-tool-not-supported-by-pr',
+  'host-tool-no-explicit-head',
+  'host-tool-bound-to-other-branch',
+]);
+
+const HOST_POLICIES = Object.freeze(['unrestricted', 'restricted']);
+
+function optionalBranchName(value, label) {
+  if (value === null) return null;
+  return requireString(value, label);
+}
+
+function publicationProbe(value, hostPolicy) {
+  if (value === null) {
+    if (hostPolicy !== 'restricted') {
+      fail('INVALID_PAYLOAD', 'writer.probe may be null only with hostPolicy restricted', {
+        field: 'writer.probe',
+      });
+    }
+    return null;
+  }
+  requireObject(value, 'writer.probe');
+  if (typeof value.ok !== 'boolean') {
+    fail('INVALID_PAYLOAD', 'writer.probe.ok must be a boolean', { field: 'writer.probe.ok' });
+  }
+  // A failed helper call carries its stable error code; a successful one carries none.
+  exactKeys(
+    value,
+    value.ok ? ['ok', 'pullRequestCreate'] : ['ok', 'code', 'pullRequestCreate'],
+    'writer.probe',
+  );
+  if (![true, false, null].includes(value.pullRequestCreate)) {
+    fail('INVALID_PAYLOAD', 'writer.probe.pullRequestCreate must be true, false or null', {
+      field: 'writer.probe.pullRequestCreate',
+    });
+  }
+  return {
+    ok: value.ok,
+    code: value.ok ? null : requireString(value.code, 'writer.probe.code'),
+    pullRequestCreate: value.pullRequestCreate,
+  };
+}
+
+function publicationWriter(value, hostPolicy) {
+  requireObject(value, 'writer');
+  if (value.kind === 'provider-helper') {
+    exactKeys(value, ['kind', 'probe'], 'writer');
+    return { kind: value.kind, probe: publicationProbe(value.probe, hostPolicy) };
+  }
+  if (value.kind === 'host-tool') {
+    exactKeys(value, ['kind', 'name', 'explicitHead', 'boundBranch'], 'writer');
+    if (typeof value.explicitHead !== 'boolean') {
+      fail('INVALID_PAYLOAD', 'writer.explicitHead must be a boolean', {
+        field: 'writer.explicitHead',
+      });
+    }
+    return {
+      kind: value.kind,
+      name: requireString(value.name, 'writer.name'),
+      explicitHead: value.explicitHead,
+      boundBranch: optionalBranchName(value.boundBranch, 'writer.boundBranch'),
+    };
+  }
+  fail('INVALID_PAYLOAD', 'writer.kind must be provider-helper or host-tool', {
+    field: 'writer.kind',
+  });
+}
+
+// Classifies the pull-request writer the orchestrator observed. It is pure: no runner, no Git, no
+// state. Only the provider helper that `pr` uses can open a pull request with an explicit head, so
+// every host-tool writer is unsupported. Without `head` and `base` the scope is `writer`, and the
+// head-dependent reasons are not evaluated.
+export function publicationPreflight(input) {
+  requireObject(input, 'input');
+  const pair = Object.hasOwn(input, 'head') || Object.hasOwn(input, 'base');
+  exactKeys(
+    input,
+    pair ? ['hostPolicy', 'writer', 'source', 'head', 'base'] : ['hostPolicy', 'writer', 'source'],
+    'input',
+  );
+  if (!HOST_POLICIES.includes(input.hostPolicy)) {
+    fail('INVALID_PAYLOAD', 'hostPolicy must be unrestricted or restricted', {
+      field: 'hostPolicy',
+    });
+  }
+  const hostPolicy = input.hostPolicy;
+  const writer = publicationWriter(input.writer, hostPolicy);
+  exactKeys(input.source, ['branch'], 'source');
+  const sourceBranch = optionalBranchName(input.source.branch, 'source.branch');
+  const head = pair ? requireString(input.head, 'head') : null;
+  const base = pair ? requireString(input.base, 'base') : null;
+
+  const helper = writer.kind === 'provider-helper' ? writer : null;
+  const tool = writer.kind === 'host-tool' ? writer : null;
+  const applies = {
+    'head-is-source-branch': pair && sourceBranch !== null && head === sourceBranch,
+    'head-is-base': pair && head === base,
+    'host-policy-restricted': hostPolicy === 'restricted',
+    'helper-probe-failed': helper?.probe?.ok === false,
+    'pull-request-create-unsupported': helper?.probe?.pullRequestCreate === false,
+    'host-tool-not-supported-by-pr': tool !== null,
+    'host-tool-no-explicit-head': tool !== null && !tool.explicitHead,
+    'host-tool-bound-to-other-branch':
+      pair && tool !== null && tool.boundBranch !== null && tool.boundBranch !== head,
+  };
+  const reasons = PUBLICATION_PREFLIGHT_REASONS.filter((reason) => applies[reason]);
+  return {
+    status: reasons.length === 0 ? 'supported' : 'unsupported',
+    scope: pair ? 'pair' : 'writer',
+    head,
+    base,
+    writer: writer.kind,
+    hostPolicy,
+    reasons,
+    // The stable helper error code behind `helper-probe-failed`, else null.
+    probeCode: applies['helper-probe-failed'] ? helper.probe.code : null,
+  };
+}
+
 export async function executeOperation(operation, input = {}, options = {}) {
   try {
     if (!DELIVERY_SELECTION_OPERATIONS.includes(operation)) {
@@ -2963,6 +3090,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
     else if (operation === 'upstream-status') data = await upstreamStatus(input, options);
     else if (operation === 'fast-forward') data = await fastForwardUpstream(input, options);
     else if (operation === 'committed-range') data = await committedRange(input, options);
+    else if (operation === 'publication-preflight') data = publicationPreflight(input);
     else data = await reconcileDelivery(input, options);
     return { ok: true, operation, data, dryRun: isDryRun(operation, options.apply) };
   } catch (error) {

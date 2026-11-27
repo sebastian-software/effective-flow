@@ -193,6 +193,7 @@ const FIXTURES = {
   'sf-label-migrate': { issues: [{ number: 1, labels: ['sf-fix'] }] },
   'pr-read': { number: 1 },
   'pr-acceptance-sources': { number: 1, headSha: SHA },
+  'issue-acceptance-criteria': { numbers: [1] },
   'pr-comments-read': { number: 1 },
   'pr-reviews-read': { number: 1 },
   'pr-list': {},

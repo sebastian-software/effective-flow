@@ -626,6 +626,24 @@ knownOids}`, never fetching) serves the lazy `deliver-committed-range` route, wh
   resolves to an `origin` remote-tracking ref and the checkout is attached to a non-base branch;
   otherwise the read fails and a failed read adds no notice.
 
+  The helper's read-only `publication-preflight` operation classifies the pull-request writer that
+  step 1.1 observed, with no Git access, runner, or state. Its payload carries `hostPolicy`
+  (`unrestricted` or `restricted`), `writer`, `source`, and optionally `head` and `base`. The writer
+  is `{kind: "provider-helper", probe}`, where `probe` is `null` only under `restricted` and
+  otherwise `{ok, code?, pullRequestCreate}`, or
+  `{kind: "host-tool", name, explicitHead, boundBranch}`; `source` is `{branch}`, with `null` for a
+  detached checkout. Without `head` and `base` the scope is `writer` and the head-dependent reasons
+  are not evaluated; with both it is `pair`. The result carries `status`
+  (`supported` or `unsupported`), `scope`, `reasons` in the fixed order `head-is-source-branch`,
+  `head-is-base`, `host-policy-restricted`, `helper-probe-failed`, `pull-request-create-unsupported`,
+  `host-tool-not-supported-by-pr`, `host-tool-no-explicit-head`, `host-tool-bound-to-other-branch`,
+  and `probeCode`, the helper's error code behind `helper-probe-failed`. Every host-tool writer is
+  unsupported, because `pr` publishes only through the provider helper's `pr-create`. The lazy
+  `deliver-publication-preflight` fragment owns the stop reports and the alternatives. The operation
+  has three call sites: step 1.1 in writer scope before the upstream check, step 3.3 in pair scope
+  with the derived head and the resolved base before any branch is created, and the resume path,
+  which runs the same observation and a pair-scope call for the record's branch before step 4.3.
+
 - `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
   validates files. A delivery caller supplies a verified execution-location receipt, declared path
   group, and expected index-tree OID; the result reports enough exact Git state for the caller to
@@ -1126,9 +1144,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 80 non-destructive or bounded rules, in four
+a prose removal of that state too. `setup` can write 82 non-destructive or bounded rules, in four
 families (twenty-five runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 47 read-only `remote-tracker` operations (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 49 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

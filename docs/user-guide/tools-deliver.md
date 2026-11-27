@@ -42,10 +42,12 @@ more than one plausible scope, `deliver` asks you to refine the selection in nor
 If the exact files and states still cannot be agreed, it stops without changing Git or the forge.
 This manifest confirmation is the workflow's sole routine approval; the only questions that can come
 before it are the [resume and release questions](#resuming-or-releasing-a-failed-delivery) for a
-retained failed delivery and the conditional upstream questions described under
-[When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream). The
-[committed-range route](#publishing-commits-you-already-made) replaces it with at most its provider
-question or one focused publish question. If source state drifts after
+retained failed delivery, one provider question (`github` or `forgejo`) that is asked once when the
+forge host is ambiguous, and the conditional upstream questions described under
+[When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream). An unanswered
+or skipped provider question, and a non-interactive run, stop the run with nothing changed. The
+[committed-range route](#publishing-commits-you-already-made) replaces the manifest confirmation
+with at most its provider question or one focused publish question. If source state drifts after
 confirmation, `deliver` displays the updated manifest and asks you to confirm it again before it
 continues.
 
@@ -90,7 +92,8 @@ confirmation round of its own and creates no branch, worktree, commit, or manife
   **Cancel**: nothing is pushed. When the run must ask which forge it is (`github` or `forgejo`),
   that is its only question: a condition that would otherwise ask the Publish or Cancel question
   then ends with a notice instead, and an unanswered forge question also ends with a notice, with
-  nothing pushed.
+  nothing pushed. An answer to the provider question at the start of the run counts as this
+  question, so it is not asked again.
 - **Dirty checkouts:** any staged, unstaged, or untracked change keeps the selection path above.
   When the configured base resolves to an `origin` remote-tracking ref and the checkout is attached
   to a non-base branch, its delivery adds one notice line that committed work on the branch is not
@@ -123,8 +126,9 @@ counts, and a record that another run still holds is reported and left alone.
   An unanswered question or a non-interactive run starts a new delivery and keeps the record.
 - **What a resume skips and reruns.** It skips the upstream check and fast-forward, the selection and
   its confirmation, the commit grouping, branch and worktree creation, the transfer, and the project
-  setup. It reruns the repository validation, the exact-diff reconcile against the recorded progress,
-  and the source comparisons against a fresh snapshot, then commits only the remaining groups from the
+  setup. It reruns the [publication-path check](#when-the-pull-request-cannot-target-the-delivery-branch)
+  for the recorded branch, the repository validation, the exact-diff reconcile against the recorded
+  progress, and the source comparisons against a fresh snapshot, then commits only the remaining groups from the
   first uncommitted one and continues with the pull request and report as usual. Base branch and
   languages come from the recorded progress. A commit that was created but never recorded, for
   example after a helper failure, is accepted once the same proofs hold. A group that a failing commit
@@ -132,6 +136,8 @@ counts, and a record that another run still holds is reported and left alone.
   only while the index still stages exactly that group, and committed again; staged content that
   changed since then, a newer entry beside the group included, stops the resume and stays staged. If
   the resume fails again, the record returns to its failed state and can be resumed the same way.
+  When the publication-path check stops the resume, the record returns to `aborted` before anything
+  is changed, and a later run from a supported context resumes it the same way.
 - **Release.** A candidate that cannot be resumed, for example because the visibility is weaker or
   its branch history no longer matches the recorded progress, is listed with the way it can be
   released and, with recorded progress, the exact paths a release discards. A separate **Release**
@@ -234,6 +240,43 @@ its own remote branch, newer content on the configured base is not pulled in, so
 base can still stop `deliver` later, when it transfers the confirmed states to the delivery
 worktree.
 
+#### When the pull request cannot target the delivery branch
+
+`deliver` promises a pull request, and `pr` opens one only through the provider helper, which names
+the head and the base branch explicitly. Before it changes anything, `deliver` checks that this
+path can work, and stops early when it cannot. It checks at two points:
+
+- **At the start,** before the upstream check, any fast-forward, and the selection. Only the resume
+  and release questions and the provider question can come earlier. `deliver` reads the policy of
+  your host from its instructions and tool policy, and calls the provider helper's
+  `repository-resolve` and `probe`. A restricted policy makes no helper call and asks no question.
+  This stop has no derived branch name yet, so it names the configured `delivery.baseBranch` value
+  as written and, as the head, either the fresh `<delivery.branchPrefix>/deliver/<slug>` pattern for
+  a selected change or the current branch when you publish commits you already made.
+- **Just before the branch is created,** for a selected change, with the real head and the
+  resolved local base. Publishing commits you already made creates no branch and has only the first
+  check.
+
+A stop reports the writer it found and every reason with the capability it lacks: the head would be
+the source branch or the base, the host policy does not permit the helper's pull-request write, the
+helper call failed (with its remediation), the provider CLI cannot create pull requests, or the
+allowed host tool has no explicit head, is bound to another branch, or is not supported by `pr`. It
+says that no delivery branch, worktree, commit, push, or pull request was created by this delivery,
+and names a fast-forward you confirmed earlier when there was one. A supported writer continues with
+no further question.
+
+The supported alternatives are to fix the helper as its remediation says, to run `deliver` again
+from a context whose host policy permits the helper's pull-request write, or to create and publish
+the branch outside this workflow. A compare URL or a manual handoff is not a delivered pull request,
+so `deliver` does not offer one in its place. It never switches, pushes, or publishes your source
+branch, bypasses the host policy, merges to work around it, or uses another transport.
+
+The check cannot prove a write permission it never exercises, and it sees a host restriction only
+when the host's instructions, tool policy, or runtime information state it. A restriction it cannot
+see, or a helper write denied at run time after a successful probe, still fails late: `pr` stops
+after the push, `deliver` keeps the committed branch and reports its exact state, and no other
+transport is used.
+
 ## `/effective-flow commit`
 
 **Purpose:** Creates a descriptive commit message for already **staged** changes and
@@ -329,6 +372,20 @@ results with one notice that the recorded results do not match the content of `<
 are not reported. The section follows `language.forge`; check, scope and limitation text stays as
 the workflow wrote it. Derived description prose makes no test claims of its own, and a description
 you supplied stays unchanged, with the section following it.
+
+**Acceptance criteria section:** When the workflow that hands the branch over supplies its
+issue-lifecycle receipt for the forge, a derived description for a new pull request, or for a plan's
+draft that `pr` finishes, gets an "Acceptance criteria" section after the prose. For each issue the
+receipt references whose author is trusted, `pr` reads the issue's acceptance criteria and lists
+each one with either a pointer to the commit, file or behaviour that covers it or `not covered`.
+The section makes no verification claim. It is skipped in hidden mode, and when the read fails the
+final report names it in one line. The section's format is owned by
+`src/shared/pr-criteria-coverage.md`. Known limits:
+
+- A criterion that needs a check result, such as passing CI, is never marked covered.
+- The section reflects the branch when `pr` derived it and is not updated after later pushes.
+- A direct `pr` run without a receipt reads no criteria.
+- A reused pull request keeps its description and gets no section.
 
 `pr` never starts validation and never invents evidence. When there is nothing trustworthy to show,
 the description carries no section and the final report says why on its verification line:

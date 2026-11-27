@@ -37,8 +37,9 @@ releases of those managers. After every source or installer change, use the same
 
 For changes to Claude Code setup allow rules or subagent spawn and progress records, run
 `pnpm test:contracts` before the full local suite and fix any failures first. It reuses the
-normal test preflight and runs the two contract files in full. Use `t3-project` where required
-by the checkout. The focused check does not replace `pnpm test` or change the required CI checks.
+normal test preflight and runs the two contract files in full. Run these commands through the
+execution environment the checkout requires, if any. The focused check does not replace
+`pnpm test` or change the required CI checks.
 
 For delivery evidence, run the focused check on a clean candidate commit in a checkout that
 will not be edited during validation. Record the tested commit SHA, the checkout status before
@@ -111,7 +112,13 @@ validation records limited evidence (checks that need no Git, such as format and
 test files that name or import a changed path, with the full suite left to pull-request CI) instead
 of bypassing the preflight with another full-suite run.
 
-When validation runs through the shared `t3-project` runner, the harness's own command timeout (for example the Claude Code Bash tool's foreground or background timeout) counts from the start of the call and includes the runner's capacity wait, not only the run. Set `--max-wait` so that the harness timeout still comfortably covers the longest wait it allows, including the overrun the runtime instructions document, plus the command's run time, and run a full suite in the background with a timeout sized the same way. A call the harness interrupts is no validation result; before repeating it, follow the runner's instructions in `/opt/t3-project-runtime/INSTRUCTIONS.md`, which own its flags, limits and recovery.
+When validation runs through an execution environment that can queue or limit commands, the
+harness's own command timeout counts from the start of the call and includes any wait for
+admission, not only the run. Use the environment's own limit on that wait, and size the harness
+timeout so it covers that limit plus the command's run time; a full suite runs in the background
+with a timeout sized the same way. A call the harness interrupts is no validation result. Before
+repeating it, follow the execution environment's own documentation, which owns its flags, limits
+and recovery.
 
 ## Placeholder and directive syntax
 
@@ -1522,7 +1529,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 81 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 82 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1837,6 +1844,11 @@ and directive syntax").
   paths included; a dirty checkout never loads it. It nests lazy pointers to
   `base-branch-resolution` (range-base derivation) and `remote-helper-contract` (the existing-PR
   lookup), and holds the route's only `ask` fence, which is unscored.
+  `deliver-publication-preflight` is the single-consumer `deliver` fragment for the publication-path
+  stop: the host-tool writer shape, the stop report, and the supported alternatives. Its one
+  pointer sits at step 1.1, after the host policy is set, and fires when that policy is
+  `restricted` or a `publication-preflight` call (step 1.1, step 3.3, or a resume) returns
+  `unsupported`; a supported unrestricted run never loads it.
   `deliver-partial-diff-resume` (the resume and release entry with its step map) is the single-consumer
   `deliver` fragment lazy from step 1.1, loaded only when `worktree inspect` lists a retained
   `partial-diff` record. `worktree-partial-diff-recovery` (ledger schema, size bound, proofs and call
@@ -2158,6 +2170,8 @@ record; an `INVALID_*` error records `unverified`. A Fast
   - (e) The orchestrator does not itself read the bulk input the spawn reads, so work actually
     moves. For `pr/body-draft` that bulk is the full diff and the plan content; `--stat`,
     `--name-only` and commit messages stay allowed.
+    The criteria `pr` step 9 reads with `issue-acceptance-criteria` are small quoted data the
+    brief carries (`src/shared/pr-criteria-coverage.md`), not bulk input.
 
   `pr/body-draft` (the PR body draft in `pr` step 9) is the first real `mechanical` site; the
   no-op `merge-gate-delegated-run/nested-spawn-probe` is the only other one.
