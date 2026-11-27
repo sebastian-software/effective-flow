@@ -3186,12 +3186,7 @@ test('no source outside the retired-key contract pairs a retired key with fallba
 // Each fragment is pinned by the *trigger token* of its decision point, never by the whole
 // sentence, so rewording the clause stays free while dropping the decision point fails.
 test('every merge-gate lazy pointer names the decision point that loads it', () => {
-  const triggers = new Map(
-    [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)].map((match) => [
-      match[1].trim(),
-      (match[2] ?? '').trim(),
-    ]),
-  );
+  const pointers = [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)];
 
   const pinned = [
     // Deferred by the context-slimming work:
@@ -3303,6 +3298,12 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
         'Phase 0 having resolved a non-observer merge or report mode immediately before Phase 1',
     },
     {
+      fragment: 'pilot-measurement',
+      trigger: /observer-only Phase 5\.5.*suspended observation handle/,
+      decision:
+        'an observer-only wake with a suspended observation handle before issue observation',
+    },
+    {
       // A delegated gate run learns its host only from the `Host: t3-code` input line, so a clause
       // naming only the T3 Code environment would leave every delegated run on T3 without the
       // fragment and waiting through its non-T3 path. Both halves are required.
@@ -3327,21 +3328,21 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
   ];
 
   for (const { fragment, trigger, decision } of pinned) {
-    const when = triggers.get(fragment);
+    const triggers = pointers
+      .filter((match) => match[1].trim() === fragment)
+      .map((match) => (match[2] ?? '').trim());
     assert.ok(
-      when !== undefined,
+      triggers.length > 0,
       `src/tools/merge-gate.md must keep its lazy-include pointer for ${fragment}`,
     );
-    assert.notEqual(
-      when,
-      '',
+    assert.ok(
+      triggers.every(Boolean),
       `the ${fragment} pointer in src/tools/merge-gate.md must carry a non-empty when: clause - ` +
         `without it the fragment ships with no documented moment to load it`,
     );
-    assert.match(
-      when,
-      trigger,
-      `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
+    assert.ok(
+      triggers.some((when) => trigger.test(when)),
+      `the ${fragment} pointer must name its decision point (${decision}); got: ${triggers.join('; ')}`,
     );
   }
 });
@@ -3439,7 +3440,10 @@ test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 
     ),
     'condition 1 must stay the merge authorization and be excluded only from the projection',
   );
-  assert.match(finalization, /`merged` only when a fresh Phase-5 read verifies the merge/);
+  assert.match(
+    finalization,
+    /`merged` only when a fresh Phase-5 read or the observer-only wake verifies the merge/,
+  );
   assert.match(
     finalization,
     /`failed` for a reserved merge-mode run that did not reach a verified merge/,
@@ -3453,9 +3457,9 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
   const fragment = source('src/shared/pilot-measurement.md');
   const phase6 = section(gate, '### Phase 6: Summary', '\n## ');
   ordered(
-    phase6,
-    'Before step 1',
-    '`## Phase 6 observation finalization`',
+    prose(phase6),
+    'Before step 1, finalize a reserved or restored pilot observation only if it has not already been finalized',
+    "per `pilot-measurement`'s Phase 6",
     '1. Delete the wisdom file',
   );
   assert.equal(

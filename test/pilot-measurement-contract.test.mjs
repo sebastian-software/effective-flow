@@ -71,9 +71,10 @@ test('reservation, correction counters, and exactly-once finalization are placed
     '### Phase 1:',
   );
   ordered(
-    mergeGate,
+    mergeGate.replace(/\s+/g, ' '),
     '### Phase 6: Summary',
-    'Phase 6 observation finalization',
+    'finalize a reserved or restored pilot observation only if it has not already been finalized',
+    "per `pilot-measurement`'s Phase 6",
     'Delete the wisdom file',
   );
   assert.match(fragment, /Run this section only after Phase 0 has resolved a non-observer/);
