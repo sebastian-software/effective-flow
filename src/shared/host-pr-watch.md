@@ -81,15 +81,29 @@ running environment identifies T3 Code.
 reported check not yet completed, restricted to checks that are required or of unstated requiredness
 when `mergeGate.requireAllChecks` is `false`. An empty set continues to steps 3 and 4 in the same
 round. A non-empty set suspends, after `## Early entry` of `merge-gate-configured-reviewer` where
-that route is loaded. An unreported check list (`checksReported: false`) never suspends: it
-continues like an empty set, and Phase 2's loop-exit rule for an unreported list decides it – step
-2's once-per-run `checks-pending` handling or the declared no-CI policy's skip.
+that route is loaded, subject to the "No-wake stop". An unreported check list
+(`checksReported: false`) never suspends: it continues like an empty set, and Phase 2's loop-exit
+rule for an unreported list decides it – step 2's once-per-run `checks-pending` handling or the
+declared no-CI policy's skip.
 
 **Bot order** (configured-reviewer Phase 3). Run steps 1 to 3 for every configured bot first, then
 post any stale-verdict re-trigger of step 5, before any delegation. A bot that is not **has run**,
 or whose re-trigger awaits its answer under step 5, is pending. With any bot pending, the run
 suspends once, before any step-5 delegation, so nothing is pushed before the suspend. Step-5
 delegations start only once no bot is pending. Each bot's has-run decision stays its own.
+
+**No-wake stop.** Before any suspension, first or resumed, and for kind `checks` after
+`## Early entry` of `merge-gate-configured-reviewer` where that route is loaded, the run takes
+"Report-and-stop, run side" instead of suspending in two cases: (a) under
+`mergeGate.requireAllChecks: true`, every check of a kind `checks` pending set reports
+`required: false`; (b) for kind `bot`, every pending bot is **running** by its configured
+`.check`, at least one matching entry being `PENDING`, every matching `PENDING` entry reports
+`required: false`, and no re-trigger answer is outstanding for it. Its report also names, quoted
+as data, what the same read already makes actionable: for kind `checks` each check failing as
+Phase 2 step 4 defines it, for kind `bot` each **has run** bot with items step 5 would hand over
+after its three exclusion rules, without its stop check or repair evaluation, by login with
+their count (unresolved threads plus one per pending changes-requested review), never their
+text; re-entry helps once the no-wake checks or bots have completed.
 
 **Suspend.** After finishing any push of the round, append a **wait record** to the wisdom file:
 kind `checks` or `bot`; the pending check names or bot logins; the observed head SHA; the round; the
@@ -129,10 +143,8 @@ pending bot is such a bot, that resume instead takes step 5's "did not answer wi
 continuation, recording the stale-verdict state and handing the verdict's items to
 `{{SKILL:iterate}}` as on every other host. For an unconfirmed re-trigger that condition reads
 "no review absent from the recorded baseline". Any other pending bot or check at the cap keeps report-and-stop. A changed or progress resume, a suspend of a different kind, and
-any return other than `SUSPENDED host-pr-watch` reset the count to zero. Where a resume under
-`mergeGate.requireAllChecks: true` finds every still-pending check reporting `required: false`, it
-does not suspend again and takes that path, naming them. `mergeGate.maxRounds` bounds changed
-resumes as it bounds every round.
+any return other than `SUSPENDED host-pr-watch` reset the count to zero. `mergeGate.maxRounds`
+bounds changed resumes as it bounds every round.
 
 **Report-and-stop, run side.** The run returns `DONE` with a report naming the pending checks or
 bots and the re-entry `{{SKILL:merge-gate}} <PR>`, and merges nothing.
@@ -143,14 +155,15 @@ bots and the re-entry `{{SKILL:merge-gate}} <PR>`, and merges nothing.
 that carried `Host: t3-code`, also from one carrying `Relayed answer: none`, and re-dispatch each
 such return at most once. An invalid one is reported and ends the gate: dispatch nothing more,
 delete the wisdom file, and unwatch the pull request if this session watched it. A gate run may
-suspend any number of times; only "Bounds" limits the sequence.
+suspend any number of times; only "Bounds" limits the sequence of suspensions; the "No-wake
+stop" ends the run before one.
 
 **Watch.** On the first suspension of a gate run, call `watch_pull_request` once; later suspensions
 of that gate run call nothing, because the watch stays on. Before ending the turn, print one visible
 line naming the pending wait, stating that the suspension has no time bound on T3 Code and that the
-user can continue or stop. It also warns, where none of the pending checks is required, or for kind
-`bot` where a pending bot's has-run signal is a configured `.check` that is not required, that such
-a pass may not wake the gate. Then end the turn.
+user can continue or stop. It also warns, where no pending check is required but at least one is
+of unstated requiredness, or for kind `bot` where a pending bot's configured `.check` has not
+reported yet or reports no requiredness, that such a pass may not wake the gate. Then end the turn.
 
 **Wakes and requests.** Route each wake to the suspended gate run of the pull request it names. A
 wake for a pull request with no suspended gate run, or while no suspension awaits re-dispatch, such
@@ -179,8 +192,8 @@ more, delete the wisdom file, and unwatch if this session watched. It merges not
 **Inline run.** A top-level inline gate run records the wait as above and follows this caller
 section itself: watch once, the visible line, end the turn, stop on request, unwatch, report-and-stop.
 On each wake it continues in this session from its wisdom file with fresh reads, under the same
-round, unchanged-wake and optional-check rules. An inline run that is itself a delegated sub-agent
-never watches and takes the caller's report-and-stop path.
+round and unchanged-wake rules and the "No-wake stop". An inline run that is itself a delegated
+sub-agent never watches and takes the caller's report-and-stop path.
 
 ### iterate: top-level wait
 
