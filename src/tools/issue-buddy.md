@@ -333,9 +333,10 @@ zero new plans; a mutation or ambiguous identity stays a pass stop. With exactly
 plan, run `publication-metadata` as below and `plan-publication.mjs scan` with
 `{cwd, runState: "unattended", planFile: <relative plan path>}`, reading only its finding ids;
 classify from these two helper results through the ordered mapping, never from the abort text
-(item 4 only for a helper-proven content fault such as a non-empty `data.blocking` or invalid
-metadata, otherwise item 5), preserve the plan as Phase 5 preserves an unpublished one, and skip
-Phase 5. Without a new plan, item 5 applies and nothing is preserved.
+(a non-empty `data.blocking` from that `scan` is item 4; a `publication-metadata` refusal is
+item 5, because an interrupted planner can leave metadata unwritten and the refusal names no
+failed check; anything else is item 5), preserve the plan as Phase 5 preserves an unpublished one,
+and skip Phase 5. Without a new plan, item 5 applies and nothing is preserved.
 
 Verify no HEAD/index/tracked/unrelated-path mutation or overwrite in `PLANNING_ROOT` and exactly one
 new regular untracked canonical plan directly under its `plan.dir`, associated with this issue.

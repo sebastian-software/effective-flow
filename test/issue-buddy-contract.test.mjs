@@ -407,7 +407,8 @@ test('Issue Buddy plans in a per-pass issue-planning worktree at collect.baseOid
 });
 
 // Invariant (issue #799): a plan preserved after a planner abort is classified by the parent's own
-// helpers and stays listable by Phase 1. The no-mutation verification still runs, the abort text
+// helpers and stays listable by Phase 1. An abort caused by the environment never spends an issue
+// retry; only helper-proven blocked plan content (a non-empty `data.blocking`) does. The no-mutation verification still runs, the abort text
 // never decides the outcome, and an aborted plan never reaches Phase 5's publish.
 test('Issue Buddy classifies a planner abort from its own helpers and never publishes the plan', () => {
   ordered(
@@ -427,8 +428,18 @@ test('Issue Buddy classifies a planner abort from its own helpers and never publ
   );
   assert.match(
     prose,
-    /classify from these two helper results through the ordered mapping, never from the abort text \(item 4 only for a helper-proven content fault such as a non-empty `data\.blocking` or invalid metadata, otherwise item 5\)/,
+    /classify from these two helper results through the ordered mapping, never from the abort text/,
   );
+  // An abort caused by the environment never spends an issue retry: only a non-empty
+  // `data.blocking` from the parent's own scan is item 4; a `publication-metadata` refusal is
+  // item 5 on this path, because an interrupted planner leaves the same refusal.
+  const abortPath = prose.slice(
+    prose.indexOf('After any planner `ABORT`'),
+    prose.indexOf('Verify no HEAD/index'),
+  );
+  assert.match(abortPath, /non-empty `data\.blocking`[^.]*item 4/);
+  assert.match(abortPath, /`publication-metadata` refusal[^.]*item 5/);
+  assert.doesNotMatch(abortPath, /invalid metadata/);
   assert.match(
     prose,
     /preserve the plan as Phase 5 preserves an unpublished one, and skip Phase 5\. Without a new plan, item 5 applies and nothing is preserved/,
