@@ -1,6 +1,6 @@
 # Name autopilot delivery-base step in the PR review conflict-repair scope
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #824
@@ -106,13 +106,13 @@ branch; no tool's `contextBudget` changes; a guard test protects the invariant.
    - `src/shared/merge-gate-conflict-resolution.md`: its opening paragraph (the slice from
      "## Conflict-resolution delegation contract" to "with its own stated substitutions.") must name `{{SKILL:merge-gate}}` and
      `autopilot-delivery-conflict`.
-   Its title names the invariant, for example "every fragment lists the same workflows that may
-   resolve a conflict on a head branch", as the issue prescribes. A one-line comment above the test
-   states that it pins the two named performers in each fragment plus the removal of the old
-   exclusivity phrase, not a full set comparison, because the fragments spell the performers
-   differently (`{{SKILL:autopilot}}` in `merge-gate-conflict-resolution.md`, "no workflow other
-   than …" in `worktree-integration.md`). The two other fragments already satisfy their
-   assertions; only `pr-review-comments.md` changes.
+     Its title names the invariant, for example "every fragment lists the same workflows that may
+     resolve a conflict on a head branch", as the issue prescribes. A one-line comment above the test
+     states that it pins the two named performers in each fragment plus the removal of the old
+     exclusivity phrase, not a full set comparison, because the fragments spell the performers
+     differently (`{{SKILL:autopilot}}` in `merge-gate-conflict-resolution.md`, "no workflow other
+     than …" in `worktree-integration.md`). The two other fragments already satisfy their
+     assertions; only `pr-review-comments.md` changes.
 4. Run `pnpm format` (or check with `pnpm agent:check`) and confirm oxfmt preserves the manual line
    breaks: `.oxfmtrc.json` sets no `proseWrap`, and neighbouring lines of the fragment already vary
    widely in width (lines 326–337), which a reflowing formatter would not leave. The comment above
@@ -139,17 +139,17 @@ branch; no tool's `contextBudget` changes; a guard test protects the invariant.
 ## Acceptance criteria
 
 - [ ] Compared on `prose()`-normalised text of the bounded conflict paragraph, the "No history
-  rewriting" section of `src/shared/pr-review-comments.md` contains the issue's replacement clause
-  naming `autopilot-delivery-conflict` and no longer contains "no other workflow resolves a
-  conflict"; the "fallen behind" paragraph is byte-identical to `origin/develop`.
+      rewriting" section of `src/shared/pr-review-comments.md` contains the issue's replacement clause
+      naming `autopilot-delivery-conflict` and no longer contains "no other workflow resolves a
+      conflict"; the "fallen behind" paragraph is byte-identical to `origin/develop`.
 - [ ] The conflict paragraph still spans exactly six source lines, and
-  `git diff --stat origin/develop -- src test` lists only `src/shared/pr-review-comments.md` and
-  `test/workflow-contracts.test.mjs` (the plan file's own archival under `docs/plan/` is excluded).
+      `git diff --stat origin/develop -- src test` lists only `src/shared/pr-review-comments.md` and
+      `test/workflow-contracts.test.mjs` (the plan file's own archival under `docs/plan/` is excluded).
 - [ ] The new guard test in `test/workflow-contracts.test.mjs` passes, checks bounded paragraphs of
-  all three fragments, and its title names the invariant that every fragment lists the same
-  workflows that may resolve a conflict on a head branch.
+      all three fragments, and its title names the invariant that every fragment lists the same
+      workflows that may resolve a conflict on a head branch.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` all pass in
-  CI's order, with no `contextBudget:` line in `src/tools/` changed.
+      CI's order, with no `contextBudget:` line in `src/tools/` changed.
 
 ## Validation plan
 
