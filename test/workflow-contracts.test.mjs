@@ -2954,6 +2954,7 @@ test('the retired-key contract detects at the first configuration read and names
       ['iterate', 'pr', reviewerKeys],
       ['merge-gate', null, ['mergeGate.*']],
       ['retro', null, []],
+      ['focus', null, []],
     ],
   );
   assert.deepEqual(
