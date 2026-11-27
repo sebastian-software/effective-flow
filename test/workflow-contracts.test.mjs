@@ -28605,6 +28605,244 @@ test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-res
   );
 });
 
+// The "### iterate: top-level wait" section: its slice runs from its heading to the next heading of
+// level 1-3, or to the end of the file only when none follows, and the heading must exist so a
+// missing heading fails instead of cutting from the wrong place.
+function hostPrWatchIterateWait() {
+  const text = hostPrWatchSource();
+  const heading = '### iterate: top-level wait';
+  const start = text.indexOf(heading);
+  assert.notEqual(start, -1, `${HOST_PR_WATCH_PATH} must carry the heading ${heading}`);
+  const next = text.slice(start + heading.length).search(/\n#{1,3} /);
+  return prose(next === -1 ? text.slice(start) : text.slice(start, start + heading.length + next));
+}
+
+// Invariant (#849): a top-level iterate run suspends in a watch only while a still-running reviewer
+// can actually wake it - a pending required check of its configured `mergeGate.bots.<login>.check`;
+// every other running-reviewer state hands back instead of asking, the gate lives only in this
+// fragment, and the hand-back replaces the T3 question.
+test('host-pr-watch iterate wait gates the watch on a pending required check and hands back instead of asking otherwise', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'wake-capable\\W+only when a pending check entry matching its configured `mergeGate\\.bots\\.<login>\\.check`',
+      'reports `required: true`',
+      80,
+    ),
+    'wake-capable only with a pending matching entry of the configured check reporting required: true',
+  );
+  assert.match(wait, /not wake-capable when no entry matches its check/i, 'no matching entry');
+  assert.match(wait, near('not wake-capable', 'reports `required: false`', 200), 'required: false');
+  assert.match(
+    wait,
+    near('not wake-capable', 'states no requiredness \\(Forgejo, or a missing field\\)', 200),
+    'unstated requiredness (Forgejo or missing field)',
+  );
+  assert.match(
+    wait,
+    near('not wake-capable', 'only through a trigger comment', 200),
+    'a trigger-comment-only running state',
+  );
+  assert.match(
+    wait,
+    near(
+      '`merge-gate` caller\'s warning under "Watch\\."',
+      'unstated requiredness counts as not wake-capable here',
+      80,
+    ),
+    'the deliberate divergence from the merge-gate caller warning',
+  );
+  assert.match(
+    wait,
+    near(
+      'none is wake-capable, the run hands back instead of asking',
+      'replaces step 4\'s T3 question and the Rules\' "ask once per Phase 1\\.5"',
+      120,
+    ),
+    "the hand-back replaces step 4's T3 question and the Rules' ask-once",
+  );
+  const iterate = prose(source('src/tools/iterate.md'));
+  assert.doesNotMatch(iterate, /wake-capable/i, 'iterate.md carries no copy of the gate');
+  assert.doesNotMatch(iterate, /neutral wake/i, 'iterate.md carries no copy of the neutral wake');
+});
+
+// Invariant (#849): the wake gate is not a one-time check - it decides every re-suspend, and a
+// still-running reviewer re-suspends only when one still running is wake-capable.
+test('host-pr-watch iterate wait runs the gate again before every re-suspend', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'a reviewer still running: the gate decides each re-suspend',
+      'Re-suspend when one still running is wake-capable',
+      20,
+    ),
+    'the gate decides each re-suspend of a still-running reviewer',
+  );
+  assert.match(
+    wait,
+    near('Re-suspend when one still running is wake-capable', 'otherwise hand back', 120),
+    'a still-running reviewer re-suspends only when one still running is wake-capable, otherwise hand back',
+  );
+});
+
+// Invariant (#849): the hand-back is a watchless suspension that tells the user exactly what is
+// running and on what evidence, promises no wake, offers continue, proceed or stop, and reuses the
+// existing Proceed, step 7 and report contracts instead of restating "Checks that are not required.".
+test('host-pr-watch iterate wait defines the hand-back as a watchless suspension with continue, proceed or stop', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(wait, /A hand-back is a suspension without a watch/i, 'no watch');
+  assert.match(
+    wait,
+    near("Unwatch first while this run's watch is on", 'print one visible line', 80),
+    'unwatch first, then one visible line',
+  );
+  assert.match(
+    wait,
+    near(
+      'naming each running reviewer with its evidence',
+      '\\(the check name and its stated requiredness, or the trigger comment\\)',
+      80,
+    ),
+    'each running reviewer with its evidence',
+  );
+  assert.match(
+    wait,
+    /no event is guaranteed to wake the session/i,
+    'no event is guaranteed to wake the session',
+  );
+  assert.match(wait, /offering continue, proceed or stop/i, 'continue, proceed or stop');
+  assert.match(
+    wait,
+    /A request to continue is classified like a wake/i,
+    'continue is classified like a wake',
+  );
+  assert.match(
+    wait,
+    near("continues as Phase 1\\.5's `Proceed` does", 'step 7 records the branch as proceeded', 80),
+    "proceed is Phase 1.5's Proceed and step 7 records it",
+  );
+  assert.match(wait, /stop ends the run with step 5's report/i, "stop ends with step 5's report");
+  assert.match(
+    wait,
+    /Estimates and polling follow "Checks that are not required\."/i,
+    'refers to the existing paragraph instead of restating it',
+  );
+});
+
+// Invariant (#849): an answered `Wait` calls `watch_pull_request`; a hand-back ends when a re-read
+// finds a wake-capable running reviewer - asking the T3 question only if this run never asked it,
+// otherwise one more watch call - and a watch starts with exactly one call while re-suspends with the
+// watch on call nothing, so the old "never call the watch again" rule is gone.
+test('host-pr-watch iterate wait leaves the hand-back through the question or one more watch call', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    /When the T3 question is answered `Wait`, call `watch_pull_request`/i,
+    'an answered Wait calls watch_pull_request',
+  );
+  assert.match(
+    wait,
+    near(
+      'When a re-read finds a wake-capable running reviewer, the hand-back ends',
+      'ask the T3 question if this run has never asked it',
+      80,
+    ),
+    'the hand-back ends on a wake-capable running reviewer; the question is asked if never asked',
+  );
+  assert.match(
+    wait,
+    /otherwise call `watch_pull_request` once more and suspend as on `Wait`/i,
+    'otherwise one more watch call and suspend as on Wait',
+  );
+  assert.match(
+    wait,
+    near(
+      'A watch starts with exactly one `watch_pull_request` call, on `Wait` or on leaving a hand-back',
+      're-suspends while it stays on call nothing',
+      20,
+    ),
+    'a watch starts with exactly one call; re-suspends while it stays on call nothing',
+  );
+  assert.doesNotMatch(
+    wait,
+    /re-suspend without asking again or calling the watch again/i,
+    'the old never-ask-again, never-watch-again rule is gone',
+  );
+});
+
+// Invariant (#849): a neutral wake - same head, nothing new from people or failures, and a required
+// check newly passed - neither adds to nor resets the unchanged count; non-required checks and
+// merge-state changes other than a new conflict never affect it, each read's check states from
+// Phase 1's read on are recorded before every suspension as the next baseline, together with the
+// unchanged-wake count, and the bound on neutral wakes is stated.
+test('host-pr-watch iterate wait defines the neutral wake and its bound', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'An unchanged wake is neutral when its re-read also shows an unchanged head, no new comment, review or thread, no newly failed required check and no new conflict',
+      'at least one required check newly passed: passed now, and not passed or absent in the previous read',
+      80,
+    ),
+    'the neutral-wake conditions',
+  );
+  assert.match(
+    wait,
+    near(
+      'Non-required checks, failures included, and other merge-state changes do not affect this',
+      'A neutral wake neither adds to nor resets the count',
+      40,
+    ),
+    'non-required checks and other merge-state changes do not affect it; neutral neither adds nor resets',
+  );
+  assert.match(
+    wait,
+    near(
+      "Record each read's check states, starting with Phase 1's read, and the unchanged-wake count in the wisdom file with what Phase 1\\.5 step 7 records",
+      "before every suspension, the check states as the next comparison's baseline",
+      20,
+    ),
+    "check states from Phase 1's read on and the unchanged-wake count, recorded with step 7's record before every suspension, the check states as the baseline",
+  );
+  assert.match(
+    wait,
+    near(
+      'Neutral wakes are bounded: a required check newly passes a bounded number of times per head',
+      'a re-run read only after it passes again reads as passed in both reads, so its wake counts',
+      80,
+    ),
+    'the bound on neutral wakes: per head, and a re-run counts once it passes again',
+  );
+});
+
+// Invariant (#849): the cap of three consecutive counted unchanged wakes is retained - it ends the
+// run with step 5's report - every non-neutral unchanged wake, such as an unrelated comment, counts
+// toward the cap, and a wake that changed a reviewer's state or evidence resets the count.
+test('host-pr-watch iterate wait keeps the cap of three counted unchanged wakes and its reset', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near('after three consecutive counted unchanged wakes', "end the run with step 5's report", 40),
+    "three consecutive counted unchanged wakes end the run with step 5's report",
+  );
+  assert.match(
+    wait,
+    near(
+      'A neutral wake neither adds to nor resets the count',
+      'every other unchanged wake counts',
+      40,
+    ),
+    'every non-neutral unchanged wake counts toward the cap',
+  );
+  assert.match(
+    wait,
+    /A wake that changed a reviewer's state or evidence resets the count/i,
+    'a changed wake resets the count',
+  );
+});
+
 // ---------------------------------------------------------------------------------------------
 // Verification evidence (#661): producer handoffs, the pr trust rule, placement and the gap line.
 // The helper's own behavior is covered by test/verification-evidence.test.mjs; these tests pin the
