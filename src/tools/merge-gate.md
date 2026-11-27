@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 981
+contextBudget: 990
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -287,8 +287,14 @@ worker role, with zero inherited turns where supported. The handoff says to read
   title match. Before every dispatch, re-dispatches included, or an inline run, resolve it through
   `plan-reference-resolve` with `cwd` the root `plan.dir` resolves against (the checkout root, or
   `RUNTIME_STATE_ROOT` in hidden mode) and `planDir` the configured `plan.dir`; it passes only on
-  `resolved` with `data.exact` true inside `<plan.dir>/` or `<plan.dir>/archive/`. Drop a line that
-  fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it;
+  `resolved` with `data.exact` true inside `<plan.dir>/` or `<plan.dir>/archive/`. On `not-found`
+  only, and only in standard visibility, take the head OID from a `pr-status-read`, run
+  `git fetch --no-write-fetch-head --refmap= origin refs/pull/<N>/head` rooted in
+  `RUNTIME_STATE_ROOT` with `GIT_TERMINAL_PROMPT=0` and a 60-second command timeout, then call once
+  more with it as `headSha`; a `source: "head"` result passes as
+  `Associated plan: <data.path>; head=<headSha>`. A passed line always carries `data.path`. Drop a
+  line that fails, also on a nonzero exit or `ok: false`, a missing head, or a failed or timed-out
+  fetch, so it never aborts the gate; "Entry" repeats it;
 - `Wisdom file: <RUNTIME_STATE_ROOT>/.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`, one
   session ID per gate run, kept across re-dispatches;
 - `Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>`;
