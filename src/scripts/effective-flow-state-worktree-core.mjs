@@ -1837,6 +1837,21 @@ function recordsPostImage(result, blob) {
     .some((field) => field.startsWith(':') && field.slice(1).split(' ')[3] === blob);
 }
 
+// Whether the worktree `root` holds no ignored entry in or around the directory of `planPath`
+// (the proof's own `dirty-entries` rule); false also when Git cannot establish it.
+async function planDirectoryIgnoreFree(git, root, planPath) {
+  const planDir = planPath.slice(0, planPath.lastIndexOf('/'));
+  const status = await guardedGit(
+    git,
+    root,
+  )(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching']);
+  const entries = gitOk(status) ? porcelainEntries(status.stdout) : null;
+  return (
+    entries !== null &&
+    !entries.some((entry) => entry.code === '!!' && coversDirectory(planDir, entry.path))
+  );
+}
+
 // The superseded-plan proof of `record`, for one that `supersededPlanApplies` admits, with the
 // `inputs` of `supersededPlanInputs`: `{ok: true, evidence, identity}`, or `{ok: false, reason}`
 // with the first failing reason of SUPERSEDED_PLAN_REASONS. It writes nothing. `git` is the proof's
@@ -3640,6 +3655,11 @@ async function discardSupersededPlan(context, roots, paths, recordId, record, he
   try {
     await phase(deps, 'afterDiscard', { recordId });
     const facts = failedConditionSevenFacts(await conditionSevenFacts(context, roots, record));
+    // An ignored file that appeared below the plan directory since the proof is invisible to
+    // `git status` and to condition 7, and the removal would delete it with no copy in the base.
+    if (!(await planDirectoryIgnoreFree(git, record.worktreePath, evidence.planPath))) {
+      facts.push('ignoredPlanEntries');
+    }
     if (facts.length > 0) {
       return await failed(
         `the preserved plan ${evidence.planPath} was discarded, but condition 7 fails: ${facts.join(', ')}`,

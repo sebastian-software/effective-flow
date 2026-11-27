@@ -4849,6 +4849,24 @@ test('a superseded-plan discard that fails after the rename is cleanup-failed an
   assert.match(readRecord(late.root).reason, /condition 7 fails: clean/);
   assert.equal(existsSync(late.planFile), false);
   assert.ok(existsSync(late.worktree.worktreePath));
+
+  // Invariant: an ignored file created below plan.dir after the proof is never deleted by the
+  // removal that follows the discard.
+  const ignored = await supersededWorktree(t);
+  const ignoredItem = planEntry(await plan(ignored.root), 'record-1').item;
+  const [kept] = expectOk(
+    await applyProven(ignored.root, ignoredItem, {
+      onPhase: (name) => {
+        if (name === 'afterDiscard') {
+          writeFileSync(join(ignored.root, '.git', 'info', 'exclude'), '*.tmp\n');
+          writeFileSync(join(dirname(ignored.planFile), 'late.tmp'), 'x');
+        }
+      },
+    }),
+  ).items;
+  assert.equal(kept.code, 'REMOVE_FAILED', JSON.stringify(kept));
+  assert.match(readRecord(ignored.root).reason, /ignoredPlanEntries/);
+  assert.ok(existsSync(join(dirname(ignored.planFile), 'late.tmp')));
 });
 
 // Invariant: the digest binds the archive blob, not the base commit: an advance of the local
