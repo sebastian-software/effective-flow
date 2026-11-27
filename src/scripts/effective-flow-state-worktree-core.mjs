@@ -95,7 +95,9 @@
 // The same cleanup-only flag admits an `issue-planning` record that Issue Buddy kept `aborted` with
 // reason `plan-preserved` (PRESERVED_PLAN_REASON, `preservedPlanRelease`): condition 1 accepts
 // that status for it, and every other condition stays required. Its worktree still holding the
-// untracked preserved plan fails condition 7. Once the user moved or discarded the plan, the record
+// untracked preserved plan fails condition 7, and so does any ignored entry in or around `plan.dir` of
+// an `issue-planning` worktree (`ignoredPlanEntries`: `git status` never lists it and a removal would
+// delete it with no copy), on every path to a removal. Once the user moved or discarded the plan, the record
 // is an ordinary `worktree:` item removed after confirmation, a fully gone one through the gone
 // route. While the plan is there, cleanup discards it only under the superseded-plan proof
 // (SUPERSEDED_PLAN_PROOF, `supersededPlanProof`), which never deletes bytes the base cannot give
@@ -1245,6 +1247,8 @@ export function evaluateEligibility(
         (facts.quarantineRetained ||
           facts.ignoredEndpoints === null ||
           facts.ignoredEndpoints.length > 0 ||
+          facts.ignoredPlanEntries === null ||
+          (facts.ignoredPlanEntries ?? []).length > 0 ||
           facts.hiddenChanges === null ||
           facts.hiddenChanges.length > 0)))
   ) {
@@ -1556,6 +1560,31 @@ async function hiddenWorktreeEntries(context, roots, root) {
   }
 }
 
+// The ignored entries of the proven worktree of an `issue-planning` `record` in or around its plan
+// directory (`plan.dir`, else the whole worktree when the configuration cannot name it), sorted:
+// `git status` never lists them, so the worktree looks clean once the preserved plan is gone, while
+// they hold bytes no copy in the base gives back and a removal would delete. It holds for every
+// path to a removal (the discard's recheck, a `cleanup-failed` retry, `worktree remove`). Empty for
+// every other purpose; null when Git cannot establish it. Only for a worktree whose common
+// directory is proven ours.
+async function ignoredPlanDirectoryEntries(context, record) {
+  if (record.purpose !== 'issue-planning') return [];
+  const config = await cleanupConfiguration(context, { env: context.env });
+  const planDir = config === null ? null : planDirectory(config);
+  const status = await guardedGit(
+    context,
+    record.worktreePath,
+  )(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching']);
+  const entries = gitOk(status) ? porcelainEntries(status.stdout) : null;
+  if (entries === null) return null;
+  return entries
+    .filter(
+      (entry) => entry.code === '!!' && (planDir === null || coversDirectory(planDir, entry.path)),
+    )
+    .map((entry) => entry.path)
+    .sort();
+}
+
 // The facts condition 7 of `evaluateEligibility` reads for the proven worktree of `record`: `clean`
 // (an empty `git status`) and the removal-only `quarantineRetained`, `ignoredEndpoints` and
 // `hiddenChanges`. Only for a worktree whose common directory is proven ours.
@@ -1569,6 +1598,7 @@ async function conditionSevenFacts(context, roots, record) {
     clean: gitOk(status) && asBuffer(status.stdout).length === 0,
     quarantineRetained: await retainsQuarantine(context.fs, target),
     ignoredEndpoints: await ignoredLedgerEndpoints(context, roots, record),
+    ignoredPlanEntries: await ignoredPlanDirectoryEntries(context, record),
     hiddenChanges: await hiddenWorktreeEntries(context, roots, target),
   };
 }
@@ -1579,6 +1609,7 @@ function failedConditionSevenFacts(facts) {
     ...(facts.clean ? [] : ['clean']),
     ...(facts.quarantineRetained ? ['quarantineRetained'] : []),
     ...(facts.ignoredEndpoints?.length === 0 ? [] : ['ignoredEndpoints']),
+    ...((facts.ignoredPlanEntries ?? []).length === 0 ? [] : ['ignoredPlanEntries']),
     ...(facts.hiddenChanges?.length === 0 ? [] : ['hiddenChanges']),
   ];
 }
@@ -1618,6 +1649,7 @@ export async function gatherFacts(
     clean: false,
     quarantineRetained: false,
     ignoredEndpoints: [],
+    ignoredPlanEntries: [],
     hiddenChanges: [],
     isMain: target === roots.cwd || (worktrees[0] ? matches(worktrees[0], target) : false),
     isExecutionRoot: target === roots.executionRoot,
@@ -1696,7 +1728,8 @@ export async function gatherFacts(
 // Whether cleanup derives the superseded-plan proof for a record (see the header): the
 // preserved-plan release admits it, its worktree is present and proven ours, condition 7 is its
 // only failed condition and it has no blocker, and condition 7 fails only on a non-empty status (no
-// release quarantine, ignored endpoint or hidden edit). Every other record keeps its report.
+// release quarantine, ignored endpoint or hidden edit; `ignoredPlanEntries` counts with `clean`, which the
+// proof's own `dirty-entries` rule then reports). Every other record keeps its report.
 // `mergeGateRelease` is the caller's cleanup-only flag, as `preservedPlanRelease` takes it.
 function supersededPlanApplies(facts, { conditions, blockers }, mergeGateRelease) {
   return (
@@ -1706,7 +1739,9 @@ function supersededPlanApplies(facts, { conditions, blockers }, mergeGateRelease
     conditions.length === 1 &&
     conditions[0] === 7 &&
     blockers.length === 0 &&
-    failedConditionSevenFacts(facts).join() === 'clean'
+    failedConditionSevenFacts(facts)
+      .filter((fact) => fact !== 'ignoredPlanEntries')
+      .join() === 'clean'
   );
 }
 
@@ -1835,21 +1870,6 @@ function recordsPostImage(result, blob) {
     .split('\0')
     .map((field) => field.replace(/^\n+/, ''))
     .some((field) => field.startsWith(':') && field.slice(1).split(' ')[3] === blob);
-}
-
-// Whether the worktree `root` holds no ignored entry in or around the directory of `planPath`
-// (the proof's own `dirty-entries` rule); false also when Git cannot establish it.
-async function planDirectoryIgnoreFree(git, root, planPath) {
-  const planDir = planPath.slice(0, planPath.lastIndexOf('/'));
-  const status = await guardedGit(
-    git,
-    root,
-  )(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching']);
-  const entries = gitOk(status) ? porcelainEntries(status.stdout) : null;
-  return (
-    entries !== null &&
-    !entries.some((entry) => entry.code === '!!' && coversDirectory(planDir, entry.path))
-  );
 }
 
 // The superseded-plan proof of `record`, for one that `supersededPlanApplies` admits, with the
@@ -3655,11 +3675,8 @@ async function discardSupersededPlan(context, roots, paths, recordId, record, he
   try {
     await phase(deps, 'afterDiscard', { recordId });
     const facts = failedConditionSevenFacts(await conditionSevenFacts(context, roots, record));
-    // An ignored file that appeared below the plan directory since the proof is invisible to
-    // `git status` and to condition 7, and the removal would delete it with no copy in the base.
-    if (!(await planDirectoryIgnoreFree(git, record.worktreePath, evidence.planPath))) {
-      facts.push('ignoredPlanEntries');
-    }
+    // `ignoredPlanEntries` is one of those facts: an ignored file that appeared below the plan
+    // directory since the proof is invisible to `git status`, and the removal would delete it.
     if (facts.length > 0) {
       return await failed(
         `the preserved plan ${evidence.planPath} was discarded, but condition 7 fails: ${facts.join(', ')}`,

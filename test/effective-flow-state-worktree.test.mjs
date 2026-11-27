@@ -4867,6 +4867,25 @@ test('a superseded-plan discard that fails after the rename is cleanup-failed an
   assert.equal(kept.code, 'REMOVE_FAILED', JSON.stringify(kept));
   assert.match(readRecord(ignored.root).reason, /ignoredPlanEntries/);
   assert.ok(existsSync(join(dirname(ignored.planFile), 'late.tmp')));
+
+  // Invariant: that `cleanup-failed` record is no ordinary removal afterwards: neither the retry
+  // through `cleanup plan` and `cleanup apply` nor the owning session's `worktree remove` deletes
+  // the ignored file, which no copy in the base gives back.
+  const retried = await plan(ignored.root);
+  const retry = planEntry(retried, 'record-1');
+  assert.equal(retry.item, undefined, JSON.stringify(retried.items));
+  assert.deepEqual(retry.blocked?.conditions, [7], JSON.stringify(retry.blocked));
+  const [direct] = expectOk(
+    await call('worktree remove', {
+      cwd: ignored.root,
+      executionRoot: ignored.root,
+      sessionId: SESSION,
+      recordIds: ['record-1'],
+    }),
+  ).items;
+  assert.deepEqual([direct.ok, direct.code, direct.conditions], [false, 'NOT_ELIGIBLE', [7]]);
+  assert.ok(existsSync(join(dirname(ignored.planFile), 'late.tmp')));
+  assert.ok(existsSync(ignored.worktree.worktreePath));
 });
 
 // Invariant: the digest binds the archive blob, not the base commit: an advance of the local
