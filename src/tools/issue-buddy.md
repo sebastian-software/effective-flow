@@ -232,12 +232,14 @@ Run no raw fetch or plan-branch read; WP3/WP4 own bounded Git reads.
 
 **Formatter preflight.** In publishing mode, after `consent-check` and before recovery or
 judgment, resolve once from the project's instructions (`AGENTS.md` and its includes, package
-scripts, formatter configuration, host instructions) whether they name a Markdown formatter, and
-retain the result. Without running it on any file, check that a named formatter allows a direct
-call as `<skill-root>/shared/unattended-planning.md` "Completion" step 1 defines it, already
-installed in `RUNTIME_STATE_ROOT` and allowed by host instructions to run with working directory
-`PLANNING_ROOT`. This parent never installs. A named formatter that cannot run directly or
-ambiguous instructions stop the pass with
+scripts, formatter configuration) read in `PLANNING_ROOT`, plus host instructions, whether they
+name a Markdown formatter, and retain the result; reading them runs no project tool there. Without
+running it on any file, check that a named formatter allows a direct call as
+`<skill-root>/shared/unattended-planning.md` "Completion" step 1 defines it, already installed in
+`RUNTIME_STATE_ROOT` and allowed by host instructions to run with working directory
+`PLANNING_ROOT`; only that executable comes from `RUNTIME_STATE_ROOT`. This parent never installs.
+A named formatter that cannot run directly, an installed executable other than the one the
+`PLANNING_ROOT` tree names, or ambiguous instructions stop the pass with
 `{issue: null, stage: "format", code: "FORMATTER_UNAVAILABLE"}`.
 
 Dry-run reports recovery without completing it. Publishing processes only `authorizedRecovery`,

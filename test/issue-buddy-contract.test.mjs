@@ -566,7 +566,12 @@ test('the base-move fragment re-publishes on republish: true, flags an unresolve
 // Invariant (issue #800): a publishing pass resolves the Markdown formatter once, after the
 // caller's `consent-check` and before recovery and judgment, accepts only the direct call that
 // `unattended-planning` "Completion" step 1 defines once (pointed to, never restated here), and
-// stops with stage `format` and `FORMATTER_UNAVAILABLE` before anything is planned.
+// stops with stage `format` and `FORMATTER_UNAVAILABLE` before anything is planned. The formatter
+// is the one the base tree names: project instructions, package scripts and formatter
+// configuration are read in `PLANNING_ROOT` (the planning worktree at `collect.baseOid`), host
+// instructions stay host-side, and only the installed executable comes from `RUNTIME_STATE_ROOT`;
+// an installed executable other than the one the `PLANNING_ROOT` tree names stops the pass with
+// `FORMATTER_UNAVAILABLE`.
 test('Issue Buddy preflights a named formatter before recovery and judgment', () => {
   ordered(
     '`consent-check` when it applies',
@@ -582,7 +587,13 @@ test('Issue Buddy preflights a named formatter before recovery and judgment', ()
   assert.match(prose, /This parent never installs/);
   assert.match(
     prose,
-    /A named formatter that cannot run directly or ambiguous instructions stop the pass with `\{issue: null, stage: "format", code: "FORMATTER_UNAVAILABLE"\}`/,
+    /resolve once from the project's instructions \(`AGENTS\.md` and its includes, package scripts, formatter configuration\) read in `PLANNING_ROOT`, plus host instructions, whether they name a Markdown formatter/,
+  );
+  assert.match(prose, /reading them runs no project tool there/);
+  assert.match(prose, /only that executable comes from `RUNTIME_STATE_ROOT`/);
+  assert.match(
+    prose,
+    /A named formatter that cannot run directly, an installed executable other than the one the `PLANNING_ROOT` tree names, or ambiguous instructions stop the pass with `\{issue: null, stage: "format", code: "FORMATTER_UNAVAILABLE"\}`/,
   );
   // The tool source discovers the formatter and names no concrete runner or formatter.
   assert.doesNotMatch(source, /\boxfmt\b|pnpm exec|\bnpx\b|t3-project/);
