@@ -1093,7 +1093,7 @@ test('unattended Completion formats only through a direct call and reports an un
   assert.doesNotMatch(completion, /finish formatting/);
   for (const literal of [
     "Unless the caller's brief forbids project tools, format only the plan file, and only through a direct call of an already-present formatter executable, changing no other path.",
-    "A direct call runs the executable the project's instructions name with the plan path appended: a package script whose command is a single executable resolves to that executable, and a package-manager-generated bin shim (such as `node_modules/.bin/<name>`) counts; a package manager, `pnpm exec`, `npx`, a runner, an install, a download or an executable that accepts no path never does.",
+    "A direct call runs the executable the project's instructions name, keeping the options its command carries (such as `--write`) and replacing any broad file argument with the single plan path, and appends the plan path when it carries none: a package script whose command is a single executable resolves to that executable with those options, and a package-manager-generated bin shim (such as `node_modules/.bin/<name>`) counts; a package manager, `pnpm exec`, `npx`, a runner, an install, a download or an executable that accepts no path never does.",
     'Otherwise leave the plan unformatted and add `formatter: unavailable` to `Notes:`.',
     'skipped publication and `formatter: unavailable` when applicable',
   ])
