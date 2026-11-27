@@ -1,6 +1,6 @@
 # Issue Buddy planning: forbid builds and installs in the planning worktree and define who formats the plan
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #800
@@ -155,9 +155,11 @@ Not relevant: no UI.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site":"S-CLR","question":"When the Issue Buddy parent finds no runnable Markdown formatter before publication, what happens?","options":["Pass stop without a new row","New opt-in row","Publish unformatted with note"],"escape":[],"scores":[{"label":"Pass stop without a new row","score":8,"reason":"It fails closed the way unattended Issue Buddy already handles unresolved environment problems, keeps the plan under the existing Phase 5 preservation rule, and adds no setup block, docs or tests; an unformatted plan fails pnpm agent:check in CI anyway, so permitting it buys little."},{"label":"New opt-in row","score":5,"reason":"It matches the proposed configuration row, but a new row needs setup wiring, migration, configuration-guide docs and tests, and its only effect is to publish plan PRs known to fail agent:check in CI."},{"label":"Publish unformatted with note","score":2,"reason":"It reproduces the observed failure of a published plan PR that fails pnpm agent:check and contradicts the requirement to stop unless configuration allows publication."}]},{"site":"S-CLR","question":"How should the formatter-stability fixture test be built?","options":["Spawn oxfmt in node:test","Committed fixture checked by agent:check","Both"],"escape":[],"scores":[{"label":"Spawn oxfmt in node:test","score":4,"reason":"It checks stability directly, but makes pnpm test depend on installed node_modules, which fails in exactly the fresh dependency-less worktree the issue describes, and no existing test spawns oxfmt."},{"label":"Committed fixture checked by agent:check","score":9,"reason":"agent:check already checks committed test/fixtures Markdown in CI and a node:test drift check keeps the fixture equal to the plan-contract example; its edge over Both is that the unit suite gains no formatter dependency."},{"label":"Both","score":5,"reason":"The extra oxfmt spawn repeats a check agent:check already makes in CI and brings back the installed-binary requirement in the unit suite."}]},{"site":"S-BAT","question":"May the Issue Buddy parent's formatting step install dependencies?","options":["Never install","Isolated runner may install","Sandboxed formatting leaf"],"escape":[],"scores":[{"label":"Never install","score":8,"reason":"It keeps install lifecycle scripts and cache writes away from the credential-holding parent, the invoking checkout usually already has the formatter with the same config, and an unrunnable formatter falls back to the existing fail-closed stop that preserves the plan."},{"label":"Isolated runner may install","score":6,"reason":"It fits the configured-runner example, but still runs install lifecycle scripts under the credential-holding parent, and isolation rests on a prose declaration the parent cannot check."},{"label":"Sandboxed formatting leaf","score":4,"reason":"It adds a new spawn site and an unattended leaf allowed to install, against the goal of forbidding installs during planning, and the parent can verify only exit status and worktree mutations."}]},{"site":"S-BAT","question":"How does the parent behave when the project's instructions name no Markdown formatter at all?","options":["Split: none named publishes","Stop everywhere, documented","Opt-in row for no-formatter repos"],"escape":[],"scores":[{"label":"Split: none named publishes","score":9,"reason":"A repository that names no Markdown formatter runs no formatter check in CI, so publishing as-is with a pass-report note keeps consumers progressing while a named but unrunnable formatter still stops the pass; its edge over the opt-in row is that it needs no configuration."},{"label":"Stop everywhere, documented","score":2,"reason":"The null pass failure consumes no retry, so every pass picks the same ready issue again, stops and leaves another preserved planning worktree, a livelock that documentation does not fix."},{"label":"Opt-in row for no-formatter repos","score":5,"reason":"It ends the loop only for repositories that opt in and brings back the setup, migration, documentation and test cost the earlier decision rejected."}]},{"site":"S-BAT","question":"When and how is formatter availability established?","options":["Preflight before planning","Detect after planning, document","Allow prepared runner"],"escape":[],"scores":[{"label":"Preflight before planning","score":8,"reason":"Checking once right after PLANNING_ROOT is created stops an unrunnable formatter before anything is planned, so passes no longer re-plan the issue or pile up preserved planning worktrees, and it keeps the never-install boundary, its edge over the runner option."},{"label":"Detect after planning, document","score":3,"reason":"Documentation does not end the loop: each pass still plans the issue in full, stops with a null failure that uses no retry and keeps one more planning worktree."},{"label":"Allow prepared runner","score":4,"reason":"It could make formatting work on runner-only hosts, but reopens the never-install decision on a claim the parent cannot check, and detection after planning still wastes a full planning run per unrunnable case."}]},{"site":"S-DEC","question":"How does the plan handle hosts whose instructions route project tools through a runner?","options":["Strict stop, documented remedy","Named runner without install","Publish unformatted with a flag"],"escape":[],"scores":[{"label":"Strict stop, documented remedy","score":7,"reason":"It keeps the never-install, split and preflight decisions intact, and each stop is cheap; its edge over the runner option is that such a runner cannot meet the no-install condition."},{"label":"Named runner without install","score":5,"reason":"It would unblock runner-only hosts, but such a runner may always run its dependency-sync prepare steps, so the no-install guarantee becomes a claim the parent cannot check."},{"label":"Publish unformatted with a flag","score":2,"reason":"It brings back the observed failure of a published plan PR that fails pnpm agent:check and contradicts the stop-unless-configured rule."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -201,3 +203,29 @@ Deep review:
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Requirement:** Issue Buddy's planning sub-run may not run build, install, test, formatter or generated-output commands in `PLANNING_ROOT`; the parent formats the plan before publication or stops the pass before planning; every unattended `DONE` entry has a defined formatter-unavailable branch; the plan contract documents a formatter-stable nested checklist form.
+
+**Architecture decisions:** as planned and as decided by score. The definition of a direct formatter call lives once in `unattended-planning` "Completion" step 1; the Issue Buddy preflight points to it and keeps only the parent's own conditions. The restated prohibition travels as the authority limits of every child handoff, outside any control-line payload. No configuration row was added and no helper script changed.
+
+**Affected files:** `src/tools/issue-buddy.md`, `src/tools/plan.md`, `src/shared/issue-buddy-base-move.md`, `src/shared/unattended-planning.md`, `src/shared/plan-contract.md`, `test/issue-buddy-contract.test.mjs`, `test/issue-buddy-pass.test.mjs`, `test/unattended-planning-contract.test.mjs`, `test/fixtures/plan-contract/nested-checklist.md` (new), `test/plan-contract-format.test.mjs` (new), `docs/user-guide/tools-automation.md`, `docs/user-guide/tools-understand.md`, `docs/developer-guide/plan-conventions.md`.
+
+**Implementation details:** Phase 2 formatter preflight after `consent-check` with the `FORMATTER_UNAVAILABLE` stop; Phase 4 brief prohibition and a mutation check that counts new ignored and untracked paths; a format step between two `publication-metadata` calls with `FORMAT_FAILED` and `FORMAT_METADATA_CHANGED`; Phase 5 removal against the retained identity and formatted blob; the base-move re-run compares with the retained projection; `contextBudget` of `issue-buddy` raised from 580 to 620. The Issue Buddy user guide section lives in `docs/user-guide/tools-understand.md`, which the documentation sync gate added to the plan's two guides.
+
+**Test results:** the Phase 5 full run ran `pnpm agent:check` (flagged only this plan file, formatted at completion), `pnpm test` (6920 passed; two timeouts in `test/host-driver.test.mjs` and `test/merge-gate-eval-round-lifecycle.test.mjs`, outside the changed areas, passed on the base and passed again by identity on the candidate under lower load), `node build.mjs` and `pnpm test:distribution` (both passed). Later corrections were verified targeted: 76/76 affected tests, build and formatter checks.
+
+**Review result:** one Important finding (this plan file failed the formatter check) was fixed at completion by formatting; five Notes were fixed in the incorporation pass and confirmed by the scoped re-check. No residual findings were admitted, so no external review report was written.
+
+## Review findings
+
+**Date:** 2026-11-27
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     6 |
+| Open / Not implemented |     0 |

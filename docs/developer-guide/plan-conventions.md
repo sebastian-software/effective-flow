@@ -164,6 +164,10 @@ judgment forces `Revision required`. Invalid input or an operational failure ret
 `ABORT: <reason>`; cleanup belongs to the caller. Session renaming and next-step recommendations are
 suppressed. Without the envelope, interactive behavior is unchanged.
 
+`Completion` sets when an unattended run formats its plan; an Issue Buddy pass forbids it to the
+planning child and formats in the parent (`issue-buddy` Phase 4). The formatter-stable form of
+nested checklist items is a rule of [`plan-contract.md`](../../src/shared/plan-contract.md).
+
 ### Planning readiness
 
 [`planning-readiness.md`](../../src/shared/planning-readiness.md) owns the readiness gate for

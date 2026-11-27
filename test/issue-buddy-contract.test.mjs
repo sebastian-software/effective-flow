@@ -495,7 +495,7 @@ test('the base-move fragment re-publishes once on the assessed base and flags a 
   assert.match(baseMoveProse, /its `BASE_CHANGED` is an item-5 stop keeping the entry/);
   assert.match(
     baseMoveProse,
-    /same input\. Its projection, `blobOid` included, must equal the first run's/,
+    /same input\. Its projection, `blobOid` included, must equal the projection Phase 4 retained/,
   );
 });
 
@@ -560,5 +560,108 @@ test('the base-move fragment re-publishes on republish: true, flags an unresolve
   assert.match(
     baseMoveProse,
     /A fitting move that published is one chat line: the range `<from>\.\.<to>` as short object IDs, the commit count and the cited-path count/,
+  );
+});
+
+// Invariant (issue #800): a publishing pass resolves the Markdown formatter once, after the
+// caller's `consent-check` and before recovery and judgment, accepts only the direct call that
+// `unattended-planning` "Completion" step 1 defines once (pointed to, never restated here), and
+// stops with stage `format` and `FORMATTER_UNAVAILABLE` before anything is planned.
+test('Issue Buddy preflights a named formatter before recovery and judgment', () => {
+  ordered(
+    '`consent-check` when it applies',
+    '**Formatter preflight.** In publishing mode, after `consent-check` and before recovery or',
+    'A proven unrecorded PR is reconciled',
+    '## Phase 3: Readiness',
+  );
+  assert.match(
+    prose,
+    /check that a named formatter allows a direct call as `<skill-root>\/shared\/unattended-planning\.md` "Completion" step 1 defines it, already installed in `RUNTIME_STATE_ROOT` and allowed by host instructions to run with working directory `PLANNING_ROOT`/,
+  );
+  assert.doesNotMatch(prose, /single executable resolves|bin shim/);
+  assert.match(prose, /This parent never installs/);
+  assert.match(
+    prose,
+    /A named formatter that cannot run directly or ambiguous instructions stop the pass with `\{issue: null, stage: "format", code: "FORMATTER_UNAVAILABLE"\}`/,
+  );
+  // The tool source discovers the formatter and names no concrete runner or formatter.
+  assert.doesNotMatch(source, /\boxfmt\b|pnpm exec|\bnpx\b|t3-project/);
+});
+
+// Invariant (issue #800): the separate planning brief forbids every project tool in
+// `PLANNING_ROOT`, the formatter included, and carries that prohibition into every agent the
+// sub-run starts as that child handoff's authority limits, outside any control-line payload (so a
+// strict entry such as `plan-review` keeps its exact payload); any new ignored or untracked path
+// besides the plan is an unrelated mutation.
+test('Issue Buddy forbids project tools in the planning brief and names new ignored paths as mutation', () => {
+  assert.match(
+    prose,
+    /no project build, install, test, formatter or generated-output command in `PLANNING_ROOT` \(using, besides the plan write, only file reads, read-only Git and the skill's own helper scripts\), restated as the authority limits of every child handoff it starts, outside any control-line payload, and no user questions as its separate brief/,
+  );
+  assert.match(
+    prose,
+    /exactly one new regular untracked canonical plan directly under its `plan\.dir`, associated with this issue; any other new ignored or untracked path is an unrelated mutation/,
+  );
+  assert.match(prose, /unrelated mutation or ambiguous identity is a pass stop/);
+});
+
+// Invariant (issue #800): between the first `publication-metadata` call and `publish --apply`
+// the parent formats the plan without reading formatter output, re-checks mutation, validates
+// again and retains that projection, whose `blobOid` is `<metadata blobOid>`; creation identity is
+// type, device, inode and link count 1 and is re-recorded only after the second call succeeds.
+test('Issue Buddy formats before publication, validates again and binds the formatted blob', () => {
+  ordered(
+    'Call only\n`plan-lint.mjs publication-metadata`',
+    '**Format.** With no Markdown formatter named (Phase 2), retain the first projection',
+    'evaluating only its exit status',
+    'Then re-verify HEAD, index and tracked state',
+    '`publication-metadata` again with the same input',
+    'Only then check identity',
+    '`<metadata blobOid>` is the retained projection',
+    'Call `plan-publication.mjs publish --apply`',
+  );
+  assert.match(prose, /the plan is published as-is/);
+  assert.match(
+    prose,
+    /run the preflighted formatter on the plan path only, working directory `PLANNING_ROOT`, keeping its stdout and stderr out of context and evaluating only its exit status; this is no overwrite in the sense above/,
+  );
+  assert.match(
+    prose,
+    /a nonzero exit, any HEAD\/index\/tracked change or any other new path stops with `FORMAT_FAILED`/,
+  );
+  assert.match(
+    prose,
+    /it must succeed with the same `planFile`, `reviewResult` and `openPointCount`, else stop with `FORMAT_METADATA_CHANGED`, and its projection is retained/,
+  );
+  assert.match(
+    prose,
+    /Record creation identity independently as file type, device, inode and a link count of 1, never modification time or size/,
+  );
+  assert.match(
+    prose,
+    /a non-regular file or a link count other than 1 stops with `FORMAT_FAILED`, and a changed inode is re-recorded as the creation identity from the formatted file/,
+  );
+  assert.match(
+    prose,
+    /Each stop is the null failure `\{issue: null, stage: "format", code\}` under item 5, preserving the plan and its planning worktree/,
+  );
+  assert.match(
+    prose,
+    /with proven creation ownership by the retained creation identity, unchanged current blob equal to WP4's `blobOid` \(the formatted blob when Phase 4 formatted\)/,
+  );
+});
+
+// Invariant (issue #800): formatter output and absolute host paths never reach the report; a
+// format stop names only the executable, the repository-relative plan path and the exit status in
+// chat, its persisted failure keeps the closed `{issue: null, stage, code}` shape, and a pass
+// without a named formatter says that it published as-is.
+test('Issue Buddy reports format stops with bounded safe details only', () => {
+  assert.match(
+    prose,
+    /Say when a plan was published as-is because the project names no Markdown formatter/,
+  );
+  assert.match(
+    prose,
+    /A `format` stop's details name only the formatter executable, the repository-relative plan path and the exit status, never an absolute host path; its persisted failure stays `\{issue: null, stage, code\}`/,
   );
 });
