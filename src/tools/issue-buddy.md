@@ -428,8 +428,8 @@ pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`,
 plus `baseMoves` when `issue-buddy-base-move` added an entry. After successful collection also pass
 `collect: <exact persisted returned result>`; before it, pass `mode` and `limits`. Use only reconciled successfully recorded verdicts/PR identities.
 Initial leftovers are bound by collection; append only validated preserved new-file diagnostics:
-every plan this pass wrote, minus the `releasedPaths` and `absentPaths` of an `ok` item or of one
-reporting `removed: true`, also when a fallback transition failed. Deduplicate by path without
+every plan this pass wrote, minus the `releasedPaths` and `absentPaths` of any item reporting
+`planReleased: true`, even if removal or a fallback transition failed. Deduplicate by path without
 changing initial metadata or selection; each names its bounded blob diagnostic, the worktree path
 and any `quarantinePath`.
 No `ready`, `passFailure` or extra cache field is admitted. Never rewrite a v1 report.

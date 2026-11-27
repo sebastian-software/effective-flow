@@ -253,8 +253,8 @@ test('Issue Buddy withdraws its planning worktree through the plan release or pr
 });
 
 // Invariant (#810): a v2 report is never rewritten, so Phase 6 runs the planning-worktree exit
-// before `pass-report`, and the leftovers it reports are every plan written minus those an `ok`
-// or `removed: true` item reports released or absent, also after a failed fallback transition.
+// before `pass-report`, and its leftovers exclude released and absent plans even if later
+// removal or a fallback transition fails.
 test('Issue Buddy withdraws the planning worktree before it persists the report', () => {
   assert.match(
     prose,
@@ -263,7 +263,7 @@ test('Issue Buddy withdraws the planning worktree before it persists the report'
   ordered('First withdraw or keep the', 'Finally attempt `pass-close`');
   assert.match(
     prose,
-    /every plan this pass wrote, minus the `releasedPaths` and `absentPaths` of an `ok` item or of one reporting `removed: true`, also when a fallback transition failed/,
+    /every plan this pass wrote, minus the `releasedPaths` and `absentPaths` of any item reporting\s+`planReleased: true`, even if removal or a fallback transition failed/,
   );
   assert.doesNotMatch(
     prose,
