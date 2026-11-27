@@ -30157,10 +30157,8 @@ test('autopilot issue source stops on an existing open pull request and accepts 
   );
 });
 
-// Invariant: a classification deadline never leaves a false promise of continuation. This guards the
-// authored contract only, not host behaviour: when the delegation returns before the leaf has a
-// terminal result, preflight ends in the current turn before `run-init` and names manual re-entry.
-test('autopilot issue classification ends preflight in the turn when the delegate wait times out', () => {
+// Invariant: a wake-only classification stops preflight without changing same-turn waits.
+test('autopilot issue classification stops only when the host can no longer await it in the same turn', () => {
   const paragraph = prose(
     boundedSlice(
       source('src/shared/autopilot-issue-source.md'),
@@ -30168,48 +30166,17 @@ test('autopilot issue classification ends preflight in the turn when the delegat
       '<!-- spawn-site:autopilot-issue-source/issue-classification -->',
     ),
   );
-  // (a) a wait that returned before a terminal result ends preflight in this turn, before run-init.
-  assert.match(
-    paragraph,
-    /timed out|before (?:it|the leaf|the delegation)?\s*(?:has |returns )?(?:a )?terminal result|still running/i,
-    'the classification paragraph names a delegate wait that returns before a terminal result',
-  );
-  assert.match(
-    paragraph,
-    near('current turn|this turn|same turn', 'before `run-init`'),
-    'that case ends preflight in the current turn before `run-init`',
-  );
-  // (b) the report names the cause, that nothing was created, and the manual re-entry.
-  assert.match(paragraph, near('no run', 'no pull request'), 'the report says nothing was created');
-  assert.ok(
-    paragraph.includes('{{SKILL:autopilot}} <issue>'),
-    'the report names the manual re-entry `{{SKILL:autopilot}} <issue>`',
-  );
-  // (c) no promised continuation or wake, no polling or background retry.
-  assert.match(
-    paragraph,
-    near('never promises?|no promise|promises? no|does not promise', 'continuation|wake'),
-    'it rules out promising an automatic continuation or wake',
-  );
-  assert.match(paragraph, /poll/i, 'it rules out polling or a background retry');
-  // (d) a late completion never authorizes run-init or Issue Buddy without a fresh invocation.
-  assert.match(
-    paragraph,
-    near('late completion|completes later|finishes later', 'fresh invocation'),
-    'a late completion needs a fresh invocation',
-  );
-  assert.match(
-    paragraph,
-    near('late completion|completes later|finishes later', '`run-init`[\\s\\S]{0,40}Issue Buddy'),
-    'a late completion never authorizes `run-init` or Issue Buddy',
-  );
-  // (e) the existing stop wording stays.
   includesAll(
     paragraph,
     [
       'Only `plain-issue` continues as an issue source',
       'another subtype is the usage error of preflight step 7',
       'A declined or failed spawn or any other output stops preflight.',
+      'Keep using the host’s supported same-turn await while available; that is not polling.',
+      'If that await ends without a terminal result and only an asynchronous wake remains (e.g. T3 `waitTimedOut: true`), stop preflight in this turn before `run-init`',
+      'report the cause, that no run or pull request was created, and the re-entry `{{SKILL:autopilot}} <issue>` for the same issue',
+      'Never promise a wake or continuation, poll, or retry in the background.',
+      'A late completion of the stopped attempt never authorizes `run-init` or Issue Buddy; only a fresh invocation starts a new preflight.',
     ],
     'the classification paragraph',
   );

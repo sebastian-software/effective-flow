@@ -51,9 +51,10 @@ residual risk of this consent. A repository whose visibility cannot be read is t
   branch – the configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main` – and the
   plan lives in a worktree of the run's own, so your checkout is never touched. Forgejo and
   external trackers are not supported for issue sources yet.
-  If the issue classification does not finish within the host's wait (for example on T3 Code),
-  Autopilot stops without writing anything, says so, and names the command to start it again for
-  the same issue. It does not continue on its own when the classification finishes later.
+  If the host can no longer wait for issue classification in the current turn and can only notify
+  Autopilot later (for example after a T3 Code wait times out), Autopilot stops without writing
+  anything and gives the command to start again for the same issue. It does not resume when
+  classification finishes later. Where the host can still wait in the same turn, it does.
 - **One run per issue, many issues in parallel.** An issue-sourced run claims its issue when it
   starts and holds the claim until it ends, with or without a pull request. A second autopilot run,
   an Issue Buddy pass or `plan-issue` on the same issue stops (or, in an Issue Buddy batch, skips
