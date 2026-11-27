@@ -30115,10 +30115,10 @@ test('next-steps rows: incomplete criteria iterate first and an autopilot draft 
   assert.notEqual(incomplete, -1, 'missing incomplete-criterion row');
   assert.notEqual(generic, -1, 'missing generic pull-request row');
   assert.ok(incomplete < generic, 'the specific row precedes the generic fallback');
-  assert.equal(edges[incomplete].then, '{{SKILL:iterate}} <PR>');
+  assert.equal(edges[incomplete].then, '{{SKILL:iterate}} <PR> own-review findings');
   assert.equal(edges[incomplete].or, '{{SKILL:merge-gate}} <PR>');
   assert.equal(edges[generic].then, '{{SKILL:merge-gate}} <PR>');
-  assert.equal(edges[generic].or, '{{SKILL:iterate}} <PR>');
+  assert.equal(edges[generic].or, '{{SKILL:iterate}} <PR> own-review findings');
   const autopilot = edges.find(
     (edge) => edge.tool === 'autopilot' && edge.condition === 'draft PR opened, no blocker',
   );
@@ -30132,6 +30132,171 @@ test('next-steps rows: incomplete criteria iterate first and an autopilot draft 
     0,
     'tool-flow.md mirrors the next-steps rows',
   );
+});
+
+// Reads the iterate sections and the fragment both own-review tests below check.
+function ownReviewSources() {
+  const iterate = source('src/tools/iterate.md');
+  return {
+    iterate,
+    phase0: prose(boundedSlice(iterate, '### Phase 0:', '### Phase 1:')),
+    phase2: prose(boundedSlice(iterate, '### Phase 2: Classification', '### Phase 2.5:')),
+    surfaces: prose(source('src/shared/iterate-own-review-surfaces.md')),
+  };
+}
+
+// Invariant: the `iterate` invocation next-steps recommends after an own published review is the
+// exact selection phrase iterate accepts. A bare `iterate <PR>` excludes every own-review thread, so
+// a recommendation and a parser that drift apart send the user into a run that classifies none of
+// the findings it was recommended for.
+test('the iterate invocation next-steps recommends after an own published review is the exact selection phrase iterate accepts', () => {
+  const OWN_REVIEW_SELECTION = 'own-review findings';
+  const extended = `{{SKILL:iterate}} <PR> ${OWN_REVIEW_SELECTION}`;
+  const published = ', own review findings published';
+  const edges = parseNextStepsTable(source(NEXT_STEPS_PATH), { context: NEXT_STEPS_PATH });
+  // Every iterate cell carries the phrase, except the fixed failing-checks repair.
+  for (const edge of edges) {
+    for (const cell of [edge.then, edge.or].filter((value) =>
+      value.startsWith('{{SKILL:iterate}}'),
+    ))
+      assert.ok(
+        cell === extended || cell === '{{SKILL:iterate}} <PR> fix the failing checks',
+        `${edge.tool} | ${edge.condition}: ${cell}`,
+      );
+  }
+  // Every publication-conditioned row recommends iterate first and directly precedes its generic row.
+  const specific = edges.flatMap((edge, index) => {
+    if (!edge.condition.endsWith(published)) return [];
+    assert.equal(edge.then, extended, edge.condition);
+    assert.equal(edge.or, '{{SKILL:merge-gate}} <PR>', edge.condition);
+    const generic = edges[index + 1];
+    assert.equal(generic?.tool, edge.tool, `${edge.tool} | ${edge.condition}`);
+    assert.equal(generic.condition, edge.condition.slice(0, -published.length));
+    return [`${edge.tool} | ${edge.condition}`];
+  });
+  assert.deepEqual(specific, [
+    'apply | findings applied, PR opened, own review findings published',
+    'apply | issues processed, PR opened, own review findings published',
+    'build | PR opened, own review findings published',
+    'fix | PR opened, own review findings published',
+    'refactor | PR opened, own review findings published',
+    'docs | PR opened, own review findings published',
+    'maintain | PR opened, own review findings published',
+    'iterate | PR mode, own review findings published',
+  ]);
+  const nextSteps = prose(source(NEXT_STEPS_PATH));
+  assert.match(
+    nextSteps,
+    /every bare `\{\{SKILL:iterate\}\} <PR>` option becomes `\{\{SKILL:iterate\}\} <PR> own-review findings`/,
+  );
+  assert.match(nextSteps, /precedes and wins over it/);
+  assert.match(nextSteps, /An unreported or unknown count selects the generic row/);
+  // The count reaches the emitter only through the retention rule that owns it.
+  assert.match(
+    prose(source('src/shared/worktree-integration.md')),
+    /published-finding count from "PR review publication", across cleanup and returning delegations/,
+  );
+  // The producer owns the count; without it the own-review rows never fire.
+  // The count follows each write's actual outcome, so a failed or unconfirmed write adds nothing.
+  const prReviewIntegration = prose(source('src/shared/pr-review-integration.md'));
+  assert.match(
+    prReviewIntegration,
+    /for the resolved pull request, report to the caller how many findings this run published on it/,
+  );
+  assert.match(prReviewIntegration, /a failed or unconfirmed write adds none/);
+  assert.match(prReviewIntegration, /0 whenever no finding was published/);
+  assert.match(
+    prReviewIntegration,
+    /never counts a withheld finding or one whose normalized signature already appears/,
+  );
+
+  const { phase0, phase2 } = ownReviewSources();
+  assert.ok(phase0.includes(`exactly \`${OWN_REVIEW_SELECTION}\`, set the own-review switch`));
+  assert.ok(
+    phase2.includes(
+      `\`${OWN_REVIEW_SELECTION}\` form \`next-steps\` recommends, is that explicit naming`,
+    ),
+  );
+  assert.match(phase2, /A bare invocation keeps excluding every marked thread/);
+
+  assert.match(
+    prose(source('src/tools/review.md')),
+    /leads to the invocation of the `next-steps` incomplete-criterion row/,
+  );
+});
+
+// Invariant: the own-review switch widens only what iterate selects, never what it may do. It is
+// recognized exactly, stays inert in Local mode, keeps resolved and already-answered threads out,
+// and its top-level findings are handled-state tracked per authenticated login and answered by no
+// reply and no resolve, so a switched run cannot act on, or re-handle, a finding on another account's say-so.
+test('the iterate own-review switch selects findings without widening authority or handled state', () => {
+  const { iterate, phase0, phase2, surfaces } = ownReviewSources();
+  assert.match(
+    phase0,
+    /Only a direct invocation, carrying neither a body delimiter nor any control line/,
+  );
+  assert.match(
+    phase0,
+    /which keeps it gated: the Phase 2\.5 approval precedes every item it admits/,
+  );
+  assert.match(phase0, /Recognition is exact:.* or any other run's text is ordinary free text/);
+  assert.match(phase0, /In Local mode the switch has no effect/);
+  assert.match(phase0, /Record it, or its absence, in the wisdom file/);
+  assert.match(
+    phase2,
+    /a `resolved` thread or one with an `<!-- effective-flow-iterate -->` reply stays excluded/,
+  );
+  // The fragment's only pointer sits at its decision point, Phase 0 step 13, before Phase 1 reads.
+  const pointer = 'iterate-own-review-surfaces\nwhen:';
+  const step13 = iterate.indexOf('13. **Own-review selection switch.**');
+  const load = iterate.indexOf(pointer);
+  assert.ok(
+    step13 !== -1 && step13 < load && load < iterate.indexOf('### Phase 1: Gather context'),
+    'lazy include sits after Phase 0 step 13 and before Phase 1',
+  );
+  assert.equal(iterate.lastIndexOf(pointer), load, 'the fragment has exactly one pointer');
+
+  assert.match(surfaces, /through `pr-comments-read`, at the same instant as the threads/);
+  assert.match(surfaces, /opens with `<!-- effective-flow-pr-review -->` as its leading line/);
+  assert.match(surfaces, /copied marker inside a blockquote and never counts/);
+  assert.match(surfaces, /the fragment adds no top-level comments/);
+  assert.match(surfaces, /report that this run sees no top-level own findings/);
+  assert.match(surfaces, /Establish the authenticated login through `viewer-read`/);
+  assert.match(surfaces, /a summary by any other account is ignored/);
+  assert.match(surfaces, /Without an established login no finding counts as handled/);
+  // signature-parse rejects several differing Signature fields in one body, so each line goes alone.
+  assert.match(
+    surfaces,
+    /Pass each `Signature` line alone to the remote helper's `signature-parse` operation, which fails on several differing values in one body/,
+  );
+  assert.match(surfaces, /or the legacy `Signatur` field the parser also accepts/);
+  assert.match(surfaces, /A line that fails to parse is never handled and never listed/);
+  assert.match(surfaces, /one free-text item with its own outcome/);
+  assert.match(surfaces, /grants it no authority/);
+  assert.match(surfaces, /gets no reply and is never resolved/);
+  // Terminal outcomes are named once by their outcome-table rows; anything else is read again.
+  assert.match(
+    surfaces,
+    /Terminal are exactly these "Returned outcome record" rows: implemented as a commit, `skipped` as a false positive \(`unsupported`\), and non-admitted work closed by the gate, plus a non-credible `needs_evidence` item closed in Phase 2/,
+  );
+  assert.match(surfaces, /admitted work and deferred questions included, is not terminal/);
+  // A value is listed only when every item sharing it is terminal, so a forged copy of a genuine
+  // finding's Signature cannot mark it handled, and the summary never republishes attacker text.
+  assert.match(
+    surfaces,
+    /each normalized value whose every item in this run reached a terminal outcome/,
+  );
+  // Every terminal value is listed, backticks included, in one labelled block that is the only
+  // place a later run reads handled values from; other code spans in the summary never count.
+  assert.match(surfaces, /one fixed block: the line `Handled own-review Signatures:`/);
+  assert.match(
+    surfaces,
+    /backtick fence is one longer than the value's longest backtick run, with one space padding each side/,
+  );
+  assert.match(surfaces, /never republishes raw `Signature` text/);
+  assert.match(surfaces, /reads values from that block only, never from another code span/);
+  assert.doesNotMatch(surfaces, /omits a value containing a backtick/);
+  assert.match(surfaces, /Under `Summary comment: suppressed` the switch is never set/);
 });
 
 // --- Parallel issue planning with per-issue claims ---

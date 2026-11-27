@@ -361,6 +361,12 @@ change from scratch, `/effective-flow build`, `/effective-flow fix`, `/effective
 PR reference is optional (`#42`, bare number, or PR URL); without it, `iterate` tries to resolve
 the open PR of the current branch.
 
+By default `iterate` skips the review threads and marked top-level PR comments that Effective
+Flow's own review published on the PR. A direct invocation of the form
+`iterate <PR> own-review findings` includes both; the `next-steps`
+recommendations after a run that published such findings suggest exactly this form. Text delegated
+by another workflow never switches this on.
+
 **Input/output:** In **PR mode**, `iterate` reads the review threads of all reviewers fresh,
 classifies each point (actionable, already addressed, or pure question), and obtains an
 approval. Output is **one commit per implemented point** on the PR head branch, each made only after

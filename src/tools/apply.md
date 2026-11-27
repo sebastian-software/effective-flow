@@ -1,7 +1,7 @@
 ---
 description: "Takes any apply source (plan file, review report, tracker issue or review epic), classifies it via the shared apply-source detection and delegates to the responsible skill {{SKILL:apply-plan}}, {{SKILL:apply-review}} or {{SKILL:apply-issues}}. Pure routing layer with no implementation of its own."
 catalogHint: "Starts implementation from a finished source (plan, issue or review finding)."
-contextBudget: 558
+contextBudget: 560
 ---
 
 # Effective Flow Apply
@@ -155,6 +155,8 @@ when: the run's subject is fixed and a session title is about to be applied or e
 6. When control returns here, emit the next-step block per `next-steps` as the last element of the
    report, using the retained source association and returned outcome in its shared selection; only
    generic fallback uses the reported clarity-gate, findings or issues row, with or without a PR.
+   Keep each returned pull request's published-finding count as observed outcome; a child that
+   returned none leaves the generic `PR opened` row in force.
 
 ## Rules
 
