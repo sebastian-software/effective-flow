@@ -658,7 +658,9 @@ test('pr keeps drafts and merges the appendix after the body check', () => {
 // failure, never a rebase, force-push or retry); `off` skips it and `ask` counts as the attempt;
 // an unresolved conflict is no blocker, so the run continues to `pr-appendix` and `pr` and
 // publishes the draft; Phase 6 reports `deliveryBase`; and "Before `pr`" resolves the workflow's
-// final head only after the pre-delivery steps, so a merge commit joins the delivered range.
+// final head only after the pre-delivery steps, so a merge commit joins the delivered range. The
+// fragment also loads when the user explicitly resumes a delivery-base gate retained while waiting
+// for capacity.
 test('autopilot makes one delivery conflict attempt and publishes the draft despite an unresolved conflict', () => {
   const autopilot = flat(tool('autopilot'));
   const steps = autopilot.slice(autopilot.indexOf('**Pre-delivery steps.**'));
@@ -673,7 +675,7 @@ test('autopilot makes one delivery conflict attempt and publishes the draft desp
   );
   assert.match(
     autopilot,
-    /```lazy-include autopilot-delivery-conflict when: the workflow reported its verified handback commit and pre-delivery step 1 starts ```/,
+    /```lazy-include autopilot-delivery-conflict when: the workflow reported its verified handback commit and pre-delivery step 1 starts, or the user explicitly resumes a retained delivery-base gate ```/,
   );
 
   const fragment = flat(read('shared/autopilot-delivery-conflict.md'));

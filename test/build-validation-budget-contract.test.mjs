@@ -286,7 +286,8 @@ test('base CI step is asymmetric, recipe-bound and treats output as untrusted', 
 // Invariant: step 2 hands `pending-base-run` back to the orchestrator, which runs the base only
 // after the candidate run ended, in the `base-validation` worktree whose purpose (branch, path,
 // `baselineHead`) the lifecycle fragment owns, at its own spawn site, restores and cleans it before
-// removal on every exit path, and states why step 2 ran. The base run, marked by
+// removal on every exit path except waiting for capacity, which keeps both checkouts for re-entry,
+// and states why step 2 ran. The base run, marked by
 // `Base attribution run:`, skips expected matching and steps 1 and 2 and runs only the named
 // identities; the validator itself never runs the base from the candidate run.
 test('pending-base-run hands off to a sequential base run at its own spawn site', () => {
@@ -309,7 +310,7 @@ test('pending-base-run hands off to a sequential base run at its own spawn site'
       '`Base attribution run:` line naming only the pending identities, the same signature rule',
       '<!-- spawn-site:build-delegated-run/base-attribution -->',
       'Merge each returned `pre-existing`, `new` or `unknown` into the original annotation.',
-      'Before `worktree remove`, on every exit path, run `git -C <WORKTREE_PATH> restore --source=<CREATION_OID> --staged --worktree -- :/`, then `git -C <WORKTREE_PATH> clean -f -d -- <PATH>...` on only the untracked, non-ignored paths the validator reported as generated, never `-x`, skipping the clean when it reported none; then remove the worktree.',
+      'Before `worktree remove`, on each exit path except waiting for capacity, run `git -C <WORKTREE_PATH> restore --source=<CREATION_OID> --staged --worktree -- :/`, then `git -C <WORKTREE_PATH> clean -f -d -- <PATH>...` on only the untracked, non-ignored paths the validator reported as generated, never `-x`, skipping the clean when it reported none; then remove the worktree.',
       'The report states why step 2 ran.',
     ],
     'base attribution',
