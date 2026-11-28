@@ -1,7 +1,7 @@
 ---
-description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits, the files of schema-invalid lifecycle records whose worktree is already gone, merge-gate presence markers whose run's wisdom file is gone, closed autopilot run ledgers whose pull request is merged, closed or absent, planning claims or Issue Buddy pass records proven orphaned or confirmed stale with trusted issue text no pass record lists, open pilot measurement reservations it abandons through the pilot helper once their session is proven gone or their staleness is confirmed, finished triage reports, and kept issue-planning worktrees once their preserved plan has been moved or discarded; it never forces removal or prunes worktrees, and deletes a branch only by Git's own rules or a compare-and-delete under a helper proof: a base-validation or issue-planning branch still at its creation commit, or a local delivery branch whose content, squash merges included, is proven to be in the base branch. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
+description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits, the files of schema-invalid lifecycle records whose worktree is already gone, merge-gate presence markers whose run's wisdom file is gone, closed autopilot run ledgers whose pull request is merged, closed or absent, planning claims or Issue Buddy pass records proven orphaned or confirmed stale with trusted issue text no pass record lists, open pilot measurement reservations it abandons through the pilot helper once their session is proven gone or their staleness is confirmed, finished triage reports, and kept issue-planning worktrees once their preserved plan has been moved or discarded or, under a helper proof, is superseded by its Implemented archive copy on the base branch, which cleanup then discards; it never forces removal or prunes worktrees, and deletes a branch only by Git's own rules or a compare-and-delete under a helper proof: a base-validation or issue-planning branch still at its creation commit, or a local delivery branch whose content, squash merges included, is proven to be in the base branch. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
 catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers, autopilot ledgers, orphaned planning claims and pilot reservations."
-contextBudget: 1037
+contextBudget: 1063
 ---
 
 # Effective Flow Cleanup
@@ -173,7 +173,10 @@ age alone never decides, so a long live run that is stale but `alive` keeps its 
 confirmed. A legacy `.effective-flow/issue-buddy/pass.lock` is reported for operator inspection,
 never removed. A kept `issue-planning` worktree (`aborted`, reason `plan-preserved`) holds a plan
 Issue Buddy preserved: it is retained, dirty, while that plan is present, and becomes an ordinary
-`worktree:` candidate once the user has moved or discarded the plan.
+`worktree:` candidate once the user has moved or discarded the plan. While the plan is there, the
+helper's proof `preserved-plan-superseded` can show it recoverable from the base branch, from its
+Implemented archive copy of the same name; then the worktree is a candidate whose removal discards
+that one plan file.
 
 Open pilot measurement reservations (`.effective-flow/model-tiering-pilot/`) are a sixth class,
 owned by the fragment below; a crashed or aborted run leaves one that keeps pilot activation busy.
@@ -198,7 +201,7 @@ included lifecycle contract. `cwd` is `RUNTIME_STATE_ROOT`, `executionRoot` the 
 
 ```text
 node <skill-root>/scripts/effective-flow-state.mjs cleanup plan <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>}'
-node <skill-root>/scripts/effective-flow-state.mjs cleanup apply <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>,"items":{"<itemId>":"<itemDigest>","branch:<name>":{"itemDigest":"<itemDigest>","proof":"<proof>","proofCommit":"<proofCommit>"}}}'
+node <skill-root>/scripts/effective-flow-state.mjs cleanup apply <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>,"items":{"<itemId>":"<itemDigest>","branch:<name>":{"itemDigest":"<itemDigest>","proof":"<proof>","proofCommit":"<proofCommit>"},"worktree:<RECORD_ID>":{"itemDigest":"<itemDigest>","proof":"preserved-plan-superseded"}}}'
 ```
 
 Give every `cleanup plan` call an explicit Bash timeout of 120000 ms.
@@ -210,7 +213,8 @@ are discarded), `discard` (single `.firmo/<path>` or `.sf-plugin/<path>` entries
 is read-only and returns `items` (actionable, each with `itemId` and `itemDigest`), `blocked` (with
 `conditions`, `failures` or, for `invalid-record`, `schemaReason`, and a `blockers` array), and
 `unrecorded` registered worktrees; item IDs are `worktree:<RECORD_ID>` (a stopped `merge-gate`
-record included), `invalid-record:<RECORD_ID>` (with `schemaReason`, `action` and `evidence`; a
+record included; a kept planning worktree with `proof: "preserved-plan-superseded"`, its evidence
+and `waivedConditions: [7]`, blocked otherwise with `supersededPlan.reason`), `invalid-record:<RECORD_ID>` (with `schemaReason`, `action` and `evidence`; a
 file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), `legacy:.firmo`,
 `legacy:.sf-plugin`, `config:.effective-flow/config.json` and `branch:<name>` (a proven local
 branch with `branch`, `tip`, `proof`, `proofCommit`, `source` and `dependsOn`). Every other branch
@@ -219,6 +223,11 @@ under `delivery.branchPrefix` is in `retainedBranches` with one `reason`.
 ```lazy-include
 cleanup-branches
 when: `cleanup plan` returns a `branch:` item, a non-empty `retainedBranches` or a non-null `branchProof.reason`
+```
+
+```lazy-include
+cleanup-superseded-plans
+when: `cleanup plan` returns a `worktree:` item with `proof: "preserved-plan-superseded"`, or a blocked record whose `supersededPlan.reason` is not `archive-missing`
 ```
 
 ### Phase 1: Discovery / inventory
@@ -378,7 +387,8 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    workflow/purpose, and branch policy. State that eligibility is checked again under an exclusive
    record lock immediately before removal. An `invalid-record:` candidate shows its path,
    `schemaReason`, action and `evidence` instead, never a record field: its only action, `absent`,
-   deletes only the record file; a worktree it names that is still present is never removed.
+   deletes only the record file; a worktree it names that is still present is never removed. List
+   every `preserved-plan-superseded` item as its own class, as `cleanup-superseded-plans` defines.
 7. List retained and recordless worktrees separately with their concrete reason. They are not
    offered for confirmation. List presence-marker candidates by session ID, PR and age; kept
    markers are not offered. List autopilot ledgers as `cleanup-autopilot-ledgers` defines. List
@@ -394,7 +404,7 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    every merge-gate branch, remains. Cleanup never runs `git worktree prune` or `git branch -D`.
    Show `branch:` items as their own class as `cleanup-branches` defines; a `squash-tree` item
    distinctly: "the base changed these lines after the merge".
-9. If there are no deletable migration artifacts, stale diff baselines, presence-marker, ledger, claim, pass-record, trusted-text, triage-report, pilot-reservation or worktree removal candidates and no `branch:` item, call the
+9. If there are no deletable migration artifacts, stale diff baselines, presence-marker, ledger, claim, pass-record, trusted-text, triage-report, pilot-reservation or worktree removal candidates (superseded-plan items included) and no `branch:` item, call the
    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
    still produced.
 
@@ -416,7 +426,7 @@ options:
 ```
 
 ```ask
-when: there is at least one verified worktree removal candidate
+when: there is at least one verified worktree removal candidate without `proof: "preserved-plan-superseded"`
 header: Worktrees
 question: Remove the verified Effective Flow worktrees listed in the dry run now, stopped merge-gate worktrees with no unpushed commits and schema-invalid records included, after checking every proof again under its lifecycle lock?
 options:
@@ -426,6 +436,19 @@ options:
     description: Choose which listed worktrees may be revalidated and removed
   - label: Keep all
     description: Remove no worktree; list every one in the final retained-worktree report
+```
+
+```ask
+when: there is at least one `worktree:` item with `proof: "preserved-plan-superseded"`
+header: Superseded
+question: Discard the preserved plans listed in the dry run, each proven recoverable from its Implemented archive copy on the base branch, and remove their planning worktrees? Each proof runs again under its lifecycle lock first.
+options:
+  - label: Discard all proven
+    description: Re-prove each listed plan, discard exactly that file and remove its worktree
+  - label: Select individually
+    description: Choose which listed plans may be re-proven, discarded and their worktrees removed
+  - label: Keep all
+    description: Discard no plan; each worktree stays retained for a later cleanup run
 ```
 
 ```ask
@@ -491,12 +514,14 @@ Execute per class:
 
 - **Tracked files:** remove via `git rm` (staged, **no** commit).
 - **Untracked/gitignored legacy items and worktrees:** "Yes, remove as listed" selects every
-  `legacy:` and `config:` item of the dry run; "Remove all verified" every `worktree:` and
-  `invalid-record:` item, "Delete all proven" every `branch:` item, "Select individually" the
-  chosen ones. Send all selected items in **one** `cleanup apply` call (at most 64 `worktree:` and
+  `legacy:` and `config:` item of the dry run; "Remove all verified" every `worktree:` item
+  without that proof and every `invalid-record:` item, "Discard all proven" every
+  `preserved-plan-superseded` item, "Delete all proven" every `branch:` item, "Select
+  individually" the chosen ones. Send all selected items in **one** `cleanup apply` call (at most 64 `worktree:` and
   `invalid-record:` items and 32 `branch:` items; the rest after a fresh `cleanup plan`) with the
   dry run's `decisions` and each item's `itemDigest`, for a `branch:` item the object
-  `{itemDigest, proof, proofCommit}` from its plan entry; give it an explicit
+  `{itemDigest, proof, proofCommit}` from its plan entry, for a proven `worktree:` item
+  `{itemDigest, proof}`; give it an explicit
   Bash timeout of 120000 ms and, in Codex, request sandbox escalation for it up front. The helper
   re-proves every selected item from fresh evidence before it removes anything.
 - **Stale diff baselines:** for each confirmed directory, revalidate the receipt and `RUNTIME_STATE_ROOT`, apply runtime-state safety to its exact handle,
@@ -531,11 +556,13 @@ Execute per class:
 `cleanup apply` outcomes:
 
 - `PREVIEW_MISMATCH` (`itemId`, `reason`), whole call: a selected item changed since the dry run
-  (`digest`), vanished (`unknown-item`, `proof-commit-missing`) or is no longer actionable
-  (`not-actionable`), which then carries its `conditions` and `blockers`, and nothing was written. Call `cleanup plan` again, show
+  (`digest`), vanished (`unknown-item`, `proof-commit-missing`), is no longer actionable
+  (`not-actionable`), which then carries its `conditions` and `blockers`, or was sent in the wrong
+  value form (`proof-mismatch`), and nothing was written. Call `cleanup plan` again, show
   the new dry run, and ask again.
 - `result.items[]`, one per selected item: worktree items follow the lifecycle outcome table, where
-  `BRANCH_RETAINED` keeps a branch Git refused to delete. An `invalid-record:` item
+  `BRANCH_RETAINED` keeps a branch Git refused to delete, a removed superseded-plan item names its
+  `discardedPlan` and a `restored` one follows its own row. An `invalid-record:` item
   changed by its turn is its own `PREVIEW_MISMATCH`; its `REMOVE_FAILED` keeps the record file. A
   legacy item reports `ok` with `removedEntries`, or its code: `LEGACY_CHANGED`, `UNSAFE_TARGET` and
   `WRITE_FAILED` stop that item with the partial state (`removedEntries`, `stoppedAt`), the plan codes
@@ -599,8 +626,9 @@ Retention reasons and their safe next steps:
   head branch or drop those commits; `in-progress-operation` – finish or abort that merge,
   cherry-pick, revert or rebase; `proof-unavailable` – a proof Git call failed or timed out. An
   `issue-planning` record with reason `plan-preserved` fails condition 7 while its plan is there:
-  move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree
-  for removal
+  without a `supersededPlan.reason` or with `archive-missing` (not archived yet), move the plan out
+  of the worktree or discard it, then rerun cleanup, which offers the worktree for removal; for any
+  other reason follow `cleanup-superseded-plans`
 - `cleanup-in-progress` or an existing lock: cleanup is claimed, active, or may have been
   interrupted; include known owner and timestamp and let the owner finish
 - dirty: clean the checkout before rerunning cleanup; locked: ask the known owner before unlocking
@@ -617,7 +645,8 @@ Retention reasons and their safe next steps:
 Cleanup never breaks a lock or upgrades a retained lifecycle status to make it eligible; its only
 claims from a retained status are the confirmed cleanup-only claims of an `aborted` or `failed`
 `merge-gate` record, with condition 6 waived, after its no-unpushed-commits proof, and of an
-`aborted` `plan-preserved` `issue-planning` record with every other condition.
+`aborted` `plan-preserved` `issue-planning` record with every other condition, condition 7 waived
+only under its `preserved-plan-superseded` proof.
 
 Then emit the next-step block per `next-steps` as the last element of the report: the staged-removals
 row when this run staged deletions, the configuration row when it only referred config values on. A

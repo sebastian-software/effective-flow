@@ -1,7 +1,7 @@
 ---
 description: "Turns a confirmed selection of current-session local changes into coherent commits on a fresh delivery branch and opens a pull request without changing the source checkout beyond an optional, user-confirmed upstream fast-forward before selection."
 catalogHint: "Delivers confirmed local changes as coherent commits in a clean pull request."
-contextBudget: 868
+contextBudget: 878
 ---
 
 # Effective Flow Deliver

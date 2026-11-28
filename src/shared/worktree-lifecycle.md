@@ -80,15 +80,17 @@ repairs or rewrites such a record; only cleanup's confirmed `invalid-record` ite
 - `cleanup-failed`: an ordinary removal or required post-removal operation failed and may be
   retried only after all eligibility proofs pass again
 
-| From                                | To or terminal action                   | Operation                                                                                               |
-| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| newly created                       | `active`                                | `worktree record-init`                                                                                  |
-| `active`                            | `cleanup-ready`, `aborted`, or `failed` | `worktree transition` by the owning session                                                             |
-| `aborted` or `failed`               | `active` (adoption)                     | `worktree transition` under the record lock, `adoption` `plan-pr-continuation` or `partial-diff-resume` |
-| `aborted` or `failed`               | `cleanup-ready` (release)               | `worktree transition` under the record lock, `release: "partial-diff"`                                  |
-| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                                                         |
-| `aborted`/`failed` `merge-gate`     | `cleanup-in-progress`                   | claim inside `cleanup apply` only, after the no-unpushed-commits proof                                  |
-| `cleanup-in-progress`               | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                                                     |
+| From                                        | To or terminal action                   | Operation                                                                                               |
+| ------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| newly created                               | `active`                                | `worktree record-init`                                                                                  |
+| `active`                                    | `cleanup-ready`, `aborted`, or `failed` | `worktree transition` by the owning session                                                             |
+| `aborted` or `failed`                       | `active` (adoption)                     | `worktree transition` under the record lock, `adoption` `plan-pr-continuation` or `partial-diff-resume` |
+| `aborted` or `failed`                       | `cleanup-ready` (release)               | `worktree transition` under the record lock, `release: "partial-diff"`                                  |
+| `cleanup-ready` or `cleanup-failed`         | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                                                         |
+| `aborted`/`failed` `merge-gate`             | `cleanup-in-progress`                   | claim inside `cleanup apply` only, after the no-unpushed-commits proof                                  |
+| `aborted` `plan-preserved` `issue-planning` | `cleanup-in-progress`                   | claim inside `cleanup apply` only                                                                       |
+| `cleanup-in-progress`                       | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                                                     |
+| `cleanup-in-progress`                       | `aborted` `plan-preserved` (restore)    | the claiming `cleanup apply` call, while the superseded plan is still in place                          |
 
 A controlled user or workflow stop becomes `aborted`; an implementation, integration, validation,
 ownership, or state-persistence error becomes `failed`. A sudden interruption leaves `active`,
@@ -114,7 +116,9 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
    (`git merge-base --is-ancestor <CREATION_OID> <CURRENT_BRANCH_TIP>` exits `0`), never compared
    with a moving remote tip.
 7. `git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none` is
-   empty; for removal it also fails on a kept release quarantine, ignored endpoint or hidden edit.
+   empty; for removal it also fails on a kept release quarantine, ignored endpoint, any ignored entry
+   in an `issue-planning` worktree (regardless of `plan.dir`), or hidden edit. Under the claim,
+   planning removals recheck condition 7 just before Git removal and refuse an unavailable scan.
 8. It is neither the main worktree nor the calling run's own execution worktree.
 9. No foreign or ownerless lock or cleanup claim exists.
 
@@ -126,7 +130,10 @@ Cleanup's confirmed claim of a `merge-gate` record in any of its four removable 
 condition 6 for a no-unpushed-commits proof, re-derived under the lock without fetching: no merge,
 cherry-pick, revert, rebase or sequencer in progress and an empty
 `git rev-list HEAD --not --remotes`, or, fully gone (route above), a gone branch or that `rev-list`
-from its tip. A failed call blocks; failures are `blockers`.
+from its tip. A failed call blocks; failures are `blockers`. Cleanup's confirmed
+`preserved-plan-superseded` claim of a `plan-preserved` record waives condition 7 only for its one
+proven plan file: under the lock it discards exactly that file, and the removal-time condition-7
+facts must then hold fresh before the ordinary removal.
 
 ### Helper operations
 
@@ -187,20 +194,21 @@ or `failed`, so a refused removal stays `cleanup-ready` or `cleanup-failed` for 
 envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `result.items[]`, one
 `{recordId, ok, code?}` per record.
 
-| Result                                                                                       | Handling                                                                                                                                              |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                                   |
-| `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                               |
-| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                                  |
-| item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                                  |
-| item `BRANCH_RETAINED`                                                                       | Worktree, record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven` (`ref-recreate-failed`: deleted; `branch.restore`). |
-| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                           |
-| item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                                    |
-| item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                      |
-| item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows.      |
-| item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                           |
-| item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.         |
-| harness denial, auto-mode refusal, another exit, an unparsable envelope or an `error`        | Nothing beyond the reported items changed: report the call.                                                                                           |
+| Result                                                                                       | Handling                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                                                                                                                                                                 |
+| `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                                                                                                                                                             |
+| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                                                                                                                                                                |
+| item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                                                                                                                                                                |
+| item `BRANCH_RETAINED`                                                                       | Worktree, record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven` (`ref-recreate-failed`: deleted; `branch.restore`).                                                                                                                               |
+| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                                                                                                                                                         |
+| item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                                                                                                                                                                  |
+| item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                                                                                                                                                    |
+| item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows.                                                                                                                                    |
+| item `restored: true` (`PLAN_CHANGED`, `INTERRUPTED`, `GIT_FAILED`, …; `cleanup apply`)      | A superseded-plan discard refused before its quarantine: the record is back at `aborted`/`plan-preserved`, nothing removed. Plan again. With `restored: false` the restore write failed and the record is `cleanup-failed` (or, with `persisted: false`, still claimed): report it. |
+| item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                                                                                                                                                         |
+| item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.                                                                                                                                       |
+| harness denial, auto-mode refusal, another exit, an unparsable envelope or an `error`        | Nothing beyond the reported items changed: report the call.                                                                                                                                                                                                                         |
 
 **Denial fallback.** After `worktree remove` returns any item that is not `ok` (`BRANCH_RETAINED`
 aside) or fails as a whole call, and after the one `SANDBOX_DENIED` rerun, call `worktree
