@@ -66,7 +66,7 @@ both halves, and neither is safe alone.
 | `_scaffold/no-ci-checkout.mjs`               | The base-only local `origin` of the four blocking no-CI policy scenarios                                                                |
 | `_scaffold/repair-origin.mjs`                | The real-commit `origin` of the two repair scenarios: seeded history, planned repairs, the receive hook                                 |
 | `_scaffold/configured-reviewer-origin.mjs`   | The local `origin` of the configured-reviewer scenario: a re-dated seed and the fixture's head commit, SHA for SHA                      |
-| `_scaffold/run-state-seed.mjs`               | The runtime state and history of the two run-state scenarios, the Forgejo WIP-draft conflict scenario's trigger-(c) record, and the checkout step that hands every other scenario to `merge-origin.mjs`, then `no-ci-checkout.mjs` |
+| `_scaffold/run-state-seed.mjs`               | The runtime state and history of the two run-state scenarios, the wisdom file of an earlier dispatch for the answered and Forgejo WIP-draft draft-ready scenarios, and the checkout step that hands every other scenario to `merge-origin.mjs`, then `no-ci-checkout.mjs` |
 | `_scaffold/sealed-observation.mjs`           | The seal's record of the last message and the sandbox `origin` for those two scenarios, and its parser                                  |
 | `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in                                                  |
 | `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                                                                  |
@@ -825,8 +825,8 @@ scenario's receipt and seal are unchanged.
   checks are patterns over prose: they show that the report names the fact, never that the run
   decided on it.
 
-`run-state-seed.mjs` also seeds the slot of one draft-ready scenario,
-`forgejo-wip-draft-conflict-asks-nothing`, whose seal stays the ordinary one: see below.
+`run-state-seed.mjs` also seeds the slots of four draft-ready scenarios, whose seal stays the
+ordinary one: see below.
 
 ## The draft-ready scenarios
 
@@ -837,12 +837,19 @@ Eight scenarios cover "Draft ready for review" of the delegated run: on GitHub,
 suite's first two Forgejo scenarios, `forgejo-wip-draft-marks-ready` and
 `forgejo-wip-draft-conflict-asks-nothing`. A gated answer cannot be injected into a run, so the
 answered cases are relayed re-dispatches whose `Relayed answer:` carries the precomputed state
-digest of the fresh state; no wisdom file is seeded, because Entry accepts an absent one on such a
-dispatch. The one exception is the Forgejo conflict: the WIP-draft exit ends the run on `conflict`
-only where the wisdom file holds a trigger-(c) record. A first dispatch would reach that end only
-after trigger (c) of Phase 2 step 1 fired its own proof and a provisioned no-op base merge, so the
-scenario isolates the record-gated end as the re-dispatch after a `checks-pending` `Continue`, and `run-state-seed.mjs` seeds the record a first dispatch leaves once trigger (c) fired in round 1,
-its base merge was a no-op and its check wait timed out, together with that run's presence marker.
+digest of the fresh state. Entry step 3 rejects any `Relayed answer:` line, `none` included,
+without a wisdom file from an earlier dispatch (`ABORT unparseable input line`), so
+`run-state-seed.mjs` seeds that file for `draft-ready-redispatch-marks-ready`,
+`draft-ready-keep-draft-stops` and `forgejo-wip-draft-marks-ready`: the round-1 record, the
+`ready-for-review` question posed with its state digest and no consumed answer, and the run's
+presence marker. The two mark-ready scenarios also keep the draft-ready origin of that record;
+keep-draft has none. The Forgejo conflict is a further case: the WIP-draft exit ends the run on
+`conflict` only where the wisdom file holds a trigger-(c) record. A first dispatch would reach that
+end only after trigger (c) of Phase 2 step 1 fired its own proof and a provisioned no-op base merge,
+so the scenario isolates the record-gated end as the re-dispatch after a `checks-pending`
+`Continue`, and `run-state-seed.mjs` seeds the record a first dispatch leaves once trigger (c)
+fired in round 1, its base merge was a no-op and its check wait timed out, together with that run's
+presence marker.
 Every scenario that reaches Phase 4 gets the pull-request `origin` of `merge-origin.mjs`
 (`DRAFT_READY_ORIGIN_SCENARIOS`), since the question is posed only where condition 11 holds too;
 none serves a merge. Each fixture was derived from `merge-proceeds` and replayed through the real

@@ -1,6 +1,6 @@
 # Reject a Relayed answer line on a first delegated merge-gate dispatch
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #817
@@ -244,32 +244,32 @@ Not relevant.
 ## Acceptance criteria
 
 - [ ] Entry step 3 of `src/shared/merge-gate-delegated-run.md` states that a dispatch with a
-  `Relayed answer:` line, `none` included, requires a present wisdom file and otherwise returns
-  `ABORT unparseable input line`. Because steps 1–3 run before any write and an abort from them
-  writes and deletes nothing, a first dispatch with `Relayed answer: none` and no wisdom file ends
-  at Entry with no gate work and no write.
+      `Relayed answer:` line, `none` included, requires a present wisdom file and otherwise returns
+      `ABORT unparseable input line`. Because steps 1–3 run before any write and an abort from them
+      writes and deletes nothing, a first dispatch with `Relayed answer: none` and no wisdom file ends
+      at Entry with no gate work and no write.
 - [ ] A re-dispatch after `BLOCKED-USER` (with `none` or a concrete answer, kept by the Phase 6
-  exception) still meets a present wisdom file and is accepted. So does a `Resumed wait:`
-  re-dispatch with `Relayed answer: none`, kept by the `SUSPENDED` retention and already required
-  by step 3's wait-record rule. Both hold because the following stay unchanged:
+      exception) still meets a present wisdom file and is accepted. So does a `Resumed wait:`
+      re-dispatch with `Relayed answer: none`, kept by the `SUSPENDED` retention and already required
+      by step 3's wait-record rule. Both hold because the following stay unchanged:
   - the step 3 location, name and file-kind sentence and the `Resumed wait:` sentence
   - the Phase 6 step 1 `BLOCKED-USER` retention exception
   - the `SUSPENDED host-pr-watch` "ends the same way" retention
   - the caller's re-dispatch paths in `src/tools/merge-gate.md` and
     `src/shared/host-pr-watch.md`
 - [ ] `test/workflow-contracts.test.mjs` contains a new test, with a leading invariant comment,
-  that fails when the new step 3 rule or its `ABORT unparseable input line` return is removed.
-  The existing assertions around lines 26982 and 26992 keep failing `pnpm test` when the Entry
-  steps 1–3 no-write guarantee or the Phase 6 `BLOCKED-USER` retention is removed. All existing
-  tests stay green.
+      that fails when the new step 3 rule or its `ABORT unparseable input line` return is removed.
+      The existing assertions around lines 26982 and 26992 keep failing `pnpm test` when the Entry
+      steps 1–3 no-write guarantee or the Phase 6 `BLOCKED-USER` retention is removed. All existing
+      tests stay green.
 - [ ] The three draft-ready scenarios each find a seeded earlier-dispatch wisdom file at their
-  prompt's `Wisdom file:` path, together with a matching presence marker. The scenario prose and
-  the README passages at lines 69, 828–829 and 834–841 no longer claim that an absent wisdom file
-  is accepted with a `Relayed answer:` line, nor that `run-state-seed.mjs` seeds only the
-  earlier scenarios. The new seed checks in `test/merge-gate-eval.test.mjs` pass, including the
-  digest equality.
+      prompt's `Wisdom file:` path, together with a matching presence marker. The scenario prose and
+      the README passages at lines 69, 828–829 and 834–841 no longer claim that an absent wisdom file
+      is accepted with a `Relayed answer:` line, nor that `run-state-seed.mjs` seeds only the
+      earlier scenarios. The new seed checks in `test/merge-gate-eval.test.mjs` pass, including the
+      digest equality.
 - [ ] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`,
-  `pnpm test:distribution`. `node build.mjs` reports no `contextBudget:` violation.
+      `pnpm test:distribution`. `node build.mjs` reports no `contextBudget:` violation.
 
 ## Validation plan
 
@@ -321,9 +321,11 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [{"site": "S-BAT", "question": "Which scope should the new Entry step 3 presence rule (a Relayed answer line requires a present wisdom file from an earlier dispatch, else ABORT unparseable input line) have, given the three draft-ready eval scenarios that send a concrete Relayed answer without a wisdom file?", "options": ["Every Relayed answer line, seed the three scenarios", "Relayed answer: none only", "none and stopping answers, seed the keep-draft scenario", "Every line, defer eval rework to a follow-up"], "escape": [], "stop": [], "scores": [{"label": "Every Relayed answer line, seed the three scenarios", "score": 9, "reason": "It is the issue's own proposal and fully enforces the re-dispatch-only rule in one short sentence; its edge over D is that every round goes stale anyway, so seeding three scenarios buys complete enforcement."}, {"label": "Relayed answer: none only", "score": 4, "reason": "It meets the literal acceptance criteria without eval churn, but a first dispatch carrying a step 6 stopping answer still ends with no merge and no input error, so #817 stays half-fixed."}, {"label": "none and stopping answers, seed the keep-draft scenario", "score": 6, "reason": "It closes every input that can wrongly end a run and seeds only one scenario, but step 3 needs a longer rule and continue answers stay outside the re-dispatch-only rule."}, {"label": "Every line, defer eval rework to a follow-up", "score": 2, "reason": "It ships a contract the three draft-ready scenarios contradict, so re-recording them yields Entry aborts as failing evidence, a debt the pragmatic test policy does not allow."}]}]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -350,8 +352,7 @@ Not relevant.
   middle variant (`none` plus stopping answers) was added, and the scored decision covers every
   `Relayed answer:` line.
 - **Testability, Important (incorporated):** An acceptance criterion required the new test to
-  fail on removals that the approach left to the existing assertions around lines 26982 and
-  26992. The criterion now assigns those guarantees to the existing assertions.
+  fail on removals that the approach left to the existing assertions around lines 26982 and 26992. The criterion now assigns those guarantees to the existing assertions.
 - **Scope, Note (incorporated):** The option costs misattributed eval staleness. The fragment
   edit stales every merge-gate round under every option. The decision and the Validation plan
   now state this, and they name option C's failing-evidence consequence.

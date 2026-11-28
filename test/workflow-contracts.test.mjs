@@ -28465,6 +28465,37 @@ test('merge-gate carries SUSPENDED host-pr-watch as a return entry, in the keywo
   );
 });
 
+// Invariant: a `Relayed answer:` line, `none` included, is accepted only together with a wisdom
+// file an earlier dispatch of the same gate run left behind, so a first dispatch carrying it aborts
+// at Entry before any gate work or write. Relies on, without re-asserting: "An `ABORT` from Entry
+// steps 1 to 3 writes and deletes nothing", Phase 6's "Delete the wisdom file – except on a
+// `BLOCKED-USER` return –", the "Every return ends the run once" bullet under which
+// `SUSPENDED host-pr-watch` "ends the same way", and step 3's existing wait-record requirement for
+// `Resumed wait:`.
+test('merge-gate Entry step 3 aborts a first dispatch that carries a Relayed answer line, none included', () => {
+  const step3 = mergeGateEntryStep('3. **Wisdom file.**', '4. **Fresh state.**');
+  const rule =
+    /A\s+dispatch\s+with\s+a\s+`Relayed\s+answer:`\s+line,\s+`Relayed\s+answer:\s+none`\s+included,\s+requires\s+a\s+present\s+file\s+from\s+an\s+earlier\s+dispatch\s+of\s+this\s+gate\s+run;\s+without\s+one\s+it\s+returns\s+`ABORT\s+unparseable\s+input\s+line`\./;
+  const found = rule.exec(step3);
+  assert.ok(
+    found,
+    'entry step 3 requires a present file from an earlier dispatch for any `Relayed answer:` line, `none` included, else `ABORT unparseable input line`',
+  );
+  const resumed = step3.search(/A\s+`Resumed\s+wait:`\s+dispatch\s+instead\s+requires/);
+  const limits = step3.indexOf('`Caller limits:`', found.index);
+  assert.ok(
+    resumed !== -1 && resumed < found.index,
+    'the rule follows the `Resumed wait:` sentence',
+  );
+  assert.ok(limits > found.index, 'the rule precedes the `Caller limits:` sentence');
+  const step1 = mergeGateEntryStep('1. **Input lines.**', '2. **Roots.**');
+  assert.doesNotMatch(
+    step1,
+    /requires\s+a\s+present\s+file\s+from\s+an\s+earlier\s+dispatch/,
+    'entry step 1 does not carry the present-file rule',
+  );
+});
+
 // Invariant: the delegated run's entry contract accepts the T3 host and resume lines, including the
 // resume together with one relayed answer and an existing wisdom file, and ends once on a suspend.
 test('merge-gate delegated-run entry accepts Host and Resumed wait with one Relayed answer and an existing wisdom file, and a suspend ends the run once', () => {
