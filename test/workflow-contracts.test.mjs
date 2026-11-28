@@ -30349,6 +30349,31 @@ test('autopilot issue source stops on an existing open pull request and accepts 
   );
 });
 
+// Invariant: a wake-only classification stops preflight without changing same-turn waits.
+test('autopilot issue classification stops only when the host can no longer await it in the same turn', () => {
+  const paragraph = prose(
+    boundedSlice(
+      source('src/shared/autopilot-issue-source.md'),
+      'Then classify the one reference',
+      '<!-- spawn-site:autopilot-issue-source/issue-classification -->',
+    ),
+  );
+  includesAll(
+    paragraph,
+    [
+      'Only `plain-issue` continues as an issue source',
+      'another subtype is the usage error of preflight step 7',
+      'A declined or failed spawn or any other output stops preflight.',
+      'Keep using the host’s supported same-turn await while available; that is not polling.',
+      'If that await ends without a terminal result and only an asynchronous wake remains (e.g. T3 `waitTimedOut: true`), stop preflight in this turn before `run-init`',
+      'report the cause, that no run or pull request was created, and the re-entry `{{SKILL:autopilot}} <issue>` for the same issue',
+      'Never promise a wake or continuation, poll, or retry in the background.',
+      'A late completion of the stopped attempt never authorizes `run-init` or Issue Buddy; only a fresh invocation starts a new preflight.',
+    ],
+    'the classification paragraph',
+  );
+});
+
 // Invariant: `plan-issue` claims each issue at the start of its Phase 2, stops a single-issue run or
 // skips in a multi-issue run on a held claim, releases on every exit path, and examines the code
 // read-only at the fetched resolved base OID without a worktree.
