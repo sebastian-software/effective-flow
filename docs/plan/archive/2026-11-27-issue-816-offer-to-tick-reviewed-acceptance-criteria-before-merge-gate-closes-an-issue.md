@@ -1,6 +1,6 @@
 # Offer to tick reviewed acceptance criteria before merge-gate closes an issue
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #816
@@ -119,6 +119,7 @@ question, a new forge write path and two new helper operations. Nothing is corre
   - No qualifying review on that head lists any of them as `incomplete` or `undetermined`.
 
   Anything else leaves the verdict and behaviour exactly as today.
+
 - **Quote sanitized criterion text in the chat listing only.** Decided by score.
   - The listing before the question quotes each criterion's `displayText`, next to its evidence
     reference. The reference is rendered from the helper's parsed record (review id or URL,
@@ -143,6 +144,7 @@ question, a new forge write path and two new helper operations. Nothing is corre
        `--apply`, then the post-transition re-read that must show `terminal (done)`.
 
     Its confirmed set only shrinks.
+
   - Ticked issues never enter the `Issue done` listing, which is built only from the issues step 3
     rated `complete`. Declining `Issue done` does not affect them.
   - The "nothing enters this loop late" sentence (`:291-294`, pinned at
@@ -198,25 +200,25 @@ question, a new forge write path and two new helper operations. Nothing is corre
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/merge-gate-issue-observation.md` | Intro (`:3`, "steps 1 to 7 and the transition gate"). Step 3: record the tick-eligible sub-case of `incomplete`, its fail-closed conditions, and the composite read bounds. Step 4: the tick-eligible listing, the scoped quoting exception, the `Tick and close` loop before `Issue done`, the "nothing enters late" clause, relayed and non-interactive handling. New `Tick and close` `ask` fence. Report items for ticked, declined, stale-write, no-longer-eligible, missing-review hint and fallback outcomes |
-| `src/shared/review-acceptance-lens.md` | Pin the acceptance-summary criterion line format with its optional fixed-reason suffix, and the `reviewed-head: <sha>` line |
-| `src/shared/issue-post-merge-observation.md` | One pointer sentence to the hosted tick offer, scoping the `complete`-only offer rule, the quoting exception, the read bound and "nothing enters late" (`:79-81`, `:104-105`, `:139-161`, `:189`) |
-| `src/shared/merge-gate-delegated-run.md` | Wisdom-file list (`:498-506`): the once-per-run `issue-tick-done` record |
-| `src/shared/setup-allowlist.md` | Allow-rule and read-only operation counts (`:3`, `:82`) |
-| `docs/user-guide/tools-setup.md` | Allow-rule and read-only operation counts (`:275`, `:282`) |
-| `src/tools/merge-gate.md` | `issue-tick-done` row in the relayed question table and its state-digest subject keys; `contextBudget` adjusted from the measured `node build.mjs` report if the eager line count changes |
-| `src/shared/next-steps.md` | `issue-tick-done` among the questions that never count for T3 (`:165`) |
-| `src/scripts/remote-tracker-core.mjs` | New forge-read operation `pr-acceptance-verdicts`; new local operation `task-list-tick` in `LOCAL_OPERATIONS` (`:213`); additive `key8` in `issueCriteriaProjection`; operation lists, capability map (read: `prReviewsRead`) and input validation |
-| `src/shared/remote-tracker-operations.md` | Rows and input notes for both new operations; `key8` in the `issue-acceptance-criteria` output |
-| `src/scripts/claude-settings-core.mjs` | Classify both new operations under the existing listed/excluded rule; both are non-mutating |
-| `docs/developer-guide/architecture.md` | Allow-rule total and read-only `remote-tracker` operation count (`:1144`, `:1146`) |
-| `docs/developer-guide/configuration.md` | Count of read-only `remote-tracker.mjs` operations (`:135`) |
-| `docs/developer-guide/build-system.md` | Fragment description (`~:1805`), which currently says seven steps and one transition gate; operation count (`:1532`) |
-| `test/remote-tracker.test.mjs` | Fake-runner fixture tests for both operations and the `key8` projection |
-| `test/remote-tracker-operations-reference.test.mjs` | Kind map and sample inputs for both operations |
-| `test/workflow-contracts.test.mjs` | Prose-contract assertions for the offer, the decline, both fallbacks, the question order, the relayed and non-interactive paths, the forge-only and capability gates, the new id in `RELAYED_QUESTION_IDS` (`:26480`), the pinned summary line, and the adjusted no-quoting and "nothing enters late" assertions (`~:13645-13700`) |
+| File                                                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/merge-gate-issue-observation.md`        | Intro (`:3`, "steps 1 to 7 and the transition gate"). Step 3: record the tick-eligible sub-case of `incomplete`, its fail-closed conditions, and the composite read bounds. Step 4: the tick-eligible listing, the scoped quoting exception, the `Tick and close` loop before `Issue done`, the "nothing enters late" clause, relayed and non-interactive handling. New `Tick and close` `ask` fence. Report items for ticked, declined, stale-write, no-longer-eligible, missing-review hint and fallback outcomes |
+| `src/shared/review-acceptance-lens.md`              | Pin the acceptance-summary criterion line format with its optional fixed-reason suffix, and the `reviewed-head: <sha>` line                                                                                                                                                                                                                                                                                                                                                                                         |
+| `src/shared/issue-post-merge-observation.md`        | One pointer sentence to the hosted tick offer, scoping the `complete`-only offer rule, the quoting exception, the read bound and "nothing enters late" (`:79-81`, `:104-105`, `:139-161`, `:189`)                                                                                                                                                                                                                                                                                                                   |
+| `src/shared/merge-gate-delegated-run.md`            | Wisdom-file list (`:498-506`): the once-per-run `issue-tick-done` record                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `src/shared/setup-allowlist.md`                     | Allow-rule and read-only operation counts (`:3`, `:82`)                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `docs/user-guide/tools-setup.md`                    | Allow-rule and read-only operation counts (`:275`, `:282`)                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `src/tools/merge-gate.md`                           | `issue-tick-done` row in the relayed question table and its state-digest subject keys; `contextBudget` adjusted from the measured `node build.mjs` report if the eager line count changes                                                                                                                                                                                                                                                                                                                           |
+| `src/shared/next-steps.md`                          | `issue-tick-done` among the questions that never count for T3 (`:165`)                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `src/scripts/remote-tracker-core.mjs`               | New forge-read operation `pr-acceptance-verdicts`; new local operation `task-list-tick` in `LOCAL_OPERATIONS` (`:213`); additive `key8` in `issueCriteriaProjection`; operation lists, capability map (read: `prReviewsRead`) and input validation                                                                                                                                                                                                                                                                  |
+| `src/shared/remote-tracker-operations.md`           | Rows and input notes for both new operations; `key8` in the `issue-acceptance-criteria` output                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `src/scripts/claude-settings-core.mjs`              | Classify both new operations under the existing listed/excluded rule; both are non-mutating                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `docs/developer-guide/architecture.md`              | Allow-rule total and read-only `remote-tracker` operation count (`:1144`, `:1146`)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `docs/developer-guide/configuration.md`             | Count of read-only `remote-tracker.mjs` operations (`:135`)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `docs/developer-guide/build-system.md`              | Fragment description (`~:1805`), which currently says seven steps and one transition gate; operation count (`:1532`)                                                                                                                                                                                                                                                                                                                                                                                                |
+| `test/remote-tracker.test.mjs`                      | Fake-runner fixture tests for both operations and the `key8` projection                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `test/remote-tracker-operations-reference.test.mjs` | Kind map and sample inputs for both operations                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `test/workflow-contracts.test.mjs`                  | Prose-contract assertions for the offer, the decline, both fallbacks, the question order, the relayed and non-interactive paths, the forge-only and capability gates, the new id in `RELAYED_QUESTION_IDS` (`:26480`), the pinned summary line, and the adjusted no-quoting and "nothing enters late" assertions (`~:13645-13700`)                                                                                                                                                                                  |
 
 ## Implementation details
 
@@ -265,6 +267,7 @@ question, a new forge write path and two new helper operations. Nothing is corre
         `terminal (done)`.
 
      The per-issue budget is the eight reads of steps 1 and 4 plus the post-transition re-read.
+
    - Revalidation (6.1) and the pre-close re-read (6.4) apply step 4's three revalidation outcomes
      word for word (`merge-gate-issue-observation.md:267-285`):
      - The issue is now terminal: skip the tick or the transition, and replace its recorded outcome
@@ -273,6 +276,7 @@ question, a new forge write path and two new helper operations. Nothing is corre
      - The read failed or could not be performed: drop it.
 
      The post-transition re-read in 6.5 replaces the recorded outcome, as step 4's does.
+
    - A failed transition follows step 4's failure rule (`:323-327`): continue with the remaining
      issues and never retry blindly.
    - The option description discloses everything the confirmation authorizes: the tick write, the
@@ -293,6 +297,7 @@ question, a new forge write path and two new helper operations. Nothing is corre
 
    Fallback cases report today's `incomplete` reason unchanged. An issue that is otherwise eligible
    but has no qualifying review also gets the `review <PR>` hint.
+
 9. **Registration.**
    - Add `issue-tick-done` to the relayed question table, the digest sentence, `next-steps.md:165`
      and `RELAYED_QUESTION_IDS`.
@@ -341,6 +346,7 @@ Not relevant.
   - The issue is untrusted, truncated or over the issue bound.
 
   The issue is ineligible in each case.
+
 - **Missing capability.** A required capability is unprobed or refused. The issue is ineligible and
   the capability is named.
 - **Stale body.** The body changed between the read and the write, so `issue-update-body` returns
@@ -661,15 +667,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 2 |
-| Data protection | 0 | 0 | 1 |
-| Error cases | 0 | 1 | 1 |
-| Testability | 0 | 1 | 0 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 1 | 2 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    2 |
+| Data protection |        0 |         0 |    1 |
+| Error cases     |        0 |         1 |    1 |
+| Testability     |        0 |         1 |    0 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         1 |    2 |
 
 ### Findings
 
@@ -734,3 +740,80 @@ none Critical. Every finding was incorporated.
 ## Open points
 
 - No open points.
+
+## Build completion
+
+### Requirement
+
+Issue #816: offer a confirmation-gated `Tick & close` in merge-gate's post-merge issue observation
+when an issue is `incomplete` only because its task-list criteria are unticked and an Effective
+Flow review on the merged head marks every criterion `complete`. Nothing is ticked or closed without
+explicit confirmation; every other case keeps today's verdict.
+
+### Architecture decisions
+
+- The review's acceptance summary pins one fixed line per criterion
+  (`- <source>#criterion-<key8>: complete`, or `<verdict> — <fixed reason>`) plus a
+  `reviewed-head: <headSha>` line, so merge-gate parses a stable format instead of prose.
+- New read-only helper operation `pr-acceptance-verdicts` (GitHub only; `prReviewsRead`
+  capability) and new pure local operation `task-list-tick`; `issue-acceptance-criteria` gains
+  `key8`. The tick write goes through `issue-update-body` with `expectedBodyHash`.
+- The tick listing, loop, relayed branch and `ask` fence live in the new lazily loaded fragment
+  `src/shared/merge-gate-issue-tick-offer.md`, loaded only when step 3 records a tick-eligible
+  issue; the report rule for consumed `issue-tick-done` outcomes stays in the always-loaded
+  observation fragment.
+- `remainingUnchecked` counts the union of the lines two walks count (with and without CommonMark
+  HTML-block tracking), so it may over-count but never drops a rendered unchecked item.
+- Deviations: the `ask` header is `Tick & close` (12-character header limit); merge-gate
+  `contextBudget` 985 → 990; reviews in an unknown state are excluded (`state-unknown`);
+  `task-list-tick` returns `key8` lists for `ticked`, `alreadyTicked` and `notTask`.
+
+### Affected files
+
+`src/scripts/remote-tracker-core.mjs`, `src/scripts/claude-settings-core.mjs`,
+`src/shared/merge-gate-issue-observation.md`, `src/shared/merge-gate-issue-tick-offer.md` (new),
+`src/shared/review-acceptance-lens.md`, `src/shared/issue-post-merge-observation.md`,
+`src/shared/merge-gate-delegated-run.md`, `src/shared/next-steps.md`,
+`src/shared/remote-tracker-operations.md`, `src/shared/setup-allowlist.md`, `src/tools/merge-gate.md`,
+`docs/developer-guide/{architecture,build-system,configuration}.md`,
+`docs/user-guide/{remote-tracker,tools-deliver,tools-quality,tools-setup,troubleshooting}.md`,
+`test/remote-tracker.test.mjs`, `test/remote-tracker-operations-reference.test.mjs`,
+`test/workflow-contracts.test.mjs`, `test/iterate-eval.test.mjs`.
+
+### Implementation details
+
+Allow rules are now 84 and read-only `remote-tracker` operations 51. `issue-tick-done` is
+registered in merge-gate's relayed question table, in `RELAYED_QUESTION_IDS` and among the
+questions that never count for the retrospective T3 signal; a relayed run returns it before
+`issue-done`, and the consumed answer is recorded once per run. A non-interactive run writes
+nothing. Hidden mode and `tea`-backed forges report the offer as unavailable instead of
+suggesting a review.
+
+### Test results
+
+- Phase 5 full run (`pnpm test`, before the review corrections): one failure caused by the change
+  (`task-list-tick` missing from the pinned local-operation list in `test/iterate-eval.test.mjs`),
+  repaired; three failures reproduced on the base and attributed `pre-existing` (two host-driver
+  timing tests, one merge-gate eval-round lifecycle timeout); seven failures that pass on the base
+  passed again by identity on the final candidate. `node build.mjs`, `pnpm test:distribution` and
+  `pnpm eval merge-gate verify` (evidence debt only) passed.
+- Final validation (targeted over the cumulative change): 21 affected test files, 1989 tests,
+  0 failures; `node build.mjs` and `pnpm test:distribution` passed; `pnpm agent:check` flagged only
+  this plan file, formatted afterwards.
+
+### Review result
+
+Five review passes (full review, scoped re-check, three floor-hit passes on the corrections).
+All findings were corrected in this run; none was offloaded.
+
+## Review findings
+
+**Date:** 2026-11-28
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    14 |
+| Open / Not implemented |     0 |

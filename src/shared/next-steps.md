@@ -162,7 +162,7 @@ stays a non-emitter.
     retry (Retry 1 or higher) occurred.
   - **T3:** a merge-gate run consumed at least two relayed answers to the exceptional questions
     `checks-pending`, `reviews-unestablished`, `check-list-waiver`, `conflict-resolution` or
-    `set-aside`; `iterate-approval`, `issue-done` and `iterate-in-flight` never count.
+    `set-aside`; `iterate-approval`, `issue-tick-done`, `issue-done` and `iterate-in-flight` never count.
   - **T4 (aborts only):** the run aborted after it had spawned at least one sub-agent for domain
     work; a no-op probe is none. Never an argument, preflight, configuration or migration abort;
     never any delegated-run Entry abort, for example `unparseable input line` or

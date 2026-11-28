@@ -441,11 +441,13 @@ Its 30-second bound is fixed and has no configuration key. A still-open issue is
 observation result, not a merge failure.
 
 `issue-close` is the only forge write the gate ever performs that changes an issue's **state**, and
-nothing reaches it unattended. The gate does write to an issue in two other ways after a merge — it
-removes `effective-flow-issue-in-progress` and it may patch a `checklist` container body — and
-neither of those touches the issue's state. It runs only where the post-merge assessment recorded a `complete` verdict for that
-issue, only in an interactive run, and only after you confirmed the single question that covers every
-eligible issue at once. Declining, a non-interactive run, and a missing `issueClose` capability all
+nothing reaches it unattended. The gate does write to an issue in other ways after a merge — it
+removes `effective-flow-issue-in-progress`, it may patch a `checklist` container body, and after the
+`Tick & close` confirmation described below it patches the issue body's own task list — and none of
+those touches the issue's state. It runs only where the post-merge assessment recorded a `complete` verdict for that
+issue (or, after the `Tick & close` confirmation, where a fresh re-read of the ticked issue is
+`complete`), only in an interactive run, and only after you confirmed the question that covers
+every eligible issue at once. Declining, a non-interactive run, and a missing `issueClose` capability all
 leave the issue exactly as the merge left it. If the capability is missing, the gate reports which
 one and continues – a merge that already succeeded is never re-opened or rolled back over an
 unavailable optional write.
@@ -1148,6 +1150,25 @@ the option text says so. Declining transitions nothing. A non-interactive run po
 transitions nothing; it carries the recommendation into its summary instead. A missing capability or
 an unset `externalDoneState` makes the offer unavailable for that issue, which is reported with the
 missing value named and is not the same result as an issue found incomplete.
+
+**`Tick & close` is a second, separately confirmed offer.** An issue that is `incomplete` only
+because entries of its own task list are unchecked becomes tick-eligible when a review of the merged
+head covers it. The gate reads the issue's criteria with `issue-acceptance-criteria` (each criterion
+carries a stable short `key8`) and the reviews with the read-only `pr-acceptance-verdicts`, which
+returns only qualifying reviews: submitted by a writer, on the merged head, carrying the review
+marker, a matching `reviewed-head:` line and one `- issue-<n>#criterion-<key8>: <verdict>` line per
+criterion. At least one review must list every criterion `complete` and none may list one
+`incomplete` or `undetermined`. The local `task-list-tick` operation then computes the ticked body
+for exactly those criteria and refuses when any other unchecked task item remains. After you confirm
+`Tick and set to done`, each issue is revalidated on fresh reads, its body is written through
+`issue-update-body` guarded by the input hash, and it is closed only if a re-read still shows it
+complete. A stale write ticks and closes nothing for that issue and is never retried; a tick whose
+issue then fails to close stays, because it records reviewed evidence. Declining, a non-interactive
+run and a `tea`-backed forge leave the issue untouched. In hidden mode, an issue that lacks only a
+qualifying review is reported with the offer unavailable rather than with a suggestion to run the
+review, because a hidden review publishes no summary; a qualifying review published by another run
+still makes it tick-eligible. The `Tick & close` listing is the one place that quotes criterion
+text, after the helper has neutralized and capped it.
 
 **The summary's one quotation is an issue's recorded open points.** For every issue it assesses,
 `merge-gate` also reads that issue's canonical planning comment – on the forge through the helper's

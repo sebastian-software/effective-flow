@@ -502,6 +502,10 @@ gate run inline generates it at the start. Use
   a narrowing re-dispatch
 - every consumed `Relayed answer:` by question id and round, appended when it is consumed, so the
   count of consumed exceptional answers survives re-dispatch for Phase 6
+- the consumed `issue-tick-done` answer, once per gate run: its instance digest, its option and each
+  listed issue's outcome, which the tick-outcome item of `### Observation report items` in the
+  loaded `merge-gate-issue-observation` fragment reports and the relayed branch of
+  `merge-gate-issue-tick-offer` checks before posing
 - the authenticated login `viewer-read` returned, or the reason it could not be read
 - the presence token and the entry-notice lines of "Run presence"
 - the human-comment guard state and the evidence that set it, plus every login whose top-level

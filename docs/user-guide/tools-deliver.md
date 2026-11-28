@@ -664,6 +664,24 @@ criterion of the issue is covered in the merged pull request's title or body; ot
 requests never added an in-progress label, so none is removed. A pull request created before this
 was added, or recovered by a direct `pr` run after a failed finish, stays legacy.
 
+**Tick & close.** An issue whose only open point is its own unticked task-list entries stays
+`incomplete`, and nothing is offered for it, unless a review already vouched for every one of its
+criteria. In an interactive run the gate then poses a separate `Tick & close` question before the
+`Issue done` one. It lists each such issue with its criteria – ordinal, short key, the criterion
+text and the review that covers it – and asks once for the whole run. `Tick and set to done` ticks
+exactly the listed criteria through a hash-guarded body update and closes each issue that a fresh
+re-read still finds complete; `Leave open` ticks and closes nothing. The offer needs a forge issue
+and the issue-update, issue-close, review-read and collaborator-permission capabilities, and a
+`/effective-flow review <PR>` on the final head before the gate: on GitHub a submitted review by a
+writer on the merged head whose acceptance summary marks every criterion `complete` and none
+`incomplete` or `undetermined`. Without such a review the report suggests running the review first;
+in hidden mode, where a review publishes no summary, it notes the offer as unavailable instead, and
+on a `tea`-backed forge the offer is unavailable. In hidden mode, a qualifying review published by
+another run still makes the issue eligible. A stale body, or an issue that is no longer
+complete on revalidation, ticks and closes nothing for that issue. A non-interactive run poses
+nothing and reports the recommendation. See the [remote tracker](remote-tracker.md) guide for the
+details.
+
 **What it never does:** It never reviews. It produces no findings of its own, never approves a pull
 request or submits a "request changes" review, never rewrites history (no amend, rebase, squash, or
 force-push of the head branch – a branch behind or in conflict with its base is only ever brought
@@ -675,8 +693,8 @@ delegated to a dedicated resolver worker. The gate itself only ever writes that 
 pushes it.
 
 It also never force-closes a linked issue and never treats PR prose as a substitute for a valid
-lifecycle receipt. A transition you confirmed after a `complete` assessment verdict is not a forced
-close and is the one authorized path: the gate closes nothing on its own authority, nothing at all in
+lifecycle receipt. A transition you confirmed after a `complete` assessment verdict, or after the
+`Tick & close` question, is not a forced close and is the one authorized path: the gate closes nothing on its own authority, nothing at all in
 a non-interactive run, and nothing for an issue whose verdict was `incomplete` or `undetermined`. A
 missing, malformed, duplicated, or mismatched receipt leaves the merge result unchanged and
 authorizes no tracker access. Post-merge tracker failure likewise cannot roll back a

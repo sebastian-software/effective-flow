@@ -709,6 +709,7 @@ test('the runtime-state exception list is complete for the helper local operatio
       'remote-parse',
       'sf-label-migration-plan',
       'signature-parse',
+      'task-list-tick',
       'thread-ledger-lookup',
       'thread-ledger-record',
     ],

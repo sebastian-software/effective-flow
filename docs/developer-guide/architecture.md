@@ -174,7 +174,14 @@ reachable through the caller, unlike `non-interactive`: every user gate returns
 answer as `Relayed answer:`; a `Stop` (or `Report only`) answer ends the gate at Entry with its
 report. `iterate` accepts `relayed` too, while its per-item runs still receive `non-interactive`;
 the round consuming a relayed `iterate-approval` passes the approved outcomes as the helper-built
-`Approved outcomes:` line, which `iterate` applies as its approval before any write. The caller
+`Approved outcomes:` line, which `iterate` applies as its approval before any write.
+Phase 5.5 of the gate poses two separate post-merge questions, `issue-tick-done` before `issue-done`:
+`issue-tick-done` is the confirmation-gated `Tick & close` offer for an issue that is `incomplete`
+only because of unticked task-list entries. Its eligibility composes `issue-acceptance-criteria`
+(criterion `key8`s), the read-only `pr-acceptance-verdicts` (reviews of the merged head whose
+fixed-format acceptance summary lines, pinned in `review-acceptance-lens`, cover every key) and the
+local `task-list-tick`; the write is a hash-guarded `issue-update-body` followed by the ordinary
+`issue-close`, and a consumed answer is a once-per-run record that survives re-dispatch. The caller
 asks only for an ambiguous provider and the completion mode; every other question comes back
 through it. A restriction the user stated travels as the optional `Caller limits:` line
 (`no-merge`, `no-branch-writes`), which only grows across re-dispatches and takes precedence over
@@ -1141,9 +1148,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 82 non-destructive or bounded rules, in four
+a prose removal of that state too. `setup` can write 84 non-destructive or bounded rules, in four
 families (twenty-five runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 49 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 51 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` and `pr-acceptance-verdicts` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

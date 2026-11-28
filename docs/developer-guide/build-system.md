@@ -1529,7 +1529,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 82 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 84 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1730,6 +1730,7 @@ and directive syntax").
   `plan-reference-routing`, `plan-lint`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
+  `merge-gate-issue-tick-offer`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
   `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `merge-gate-review-fix-validation`, `iterate-review-fix-validation`, `merge-gate-repair-report`, `delegated-scope-return`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `planning-batch`, `source-upstream-sync`, `setup-profiles`,
@@ -1806,7 +1807,8 @@ and directive syntax").
   body of Phase 5.5 – its seven steps and the transition gate they end in – together with the
   per-issue items Phase 6 reports for what those steps observed, under its closing
   `### Observation report items` heading, for a phase that runs after an already-successful merge
-  and is explicitly allowed to degrade. Like
+  and is explicitly allowed to degrade. It defers the rarer `Tick & close` gate in turn to
+  `merge-gate-issue-tick-offer`, loaded only once step 3 has recorded a tick-eligible issue. Like
   `merge-gate-checkout-boundary` it reuses an existing trigger, `issue-post-merge-observation`'s,
   because the two load at the same moment. What separates it from the four above is **where the
   cut runs**: the section's heading, its entry condition and its missing-receipt rule stay in the
