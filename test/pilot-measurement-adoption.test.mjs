@@ -287,7 +287,6 @@ function finalizeGateInput(fx, generationId, reservation, overrides = {}) {
     ...fx.common,
     generationId,
     observationId: reservation.observationId,
-    capability: reservation.capability,
     terminalOutcome: 'merged',
     ciRepairCorrections: 0,
     reviewerCorrections: 0,
@@ -1949,6 +1948,12 @@ test('finalize never suspends on caller errors, contention, location faults, or 
     const envelope = await rejection('finalize', input, fx.deps);
     restore();
     assert.equal(envelope.error.code, code, label);
+    // The control rewrap keeps the failed runtime-root check; no other code carries details.
+    if (code === 'UNSAFE_RUNTIME_ROOT') {
+      assert.deepEqual(envelope.error.details, { reason: 'identity-mismatch' }, label);
+    } else {
+      assert.equal('details' in envelope.error, false, label);
+    }
     assert.deepEqual(control(envelope), NEUTRAL, label);
     assert.deepEqual(snapshot(fx, generationId), before, label);
   }
@@ -2544,10 +2549,12 @@ test('start-gate-observation reports busy only for a held lock and finalize unde
   const before = snapshot(fx, generationId);
   for (const [label, input, code] of [
     ['lock contention', finalizeObservation, 'LOCKED'],
+    // The helper authenticates from its own capability file, so a supplied capability is a key
+    // outside the closed schema.
     [
       'capability',
       { ...finalizeObservation, capability: reservation.workflowCapability },
-      'AUTHENTICATION_FAILED',
+      'INVALID_PAYLOAD',
     ],
     ['payload', { ...finalizeObservation, terminalOutcome: 'unknown-outcome' }, 'INVALID_PAYLOAD'],
     ['missing generation', { ...finalizeObservation, generationId: 'Z'.repeat(32) }, 'NOT_FOUND'],

@@ -12,7 +12,10 @@ installs, where Fast needs a qualified harness (see "Portable Fast and harness q
 ## Where evidence lives
 
 Pilot evidence stays below
-`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`. The whole `.effective-flow/`
+`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`. Beside it,
+`<RUNTIME_STATE_ROOT>/.effective-flow/pilot-observation-handles/<generationId>/` holds one
+helper-owned capability file per merge-gate observation: the observation's random capability,
+reduced to its hash once the observation is finalized. The whole `.effective-flow/`
 directory must be ignored by Git and contain no tracked path. Evidence is local to one project and
 one generation; Effective Flow does not send raw records or detailed traces to a service or reuse
 the merge-gate behavioral-evaluation archive.
@@ -41,8 +44,9 @@ at the end of the gate run. Records and observations may be open at the same tim
 
 Observation setup sends the verified runtime root and repository identity together with the
 generation, configuration and generation states, `merge|report` mode, harness family, and install kind.
-The returned observation identifier and raw capability remain transient. Finalization authenticates
-that capability and records one closed outcome, the three counters, and either final required-check
+The helper keeps the observation's capability in its capability file and never shows it. The
+returned observation identifier is a non-secret reference that the run keeps until finalization.
+Finalization authenticates the capability from that file and records one closed outcome, the three counters, and either final required-check
 evidence or explicit unavailable values. Every normal or early exit after reservation finalizes
 exactly once; an early report-mode stop is `reported-blocked` with unavailable check evidence.
 
@@ -201,8 +205,13 @@ generation to a digest-bound tombstone and removes only that tombstone. If malfo
 owned evidence prevents normal aggregation, the separately confirmed `discard-generation` path is
 available only after configuration is disabled and the generation is in review. Its value-free dry
 run binds the full opaque inventory; the confirmed action requires a `change` or `stop` decision,
-emits no aggregate, and makes Keep unavailable. Manual recursive deletion is not a supported
-recovery path.
+emits no aggregate, and makes Keep unavailable. Purge and discard also remove the generation's
+capability-file directory, and only that one; every dry run reports its file count as
+`observationHandles`. For a generation that no longer exists, for example leftovers of an older
+release, the dry run also returns `observationHandlesDigest`, and the confirmed run removes the
+directory only when it echoes that value. The directory names below
+`.effective-flow/pilot-observation-handles/` are the non-secret generation ids to pass. Manual
+recursive deletion is not a supported recovery path.
 
 Suspension and resume use durable transition state. A crash during either operation keeps every
 admission path frozen until recovery completes. The next suspension, incident, or resume operation

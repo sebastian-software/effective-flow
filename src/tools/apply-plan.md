@@ -1,6 +1,6 @@
 ---
 description: "Reads a plan file from docs/plan/, checks its status and workflow recommendation and starts the matching implementation skill {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}}."
-contextBudget: 567
+contextBudget: 568
 ---
 
 # Effective Flow Apply Plan
@@ -110,7 +110,8 @@ plan-reference-routing
 
 4. Pass as context:
    - that `{{SKILL:apply-plan}}` has already checked the plan status, the workflow recommendation and the clarification gate
-   - the full plan path as source association; return any archive move and observed outcome with it
+   - the full plan path as source association; return any archive move and the observed outcome
+     `worktree-integration` retains with it
    - the verified original outcome/parent association, checkpoint and retained attempt reference;
      transfer source ownership to the receiving workflow along with progress ownership. This router
      neither counts an attempt nor writes the checkpoint; the target reconciles after its children

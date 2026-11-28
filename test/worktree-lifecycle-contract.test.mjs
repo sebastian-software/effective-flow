@@ -30,6 +30,8 @@ import {
   MAX_BRANCH_ITEMS,
   MAX_RECORD_IDS,
   PURPOSES,
+  SUPERSEDED_PLAN_PROOF,
+  SUPERSEDED_PLAN_REASONS,
 } from '../src/scripts/effective-flow-state-worktree-core.mjs';
 import { spliceDelegatedRun } from './support/merge-gate-source.mjs';
 
@@ -1056,7 +1058,7 @@ test('cleanup names the invalid-record item, its absent action and the schema-in
       'the absent action in the dry run',
     ],
     [
-      /"Remove all verified" every `worktree:` and `invalid-record:` item/,
+      /"Remove all verified" every `worktree:` item without that proof and every `invalid-record:` item/,
       'ask selects invalid-record items',
     ],
     [
@@ -1260,4 +1262,155 @@ test('the lifecycle reports the configured-base difference once and probes no sh
       'diagnostic once per run',
     ],
   ]);
+});
+
+// --- Superseded preserved plans (#812) ---
+
+// Invariant: the lifecycle state machine names both transitions of the superseded-plan discard,
+// each only inside `cleanup apply`: the claim of an `aborted` `plan-preserved` `issue-planning`
+// record, and the restore of exactly that record by the claiming call while the plan is still in
+// place. "Removal eligibility" states once that the confirmed proof waives condition 7 for the one
+// proven file and that the removal-time condition-7 facts must hold fresh after the discard.
+test('the lifecycle names the superseded-plan claim and restore and the discard-then-condition-7 rule', () => {
+  const rows = lifecycle.split('\n');
+  assert.match(
+    rows.find((line) => line.startsWith('| `aborted` `plan-preserved` `issue-planning`')) ?? '',
+    /\| `cleanup-in-progress` +\| claim inside `cleanup apply` only +\|$/,
+    'the claim row',
+  );
+  assert.match(
+    rows.find((line) => line.includes('`aborted` `plan-preserved` (restore)')) ?? '',
+    /^\| `cleanup-in-progress` +\| `aborted` `plan-preserved` \(restore\) +\| the claiming `cleanup apply` call, while the superseded plan is still in place +\|$/,
+    'the restore row',
+  );
+  assert.match(
+    flatLifecycle,
+    /Cleanup's confirmed `preserved-plan-superseded` claim of a `plan-preserved` record waives condition 7 only for its one proven plan file: under the lock it discards exactly that file, and the removal-time condition-7 facts must then hold fresh before the ordinary removal\./,
+  );
+  assert.equal(
+    flatLifecycle.match(/removal-time condition-7 facts/g)?.length,
+    1,
+    'the discard-then-condition-7 rule is stated once',
+  );
+  assert.match(
+    flatLifecycle,
+    /item `restored: true` \(`PLAN_CHANGED`, `INTERRUPTED`, `GIT_FAILED`/,
+  );
+});
+
+// Invariant: cleanup offers a proven superseded plan as its own confirmation class, so "Remove all
+// verified" never deletes an untracked plan file: the `Superseded` ask covers exactly the
+// proven items, the `Worktrees` ask excludes them, the apply value of a proven item is
+// `{itemDigest, proof}`, the description names the case, and the listing and reason detail stay
+// behind one lazy pointer that the common `archive-missing` case does not load. The restored outcome
+// is stated once, in the lifecycle outcome table, and the fragment and the tool point to it.
+test('cleanup confirms superseded plans in their own ask behind a lazy detail pointer', () => {
+  const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
+  assert.match(
+    frontmatter,
+    /under a helper proof, is superseded by its Implemented archive copy on the base branch, which cleanup then discards/,
+  );
+  assert.match(
+    cleanup,
+    /when: there is at least one verified worktree removal candidate without `proof: "preserved-plan-superseded"`\nheader: Worktrees\n/,
+  );
+  assert.match(
+    cleanup,
+    /when: there is at least one `worktree:` item with `proof: "preserved-plan-superseded"`\nheader: Superseded\n/,
+  );
+  assertClauses(flatCleanup, [
+    [
+      new RegExp(
+        `"worktree:<RECORD_ID>":\\{"itemDigest":"<itemDigest>","proof":"${SUPERSEDED_PLAN_PROOF}"\\}`,
+      ),
+      'apply value shape',
+    ],
+    [/"Discard all proven" every `preserved-plan-superseded` item/, 'ask selects proven items'],
+    [/for a proven `worktree:` item `\{itemDigest, proof\}`/, 'apply value per item'],
+    [/or was sent in the wrong value form \(`proof-mismatch`\)/, 'form mismatch outcome'],
+    [
+      /```lazy-include cleanup-superseded-plans when: `cleanup plan` returns a `worktree:` item with `proof: "preserved-plan-superseded"`, or a blocked record whose `supersededPlan\.reason` is not `archive-missing` ```/,
+      'lazy pointer',
+    ],
+    [
+      /condition 7 waived only under its `preserved-plan-superseded` proof/,
+      'the only cleanup-only claims',
+    ],
+  ]);
+  const fragment = readShared('cleanup-superseded-plans').replace(/\s+/g, ' ');
+  for (const reason of SUPERSEDED_PLAN_REASONS) {
+    assert.match(fragment, new RegExp(`\\| \`${reason}\` +\\|`), `the fragment maps ${reason}`);
+  }
+  assert.match(
+    fragment,
+    /`content-diverged` \| the preserved copy has no single open status line, is not valid UTF-8, or was revised before archiving: diff the two copies/,
+  );
+  assert.match(fragment, /`completion-prefix`: from `archivePath`/);
+  assert.match(fragment, /`blob-history`: from the base history/);
+  assert.match(fragment, /a `restored` item follows the lifecycle outcome table/);
+  assert.doesNotMatch(
+    fragment,
+    /`restored: true`/,
+    'the restored outcome is stated in the lifecycle only',
+  );
+  assert.match(flatCleanup, /a `restored` one follows its own row/);
+  assert.match(
+    flatLifecycle,
+    /With `restored: false` the restore write failed and the record is `cleanup-failed` \(or, with `persisted: false`, still claimed\): report it\./,
+  );
+  assert.doesNotMatch(flatCleanup, /diff the two copies/, 'the reason detail stays lazy');
+});
+
+test('a delivery branch with an open PR is never rebased, so creationOid stays an ancestor of its tip', () => {
+  const flatDelivery = flatten(delivery);
+  const start = flatDelivery.indexOf('**Update existing PRs:**');
+  const end = flatDelivery.indexOf('1. **Mark the plan as implemented');
+  assert.notEqual(start, -1, 'missing the "Update existing PRs" paragraph label');
+  assert.notEqual(
+    end,
+    -1,
+    'missing the "Mark the plan as implemented" step that ends the paragraph',
+  );
+  assert.ok(
+    end > start,
+    'the "Update existing PRs" paragraph must precede the "Mark the plan" step',
+  );
+  const paragraph = flatDelivery.slice(start, end);
+
+  assert.doesNotMatch(
+    paragraph,
+    /interactive rebase/,
+    'the paragraph must not qualify the rebase ban as interactive only',
+  );
+  assertClauses(paragraph, [
+    [/no rebase of any kind/, 'the unqualified rebase ban ("no rebase of any kind")'],
+    [/at any point of the run/, 'the run-wide scope ("at any point of the run")'],
+    [/new commits/, 'follow-up changes as new commits on the same branch'],
+    [
+      /stop and report the conflict instead of overwriting history/,
+      'the diverged-history stop clause',
+    ],
+  ]);
+  assert.doesNotMatch(
+    paragraph,
+    /(?<!\bno )(?<!\bnot )(?<!\bnever )(?<!`)(?:rebase|force-push|force push)/i,
+    'every mention of a rebase or force-push in the paragraph must be a prohibition (`no rebase`, `no force-push`)',
+  );
+  assertClauses(paragraph, [
+    [
+      /merge commit of `origin\/<base>`[^.]*pushed normally/,
+      'the merge alternative: a merge commit of `origin/<base>` pushed normally',
+    ],
+    [/\{\{SKILL:merge-gate\}\}/, 'merge-gate named as the performer of the merge'],
+    [
+      /creationOid.{0,400}condition 6|condition 6.{0,400}creationOid/,
+      'the creationOid reason tied to condition 6',
+    ],
+  ]);
+
+  assert.match(
+    flatten(lifecycle),
+    /6\. `creationOid` is a commit and an ancestor of the branch tip/,
+    'condition 6 of the lifecycle must be the creationOid ancestry condition',
+  );
 });

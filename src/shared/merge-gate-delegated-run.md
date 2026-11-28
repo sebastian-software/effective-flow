@@ -578,9 +578,8 @@ gate run inline generates it at the start. Use
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
 - per "Draft ready for review": every `merge-proof-local` result, the class with its blocker count
   and `appendixTrust`, why no question was posed or the answer, and the ready step's result
-- when a pilot observation was reserved, its three anonymous correction counters; never its
-  observation identifier or capability outside the handle `pilot-measurement` keeps across a
-  `SUSPENDED host-pr-watch` return
+- when a pilot observation was reserved, its three anonymous correction counters; its identifiers
+  only in the handle `pilot-measurement` keeps across a `SUSPENDED host-pr-watch` return
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
   every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
   retain that every delegated `{{SKILL:iterate}}` round carried `Summary comment: suppressed`, so it
@@ -1443,9 +1442,15 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 ### Phase 5.5: Observe linked issues after merge
 
 Enter this phase only after a fresh PR read proves either that Phase 5 merged the pull request or
-that Phase 0 selected observer-only mode. If the open-PR path did not merge, perform no issue
-observation or container completion. A missing or invalid receipt preserves the merge result and
-ends this phase without heuristic tracker access.
+that Phase 0 selected observer-only mode. Without a valid receipt, preserve the merge result and
+end this phase without heuristic tracker access.
+
+```lazy-include
+pilot-measurement
+when: observer-only Phase 5.5 starts after waking with a suspended observation handle
+```
+
+Apply “Observer-only wake” before issue observation when that fragment is loaded for this wake.
 
 ```lazy-include
 merge-gate-issue-observation
@@ -1454,14 +1459,11 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
 
 ### Phase 6: Summary
 
-Before step 1, if Phase 0 reserved or restored a pilot observation and no earlier controlled ending
-finalized it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement`
-fragment; a `SUSPENDED host-pr-watch` return writes its handle per "Suspended observation" instead. This
-ordering is mandatory: finalization needs the counters and final status evidence that step 1
-deletes. The mutually exclusive earlier-ending and normal-Phase-6 routes together finalize every
-reservation exactly once. On the T3 path of `host-pr-watch`, step 1 keeps the wisdom file on a
-`SUSPENDED host-pr-watch` return as on `BLOCKED-USER`, and a report naming a pending wait follows
-that fragment's report-and-stop path.
+Before step 1, finalize a reserved or restored pilot observation only if it has not already been
+finalized, per `pilot-measurement`'s Phase 6; a `SUSPENDED host-pr-watch` return writes its handle
+per "Suspended observation" instead.
+On T3, keep the wisdom file on that return as on `BLOCKED-USER`; a report naming a pending wait
+follows `host-pr-watch`'s report-and-stop path.
 
 ```lazy-include
 merge-gate-repair-report

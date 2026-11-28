@@ -428,9 +428,22 @@ test('forge recommendation references use the production parser for the exact ow
     ])
       assert.ok(judged(reference).length > 0, reference);
   }
+  // Invariant: only the PR reference token is normalized; the trailing own-review selection that
+  // iterate recognizes must match exactly, so a respelled or dropped phrase is a wrong option.
   const name = 'ambiguous-associated-plans-fallback';
-  const text = correctReport(name) + '\n- `effective-flow iterate #42` — PR #42 weiter bearbeiten.';
-  assert.deepEqual(reportFindings(name, [reportRecord(text)], fixtureFor(name)), []);
+  const second = (invocation) =>
+    reportFindings(
+      name,
+      [
+        reportRecord(
+          `${correctReport(name)}\n- \`effective-flow ${invocation}\` — PR #42 weiter bearbeiten.`,
+        ),
+      ],
+      fixtureFor(name),
+    );
+  assert.deepEqual(second('iterate #42 own-review findings'), []);
+  for (const invocation of ['iterate #42 own review findings', 'iterate #42'])
+    assert.ok(second(invocation).length > 0, invocation);
   const external = 'external-issue-identity-retained';
   assert.ok(
     reportFindings(

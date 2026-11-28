@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 981
+contextBudget: 985
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -177,8 +177,10 @@ input object's top-level `cwd`; setting only the process or tool working directo
    On T3 Code the caller links an open pull request of this repository once per gate run, per
    `host-pr-watch`, before step 2.
 
-2. Run the forge preflight: detect the host and CLI, probe availability and authentication, and read
-   the capabilities `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`,
+2. Run the forge preflight:
+   `node <skill-root>/scripts/remote-tracker.mjs probe <<< '{"cwd":"<RUNTIME_STATE_ROOT>"}'`
+   Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`.
+   From its `data.capabilities`, read `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`,
    `prReviewsRead`, `issueCommentsRead`, `issueClose`, and `pullRequestMarkReady`. On
    `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On `AMBIGUOUS_HOST`, ask for the
    provider once and retry.
@@ -285,8 +287,10 @@ worker role, with zero inherited turns where supported. The handoff says to read
 - `Associated plan: <repo-relative path>`, only for a verified association: explicit user input or a
   retained link from a workflow in this session, never one inferred from pull-request prose or a
   title match. Before every dispatch, re-dispatches included, or an inline run, resolve it through
-  `plan-reference-resolve` with `cwd` the root `plan.dir` resolves against (the checkout root, or
-  `RUNTIME_STATE_ROOT` in hidden mode) and `planDir` the configured `plan.dir`; it passes only on
+  `node <skill-root>/scripts/effective-flow-mechanics.mjs plan-reference-resolve <<< '{"cwd":"<root>","planDir":"<plan.dir>","reference":"<repo-relative path>"}'`,
+  spelled per the call rule of Phase 0 step 2, with `<root>` the root `plan.dir` resolves against
+  (the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode) and `<plan.dir>` the configured
+  `plan.dir`; it passes only on
   `resolved` with `data.exact` true inside `<plan.dir>/` or `<plan.dir>/archive/`. Drop a line that
   fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it;
 - `Wisdom file: <RUNTIME_STATE_ROOT>/.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`, one

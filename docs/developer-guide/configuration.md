@@ -28,7 +28,8 @@ runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, `wo
 in Phase 6),
 `merge-gate/` (the gate's delegation messages, plus `iterate`'s hidden-mode
 `merge-gate/thread-ledger.json`), `model-tiering-pilot/` (local pilot generations and their
-evidence), and, in hidden mode only, the local `project-setup.md` with the `plan/` and `concept/`
+evidence), `pilot-observation-handles/` (the pilot helper's capability files for merge-gate
+observations), and, in hidden mode only, the local `project-setup.md` with the `plan/` and `concept/`
 directories. The entire directory is ignored with one `.effective-flow/` line: in `.gitignore` in
 standard mode, or in the Git common directory's `info/exclude` in hidden mode.
 
@@ -132,7 +133,7 @@ each non-destructive or bounded helper operation: the runtime-state helper opera
 `presence list`, `presence release`, `planning-claim key`, `planning-claim acquire`,
 `planning-claim release`, `planning-claim list`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
 `config-resolve.mjs conflict-validation`, `config-resolve.mjs review-fix-validation`, the four read-only `conflict-validation.mjs` operations,
-and the 48 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`;
+and the 49 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`;
 `pr-acceptance-sources` also writes its private no-clobber review snapshot below `.effective-flow/`; an
 allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
@@ -432,7 +433,9 @@ and the qualification record is build metadata, not configuration. The existence
 activates Fast nor proves that the running host can discover or accept the representation.
 
 Pilot generation state and evidence are owned below
-`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never by a tracked configuration row.
+`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, and the helper's observation
+capability files below `<RUNTIME_STATE_ROOT>/.effective-flow/pilot-observation-handles/`, never by a
+tracked configuration row.
 Disabling the key stops new measurement and Fast admission but does not delete a generation, clear
 suspension, or authorize purge. The row also cannot authorize a detailed trace: only an explicit
 request in the current workflow run can produce the `detailOptIn: true` attestation, and that

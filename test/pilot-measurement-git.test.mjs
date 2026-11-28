@@ -14,7 +14,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { executeOperation } from '../src/scripts/pilot-measurement-core.mjs';
+import {
+  PilotMeasurementError,
+  UNSAFE_RUNTIME_ROOT_REASONS,
+  errorEnvelope,
+  executeOperation,
+} from '../src/scripts/pilot-measurement-core.mjs';
 import {
   PILOT_MEASUREMENT_PROTOCOL_DIGEST,
   PILOT_MEASUREMENT_PROTOCOL_VERSION,
@@ -75,6 +80,17 @@ test('real Git ignore and index guards admit only ignored, untracked pilot state
   assert.equal(
     git(receipt.root, 'check-ignore', '--no-index', '--', '.effective-flow/model-tiering-pilot'),
     '.effective-flow/model-tiering-pilot',
+  );
+  // The capability-file root beside the pilot namespace is ignored by the same rule.
+  assert.equal(
+    git(
+      receipt.root,
+      'check-ignore',
+      '--no-index',
+      '--',
+      '.effective-flow/pilot-observation-handles',
+    ),
+    '.effective-flow/pilot-observation-handles',
   );
   assert.equal(git(receipt.root, 'ls-files', '--', '.effective-flow/'), '');
 
@@ -169,4 +185,309 @@ test('pre-existing namespaces without the exact owner are rejected byte-for-byte
       }
     });
   }
+});
+
+const UNSAFE_MESSAGE = 'pilot measurement runtime guard rejected the target';
+const GIT_SUBCOMMANDS = ['rev-parse', 'ls-files', 'check-ignore'];
+const STDOUT_MARKER = 'stdout-marker-do-not-echo';
+const STDERR_MARKER = 'stderr-marker-do-not-echo';
+
+function inventoryInput({ root, repositoryIdentity }) {
+  return { runtimeStateRoot: root, repositoryIdentity };
+}
+
+// Wraps the real runner: every call carries a stderr marker, and a faked result for the named
+// subcommand also carries a stdout marker, so a leak of either stream is detectable.
+function markedRunner(override = () => undefined) {
+  return async (call) => {
+    const faked = override(call.args[2]);
+    if (faked !== undefined) {
+      return { stdout: STDOUT_MARKER, stderr: STDERR_MARKER, ...faked };
+    }
+    const result = await runner(call);
+    return {
+      ...result,
+      stderr: Buffer.concat([result.stderr ?? Buffer.alloc(0), Buffer.from(STDERR_MARKER)]),
+    };
+  };
+}
+
+function failingSubcommand(subcommand, result) {
+  return markedRunner((name) => (name === subcommand ? result : undefined));
+}
+
+// Each case returns the inventory input, its dependencies, and the fixture paths it used.
+const ROOT_CASES = [
+  {
+    label: 'a missing runner',
+    reason: 'git-unavailable',
+    arrange: (t) => {
+      const fixture = repository(t);
+      return { input: inventoryInput(fixture), deps: {}, paths: [fixture.root] };
+    },
+  },
+  {
+    label: 'a runner spawn error',
+    reason: 'git-unavailable',
+    arrange: (t) => {
+      const fixture = repository(t);
+      const spawnError = markedRunner(() => ({ error: new Error(STDERR_MARKER), status: 0 }));
+      return {
+        input: inventoryInput(fixture),
+        deps: { runner: spawnError },
+        paths: [fixture.root],
+      };
+    },
+  },
+  {
+    label: 'a directory outside any repository',
+    reason: 'git-failed',
+    subcommand: 'rev-parse',
+    arrange: (t) => {
+      const root = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-pilot-bare-')));
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const fixture = repository(t);
+      return {
+        input: { runtimeStateRoot: root, repositoryIdentity: fixture.repositoryIdentity },
+        deps: { runner: markedRunner() },
+        paths: [root, fixture.root],
+      };
+    },
+  },
+  {
+    label: 'a signal-killed rev-parse',
+    reason: 'git-failed',
+    subcommand: 'rev-parse',
+    arrange: (t) => {
+      const fixture = repository(t);
+      return {
+        input: inventoryInput(fixture),
+        deps: { runner: failingSubcommand('rev-parse', { status: null }) },
+        paths: [fixture.root],
+      };
+    },
+  },
+  {
+    label: 'a failing ls-files',
+    reason: 'git-failed',
+    subcommand: 'ls-files',
+    arrange: (t) => {
+      const fixture = repository(t);
+      return {
+        input: inventoryInput(fixture),
+        deps: { runner: failingSubcommand('ls-files', { status: 128 }) },
+        paths: [fixture.root],
+      };
+    },
+  },
+  {
+    label: 'a failing check-ignore',
+    reason: 'git-failed',
+    subcommand: 'check-ignore',
+    arrange: (t) => {
+      const fixture = repository(t);
+      return {
+        input: inventoryInput(fixture),
+        deps: { runner: failingSubcommand('check-ignore', { status: 128 }) },
+        paths: [fixture.root],
+      };
+    },
+  },
+  {
+    label: 'a regular file as root',
+    reason: 'not-directory',
+    arrange: (t) => {
+      const fixture = repository(t);
+      const file = join(fixture.root, 'source.txt');
+      writeFileSync(file, 'fixture\n');
+      return {
+        input: { runtimeStateRoot: file, repositoryIdentity: fixture.repositoryIdentity },
+        deps: { runner: markedRunner() },
+        paths: [fixture.root, file],
+      };
+    },
+  },
+  {
+    label: 'a nested execution root',
+    reason: 'toplevel-mismatch',
+    arrange: (t) => {
+      const fixture = repository(t);
+      const nested = join(fixture.root, 'nested');
+      mkdirSync(nested);
+      return {
+        input: { runtimeStateRoot: nested, repositoryIdentity: fixture.repositoryIdentity },
+        deps: { runner: markedRunner() },
+        paths: [fixture.root, nested],
+      };
+    },
+  },
+  {
+    label: 'a foreign repository identity',
+    reason: 'identity-mismatch',
+    arrange: (t) => {
+      const fixture = repository(t);
+      const foreign = repository(t, 'effective-flow-pilot-foreign-');
+      return {
+        input: { runtimeStateRoot: fixture.root, repositoryIdentity: foreign.repositoryIdentity },
+        deps: { runner: markedRunner() },
+        paths: [fixture.root, foreign.root],
+      };
+    },
+  },
+  {
+    label: 'a root that does not exist',
+    reason: 'path-resolution',
+    arrange: (t) => {
+      const fixture = repository(t);
+      const missing = join(fixture.root, 'missing');
+      return {
+        input: { runtimeStateRoot: missing, repositoryIdentity: fixture.repositoryIdentity },
+        deps: { runner: markedRunner() },
+        paths: [fixture.root, missing],
+      };
+    },
+  },
+  {
+    label: 'tracked runtime state',
+    reason: 'tracked-runtime-state',
+    arrange: (t) => {
+      const fixture = repository(t);
+      writeFileSync(join(fixture.root, '.effective-flow', 'tracked.txt'), 'tracked\n');
+      git(fixture.root, 'add', '-f', '.effective-flow/tracked.txt');
+      return {
+        input: inventoryInput(fixture),
+        deps: { runner: markedRunner() },
+        paths: [fixture.root],
+      };
+    },
+  },
+  {
+    label: 'a runtime path that is not ignored',
+    reason: 'not-ignored',
+    arrange: (t) => {
+      const fixture = repository(t);
+      rmSync(join(fixture.root, '.gitignore'));
+      return {
+        input: inventoryInput(fixture),
+        deps: { runner: markedRunner() },
+        paths: [fixture.root],
+      };
+    },
+  },
+];
+
+async function rootRejection(input, deps) {
+  let envelope;
+  await assert.rejects(executeOperation('inventory', input, deps), (error) => {
+    assert.ok(error instanceof PilotMeasurementError);
+    envelope = errorEnvelope('inventory', error);
+    return true;
+  });
+  return envelope;
+}
+
+function stringValues(value) {
+  if (typeof value === 'string') return [value];
+  if (value === null || typeof value !== 'object') return [];
+  return Object.values(value).flatMap(stringValues);
+}
+
+// Invariant: every reason in the closed list is reachable, and the envelope names it with the
+// unchanged code, exit status and message.
+for (const reason of UNSAFE_RUNTIME_ROOT_REASONS) {
+  test(`UNSAFE_RUNTIME_ROOT names the failed check ${reason}`, async (t) => {
+    const cases = ROOT_CASES.filter((entry) => entry.reason === reason);
+    assert.ok(cases.length > 0, `no case produces ${reason}`);
+    for (const entry of cases) {
+      const { input, deps } = entry.arrange(t);
+      const envelope = await rootRejection(input, deps);
+      assert.equal(envelope.error.code, 'UNSAFE_RUNTIME_ROOT', entry.label);
+      assert.equal(envelope.error.exitCode, 3, entry.label);
+      assert.equal(envelope.error.message, UNSAFE_MESSAGE, entry.label);
+      assert.deepEqual(
+        envelope.error.details,
+        entry.subcommand === undefined ? { reason } : { reason, subcommand: entry.subcommand },
+        entry.label,
+      );
+    }
+  });
+}
+
+// Invariant: no `details` value carries an absolute path or Git output.
+test('no details value carries an absolute path or Git output', async (t) => {
+  for (const entry of ROOT_CASES) {
+    const { input, deps, paths } = entry.arrange(t);
+    const envelope = await rootRejection(input, deps);
+    const { details } = envelope.error;
+    assert.ok(UNSAFE_RUNTIME_ROOT_REASONS.includes(details.reason), entry.label);
+    if ('subcommand' in details) {
+      assert.equal(details.reason, 'git-failed', entry.label);
+      assert.ok(GIT_SUBCOMMANDS.includes(details.subcommand), entry.label);
+    }
+    for (const value of stringValues(envelope)) {
+      assert.doesNotMatch(value, /(?:^|\s)\//, `${entry.label}: rooted path in ${value}`);
+      for (const marker of [STDOUT_MARKER, STDERR_MARKER, ...paths]) {
+        assert.equal(value.includes(marker), false, `${entry.label}: leaked ${marker}`);
+      }
+    }
+  }
+});
+
+// Invariant: a runner that rejects inside the guard's path checks stays `path-resolution`; it is
+// never reclassified as a Git failure.
+test('a rejecting runner during the toplevel check reports path-resolution', async (t) => {
+  const fixture = repository(t);
+  const rejecting = async () => {
+    throw new Error(STDERR_MARKER);
+  };
+  const envelope = await rootRejection(inventoryInput(fixture), { runner: rejecting });
+  assert.deepEqual(envelope.error.details, { reason: 'path-resolution' });
+});
+
+// Invariant: an UNSAFE_RUNTIME_ROOT error always carries closed details; a raise without them is a
+// programming error, never an envelope without a reason.
+test('an UNSAFE_RUNTIME_ROOT error always carries closed details', () => {
+  for (const options of [{}, { details: undefined }, { cause: new Error('cause') }]) {
+    assert.throws(
+      () => new PilotMeasurementError('UNSAFE_RUNTIME_ROOT', options),
+      (error) => !(error instanceof PilotMeasurementError),
+    );
+  }
+  for (const reason of UNSAFE_RUNTIME_ROOT_REASONS.filter((entry) => entry !== 'git-failed')) {
+    const error = new PilotMeasurementError('UNSAFE_RUNTIME_ROOT', { details: { reason } });
+    assert.deepEqual(errorEnvelope('inventory', error).error.details, { reason });
+  }
+});
+
+// Invariant: `details` exists only on UNSAFE_RUNTIME_ROOT and only in the closed shape; any other
+// shape is a programming error, not a helper error a caller could see as a reason.
+test('error details outside the closed shape are rejected at construction', () => {
+  for (const [code, details] of [
+    ['UNSAFE_RUNTIME_ROOT', { reason: 'unknown' }],
+    ['UNSAFE_RUNTIME_ROOT', { reason: 'git-failed' }],
+    ['UNSAFE_RUNTIME_ROOT', { reason: 'git-failed', subcommand: 'status' }],
+    ['UNSAFE_RUNTIME_ROOT', { reason: 'not-ignored', subcommand: 'check-ignore' }],
+    ['UNSAFE_RUNTIME_ROOT', { reason: 'not-ignored', path: '/tmp' }],
+    ['UNSAFE_RUNTIME_ROOT', 'not-ignored'],
+    ['INVALID_PAYLOAD', { reason: 'not-ignored' }],
+  ]) {
+    assert.throws(
+      () => new PilotMeasurementError(code, { details }),
+      (error) => !(error instanceof PilotMeasurementError),
+      JSON.stringify(details),
+    );
+  }
+  for (const subcommand of GIT_SUBCOMMANDS) {
+    const error = new PilotMeasurementError('UNSAFE_RUNTIME_ROOT', {
+      details: { reason: 'git-failed', subcommand },
+    });
+    assert.deepEqual(errorEnvelope('inventory', error).error.details, {
+      reason: 'git-failed',
+      subcommand,
+    });
+  }
+  assert.equal(
+    'details' in errorEnvelope('inventory', new PilotMeasurementError('LOCKED')).error,
+    false,
+  );
 });

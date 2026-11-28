@@ -119,6 +119,31 @@ test('oversized stdin is rejected before JSON processing with the capacity exit 
   assert.equal(result.stderr, 'CAPACITY_EXHAUSTED: pilot measurement capacity is exhausted\n');
 });
 
+// Invariant: a rejected runtime root names its failed check in the stdout envelope only; code,
+// exit status, message and the stderr line stay unchanged.
+test('a rejected runtime root exposes its closed reason in the stdout envelope only', (t) => {
+  const fixture = repository(t);
+  const nested = join(fixture.root, 'nested');
+  mkdirSync(nested);
+  const result = runCli(
+    ['inventory'],
+    { runtimeStateRoot: nested, repositoryIdentity: fixture.repositoryIdentity },
+    { cwd: fixture.root },
+  );
+  assert.equal(result.status, 3, result.stderr);
+  const envelope = parseSingleEnvelope(result);
+  assert.deepEqual(envelope.error, {
+    code: 'UNSAFE_RUNTIME_ROOT',
+    message: 'pilot measurement runtime guard rejected the target',
+    exitCode: 3,
+    details: { reason: 'toplevel-mismatch' },
+  });
+  assert.equal(
+    result.stderr,
+    'UNSAFE_RUNTIME_ROOT: pilot measurement runtime guard rejected the target\n',
+  );
+});
+
 test('begin-baseline performs the guarded filesystem effect and returns no raw local data', (t) => {
   const fixture = repository(t);
   const input = {
@@ -152,6 +177,8 @@ test('begin-baseline performs the guarded filesystem effect and returns no raw l
   assert.equal(git(fixture.root, 'status', '--porcelain'), '');
 });
 
+// Invariant: reservation and finalization run in separate processes, and no output stream of
+// either carries the raw capability the helper keeps in its capability file.
 test('the spawned CLI discovers and completes one anonymous gate observation', (t) => {
   const fixture = repository(t);
   const common = {
@@ -191,13 +218,25 @@ test('the spawned CLI discovers and completes one anonymous gate observation', (
   );
   assert.equal(reservationResult.status, 0, reservationResult.stderr);
   const reservation = parseSingleEnvelope(reservationResult).result;
+  // The raw capability exists only in the helper's capability file.
+  const { capability } = JSON.parse(
+    readFileSync(
+      join(
+        fixture.root,
+        '.effective-flow/pilot-observation-handles',
+        baseline.generationId,
+        `${reservation.observationId}.json`,
+      ),
+      'utf8',
+    ),
+  );
+  assert.match(capability, /^[A-Za-z0-9_-]{32,128}$/);
   const finalized = runCli(
     ['finalize-gate-observation'],
     {
       ...common,
       generationId: baseline.generationId,
       observationId: reservation.observationId,
-      capability: reservation.capability,
       terminalOutcome: 'failed',
       ciRepairCorrections: 0,
       reviewerCorrections: 0,
@@ -210,7 +249,83 @@ test('the spawned CLI discovers and completes one anonymous gate observation', (
   );
   assert.equal(finalized.status, 0, finalized.stderr);
   assert.equal(parseSingleEnvelope(finalized).result.status, 'finalized');
-  assert.doesNotMatch(finalized.stdout, new RegExp(reservation.capability));
+  for (const output of [
+    reservationResult.stdout,
+    reservationResult.stderr,
+    finalized.stdout,
+    finalized.stderr,
+  ]) {
+    assert.equal(output.includes(capability), false);
+  }
+});
+
+// Invariant: the observation capability never crosses the CLI boundary; the helper keeps it and
+// finalize identifies the observation by its identifiers alone (issue #813).
+test('start-gate-observation keeps its capability helper-side and finalize needs no capability', (t) => {
+  const fixture = repository(t);
+  const common = {
+    runtimeStateRoot: fixture.root,
+    repositoryIdentity: fixture.repositoryIdentity,
+  };
+  const baseline = parseSingleEnvelope(
+    runCli(
+      ['begin-baseline'],
+      {
+        ...common,
+        configState: 'enabled',
+        fastEnabled: true,
+        protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+        protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+        confirmation: true,
+      },
+      { cwd: fixture.root },
+    ),
+  ).result;
+
+  const started = runCli(
+    ['start-gate-observation'],
+    {
+      ...common,
+      generationId: baseline.generationId,
+      configState: 'enabled',
+      generationState: 'baseline',
+      mode: 'merge',
+      harnessFamily: 'codex',
+      installKind: 'native',
+    },
+    { cwd: fixture.root },
+  );
+  assert.equal(started.status, 0, started.stderr);
+  const reservation = parseSingleEnvelope(started).result;
+  assert.equal(Object.hasOwn(reservation, 'capability'), false);
+  assert.deepEqual(Object.keys(reservation).sort(), [
+    'cohort',
+    'observationId',
+    'ordinal',
+    'status',
+  ]);
+
+  // A separate process finalizes with identifiers and terminal fields only.
+  const finalized = runCli(
+    ['finalize-gate-observation'],
+    {
+      ...common,
+      generationId: baseline.generationId,
+      observationId: reservation.observationId,
+      terminalOutcome: 'failed',
+      ciRepairCorrections: 0,
+      reviewerCorrections: 0,
+      conflictCorrections: 0,
+      checksReported: false,
+      requiredCheckCount: 'unavailable',
+      requiredChecksSatisfied: 'unavailable',
+    },
+    { cwd: fixture.root },
+  );
+  assert.equal(finalized.status, 0, finalized.stderr);
+  const envelope = parseSingleEnvelope(finalized);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.result.status, 'finalized');
 });
 
 test('a failed mutation leaves no namespace behind', (t) => {

@@ -29,6 +29,10 @@ task-tracking
 delegation-mandate
 ```
 
+```include
+worker-git-history
+```
+
 ## Recommended skills
 
 - `effective-delivery` – repository-native command discovery, CI and build tooling, and dependency

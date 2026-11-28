@@ -10,6 +10,7 @@ import {
   realpath,
   rename,
   rm,
+  rmdir,
   stat,
   unlink,
 } from 'node:fs/promises';
@@ -76,6 +77,33 @@ export const PILOT_MEASUREMENT_ERROR_CODES = Object.freeze([
   'ADMISSION_CHANGED',
   'PROFILE_UNAVAILABLE',
 ]);
+
+// Closed, value-free reasons an UNSAFE_RUNTIME_ROOT error names in `details.reason`; a
+// `git-failed` reason also names its bare Git subcommand. Neither ever carries a path or Git output.
+export const UNSAFE_RUNTIME_ROOT_REASONS = Object.freeze([
+  'git-unavailable',
+  'git-failed',
+  'not-directory',
+  'toplevel-mismatch',
+  'identity-mismatch',
+  'path-resolution',
+  'tracked-runtime-state',
+  'not-ignored',
+]);
+const GIT_SUBCOMMANDS = Object.freeze(['rev-parse', 'ls-files', 'check-ignore']);
+const ROOT_DETAILS = Object.freeze(
+  Object.fromEntries(
+    UNSAFE_RUNTIME_ROOT_REASONS.map((reason) => [reason, Object.freeze({ reason })]),
+  ),
+);
+const GIT_FAILED_DETAILS = Object.freeze(
+  Object.fromEntries(
+    GIT_SUBCOMMANDS.map((subcommand) => [
+      subcommand,
+      Object.freeze({ reason: 'git-failed', subcommand }),
+    ]),
+  ),
+);
 
 const EXIT_CODES = Object.freeze({
   INVALID_OPERATION: 2,
@@ -236,13 +264,51 @@ const CONTROL_NEUTRAL_CODES = new Set([
   'NOT_FOUND',
 ]);
 const RECEIPT_FAULT = Symbol('pilot-measurement-receipt-fault');
+// The helper keeps each gate observation's raw capability in a capability file of its own below
+// `.effective-flow/pilot-observation-handles/<generationId>/`, a sibling of the pilot namespace, so
+// no generation tree, closed name set, or evidence inventory sees it. Finalization replaces the
+// file by a consumed marker that holds only the capability hash.
+const HANDLE_ROOT = 'pilot-observation-handles';
+const HANDLE_SCHEMA = 1;
+const HANDLE_MAX_BYTES = 4 * 1024;
+const HANDLE_KIND = 'gate-observation-handle';
+const CONSUMED_HANDLE_KIND = 'gate-observation-handle-consumed';
+const HANDLE_FILE = /^[A-Za-z0-9_-]{32,128}\.json$/;
+
+// A programming error in a `details` shape; never mapped to a runtime-root reason.
+class InvalidErrorDetails extends Error {}
+
+function validDetails(code, details) {
+  if (code !== 'UNSAFE_RUNTIME_ROOT' || !isObject(details)) return false;
+  const keys = Object.keys(details);
+  if (!UNSAFE_RUNTIME_ROOT_REASONS.includes(details.reason)) return false;
+  if (details.reason === 'git-failed') {
+    return (
+      keys.length === 2 &&
+      keys.includes('subcommand') &&
+      GIT_SUBCOMMANDS.includes(details.subcommand)
+    );
+  }
+  return keys.length === 1;
+}
 
 export class PilotMeasurementError extends Error {
   constructor(code, options = {}) {
+    // This module is the only raiser of UNSAFE_RUNTIME_ROOT, so every one must name its check.
+    const needsDetails = options.details !== undefined || code === 'UNSAFE_RUNTIME_ROOT';
+    if (needsDetails && !validDetails(code, options.details)) {
+      throw new InvalidErrorDetails('pilot measurement error details are outside the closed set');
+    }
     super(ERROR_MESSAGES[code] ?? ERROR_MESSAGES.WRITE_FAILED, { cause: options.cause });
     this.name = 'PilotMeasurementError';
     this.code = code;
     this.exitCode = EXIT_CODES[code] ?? 1;
+    if (options.details !== undefined) {
+      this.details =
+        options.details.reason === 'git-failed'
+          ? GIT_FAILED_DETAILS[options.details.subcommand]
+          : ROOT_DETAILS[options.details.reason];
+    }
     if (options.pilotControlOutcome !== undefined) {
       this.pilotControlOutcome = options.pilotControlOutcome;
       this.controlStatePersisted = options.controlStatePersisted;
@@ -443,10 +509,20 @@ function asText(value) {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
 }
 
-async function gitCall(runner, cwd, args, allowed = [0]) {
-  if (typeof runner !== 'function') fail('UNSAFE_RUNTIME_ROOT');
+function unsafeRoot(reason, cause) {
+  fail('UNSAFE_RUNTIME_ROOT', { details: ROOT_DETAILS[reason], cause });
+}
+
+// A rejecting runner stays uncaught here; `statusReasons` maps a non-allowed exit status to a
+// caller-named reason. The status is only compared, never reported.
+async function gitCall(runner, cwd, args, allowed = [0], statusReasons = {}) {
+  if (typeof runner !== 'function') unsafeRoot('git-unavailable');
   const result = await runner({ executable: 'git', args: ['-C', cwd, ...args], cwd });
-  if (result?.error || !allowed.includes(result?.status)) fail('UNSAFE_RUNTIME_ROOT');
+  if (result?.error) unsafeRoot('git-unavailable');
+  if (!allowed.includes(result?.status)) {
+    if (Object.hasOwn(statusReasons, result?.status)) unsafeRoot(statusReasons[result.status]);
+    fail('UNSAFE_RUNTIME_ROOT', { details: GIT_FAILED_DETAILS[args[0]] });
+  }
   return asText(result.stdout).trim();
 }
 
@@ -458,24 +534,27 @@ async function repositoryGuard(input, deps, { mutation = false } = {}) {
   let identity;
   try {
     root = await realpath(input.runtimeStateRoot);
-    if (!(await stat(root)).isDirectory()) fail('UNSAFE_RUNTIME_ROOT');
+    if (!(await stat(root)).isDirectory()) unsafeRoot('not-directory');
     const top = await realpath(await gitCall(deps.runner, root, ['rev-parse', '--show-toplevel']));
-    if (top !== root) fail('UNSAFE_RUNTIME_ROOT');
+    if (top !== root) unsafeRoot('toplevel-mismatch');
     const common = await gitCall(deps.runner, root, [
       'rev-parse',
       '--path-format=absolute',
       '--git-common-dir',
     ]);
     identity = await realpath(common);
-    if (identity !== (await realpath(input.repositoryIdentity))) fail('UNSAFE_RUNTIME_ROOT');
+    if (identity !== (await realpath(input.repositoryIdentity))) unsafeRoot('identity-mismatch');
   } catch (error) {
-    if (error instanceof PilotMeasurementError) throw error;
-    fail('UNSAFE_RUNTIME_ROOT', { cause: error });
+    if (error instanceof PilotMeasurementError || error instanceof InvalidErrorDetails) throw error;
+    unsafeRoot('path-resolution', error);
   }
   const tracked = await gitCall(deps.runner, root, ['ls-files', '--', '.effective-flow/']);
-  if (tracked !== '') fail('UNSAFE_RUNTIME_ROOT');
+  if (tracked !== '') unsafeRoot('tracked-runtime-state');
   for (const target of ['.effective-flow', '.effective-flow/model-tiering-pilot']) {
-    await gitCall(deps.runner, root, ['check-ignore', '--no-index', '-q', '--', target], [0]);
+    // `check-ignore -q` exits 1 for a path that is not ignored; any other failure is `git-failed`.
+    await gitCall(deps.runner, root, ['check-ignore', '--no-index', '-q', '--', target], [0], {
+      1: 'not-ignored',
+    });
   }
   if (mutation) {
     const memory = await readJson(path.join(root, '.effective-flow', 'memory.json'), {
@@ -777,6 +856,217 @@ async function inspectNamespace(input, deps) {
 function generationPath(context, generationId) {
   opaque(generationId);
   return path.join(context.namespace, 'generations', generationId);
+}
+
+function observationHandleRoot(context) {
+  return path.join(context.runtimeDirectory, HANDLE_ROOT);
+}
+
+function observationHandleDirectory(context, generationId) {
+  return path.join(observationHandleRoot(context), opaque(generationId));
+}
+
+function observationHandlePath(context, generationId, observationId) {
+  return path.join(
+    observationHandleDirectory(context, generationId),
+    `${opaque(observationId)}.json`,
+  );
+}
+
+// Capability files live outside the pilot namespace, so their root carries its own ignore check;
+// `repositoryGuard` already proves all of `.effective-flow/` untracked.
+async function observationHandleGuard(context, deps, { mutation = true } = {}) {
+  await repositoryGuard(context.input, deps, { mutation });
+  await gitCall(
+    deps.runner,
+    context.root,
+    ['check-ignore', '--no-index', '-q', '--', `.effective-flow/${HANDLE_ROOT}`],
+    [0],
+    { 1: 'not-ignored' },
+  );
+}
+
+// Whether every directory on the way to the generation's capability files exists; a symlinked or
+// non-directory component is unsafe storage.
+async function observationHandleDirectoryExists(context, generationId) {
+  for (const target of [
+    context.runtimeDirectory,
+    observationHandleRoot(context),
+    observationHandleDirectory(context, generationId),
+  ]) {
+    if (!(await directoryState(target))) return false;
+  }
+  return true;
+}
+
+async function removeObservationHandle(context, target, deps) {
+  try {
+    await observationHandleGuard(context, deps);
+    await unlink(target);
+    await syncDirectory(context, path.dirname(target), deps);
+  } catch {}
+}
+
+async function writeObservationHandle(context, generationId, observationId, capability, deps) {
+  await observationHandleGuard(context, deps);
+  if (!(await directoryState(context.runtimeDirectory))) fail('UNSAFE_STORAGE');
+  for (const target of [
+    observationHandleRoot(context),
+    observationHandleDirectory(context, generationId),
+  ]) {
+    if (!(await directoryState(target))) await guardedMkdir(context, target, deps);
+    await syncDirectory(context, path.dirname(target), deps);
+  }
+  const target = observationHandlePath(context, generationId, observationId);
+  const value = {
+    schema: HANDLE_SCHEMA,
+    kind: HANDLE_KIND,
+    generationId,
+    observationId,
+    capability,
+  };
+  try {
+    await writeExclusiveJson(context, target, value, deps);
+  } catch (error) {
+    // An existing file was never this call's own; any other failure may have left a partial one.
+    if (!(error instanceof PilotMeasurementError && error.code === 'INVALID_STATE')) {
+      await removeObservationHandle(context, target, deps);
+    }
+    throw error;
+  }
+  return target;
+}
+
+function validateObservationHandle(value, generationId, observationId) {
+  if (!isObject(value)) fail('UNSAFE_STORAGE');
+  const secret =
+    value.kind === HANDLE_KIND
+      ? 'capability'
+      : value.kind === CONSUMED_HANDLE_KIND
+        ? 'capabilityHash'
+        : null;
+  const keys = ['schema', 'kind', 'generationId', 'observationId', secret];
+  if (
+    secret === null ||
+    Object.keys(value).length !== keys.length ||
+    keys.some((key) => !Object.hasOwn(value, key)) ||
+    value.schema !== HANDLE_SCHEMA ||
+    typeof value.generationId !== 'string' ||
+    !OPAQUE.test(value.generationId) ||
+    typeof value.observationId !== 'string' ||
+    !OPAQUE.test(value.observationId) ||
+    typeof value[secret] !== 'string' ||
+    !(secret === 'capability' ? OPAQUE : DIGEST).test(value[secret])
+  ) {
+    fail('UNSAFE_STORAGE');
+  }
+  // A well-formed file bound to another observation authenticates nothing.
+  if (value.generationId !== generationId || value.observationId !== observationId) {
+    fail('AUTHENTICATION_FAILED');
+  }
+  return value;
+}
+
+// Returns the observation's capability file, raw or consumed, or null when none exists.
+async function readObservationHandle(context, generationId, observationId, deps) {
+  await observationHandleGuard(context, deps);
+  if (!(await observationHandleDirectoryExists(context, generationId))) return null;
+  const source = await readRegular(observationHandlePath(context, generationId, observationId), {
+    missing: true,
+    maximum: HANDLE_MAX_BYTES,
+  });
+  if (source === null) return null;
+  let value;
+  try {
+    value = JSON.parse(source);
+  } catch (error) {
+    fail('UNSAFE_STORAGE', { cause: error });
+  }
+  return validateObservationHandle(value, generationId, observationId);
+}
+
+async function consumeObservationHandle(
+  context,
+  generationId,
+  observationId,
+  capabilityHash,
+  deps,
+) {
+  await observationHandleGuard(context, deps);
+  await atomicWrite(
+    context,
+    observationHandlePath(context, generationId, observationId),
+    {
+      schema: HANDLE_SCHEMA,
+      kind: CONSUMED_HANDLE_KIND,
+      generationId,
+      observationId,
+      capabilityHash,
+    },
+    'finalize-gate-observation',
+    generationId,
+    deps,
+    HANDLE_MAX_BYTES,
+    { skipCapacity: true },
+  );
+}
+
+// The requested generation's capability-file names, or null without a directory. Only
+// `<opaque>.json` regular files and `.tmp-*` leftovers belong there.
+async function observationHandleNames(context, generationId) {
+  if (!(await observationHandleDirectoryExists(context, generationId))) return null;
+  const entries = await safeEntries(observationHandleDirectory(context, generationId));
+  for (const entry of entries) {
+    if (!entry.isFile() || !(HANDLE_FILE.test(entry.name) || entry.name.startsWith('.tmp-'))) {
+      fail('UNSAFE_STORAGE');
+    }
+  }
+  return entries.map(({ name }) => name).sort();
+}
+
+const EMPTY_OBSERVATION_HANDLES_DIGEST = canonicalDigest({
+  counts: { regularFiles: 0, directories: 0 },
+  totalBytes: 0,
+  members: [],
+});
+
+// The value-free view purge and discard show of one generation's capability files; the digest is
+// the opaque inventory a confirmed run for an absent generation must echo.
+async function observationHandleInventory(context, generationId, deps, { mutation = false } = {}) {
+  await observationHandleGuard(context, deps, { mutation });
+  const names = await observationHandleNames(context, generationId);
+  if (names === null) {
+    return { exists: false, count: 0, digest: EMPTY_OBSERVATION_HANDLES_DIGEST };
+  }
+  const inventory = await opaqueInventory(observationHandleDirectory(context, generationId), null);
+  return {
+    exists: true,
+    count: names.filter((name) => HANDLE_FILE.test(name)).length,
+    digest: inventory.fullInventoryDigest,
+  };
+}
+
+// Removes only the requested generation's capability files: each regular file by `unlink`, then
+// the emptied directory by `rmdir`, never recursively and never another generation's directory.
+async function removeObservationHandles(context, generationId, deps) {
+  await observationHandleGuard(context, deps);
+  const names = await observationHandleNames(context, generationId);
+  const handleRoot = observationHandleRoot(context);
+  if (names === null) {
+    if (await directoryState(handleRoot)) await syncDirectory(context, handleRoot, deps);
+    return;
+  }
+  const directory = observationHandleDirectory(context, generationId);
+  for (const name of names) {
+    await unlink(path.join(directory, name)).catch((error) => {
+      if (error?.code !== 'ENOENT') fail('WRITE_FAILED', { cause: error });
+    });
+  }
+  await rmdir(directory).catch((error) => {
+    if (error?.code === 'ENOTEMPTY') fail('UNSAFE_STORAGE', { cause: error });
+    if (error?.code !== 'ENOENT') fail('WRITE_FAILED', { cause: error });
+  });
+  await syncDirectory(context, handleRoot, deps);
 }
 
 async function regularFileSize(target, { missing = false } = {}, deps = {}) {
@@ -1797,6 +2087,7 @@ export function errorEnvelope(operation, error) {
     operation: PILOT_MEASUREMENT_OPERATIONS.includes(operation) ? operation : null,
     error: { code: normalized.code, message: normalized.message, exitCode: normalized.exitCode },
   };
+  if (normalized.details !== undefined) envelope.error.details = { ...normalized.details };
   if (normalized.pilotControlOutcome !== undefined) {
     envelope.pilotControlOutcome = normalized.pilotControlOutcome;
     envelope.controlStatePersisted = normalized.controlStatePersisted;
@@ -3314,6 +3605,7 @@ function controlError(error, pilotControlOutcome, controlStatePersisted) {
       : new PilotMeasurementError('WRITE_FAILED', { cause: error });
   return new PilotMeasurementError(normalized.code, {
     cause: normalized,
+    details: normalized.details,
     pilotControlOutcome,
     controlStatePersisted,
     alert: pilotControlOutcome === 'control-state-unpersistable' ? 'value-free' : 'none',
@@ -4014,30 +4306,48 @@ async function startGateObservation(input, deps) {
             installKind: input.installKind,
             ordinal: current.nextObservationOrdinal,
           };
-          await atomicWrite(
+          // The capability file comes first, so a failed write consumes no ordinal; the raw
+          // capability never leaves the helper.
+          const handle = await writeObservationHandle(
             mutable,
-            path.join(root, 'state.json'),
-            { ...current, nextObservationOrdinal: current.nextObservationOrdinal + 1 },
-            'start-gate-observation',
             input.generationId,
+            observationId,
+            capability,
             deps,
           );
-          await atomicWrite(
-            mutable,
-            path.join(root, 'gate-observations', `${observationId}.json`),
-            reservation,
-            'start-gate-observation',
-            input.generationId,
-            deps,
-            undefined,
-            { noReplace: true },
-          );
+          const reservationPath = path.join(root, 'gate-observations', `${observationId}.json`);
+          try {
+            await atomicWrite(
+              mutable,
+              path.join(root, 'state.json'),
+              { ...current, nextObservationOrdinal: current.nextObservationOrdinal + 1 },
+              'start-gate-observation',
+              input.generationId,
+              deps,
+            );
+            await atomicWrite(
+              mutable,
+              reservationPath,
+              reservation,
+              'start-gate-observation',
+              input.generationId,
+              deps,
+              undefined,
+              { noReplace: true },
+            );
+          } catch (error) {
+            // Without a durable reservation the capability file goes too; an unprovable record
+            // keeps it, since only the file can finalize that record.
+            if (!(await pathExists(reservationPath).catch(() => true))) {
+              await removeObservationHandle(mutable, handle, deps);
+            }
+            throw error;
+          }
           // The observation flags every open workflow reservation; it is never flagged itself.
           await flagOpenReservations(mutable, evidence, null, 'start-gate-observation', deps);
           return {
             status: 'reserved',
             observationId,
-            capability,
             cohort: reservation.cohort,
             ordinal: reservation.ordinal,
           };
@@ -4066,7 +4376,6 @@ async function finalizeGateObservation(input, deps) {
   return await guardedObservationMutation(input, deps, affectedRecordIds, async () => {
     commonInput(input, [
       'observationId',
-      'capability',
       'terminalOutcome',
       'ciRepairCorrections',
       'reviewerCorrections',
@@ -4102,11 +4411,55 @@ async function finalizeGateObservation(input, deps) {
       deps,
       async () => {
         const { root } = await loadState(context, input.generationId);
-        const target = path.join(root, 'gate-observations', `${input.observationId}.json`);
+        const directory = path.join(root, 'gate-observations');
+        const target = path.join(directory, `${input.observationId}.json`);
         const reservation = await readJson(target);
-        authenticate(input.capability, reservation.capabilityHash);
+        // The helper's own capability file authenticates; a missing one is a caller-side loss.
+        const handle = await readObservationHandle(
+          context,
+          input.generationId,
+          input.observationId,
+          deps,
+        );
+        if (handle === null) fail('AUTHENTICATION_FAILED');
+        const finishCleanup = async () => {
+          if (handle.kind !== CONSUMED_HANDLE_KIND) {
+            // A surviving consumed marker always implies a durable finalized record.
+            await syncDirectory(context, directory, deps);
+          }
+          let status = 'finalized';
+          try {
+            if (handle.kind !== CONSUMED_HANDLE_KIND) {
+              await consumeObservationHandle(
+                context,
+                input.generationId,
+                input.observationId,
+                reservation.capabilityHash,
+                deps,
+              );
+            }
+            await syncDirectory(
+              context,
+              observationHandleDirectory(context, input.generationId),
+              deps,
+            );
+          } catch {
+            status = 'finalized-cleanup-pending';
+          }
+          return { status, observationId: input.observationId };
+        };
+        if (handle.kind === CONSUMED_HANDLE_KIND) {
+          // A consumed marker proves an earlier finalization; beside an open reservation it is
+          // corrupt storage.
+          if (reservation.kind === 'gate-observation-reservation') fail('UNSAFE_STORAGE');
+          if (handle.capabilityHash !== reservation.capabilityHash) fail('AUTHENTICATION_FAILED');
+          if (reservation.kind !== 'gate-observation') fail('INVALID_STATE');
+          return await finishCleanup();
+        }
+        authenticate(handle.capability, reservation.capabilityHash);
         if (reservation.kind === 'gate-observation') {
-          return { status: 'finalized', observationId: input.observationId };
+          // A crash after the record write left the raw file behind.
+          return await finishCleanup();
         }
         if (reservation.kind !== 'gate-observation-reservation') fail('INVALID_STATE');
         const observation = {
@@ -4126,7 +4479,7 @@ async function finalizeGateObservation(input, deps) {
           input.generationId,
           deps,
         );
-        return { status: 'finalized', observationId: input.observationId };
+        return await finishCleanup();
       },
     );
   });
@@ -5515,18 +5868,42 @@ async function removeTombstone(context, target, input, deps) {
   );
 }
 
+// For an absent generation, a confirmed purge or discard removes capability files only when the
+// caller echoes the dry run's `observationHandlesDigest`; a missing or different value is stale.
+function assertObservationHandlesReviewed(input, handles) {
+  if (input.observationHandlesDigest !== undefined) digestValue(input.observationHandlesDigest);
+  if (
+    (handles.exists || input.observationHandlesDigest !== undefined) &&
+    input.observationHandlesDigest !== handles.digest
+  ) {
+    fail('STALE_REVIEW');
+  }
+}
+
+function absentHandleView(handles) {
+  return { observationHandles: handles.count, observationHandlesDigest: handles.digest };
+}
+
 async function purgeGeneration(input, deps) {
-  commonInput(input, ['dryRun'], ['reviewDigest', 'confirmation']);
+  commonInput(input, ['dryRun'], ['reviewDigest', 'confirmation', 'observationHandlesDigest']);
   booleanValue(input.dryRun);
   const context = input.dryRun
     ? await inspectNamespace(input, deps)
     : await ensureNamespace(input, deps);
   if (!context.exists) {
-    return { generationId: input.generationId, generationStatus: 'absent', normalTombstones: 0 };
+    return {
+      generationId: input.generationId,
+      generationStatus: 'absent',
+      normalTombstones: 0,
+      ...absentHandleView(await observationHandleInventory(context, input.generationId, deps)),
+    };
   }
   const root = generationPath(context, input.generationId);
   if (!(await directoryState(root))) {
     const tombstones = await scanTombstones(context, input.generationId);
+    const handles = await observationHandleInventory(context, input.generationId, deps, {
+      mutation: !input.dryRun,
+    });
     if (!input.dryRun) {
       digestValue(input.reviewDigest);
       if (!booleanValue(input.confirmation)) fail('INVALID_PAYLOAD');
@@ -5541,24 +5918,36 @@ async function purgeGeneration(input, deps) {
       ) {
         fail('STALE_REVIEW');
       }
+      assertObservationHandlesReviewed(input, handles);
       await removeTombstone(context, target, input, deps);
+      await removeObservationHandles(context, input.generationId, deps);
     }
     const remaining = await scanTombstones(context, input.generationId);
     return {
       generationId: input.generationId,
       generationStatus: 'absent',
       normalTombstones: remaining.normal.length,
+      ...(input.dryRun ? absentHandleView(handles) : {}),
     };
   }
   await assertKnownGenerationTree(root);
   const { review } = await validateReviewBinding(context, input.generationId);
   const reviewDigest = review.reviewDigest;
   if (input.dryRun) {
+    const handles = await observationHandleInventory(context, input.generationId, deps);
     return {
       generationId: input.generationId,
       generationStatus: 'present',
       reviewDigest,
-      inventory: await inventoryOperation(input, deps),
+      inventory: await inventoryOperation(
+        {
+          runtimeStateRoot: input.runtimeStateRoot,
+          repositoryIdentity: input.repositoryIdentity,
+          generationId: input.generationId,
+        },
+        deps,
+      ),
+      observationHandles: handles.count,
     };
   }
   exactObject(input, [
@@ -5582,6 +5971,8 @@ async function purgeGeneration(input, deps) {
       'tombstones',
       `${input.generationId}-${input.reviewDigest.replace(':', '-')}`,
     );
+    // A crash after this removal leaves the generation present, so a retry finishes it.
+    await removeObservationHandles(context, input.generationId, deps);
     await repositoryGuard(input, deps, { mutation: true });
     await rename(root, target).catch((error) => fail('WRITE_FAILED', { cause: error }));
     await removeTombstone(context, target, input, deps);
@@ -5652,7 +6043,7 @@ async function discardGeneration(input, deps) {
   commonInput(
     input,
     ['configState', 'dryRun'],
-    ['fullInventoryDigest', 'decision', 'confirmation'],
+    ['fullInventoryDigest', 'decision', 'confirmation', 'observationHandlesDigest'],
   );
   enumValue(input.configState, ['disabled']);
   booleanValue(input.dryRun);
@@ -5660,11 +6051,19 @@ async function discardGeneration(input, deps) {
     ? await inspectNamespace(input, deps)
     : await ensureNamespace(input, deps);
   if (!context.exists) {
-    return { generationId: input.generationId, generationStatus: 'absent', discardTombstones: 0 };
+    return {
+      generationId: input.generationId,
+      generationStatus: 'absent',
+      discardTombstones: 0,
+      ...absentHandleView(await observationHandleInventory(context, input.generationId, deps)),
+    };
   }
   const root = generationPath(context, input.generationId);
   if (!(await directoryState(root))) {
     const tombstones = await scanTombstones(context, input.generationId);
+    const handles = await observationHandleInventory(context, input.generationId, deps, {
+      mutation: !input.dryRun,
+    });
     if (!input.dryRun) {
       digestValue(input.fullInventoryDigest);
       enumValue(input.decision, PILOT_MEASUREMENT_PROTOCOL.enums.discardDecisions);
@@ -5680,13 +6079,16 @@ async function discardGeneration(input, deps) {
       ) {
         fail('STALE_REVIEW');
       }
+      assertObservationHandlesReviewed(input, handles);
       await removeTombstone(context, target, input, deps);
+      await removeObservationHandles(context, input.generationId, deps);
     }
     const remaining = await scanTombstones(context, input.generationId);
     return {
       generationId: input.generationId,
       generationStatus: 'absent',
       discardTombstones: remaining.discard.length,
+      ...(input.dryRun ? absentHandleView(handles) : {}),
     };
   }
   const state = await readJson(path.join(root, 'state.json'));
@@ -5695,6 +6097,7 @@ async function discardGeneration(input, deps) {
   const inventory = await opaqueFullInventory(root);
   await assertNoGenerationLocks(root, input.generationId);
   if (input.dryRun) {
+    const handles = await observationHandleInventory(context, input.generationId, deps);
     return {
       generationId: input.generationId,
       generationStatus: 'present',
@@ -5702,6 +6105,7 @@ async function discardGeneration(input, deps) {
       totalBytes: inventory.totalBytes,
       fullInventoryDigest: inventory.fullInventoryDigest,
       keepEligible: false,
+      observationHandles: handles.count,
     };
   }
   exactObject(input, [
@@ -5736,6 +6140,8 @@ async function discardGeneration(input, deps) {
       'tombstones',
       `${input.generationId}-discard-${input.fullInventoryDigest.replace(':', '-')}`,
     );
+    // A crash after this removal leaves the generation present, so a retry finishes it.
+    await removeObservationHandles(context, input.generationId, deps);
     await repositoryGuard(input, deps, { mutation: true });
     await rename(root, target).catch((error) => fail('WRITE_FAILED', { cause: error }));
     await removeTombstone(context, target, input, deps);

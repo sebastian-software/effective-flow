@@ -392,9 +392,14 @@ delivery, see step 1):
 
 **Update existing PRs:** If the delivery branch already has a pull request
 and subsequent changes are needed, those changes are always created and pushed as new
-commits on the same PR branch. Existing PR commits must not
-be rewritten via `commit --amend`, interactive rebase, squash or force-push.
-If a normal push fails because of diverged remote history,
+commits on the same PR branch. Existing PR commits are never rewritten at any point of the run:
+no `commit --amend`, no rebase of any kind (interactive or not), no squash, no force-push. Where
+`creationOid` is a pull-request commit, as on an adopted plan PR, such a rewrite replaces it, so
+condition 6 of `worktree-lifecycle` fails and `worktree remove` refuses the worktree; reviewers
+also lose the PR's history. New base commits reach such a branch only as a merge commit of
+`origin/<base>` into it, pushed normally; no workflow other than `{{SKILL:merge-gate}}` and
+autopilot's delivery-base step (`autopilot-delivery-conflict`, within its own bound) makes that
+merge. If a normal push fails because of diverged remote history,
 stop and report the conflict instead of overwriting history.
 
 1. **Mark the plan as implemented, archive it and take it into the delivery branch:**
@@ -511,8 +516,9 @@ when: the completion action created or reused a pull request and the automatic P
 ```
 
 Retain the verified source plan/issue association, any established archive move, complete planning
-basis already read and actual completion outcome (branch retained, PR opened, or merged) across
-cleanup and returning delegations as ordinary context, without a new envelope field. The final
+basis already read and actual completion outcome (branch retained, PR opened, or merged), with each
+pull request's published-finding count from "PR review publication", across cleanup and returning
+delegations as ordinary context, without a new envelope field. The final
 emitter uses these in the shared `next-steps` selection even after automatic merge; never rebuild a
 source path from a removed execution worktree. Suppressed delegations still emit no block.
 

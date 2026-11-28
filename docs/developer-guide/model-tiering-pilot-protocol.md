@@ -259,7 +259,8 @@ orphan arises when `merge-gate` crashes between `start-gate-observation` and
 It keeps `activate` at `not-ready` with `unmet: ["busy"]` and makes `aggregate` fail
 `INCOMPLETE_EVIDENCE`; it no longer blocks `start` or later observations. It is visible through
 `busyCause` and `incompleteCounts.gateObservations`. Its only way out is the same `begin-review`
-followed by `discard-generation`.
+followed by `discard-generation`, which also removes the generation's capability files (see
+"Evidence and consent").
 
 The readiness sample and aggregation's `eligibleBaselinePackets` count alike: the
 `wouldBeFastEligible` packets of **completed** baseline records. Aggregation reports the metric
@@ -344,13 +345,10 @@ fragment that owns its exact payloads:
   client surface such as T3 Code is no signal, and without the signal the run is unmeasured Quality.
   `start` carries `installKind` (from the build target) and `harnessFamily`. A run whose trusted
   caller region carries `Caller: iterate` is measured, runs Quality and records `correction-pass` at
-  gate priority 0. Before `finish-packet`, a portable Fast packet whose attempt started a child
-  takes its `modelCompliance` from `model-selection verify`; a native Fast attempt reports
-  `unverified`, the only value the helper accepts for it. A `fast` reservation whose attempt left no
-  child to verify (spawn rejected before any child started, or Quality from the first spawn after an
-  unpersisted incident) also reports `unverified`, since `finish-packet` accepts `not-applicable`
-  for a `fast` reservation only with an `admission-changed` receipt; a packet not reserved as `fast`
-  reports `not-applicable`. In a `baseline` generation every measured run first reads `protocol` and
+  gate priority 0. A packet not reserved as `fast`, or whose `start-packet` carried
+  `admission-changed`, reports `not-applicable`; every other `modelCompliance` value follows the
+  ordered list in [`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md),
+  "Delegation". In a `baseline` generation every measured run first reads `protocol` and
   calls `activate` without a confirmation: `activated` makes the reservation an `active` one, a
   `not-ready` result with an unmet `sample` keeps the run a baseline run, `not-ready` with `busy`
   keeps the baseline and the run recording, a `LOCKED` retry that stays locked keeps the
@@ -395,14 +393,16 @@ fragment that owns its exact payloads:
 - **`merge-gate`** records the anonymous period observation described under "Evidence and
   consent", also under T3 Code. Its `harnessFamily` follows the same rule as above, and the
   observation carries `installKind`. Under T3 Code the observation survives
-  `SUSPENDED host-pr-watch` re-dispatches through the gate run's wisdom file and is finalized once at
-  the end of the gate run.
+  `SUSPENDED host-pr-watch` re-dispatches through the gate run's wisdom file, whose handle carries
+  only `generationId`, `observationId` and the counters, and is finalized once at the end of the
+  gate run; the capability never leaves the helper's capability file.
 
 ## Evidence and consent
 
 All owned state stays under
-`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, behind the repository's mandatory
-runtime-state safety and migration checks. Minimal workflow records are bounded structured facts;
+`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/` and, for gate-observation capability
+files, `<RUNTIME_STATE_ROOT>/.effective-flow/pilot-observation-handles/`, behind the repository's
+mandatory runtime-state safety and migration checks. Minimal workflow records are bounded structured facts;
 they exclude prompts, diffs, source, paths, command text and output, environment values, aliases,
 URLs, and personal, repository, branch, task, PR, or session identifiers.
 
@@ -426,12 +426,32 @@ activation, or a state that differs from the caller's `generationState`, returns
 `busy`; an open record or observation of another run no longer does. Neither result persists
 anything or suspends the pilot. Only then does the evidence-health check run, where an
 invalid member or orphan temporary still takes the `evidence-gap` path. A reservation
-returns an opaque `observationId`, raw capability, cohort, and start ordinal; only the capability
-hash—not the raw capability—is persisted alongside the opaque observation ID, cohort, and ordinal.
-Finalization authenticates that capability and accepts exactly the identifier,
-capability, closed terminal outcome, three correction counters, `checksReported`, and the typed
-`requiredCheckCount` and `requiredChecksSatisfied` values in addition to the runtime/generation
-binding. `requiredCheckCount` is taken from the final `pr-status-read` check list after its
+returns an opaque `observationId`, cohort, and start ordinal, and no capability. The reservation
+record persists only the capability hash; the helper writes the raw capability to its capability
+file `.effective-flow/pilot-observation-handles/<generationId>/<observationId>.json` (mode `0600`,
+directories `0700`, exclusive no-follow create, fsync and directory sync) before it increments the
+ordinal, and removes the file again when the state or reservation write fails. The handle root must
+be Git-ignored like the pilot namespace, or the reservation fails `UNSAFE_RUNTIME_ROOT` without
+writing; it is a sibling of the namespace, so no generation tree, closed name set, or evidence
+inventory includes it. Finalization accepts exactly the identifier, closed terminal outcome, three
+correction counters, `checksReported`, and the typed `requiredCheckCount` and
+`requiredChecksSatisfied` values in addition to the runtime/generation binding; a `capability` key
+is `INVALID_PAYLOAD`. It reads the capability file at the path derived from the validated
+identifiers, requires its bound identifiers to match, and authenticates its capability against the
+stored hash. A missing file or a mismatching one is a neutral `AUTHENTICATION_FAILED` that keeps the
+reservation open; a symlinked, non-regular, oversized, or malformed file, or a consumed marker
+beside an open reservation, is `UNSAFE_STORAGE`. After the finalized record is durable, the helper
+atomically replaces the file by a consumed marker that holds only the capability hash and syncs
+its directory. `finalized` confirms both the durable record and the handle invalidation.
+`finalized-cleanup-pending` confirms the durable record only: marker replacement or directory sync
+failed. Repeating the request with the same identifiers finishes cleanup without changing the
+record: it replaces a surviving raw file or syncs the directory of a matching marker. If cleanup
+still fails, the status stays pending. Discard and purge also remove the requested generation's
+handles; `abandon-reservation` applies to workflow reservations, not gate observations.
+The capability check therefore detects only
+a capability file inconsistent with its reservation: an unknown identifier fails `NOT_FOUND` when
+the reservation is read, and the identifier pair is a bearer reference inside the private, ignored
+runtime root, so a run holding another run's open `observationId` could finalize that observation. `requiredCheckCount` is taken from the final `pr-status-read` check list after its
 deduplication, so it counts the latest run per check identity and never a superseded run. It is
 exactly-once and response-loss-idempotent. Every post-reservation normal, controlled, or early
 workflow exit calls it once. A pre-Phase-4 stop in report mode records `reported-blocked`
@@ -480,7 +500,7 @@ Fast alias and not on the `deep` model, with the Fast effort, on a host whose ma
 the installed record's; `mismatch` when a check fails; `unverified` when no observation exists
 (always the case for a native Fast attempt, and for a `fast` reservation whose attempt left no
 child: a spawn rejected before any child started or a Quality-only run after an unpersisted
-incident); `not-applicable` for a Quality packet, an
+incident); `not-applicable` for a packet not reserved as `fast`, an
 `admission-changed` fallback or a packet that never started. `mismatch` packets keep their work but
 leave every Fast metric, duration and cost and are counted only in `modelComplianceOutcomes`;
 `unverified` packets stay in the metrics and are counted. `admission-changed` packets consume no
@@ -537,6 +557,16 @@ only the bound generation. Retry rescans the tombstone directory, rejects unknow
 names, and reports the observed remainder instead of assuming zero. Deletion retains exclusive
 ownership until writers are excluded and the reviewed generation has disappeared.
 
+Purge and discard also remove `pilot-observation-handles/<generationId>/` for the requested
+generation only, by unlinking its `<opaque>.json` files and `.tmp-*` leftovers and then removing
+the empty directory; any other entry is `UNSAFE_STORAGE`. Every dry run reports the file count as
+`observationHandles`. For a present generation the removal runs under the lifecycle lock before the
+generation is tombstoned, so a crash in between leaves the generation present and a retry finishes
+it. For an absent generation, such as leftovers of an older helper, the dry run also returns
+`observationHandlesDigest`, an opaque inventory of that directory; the confirmed run removes the
+directory only when it echoes that value through the optional `observationHandlesDigest` key, and
+a missing or different value is `STALE_REVIEW` with nothing removed.
+
 `discard-generation` is narrower recovery for malformed or unknown owned evidence that prevents
 normal aggregation. It requires disabled configuration, review state, a separate confirmation of
 the value-free opaque inventory, and a `change` or `stop` decision. That inventory streams bounded
@@ -559,11 +589,11 @@ as 0 bytes.
 `finalize`, `start-gate-observation`, and `finalize-gate-observation` classify every failure,
 validation included, into exactly one class:
 
-| Class       | Codes                                                                                                                                                                                                    | Result                                                                                                       |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Neutral     | `INVALID_PAYLOAD`, `AUTHENTICATION_FAILED`, `LOCKED`, `UNSAFE_RUNTIME_ROOT`, `MIGRATION_REQUIRED`, `PROTOCOL_DRIFT`, and `NOT_FOUND` from a generation or record read                                    | Retryable error with `pilotControlOutcome: "none"`; no suspension                                            |
-| Passthrough | `CAPACITY_EXHAUSTED`                                                                                                                                                                                     | Unchanged; the capacity handler suspends exactly once                                                        |
-| Fault       | `NOT_FOUND` from the timing-receipt read, and every other code, including `UNSAFE_STORAGE`, `WRITE_FAILED`, `INCOMPLETE_EVIDENCE`, and `INVALID_STATE`; a non-helper error is reported as `WRITE_FAILED` | Persists `finalization-failed` (`finalize`) or `evidence-gap` (gate observations), keeping the original code |
+| Class       | Codes                                                                                                                                                                                                    | Result                                                                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Neutral     | `INVALID_PAYLOAD`, `AUTHENTICATION_FAILED`, `LOCKED`, `UNSAFE_RUNTIME_ROOT`, `MIGRATION_REQUIRED`, `PROTOCOL_DRIFT`, and `NOT_FOUND` from a generation or record read                                    | Retryable error with `pilotControlOutcome: "none"`; no suspension. An `UNSAFE_RUNTIME_ROOT` retry succeeds only once the check its `details.reason` names passes |
+| Passthrough | `CAPACITY_EXHAUSTED`                                                                                                                                                                                     | Unchanged; the capacity handler suspends exactly once                                                                                                            |
+| Fault       | `NOT_FOUND` from the timing-receipt read, and every other code, including `UNSAFE_STORAGE`, `WRITE_FAILED`, `INCOMPLETE_EVIDENCE`, and `INVALID_STATE`; a non-helper error is reported as `WRITE_FAILED` | Persists `finalization-failed` (`finalize`) or `evidence-gap` (gate observations), keeping the original code                                                     |
 
 `finalize` checks that the generation exists before it takes its lock, so a missing generation is
 neutral. Its classification runs after that lock is released, because persisting control state
@@ -582,6 +612,18 @@ after the suspension write completed still reports the mapped outcome as persist
 Once a JSON object input is dispatched to one of these four operations, its errors carry the
 control fields in the error envelope. Input that is not a JSON object fails `INVALID_PAYLOAD`, and
 an unknown operation fails `INVALID_OPERATION`, before dispatch and without control fields.
+
+An `UNSAFE_RUNTIME_ROOT` error envelope also carries `error.details`, after `exitCode`, naming the
+failed runtime-root check; no other code carries `details`, and the code, exit status 3 and message
+stay constant. Its `details.reason` is one closed value from `UNSAFE_RUNTIME_ROOT_REASONS`:
+`git-unavailable`, `git-failed`, `not-directory`, `toplevel-mismatch`, `identity-mismatch`,
+`path-resolution`, `tracked-runtime-state`, `not-ignored`. Only `git-failed` adds
+`details.subcommand`: `rev-parse`, `ls-files` or `check-ignore`. Neither field carries a path, Git
+argument, exit status, stdout or stderr. A missing runner or a spawn error is `git-unavailable`, a
+`check-ignore` exit 1 is `not-ignored`, and an unresolvable path, including a missing root or
+identity, is `path-resolution`, so it and `identity-mismatch` both point at the supplied root or
+identity. The control operations above copy `details` through their rewrap;
+the CLI writes it to the stdout envelope only, and stderr keeps `<code>: <message>`.
 
 The persisted protocol digest binds every generation, and an unrecognized digest fails the
 stored-state check with `UNSAFE_STORAGE`. The exceptions are the prior protocols a release

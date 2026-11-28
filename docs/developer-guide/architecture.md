@@ -555,7 +555,10 @@ plans only issues it holds a per-issue planning claim for. `cleanup` alone remov
 killed pass, from the read-only `pass-list` inventory, through `pass-prune` (a helper-verified
 `process-dead` proof or confirmed staleness) and `trusted-prune` (trusted text no pass record
 lists); a kept `issue-planning` worktree (`aborted`, reason `plan-preserved`) becomes removable
-once its plan is moved or discarded. The claims are the state helper's
+once its plan is moved or discarded, or while it is there under the helper proof
+`preserved-plan-superseded`: the base's Implemented archive copy of the same name holds every
+preserved byte, so the confirmed `cleanup apply` discards that one plan under the record lock and
+removes the worktree. The claims are the state helper's
 `planning-claim` group (`effective-flow-state-planning-claim-core.mjs`), shared with issue-sourced
 `autopilot`, which claims in `run-init` and releases in `run-close`, and with `plan-issue`. The
 loopback TCP mutation mutex covers only short local state work, never a fetch or forge call, and
@@ -635,6 +638,24 @@ knownOids}`, never fetching) serves the lazy `deliver-committed-range` route, wh
   operation only feeds one notice that committed work is excluded, and only when the configured base
   resolves to an `origin` remote-tracking ref and the checkout is attached to a non-base branch;
   otherwise the read fails and a failed read adds no notice.
+
+  The helper's read-only `publication-preflight` operation classifies the pull-request writer that
+  step 1.1 observed, with no Git access, runner, or state. Its payload carries `hostPolicy`
+  (`unrestricted` or `restricted`), `writer`, `source`, and optionally `head` and `base`. The writer
+  is `{kind: "provider-helper", probe}`, where `probe` is `null` only under `restricted` and
+  otherwise `{ok, code?, pullRequestCreate}`, or
+  `{kind: "host-tool", name, explicitHead, boundBranch}`; `source` is `{branch}`, with `null` for a
+  detached checkout. Without `head` and `base` the scope is `writer` and the head-dependent reasons
+  are not evaluated; with both it is `pair`. The result carries `status`
+  (`supported` or `unsupported`), `scope`, `reasons` in the fixed order `head-is-source-branch`,
+  `head-is-base`, `host-policy-restricted`, `helper-probe-failed`, `pull-request-create-unsupported`,
+  `host-tool-not-supported-by-pr`, `host-tool-no-explicit-head`, `host-tool-bound-to-other-branch`,
+  and `probeCode`, the helper's error code behind `helper-probe-failed`. Every host-tool writer is
+  unsupported, because `pr` publishes only through the provider helper's `pr-create`. The lazy
+  `deliver-publication-preflight` fragment owns the stop reports and the alternatives. The operation
+  has three call sites: step 1.1 in writer scope before the upstream check, step 3.3 in pair scope
+  with the derived head and the resolved base before any branch is created, and the resume path,
+  which runs the same observation and a pair-scope call for the record's branch before step 4.3.
 
 - `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
   validates files. A delivery caller supplies a verified execution-location receipt, declared path
@@ -954,7 +975,9 @@ pass is Quality-only.
 
 The shipped pilot runtime is a fourth dependency-free script subsystem. Its entry point, core,
 and protocol modules are copied byte-for-byte into every target, but all evidence belongs to the
-verified runtime root at `.effective-flow/model-tiering-pilot/`; none belongs in `src/`, `dist/`,
+verified runtime root at `.effective-flow/model-tiering-pilot/` and, for the helper's
+gate-observation capability files, `.effective-flow/pilot-observation-handles/`; none belongs in
+`src/`, `dist/`,
 the merge-gate behavioral-evaluation archive, or the tracked project-setup ADR. The protocol module
 is the executable authority for bounded schemas, limits, timing, aggregation, metrics, adoption
 gates, and enums. The build reconciles its policy projection with
@@ -1136,9 +1159,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 84 non-destructive or bounded rules, in four
+a prose removal of that state too. `setup` can write 85 non-destructive or bounded rules, in four
 families (twenty-eight runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check|path-resolve|path-prepare|reuse-facts`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 48 read-only `remote-tracker` operations (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check|path-resolve|path-prepare|reuse-facts`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 49 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

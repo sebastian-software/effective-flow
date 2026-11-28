@@ -114,11 +114,29 @@
 // The same cleanup-only flag admits an `issue-planning` record that Issue Buddy kept `aborted` with
 // reason `plan-preserved` (PRESERVED_PLAN_REASON, `preservedPlanRelease`): condition 1 accepts
 // that status for it, and every other condition stays required. Its worktree still holding the
-// untracked preserved plan fails condition 7, so cleanup never discards a plan: once the user moved
-// or discarded the plan, the record is an ordinary `worktree:` item removed after confirmation, a
-// fully gone one through the gone route. A released (`cleanup-ready` or `cleanup-failed`)
-// `issue-planning` record whose worktree is gone, e.g. after a failed record deletion, takes the gone
-// route too, also when its temporary branch is already deleted.
+// untracked preserved plan fails condition 7, and so does any ignored entry in
+// an `issue-planning` worktree (`ignoredPlanEntries`: `git status` never lists it and a removal would
+// delete it with no copy), on every path to a removal. Once the user moved or discarded the plan, the record
+// is an ordinary `worktree:` item removed after confirmation, a fully gone one through the gone
+// route. While the plan is there, cleanup discards it only under the superseded-plan proof
+// (SUPERSEDED_PLAN_PROOF, `supersededPlanProof`), which never deletes bytes the base cannot give
+// back: condition 7 is the record's only failed condition, only through a non-empty status; that
+// status holds exactly one untracked regular file `<plan.dir>/<name>` with an UNATTENDED_PLAN_NAME
+// name and no ignored entry; the local `refs/remotes/origin/<base>` commit
+// (no fetch) holds `<plan.dir>/archive/<name>` as a regular blob with exactly one canonical status
+// line, Implemented; and the preserved copy either is an open plan the archive completes
+// (`planCompletionMismatch` of `build-run-core.mjs`, valid UTF-8 on both sides, `completion-prefix`)
+// or its raw blob is a recorded post-image of either path in the base history (`blob-history`). A
+// failed proof leaves the record blocked with `supersededPlan: {reason}` (SUPERSEDED_PLAN_REASONS);
+// a held one makes it a `worktree:` item with `proof`, its evidence, `conditions: []` and
+// `waivedConditions: [7]`, whose digest also binds the plan and archive blobs and the match, never
+// the base commit, and whose apply value is `{itemDigest, proof}`. Only the cleanup callers waive
+// condition 7, never `evaluateEligibility`. Under the lock the claim re-derives the proof, and
+// `discardSupersededPlan` discards exactly that file through a quarantine before the ordinary
+// removal; a refusal before the quarantine rename restores the pre-claim record (`restored: true`).
+// A released (`cleanup-ready` or `cleanup-failed`) `issue-planning` record whose worktree is gone,
+// e.g. after a failed record deletion, takes the gone route too, also when its temporary branch is
+// already deleted.
 //
 // A record file `readRecord` reports invalid is the `invalid-record:<RECORD_ID>` class of `cleanup
 // plan` and `cleanup apply` (`assessInvalidRecord`), never a `worktree:` entry. Its proofs come
@@ -135,7 +153,8 @@
 // a root or input error (INVALID_ROOT, INVALID_INPUT, RUNTIME_STATE_UNSAFE) or a PREVIEW_MISMATCH
 // before the first write ends the whole call. `cleanup apply` items are `worktree:`,
 // `invalid-record:` (together at most MAX_RECORD_IDS), `branch:` (at most MAX_BRANCH_ITEMS),
-// `legacy:` and `config:`.
+// `legacy:` and `config:`; each value is the bare `itemDigest`, a `branch:` item's
+// `{itemDigest, proof, proofCommit}` and a proven `worktree:` item's `{itemDigest, proof}`.
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
@@ -146,6 +165,7 @@ import {
   readdir,
   readlink,
   realpath,
+  rename,
   rmdir,
   stat,
   unlink,
@@ -220,8 +240,13 @@ import {
   branchTipProof,
   verifyBranchProof,
 } from './pr-delivery-git-core.mjs';
-import { nonTerminalBuildRunBranches } from './build-run-core.mjs';
+import {
+  canonicalPlanStatusLines,
+  nonTerminalBuildRunBranches,
+  planCompletionMismatch,
+} from './build-run-core.mjs';
 import { resolutionChain, systemAccounts, untrustedNode } from './path-trust-core.mjs';
+import { UNATTENDED_PLAN_NAME, classifyPlanText } from './plan-lint-core.mjs';
 import { ReuseFactsError, deriveReuseFacts } from './worktree-reuse-facts-core.mjs';
 
 export const RECORDS_DIR = 'worktree-runs';
@@ -489,6 +514,33 @@ export const BRANCH_IN_USE_FILES = Object.freeze([
   'rebase-apply/head-name',
   'BISECT_START',
 ]);
+// The superseded-plan proof of `cleanup plan` and `cleanup apply` (see the header). The plan's
+// proofs share one budget, min(SUPERSEDED_PLAN_PROOF_BUDGET_MS, what is left of DEFAULT_DEADLINE_MS
+// − BRANCH_PROOF_BUDGET_MS), so the branch proofs after them keep their full budget.
+export const SUPERSEDED_PLAN_PROOF = 'preserved-plan-superseded';
+export const SUPERSEDED_PLAN_PROOF_BUDGET_MS = 30_000;
+// The closed vocabulary of a blocked record's `supersededPlan.reason`, in evaluation order: the
+// first failing check is reported; a failed or timed-out Git call at any step is
+// `proof-unavailable`.
+export const SUPERSEDED_PLAN_REASONS = Object.freeze([
+  'hidden-mode',
+  'base-unavailable',
+  'dirty-entries',
+  'not-plan-file',
+  'unsafe-plan-file',
+  'archive-missing',
+  'archive-not-implemented',
+  'content-diverged',
+  'proof-unavailable',
+]);
+const DEFAULT_PLAN_DIR = 'docs/plan';
+const MAX_PLAN_BYTES = 512 * 1024;
+// A `plan.dir` the proof accepts: relative, with no pathspec, shell or pattern metacharacter.
+const PLAN_DIR_PATTERN = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
+const IMPLEMENTED_STATUS_LINE =
+  /^\*\*(?:Plan status:\*\* Implemented|Planungsstatus:\*\* Umgesetzt)$/;
+const OPEN_STATUS_LINE =
+  /^\*\*(?:Plan status:\*\* Not implemented|Planungsstatus:\*\* Nicht umgesetzt)$/;
 const DEFAULT_BRANCH_PREFIX = 'effective-flow';
 const DEFAULT_BASE_BRANCH = 'main';
 const MAX_IN_USE_FILE_BYTES = 1024 * 1024;
@@ -505,6 +557,7 @@ const DEFAULT_FS = Object.freeze({
   readdir,
   readlink,
   realpath,
+  rename,
   rmdir,
   stat,
   unlink,
@@ -1607,6 +1660,8 @@ export function evaluateEligibility(
         (facts.quarantineRetained ||
           facts.ignoredEndpoints === null ||
           facts.ignoredEndpoints.length > 0 ||
+          facts.ignoredPlanEntries === null ||
+          (facts.ignoredPlanEntries ?? []).length > 0 ||
           facts.hiddenChanges === null ||
           facts.hiddenChanges.length > 0)))
   ) {
@@ -1918,6 +1973,51 @@ async function hiddenWorktreeEntries(context, roots, root) {
   }
 }
 
+// All ignored entries of a proven issue-planning worktree, independent of plan.dir so retries
+// still protect files in a former plan directory. Empty for other purposes; null on scan failure.
+async function ignoredPlanningWorktreeEntries(context, record) {
+  if (record.purpose !== 'issue-planning') return [];
+  const status = await guardedGit(
+    context,
+    record.worktreePath,
+  )(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching']);
+  const entries = gitOk(status) ? porcelainEntries(status.stdout) : null;
+  if (entries === null) return null;
+  return entries
+    .filter((entry) => entry.code === '!!')
+    .map((entry) => entry.path)
+    .sort();
+}
+
+// The facts condition 7 of `evaluateEligibility` reads for the proven worktree of `record`: `clean`
+// (an empty `git status`) and the removal-only `quarantineRetained`, `ignoredEndpoints`,
+// `hiddenChanges` and `ignoredPlanEntries`. Only for a worktree whose common directory is proven ours.
+async function conditionSevenFacts(context, roots, record) {
+  const target = record.worktreePath;
+  const status = await guardedGit(
+    context,
+    target,
+  )(['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none']);
+  return {
+    clean: gitOk(status) && asBuffer(status.stdout).length === 0,
+    quarantineRetained: await retainsQuarantine(context.fs, target),
+    ignoredEndpoints: await ignoredLedgerEndpoints(context, roots, record),
+    hiddenChanges: await hiddenWorktreeEntries(context, roots, target),
+    ignoredPlanEntries: await ignoredPlanningWorktreeEntries(context, record),
+  };
+}
+
+// The removal-time condition-7 facts of `facts` that fail, by name; empty when condition 7 holds.
+function failedConditionSevenFacts(facts) {
+  return [
+    ...(facts.clean ? [] : ['clean']),
+    ...(facts.quarantineRetained ? ['quarantineRetained'] : []),
+    ...(facts.ignoredEndpoints?.length === 0 ? [] : ['ignoredEndpoints']),
+    ...(facts.ignoredPlanEntries?.length === 0 ? [] : ['ignoredPlanEntries']),
+    ...(facts.hiddenChanges?.length === 0 ? [] : ['hiddenChanges']),
+  ];
+}
+
 // Gathers the facts of one valid record. `worktrees` is a fresh porcelain list; `ownLock` the
 // token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID;
 // `mergeGateRelease` adds the `releaseProof` of a `merge-gate` record (see `evaluateEligibility`).
@@ -1953,6 +2053,7 @@ export async function gatherFacts(
     clean: false,
     quarantineRetained: false,
     ignoredEndpoints: [],
+    ignoredPlanEntries: [],
     hiddenChanges: [],
     isMain: target === roots.cwd || (worktrees[0] ? matches(worktrees[0], target) : false),
     isExecutionRoot: target === roots.executionRoot,
@@ -1979,16 +2080,7 @@ export async function gatherFacts(
     toplevel = top === null ? null : await canonical(fs, top);
     facts.headOnBranch =
       (await line(['symbolic-ref', '-q', 'HEAD'])) === `refs/heads/${record.branch}`;
-    const status = await inWorktree([
-      'status',
-      '--porcelain',
-      '--untracked-files=all',
-      '--ignore-submodules=none',
-    ]);
-    facts.clean = gitOk(status) && asBuffer(status.stdout).length === 0;
-    facts.quarantineRetained = await retainsQuarantine(fs, target);
-    facts.ignoredEndpoints = await ignoredLedgerEndpoints(context, roots, record);
-    facts.hiddenChanges = await hiddenWorktreeEntries(context, roots, target);
+    Object.assign(facts, await conditionSevenFacts(context, roots, record));
   }
   facts.branchTip = await branchTip(context, record.branch);
   const commit = await runGit(context, context.cwd, [
@@ -2032,6 +2124,297 @@ export async function gatherFacts(
     facts.releaseProof = await mergeGateReleaseProof(context, facts, record);
   }
   return facts;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The superseded-plan proof
+
+// Whether cleanup derives the superseded-plan proof for a record (see the header): the
+// preserved-plan release admits it, its worktree is present and proven ours, condition 7 is its
+// only failed condition and it has no blocker. A known ignored entry alongside a non-empty status
+// is reported by the proof's own `dirty-entries` rule; an unavailable scan never admits the proof.
+// `mergeGateRelease` is the caller's cleanup-only flag, as `preservedPlanRelease` takes it.
+function supersededPlanApplies(facts, { conditions, blockers }, mergeGateRelease) {
+  return (
+    preservedPlanRelease(facts, mergeGateRelease) &&
+    facts.commonDirMatches === true &&
+    facts.gone !== true &&
+    conditions.length === 1 &&
+    conditions[0] === 7 &&
+    blockers.length === 0 &&
+    facts.ignoredPlanEntries !== null &&
+    failedConditionSevenFacts(facts)
+      .filter((fact) => fact !== 'ignoredPlanEntries')
+      .join() === 'clean'
+  );
+}
+
+// The configuration of a cleanup call, or null when it cannot be resolved.
+async function cleanupConfiguration(context, deps) {
+  try {
+    return await resolveConfiguration(
+      { cwd: context.cwd, tool: 'cleanup' },
+      { runner: context.runner, env: deps.env },
+    );
+  } catch {
+    return null;
+  }
+}
+
+// `plan.dir` of `config` (default DEFAULT_PLAN_DIR) without a leading `./` or a trailing `/`, or
+// null when it is invalid or outside PLAN_DIR_PATTERN.
+function planDirectory(config) {
+  const entry = configEntry(config, 'plan.dir');
+  if (entry.state === 'unset') return DEFAULT_PLAN_DIR;
+  if (entry.state !== 'set') return null;
+  const value = entry.value.replace(/^\.\//, '').replace(/\/+$/, '');
+  return PLAN_DIR_PATTERN.test(value) ? value : null;
+}
+
+// The repository-wide inputs of the proof, read once per call without a fetch: `{planDir, baseRef,
+// baseCommit}`, the commit of the local `refs/remotes/origin/<baseRef>` (`deliveryConfiguration`),
+// or `{reason}`: `hidden-mode`, `base-unavailable` (no configuration, no safe base ref or no such
+// local ref, an invalid `plan.dir`) or `proof-unavailable`.
+async function supersededPlanInputs(git, tracking, deps) {
+  const config = await cleanupConfiguration(git, deps);
+  if (tracking.timedOut) return { reason: 'proof-unavailable' };
+  if (config === null) return { reason: 'base-unavailable' };
+  if (config.visibility === 'hidden') return { reason: 'hidden-mode' };
+  const delivery = await deliveryConfiguration(git, deps, config);
+  if (tracking.timedOut) return { reason: 'proof-unavailable' };
+  const planDir = planDirectory(config);
+  if (!delivery?.baseRef || planDir === null) return { reason: 'base-unavailable' };
+  const resolved = await runGit(git, git.cwd, [
+    '--no-replace-objects',
+    'rev-parse',
+    '--verify',
+    '-q',
+    `refs/remotes/origin/${delivery.baseRef}^{commit}`,
+  ]);
+  const baseCommit = gitOk(resolved) ? gitStdout(resolved).trim() : null;
+  if (baseCommit !== null && OID_PATTERN.test(baseCommit)) {
+    return { planDir, baseRef: delivery.baseRef, baseCommit };
+  }
+  if (resolved?.error || resolved?.timedOut || resolved?.status !== 1) {
+    return { reason: 'proof-unavailable' };
+  }
+  return { reason: 'base-unavailable' };
+}
+
+// The raw blob OID of `content`, hashed without filters and without writing an object, or null.
+async function rawBlobOid(git, content) {
+  const result = await runGit(git, git.cwd, ['hash-object', '--no-filters', '--stdin'], {
+    stdin: content,
+  });
+  const oid = gitOk(result) ? gitStdout(result).trim() : null;
+  return oid !== null && OID_PATTERN.test(oid) ? oid : null;
+}
+
+// The plan file at `planPath` below the proven worktree `root`, read once: every directory down to
+// it is a real directory inside `root` (no symbolic link), and the file is regular, read without
+// following a link within MAX_PLAN_BYTES; its raw blob OID is hashed from those same bytes.
+// `{state: 'ok', identity, content, blob}`, `missing`, `unsafe`, or `git-failed`.
+async function readPlanFile(context, git, root, planPath) {
+  const { fs } = context;
+  let directory = root;
+  for (const segment of planPath.split('/').slice(0, -1)) {
+    directory = path.join(directory, segment);
+    try {
+      const info = await fs.lstat(directory);
+      if (!info.isDirectory() || info.isSymbolicLink()) return { state: 'unsafe' };
+    } catch (error) {
+      return { state: error?.code === 'ENOENT' ? 'missing' : 'unsafe' };
+    }
+  }
+  if ((await canonical(fs, directory)) !== directory) return { state: 'unsafe' };
+  const read = await readBoundedFile(fs, path.join(root, planPath), MAX_PLAN_BYTES);
+  if (read.state === 'missing') return { state: 'missing' };
+  if (read.state !== 'ok') return { state: 'unsafe' };
+  const blob = await rawBlobOid(git, read.content);
+  if (blob === null) return { state: 'git-failed' };
+  return { state: 'ok', identity: read.identity, content: read.content, blob };
+}
+
+// The entries of `git status --porcelain=v1 -z` as `{code, path}` (a rename or copy consumes its
+// source field), or null when the output is malformed.
+function porcelainEntries(buffer) {
+  const fields = asBuffer(buffer).toString('utf8').split('\0');
+  if (fields.pop() !== '') return null;
+  const entries = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (field.length < 4 || field[2] !== ' ') return null;
+    const code = field.slice(0, 2);
+    entries.push({ code, path: field.slice(3) });
+    if (/[RC]/.test(code)) index += 1;
+  }
+  return entries;
+}
+
+// The blob of exactly one regular-file entry at `archivePath` in an `ls-tree -z` listing, else null
+// (absent, a symbolic link, a gitlink, a tree).
+function archiveBlob(result, archivePath) {
+  const entries = gitStdout(result).split('\0').filter(Boolean);
+  if (entries.length !== 1) return null;
+  const entry = entries[0].match(/^(?:100644|100755) blob ([0-9a-f]+)\t([^]*)$/);
+  return entry && entry[2] === archivePath && OID_PATTERN.test(entry[1]) ? entry[1] : null;
+}
+
+// Whether a recorded post-image of `git log --raw -z` is `blob`.
+function recordsPostImage(result, blob) {
+  return gitStdout(result)
+    .split('\0')
+    .map((field) => field.replace(/^\n+/, ''))
+    .some((field) => field.startsWith(':') && field.slice(1).split(' ')[3] === blob);
+}
+
+// The superseded-plan proof of `record`, for one that `supersededPlanApplies` admits, with the
+// `inputs` of `supersededPlanInputs`: `{ok: true, evidence, identity}`, or `{ok: false, reason}`
+// with the first failing reason of SUPERSEDED_PLAN_REASONS. It writes nothing. `git` is the proof's
+// Git context (`branchGitContext`): GIT_NO_REPLACE_OBJECTS=1, and in `cleanup plan` its budget.
+async function supersededPlanProof(context, git, record, inputs) {
+  if (inputs.reason) return { ok: false, reason: inputs.reason };
+  const refused = (reason) => ({ ok: false, reason });
+  const unavailable = refused('proof-unavailable');
+  const { planDir, baseRef, baseCommit } = inputs;
+  const status = await guardedGit(
+    git,
+    record.worktreePath,
+  )([
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+    '--ignored=matching',
+    '--ignore-submodules=none',
+  ]);
+  const entries = gitOk(status) ? porcelainEntries(status.stdout) : null;
+  if (entries === null) return unavailable;
+  const changed = entries.filter((entry) => entry.code !== '!!');
+  if (
+    changed.length !== 1 ||
+    changed[0].code !== '??' ||
+    entries.some((entry) => entry.code === '!!')
+  ) {
+    return refused('dirty-entries');
+  }
+  const planPath = changed[0].path;
+  const name = planPath.slice(planDir.length + 1);
+  if (
+    !planPath.startsWith(`${planDir}/`) ||
+    name.includes('/') ||
+    !UNATTENDED_PLAN_NAME.test(name)
+  ) {
+    return refused('not-plan-file');
+  }
+  const preserved = await readPlanFile(context, git, record.worktreePath, planPath);
+  if (preserved.state === 'git-failed') return unavailable;
+  if (preserved.state !== 'ok') return refused('unsafe-plan-file');
+  const archivePath = `${planDir}/archive/${name}`;
+  const listing = await runGit(git, git.cwd, [
+    '--no-replace-objects',
+    'ls-tree',
+    '-z',
+    '--full-tree',
+    baseCommit,
+    '--',
+    archivePath,
+  ]);
+  if (!gitOk(listing)) return unavailable;
+  const archive = archiveBlob(listing, archivePath);
+  if (archive === null) return refused('archive-missing');
+  const size = await gitLine(git, git.cwd, ['--no-replace-objects', 'cat-file', '-s', archive]);
+  if (size === null) return unavailable;
+  if (Number(size) > MAX_PLAN_BYTES) return refused('archive-not-implemented');
+  const read = await runGit(git, git.cwd, ['--no-replace-objects', 'cat-file', 'blob', archive]);
+  if (!gitOk(read)) return unavailable;
+  const archived = asBuffer(read.stdout);
+  const archivedText = archived.toString('utf8');
+  const archivedLines = canonicalPlanStatusLines(archivedText);
+  if (
+    classifyPlanText(archivedText).status !== 'implemented' ||
+    archivedLines.length !== 1 ||
+    !IMPLEMENTED_STATUS_LINE.test(archivedLines[0])
+  ) {
+    return refused('archive-not-implemented');
+  }
+  const preservedText = preserved.content.toString('utf8');
+  const preservedLines = canonicalPlanStatusLines(preservedText);
+  let match = null;
+  if (
+    classifyPlanText(preservedText).status === 'open' &&
+    preservedLines.length === 1 &&
+    OPEN_STATUS_LINE.test(preservedLines[0]) &&
+    planCompletionMismatch(preserved.content, archived, { fatalUtf8: true }) === null
+  ) {
+    match = 'completion-prefix';
+  } else {
+    const history = await runGit(git, git.cwd, [
+      '--no-replace-objects',
+      'log',
+      '--no-renames',
+      '--full-history',
+      '-m',
+      '--no-abbrev',
+      '--raw',
+      '-z',
+      '--format=',
+      baseCommit,
+      '--',
+      `:(literal)${planPath}`,
+      `:(literal)${archivePath}`,
+    ]);
+    if (!gitOk(history)) return unavailable;
+    if (recordsPostImage(history, preserved.blob)) match = 'blob-history';
+  }
+  if (match === null) return refused('content-diverged');
+  return {
+    ok: true,
+    identity: preserved.identity,
+    evidence: {
+      planPath,
+      planBlob: preserved.blob,
+      archivePath,
+      archiveBlob: archive,
+      match,
+      baseRef,
+      baseCommit,
+    },
+  };
+}
+
+// A prover of the superseded-plan proof for one call: it resolves the inputs at its first proof
+// and reuses them. With `startedAt` (`cleanup plan`), every proof runs within the shared budget
+// (see SUPERSEDED_PLAN_PROOF_BUDGET_MS), and one it no longer reaches is `proof-unavailable`;
+// without it (`cleanup apply`), the call's own deadline bounds every Git call.
+function supersededPlanProver(context, deps, startedAt = null) {
+  const now = deps.now ?? Date.now;
+  let state = null;
+  return async (record) => {
+    if (state === null) {
+      let deadline = null;
+      if (startedAt !== null) {
+        const monotonic = deps.monotonicNow ?? (() => performance.now());
+        const left = (deps.deadlineMs ?? DEFAULT_DEADLINE_MS) - (monotonic() - startedAt);
+        const budget = Math.min(
+          deps.supersededPlanProofBudgetMs ?? SUPERSEDED_PLAN_PROOF_BUDGET_MS,
+          left - (deps.branchProofBudgetMs ?? BRANCH_PROOF_BUDGET_MS),
+        );
+        deadline = now() + Math.max(0, budget);
+      }
+      const tracking = { timedOut: false };
+      const git = branchGitContext(context, tracking, deadline, now);
+      state = { deadline, git, inputs: null };
+      state.inputs =
+        deadline !== null && now() >= deadline
+          ? { reason: 'proof-unavailable' }
+          : await supersededPlanInputs(git, tracking, deps);
+    }
+    if (state.deadline !== null && now() >= state.deadline) {
+      return { ok: false, reason: 'proof-unavailable' };
+    }
+    return supersededPlanProof(context, state.git, record, state.inputs);
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2099,8 +2482,10 @@ export function requireDecisions(value) {
 }
 
 // The `items` of `cleanup apply`, checked by shape only: every value is the bare `itemDigest`,
-// except a `branch:` item's, which is exactly `{itemDigest, proof, proofCommit}`. What the values
-// claim is re-derived by the pre-write pass, never trusted.
+// except a `branch:` item's, which is exactly `{itemDigest, proof, proofCommit}`, and a proven
+// `worktree:` item's, which is exactly `{itemDigest, proof: "preserved-plan-superseded"}`. What
+// the values claim is re-derived by the pre-write pass, never trusted; which form a `worktree:`
+// item needs is decided there too (a wrong form is PREVIEW_MISMATCH `proof-mismatch`).
 function requireItems(value) {
   const items = requireObject(value, 'items');
   const ids = Object.keys(items);
@@ -2112,6 +2497,21 @@ function requireItems(value) {
     if (!ITEM_ID_PATTERN.test(id)) fail('INVALID_INPUT', `items has an invalid itemId: ${id}`);
     if (itemKind(id) === 'branch') {
       requireBranchItemValue(id, items[id]);
+      continue;
+    }
+    if (itemKind(id) === 'worktree' && isObject(items[id])) {
+      const entry = items[id];
+      if (
+        Object.keys(entry).length !== 2 ||
+        typeof entry.itemDigest !== 'string' ||
+        !SHA256_PATTERN.test(entry.itemDigest) ||
+        entry.proof !== SUPERSEDED_PLAN_PROOF
+      ) {
+        fail(
+          'INVALID_INPUT',
+          `items.${id} must be a SHA-256 itemDigest or {itemDigest, proof: "${SUPERSEDED_PLAN_PROOF}"}`,
+        );
+      }
       continue;
     }
     if (typeof items[id] !== 'string' || !SHA256_PATTERN.test(items[id])) {
@@ -2545,6 +2945,7 @@ async function inspectRecords(
   const worktrees = await listWorktrees(context);
   const records = [];
   const sources = new Map();
+  const facts = new Map();
   const named = new Set();
   // The `<base>/<repo>` directory of every valid record, from the parent of its session leaf.
   const repositoryDirectories = new Set();
@@ -2575,12 +2976,13 @@ async function inspectRecords(
       ),
     );
     if (sessionId !== null && record.sessionId !== sessionId) continue;
-    const facts = await gatherFacts(context, roots, worktrees, record, { mergeGateRelease });
-    const { conditions, blockers } = assessEligibility(facts, {
+    const recordFacts = await gatherFacts(context, roots, worktrees, record, { mergeGateRelease });
+    const { conditions, blockers } = assessEligibility(recordFacts, {
       removal: true,
       mergeGateRelease,
     });
     sources.set(id, record);
+    facts.set(id, recordFacts);
     records.push({
       recordId: id,
       valid: true,
@@ -2596,10 +2998,10 @@ async function inspectRecords(
       ...(record.status === 'cleanup-in-progress'
         ? { cleanupRunId: record.cleanupRunId, claimedAt: record.claimedAt }
         : {}),
-      tip: facts.branchTip,
+      tip: recordFacts.branchTip,
       conditions,
       ...(mergeGateRelease ? { blockers } : {}),
-      lock: facts.lock,
+      lock: recordFacts.lock,
     });
   }
   const orphanLedgers = [];
@@ -2626,6 +3028,7 @@ async function inspectRecords(
     worktrees,
     records,
     sources,
+    facts,
     named,
     repositoryDirectories,
     orphanLocks,
@@ -3243,7 +3646,10 @@ const PER_ITEM_ERRORS = Object.freeze([
   'INVALID_STATE',
 ]);
 
-function worktreeDigestInput(record, tip) {
+// The digest input of a `worktree:` item. A proven superseded-plan item (`evidence`) also binds
+// its proof and the confirmed plan and archive blobs, never `baseRef` or `baseCommit`, so a fetch
+// alone changes no digest; every other item's input is unchanged.
+function worktreeDigestInput(record, tip, evidence = null) {
   return {
     kind: 'worktree',
     recordId: record.recordId,
@@ -3251,6 +3657,16 @@ function worktreeDigestInput(record, tip) {
     branch: record.branch,
     tip,
     branchPolicy: record.branchPolicy,
+    ...(evidence === null
+      ? {}
+      : {
+          proof: SUPERSEDED_PLAN_PROOF,
+          planPath: evidence.planPath,
+          planBlob: evidence.planBlob,
+          archivePath: evidence.archivePath,
+          archiveBlob: evidence.archiveBlob,
+          match: evidence.match,
+        }),
   };
 }
 
@@ -3301,6 +3717,8 @@ async function worktreeGone(context, record) {
 //   expectDigest  the selected `itemDigest` re-checked under the lock (`cleanup apply`), or null
 //   mergeGateRelease  the cleanup-only `merge-gate` release (`cleanup apply` only; see
 //                 `evaluateEligibility`), for the pre-lock gone gate and the claim
+//   supersededPlan  `{planPath}` of a confirmed superseded-plan item (`cleanup apply` only), or
+//                 null: the claim re-derives the proof and discards that plan (`removeClaimed`)
 //   signals       the signal state of the call
 async function removeOne(context, roots, recordId, options, deps) {
   const paths = recordPaths(roots.cwd, recordId);
@@ -3362,7 +3780,9 @@ async function removeOne(context, roots, recordId, options, deps) {
 // pruning or unlinking the path. Every failure after the claim is persisted as `cleanup-failed`
 // with the exact reason, so the record stays the visible truth; only a gone worktree lets the
 // branch policy run and the record be deleted. The `merge-gate` release proof is re-derived here,
-// under the lock and before the claim.
+// under the lock and before the claim, and so is the superseded-plan proof of a confirmed proven
+// item, which alone waives condition 7 and is bound by the digest; a refusal of its discard
+// before the quarantine rename restores the pre-claim record instead (`discardSupersededPlan`).
 async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, held, options, deps) {
   await phase(deps, 'underLock', { operation: options.operation, recordId });
   const read = await readRecord(context, paths, recordId);
@@ -3380,17 +3800,35 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
     ownLock: held.token,
     mergeGateRelease,
   });
-  if (options.expectDigest !== null) {
-    if (itemDigest(worktreeDigestInput(record, facts.branchTip)) !== options.expectDigest) {
-      return itemFailure(recordId, 'PREVIEW_MISMATCH', { reason: 'digest' });
-    }
-  }
   const statuses = options.allowActive ? ['active', ...CLAIMABLE_STATUSES] : CLAIMABLE_STATUSES;
-  const { conditions, blockers } = assessEligibility(facts, {
+  let { conditions, blockers } = assessEligibility(facts, {
     statuses,
     removal: true,
     mergeGateRelease,
   });
+  let superseded = null;
+  if ((options.supersededPlan ?? null) !== null) {
+    superseded = supersededPlanApplies(facts, { conditions, blockers }, mergeGateRelease)
+      ? await supersededPlanProver(context, deps)(record)
+      : { ok: false, reason: null };
+    if (!superseded.ok) {
+      return itemFailure(recordId, 'NOT_ELIGIBLE', {
+        status: record.status,
+        conditions,
+        blockers,
+        ...(superseded.reason ? { supersededPlan: { reason: superseded.reason } } : {}),
+      });
+    }
+    conditions = [];
+  }
+  if (options.expectDigest !== null) {
+    const digest = itemDigest(
+      worktreeDigestInput(record, facts.branchTip, superseded?.evidence ?? null),
+    );
+    if (digest !== options.expectDigest) {
+      return itemFailure(recordId, 'PREVIEW_MISMATCH', { reason: 'digest' });
+    }
+  }
   if (conditions.length > 0 || blockers.length > 0) {
     return itemFailure(recordId, 'NOT_ELIGIBLE', { status: record.status, conditions, blockers });
   }
@@ -3407,6 +3845,8 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
       status: record.status,
     });
   }
+  // The exact record before the claim, which a refused superseded-plan discard restores.
+  const preClaim = record;
   record = {
     ...record,
     status: 'cleanup-in-progress',
@@ -3416,12 +3856,32 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
   };
   await writeRecord(context, paths, record, held);
   const claimed = record;
+  const claimOptions = superseded?.ok
+    ? {
+        ...options,
+        discardPlan: { evidence: superseded.evidence, identity: superseded.identity },
+        preClaim,
+      }
+    : options;
   try {
-    return await removeClaimed(context, roots, paths, recordId, claimed, held, options, deps);
+    return await removeClaimed(context, roots, paths, recordId, claimed, held, claimOptions, deps);
   } catch (error) {
     // Any error after the claim (a failed or timed-out Git call, a lost lock, a guard refusal)
     // would otherwise leave the record `cleanup-in-progress` under a claim no one finishes. It is
     // reconciled to `cleanup-failed` with the error under the still-held lock, then mapped as usual.
+    // A superseded-plan discard that already restored the pre-claim record (`restoredItem`) is
+    // not reconciled again: its restore result is the item's state.
+    if (error?.restoredItem) {
+      const { code, message, status, restored, persisted } = error.restoredItem;
+      error.itemDetails = {
+        code: code ?? 'INTERNAL_ERROR',
+        ...(message ? { message } : {}),
+        status,
+        restored,
+        ...(persisted ? { persisted } : {}),
+      };
+      throw error;
+    }
     const code = error instanceof RuntimeStateError ? error.code : 'INTERNAL_ERROR';
     const persisted = await markCleanupFailed(
       context,
@@ -3435,6 +3895,8 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
       error.itemDetails = {
         status: persisted.persisted ? 'cleanup-failed' : claimed.status,
         persisted,
+        ...(error.quarantine ? { quarantine: error.quarantine } : {}),
+        ...(error.discardedPlan ? { discardedPlan: error.discardedPlan } : {}),
       };
     }
     throw error;
@@ -3442,7 +3904,41 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
 }
 
 // The claimed part of `claimAndRemove`: `record` is `cleanup-in-progress` under this actor's claim.
+// A confirmed superseded plan (`options.discardPlan`) is discarded first; every result after its
+// discard names it as `discardedPlan`.
 async function removeClaimed(context, roots, paths, recordId, record, held, options, deps) {
+  if (options.discardPlan) {
+    const refused = await discardSupersededPlan(
+      context,
+      paths,
+      recordId,
+      record,
+      held,
+      options,
+      deps,
+    );
+    if (refused !== null) return refused;
+    const discardedPlan = options.discardPlan.evidence.planPath;
+    try {
+      await phase(deps, 'afterDiscard', { recordId });
+      return {
+        ...(await removeClaimedWorktree(
+          context,
+          roots,
+          paths,
+          recordId,
+          record,
+          held,
+          options,
+          deps,
+        )),
+        discardedPlan,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object') error.discardedPlan = discardedPlan;
+      throw error;
+    }
+  }
   await phase(deps, 'afterClaim', { recordId });
   if (options.signals.signal) {
     const signal = options.signals.signal;
@@ -3456,6 +3952,135 @@ async function removeClaimed(context, roots, paths, recordId, record, held, opti
     );
     return itemFailure(recordId, 'INTERRUPTED', { signal, status: 'cleanup-failed', reconciled });
   }
+  return removeClaimedWorktree(context, roots, paths, recordId, record, held, options, deps);
+}
+
+// The discard of a confirmed superseded plan under the record lock and this actor's claim: null
+// once the plan file is gone, else the item's result. The plan is checked in place (identity and
+// raw blob of the proof under the lock), renamed into a RELEASE_QUARANTINE_PREFIX entry of the
+// worktree root, checked there again and unlinked.
+// Every outcome before the rename (an interrupt, a changed file or directory, a thrown error, a
+// failed rename while the file is still at its path) restores `options.preClaim` and reports
+// `restored: true`; only a failed restore write falls back to `cleanup-failed` (`restored: false`).
+// A thrown error outside PER_ITEM_ERRORS is restored first and still ends the call. After the
+// rename, a quarantine whose file cannot be verified is kept, which fails condition 7 until the
+// user resolves it, and the record is `cleanup-failed`.
+async function discardSupersededPlan(context, paths, recordId, record, held, options, deps) {
+  const { evidence, identity } = options.discardPlan;
+  const git = branchGitContext(context, { timedOut: false });
+  const target = path.join(record.worktreePath, evidence.planPath);
+  const failed = async (reason, details = {}) => {
+    const persisted = await markCleanupFailed(context, paths, record, reason, held, deps);
+    return itemFailure(recordId, 'REMOVE_FAILED', { reason, persisted, ...details });
+  };
+  const restore = async (code, details = {}) => {
+    try {
+      await reconciling(context, () => writeRecord(context, paths, options.preClaim, held));
+      return itemFailure(recordId, code, {
+        ...details,
+        status: options.preClaim.status,
+        restored: true,
+      });
+    } catch (error) {
+      const reason = `${code}: the claim could not be restored: ${error?.message ?? error}`;
+      const persisted = await markCleanupFailed(context, paths, record, reason, held, deps);
+      return itemFailure(recordId, code, {
+        ...details,
+        status: persisted.persisted ? 'cleanup-failed' : record.status,
+        restored: false,
+        persisted,
+      });
+    }
+  };
+  const sameFile = (read) =>
+    read.identity.dev === identity.dev &&
+    read.identity.ino === identity.ino &&
+    read.blob === evidence.planBlob;
+  const inPlace = async () => {
+    const read = await readPlanFile(context, git, record.worktreePath, evidence.planPath);
+    if (read.state === 'git-failed') {
+      fail('GIT_FAILED', `the preserved plan ${evidence.planPath} could not be hashed`);
+    }
+    return read.state === 'ok' && sameFile(read) ? read : null;
+  };
+  const quarantine = path.join(
+    record.worktreePath,
+    `${RELEASE_QUARANTINE_PREFIX}${randomHex(deps, 8)}`,
+  );
+  let preserved;
+  try {
+    await phase(deps, 'afterClaim', { recordId });
+    if (options.signals.signal) {
+      return await restore('INTERRUPTED', { signal: options.signals.signal });
+    }
+    // The file, and its directory as a canonical path inside the worktree, right before the rename.
+    const directory = path.dirname(target);
+    preserved = await inPlace();
+    if (preserved === null || (await canonical(context.fs, directory)) !== directory) {
+      return await restore('PLAN_CHANGED', { planPath: evidence.planPath });
+    }
+  } catch (error) {
+    // Restored first; only a per-item error ends the item here, every other one ends the call.
+    const code = error instanceof RuntimeStateError ? error.code : 'INTERNAL_ERROR';
+    const result = await restore(code, { message: error?.message ?? String(error) });
+    if (error instanceof RuntimeStateError && PER_ITEM_ERRORS.includes(error.code)) return result;
+    if (error && typeof error === 'object') error.restoredItem = result;
+    throw error;
+  }
+  try {
+    await context.fs.rename(target, quarantine);
+  } catch (error) {
+    const message = `the preserved plan could not be moved: ${error?.code ?? error?.message}`;
+    let still = false;
+    try {
+      still = (await inPlace()) !== null;
+    } catch {
+      still = false;
+    }
+    if (still) return restore('WRITE_FAILED', { message });
+    return failed(`${message}; it is no longer at ${evidence.planPath}`);
+  }
+  // From here on nothing is restored; a thrown error names the quarantine until the unlink and the
+  // discarded plan after it.
+  try {
+    const beforeRead = await context.fs.lstat(quarantine, { bigint: true }).catch(() => null);
+    const quarantined = await readBoundedFile(context.fs, quarantine, MAX_PLAN_BYTES);
+    const matches =
+      quarantined.state === 'ok' &&
+      quarantined.identity.dev === identity.dev &&
+      quarantined.identity.ino === identity.ino &&
+      quarantined.content.equals(preserved.content) &&
+      beforeRead?.isFile() &&
+      String(beforeRead.dev) === quarantined.identity.dev &&
+      String(beforeRead.ino) === quarantined.identity.ino &&
+      String(beforeRead.mtimeNs) === quarantined.identity.mtimeNs &&
+      beforeRead.size === BigInt(quarantined.bytes);
+    const beforeUnlink = matches
+      ? await context.fs.lstat(quarantine, { bigint: true }).catch(() => null)
+      : null;
+    if (
+      !beforeUnlink?.isFile() ||
+      beforeUnlink.dev !== beforeRead.dev ||
+      beforeUnlink.ino !== beforeRead.ino ||
+      beforeUnlink.ctimeNs !== beforeRead.ctimeNs ||
+      beforeUnlink.mtimeNs !== beforeRead.mtimeNs ||
+      beforeUnlink.size !== beforeRead.size
+    ) {
+      return await failed(
+        `the preserved plan changed on its way into the quarantine ${quarantine}, which is kept`,
+        { quarantine },
+      );
+    }
+    await context.fs.unlink(quarantine);
+  } catch (error) {
+    if (error && typeof error === 'object') error.quarantine = quarantine;
+    throw error;
+  }
+  return null;
+}
+
+// The removal of a claimed `record`'s worktree, its branch policy and the record deletion.
+async function removeClaimedWorktree(context, roots, paths, recordId, record, held, options, deps) {
   const before = await worktreeGone(context, record);
   let reconciledAbsent = false;
   if (before.gone) {
@@ -3468,6 +4093,26 @@ async function removeClaimed(context, roots, paths, recordId, record, held, opti
     const persisted = await markCleanupFailed(context, paths, record, reason, held, deps);
     return itemFailure(recordId, 'REMOVE_FAILED', { reason, persisted });
   } else {
+    if (record.purpose === 'issue-planning') {
+      const proof = await proveOwnWorktree(context, roots, record);
+      const discardedPlan = options.discardPlan?.evidence.planPath ?? null;
+      const facts = proof.commonDirMatches
+        ? await conditionSevenFacts(context, roots, record)
+        : null;
+      const failedFacts = facts === null ? null : failedConditionSevenFacts(facts);
+      if (failedFacts === null || failedFacts.length > 0) {
+        const failure =
+          failedFacts === null
+            ? 'the worktree identity could not be re-established before removal'
+            : `condition 7 fails: ${failedFacts.join(', ')}`;
+        const reason =
+          discardedPlan === null
+            ? failure
+            : `the preserved plan ${discardedPlan} was discarded, but ${failure}`;
+        const persisted = await markCleanupFailed(context, paths, record, reason, held, deps);
+        return itemFailure(recordId, 'REMOVE_FAILED', { reason, persisted });
+      }
+    }
     const removal = await runGit(context, roots.cwd, ['worktree', 'remove', record.worktreePath]);
     if (!gitOk(removal)) {
       const detail = gitFailureDetail(removal, 'git worktree remove failed');
@@ -4135,27 +4780,13 @@ async function retireInvalidRecord(context, roots, recordId, expectDigest, signa
 // Buddy does (an `origin/` prefix stripped, `origin/HEAD` resolved, unset → `origin/HEAD`, else
 // `main`), or null when it names no safe branch; `excluded` the names that are never candidates:
 // the base branch and an explicit `delivery.returnBranch`.
-async function deliveryConfiguration(context, deps) {
-  let config;
-  try {
-    config = await resolveConfiguration(
-      { cwd: context.cwd, tool: 'cleanup' },
-      { runner: context.runner, env: deps.env },
-    );
-  } catch {
-    return null;
-  }
-  const read = (key) => {
-    const entry = config.values?.[key];
-    if (!entry) return { state: 'unset', value: null };
-    const value = typeof entry.value === 'string' ? entry.value : entry.raw;
-    return entry.state === 'set' && typeof value === 'string'
-      ? { state: 'set', value: value.trim() }
-      : { state: 'invalid', value: null };
-  };
-  const prefixEntry = read('delivery.branchPrefix');
-  const baseEntry = read('delivery.baseBranch');
-  const returnEntry = read('delivery.returnBranch');
+// `config` may be one `cleanupConfiguration` already resolved in the same call.
+async function deliveryConfiguration(context, deps, config = null) {
+  config ??= await cleanupConfiguration(context, deps);
+  if (config === null) return null;
+  const prefixEntry = configEntry(config, 'delivery.branchPrefix');
+  const baseEntry = configEntry(config, 'delivery.baseBranch');
+  const returnEntry = configEntry(config, 'delivery.returnBranch');
   if ([prefixEntry, baseEntry, returnEntry].some((entry) => entry.state === 'invalid')) return null;
   const prefix =
     prefixEntry.state === 'set' ? prefixEntry.value.replace(/\/+$/, '') : DEFAULT_BRANCH_PREFIX;
@@ -4173,6 +4804,17 @@ async function deliveryConfiguration(context, deps) {
     baseRef,
     excluded: new Set([configured, baseRef, returnBranch].filter((name) => name !== null)),
   };
+}
+
+// One value of a resolved configuration, trimmed: `{state: 'set', value}`, `{state: 'unset'}` or
+// `{state: 'invalid'}`.
+function configEntry(config, key) {
+  const entry = config.values?.[key];
+  if (!entry) return { state: 'unset', value: null };
+  const value = typeof entry.value === 'string' ? entry.value : entry.raw;
+  return entry.state === 'set' && typeof value === 'string'
+    ? { state: 'set', value: value.trim() }
+    : { state: 'invalid', value: null };
 }
 
 // The branch `refs/remotes/origin/HEAD` points at, or null.
@@ -4764,25 +5406,47 @@ export async function cleanupPlan(input, deps) {
   const roots = await openRoots(context, input);
   // Every record file is read once, so each lands in exactly one class, however it changes meanwhile.
   const recordSet = await readRecordSet(context, roots);
-  const { worktrees, records, sources, named, orphanLocks, ledgerDirectory } = await inspectRecords(
-    context,
-    roots,
-    { mergeGateRelease: true, recordSet },
-  );
+  const { worktrees, records, sources, facts, named, orphanLocks, ledgerDirectory } =
+    await inspectRecords(context, roots, { mergeGateRelease: true, recordSet });
   const invalid = await invalidRecordEntries(context, roots, worktrees, recordSet);
   const items = [];
   const blocked = [];
+  // The superseded-plan proofs run before the branch proofs, within their own budget.
+  const proveSuperseded = supersededPlanProver(context, deps, startedAt);
   for (const record of records) {
     const itemId = `worktree:${record.recordId}`;
+    // The digest binds the record exactly as its facts were derived; it is never re-read here,
+    // so a record deleted or replaced since then cannot leak into the item.
+    const source = sources.get(record.recordId);
     if (record.valid && record.conditions.length === 0 && record.blockers.length === 0) {
-      // The digest binds the record exactly as its facts were derived; it is never re-read here,
-      // so a record deleted or replaced since then cannot leak into the item.
       items.push({
         itemId,
         kind: 'worktree',
         ...record,
-        itemDigest: itemDigest(worktreeDigestInput(sources.get(record.recordId), record.tip)),
+        itemDigest: itemDigest(worktreeDigestInput(source, record.tip)),
       });
+    } else if (record.valid && supersededPlanApplies(facts.get(record.recordId), record, true)) {
+      const proof = await proveSuperseded(source);
+      if (proof.ok) {
+        items.push({
+          itemId,
+          kind: 'worktree',
+          ...record,
+          conditions: [],
+          waivedConditions: [7],
+          proof: SUPERSEDED_PLAN_PROOF,
+          ...proof.evidence,
+          itemDigest: itemDigest(worktreeDigestInput(source, record.tip, proof.evidence)),
+        });
+      } else {
+        blocked.push({
+          itemId,
+          kind: 'worktree',
+          blockers: [],
+          ...record,
+          supersededPlan: { reason: proof.reason },
+        });
+      }
     } else {
       blocked.push({ itemId, kind: 'worktree', blockers: [], ...record });
     }
@@ -4879,16 +5543,35 @@ async function recomputeItem(context, roots, itemId, decisions, shared, deps, va
     const facts = await gatherFacts(context, roots, shared.worktrees, read.record, {
       mergeGateRelease: true,
     });
-    const digest = itemDigest(worktreeDigestInput(read.record, facts.branchTip));
-    const { conditions, blockers } = assessEligibility(facts, {
+    let { conditions, blockers } = assessEligibility(facts, {
       removal: true,
       mergeGateRelease: true,
     });
+    let superseded = null;
+    if (supersededPlanApplies(facts, { conditions, blockers }, true)) {
+      shared.proveSuperseded ??= supersededPlanProver(context, deps);
+      superseded = await shared.proveSuperseded(read.record);
+      if (superseded.ok) conditions = [];
+    }
+    const evidence = superseded?.ok ? superseded.evidence : null;
+    const digest = itemDigest(worktreeDigestInput(read.record, facts.branchTip, evidence));
     // An item `cleanup plan` would list as blocked is never selectable, whatever digest it carries.
     if (conditions.length > 0 || blockers.length > 0) {
-      return { reason: 'not-actionable', conditions, blockers, digest };
+      return {
+        reason: 'not-actionable',
+        conditions,
+        blockers,
+        digest,
+        ...(superseded ? { supersededPlan: { reason: superseded.reason } } : {}),
+      };
     }
-    return { digest, recordId: key };
+    // A proven item is selected only as `{itemDigest, proof}`, every other one only as its digest.
+    if ((evidence !== null) !== isObject(value)) return { reason: 'proof-mismatch', digest };
+    return {
+      digest,
+      recordId: key,
+      supersededPlan: evidence === null ? null : { planPath: evidence.planPath },
+    };
   }
   if (kind === 'invalid-record') {
     // Nothing is written during the first pass, so its items share one record set and one list.
@@ -5015,6 +5698,7 @@ export async function cleanupApply(input, deps) {
         reason: fresh.reason,
         ...(fresh.conditions ? { conditions: fresh.conditions } : {}),
         ...(fresh.blockers ? { blockers: fresh.blockers } : {}),
+        ...(fresh.supersededPlan ? { supersededPlan: fresh.supersededPlan } : {}),
         ...(fresh.failures ? { failures: fresh.failures } : {}),
       });
     }
@@ -5048,6 +5732,7 @@ export async function cleanupApply(input, deps) {
           integration: null,
           expectDigest: entry.digest,
           mergeGateRelease: true,
+          supersededPlan: entry.supersededPlan,
           signals,
         },
         deps,

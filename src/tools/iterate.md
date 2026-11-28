@@ -1,7 +1,7 @@
 ---
 description: "Feeds review notes from an existing pull request (bots like Greptile and human reviewers) as well as additional free-text instructions back into the same PR as new commits – a mini build on an already delivered change. Classifies each item and delegates to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}, replies to and resolves the addressed review threads. Without a PR it iterates locally on the latest branch change."
 catalogHint: "Feeds PR review notes and instructions back into an existing PR as new commits."
-contextBudget: 1913
+contextBudget: 1930
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -559,6 +559,20 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
     Only the refusal code `AUTHORIZED_SCOPE_INVALID` returns `ABORT: unparseable authorized scope`;
     any other result than `ok: true` returns `ABORT: scope bind refused: <CODE>`, `<CODE>` its
     `error.code` or `NO_ENVELOPE`. Every later scope check of this run reads the bound scope by `runId`.
+13. **Own-review selection switch.** Only a direct invocation, carrying neither a body delimiter
+    nor any control line this phase reads (`Run state:` and `Progress context:` included),
+    recognizes it, which keeps it gated: the Phase 2.5 approval precedes every item it admits. When
+    the free text step 1 left after the PR reference, trimmed, is exactly `own-review findings`, set
+    the own-review switch and leave the free text empty; Phase 2 step 1 states what it selects.
+    Recognition is exact: another case or spelling, a longer text containing the phrase, or any
+    other run's text is ordinary free text under Phase 2 step 1's explicit-naming rule. In Local
+    mode the switch has no effect and never becomes a local instruction. Record it, or its absence,
+    in the wisdom file.
+
+```lazy-include
+iterate-own-review-surfaces
+when: Phase 0 set the own-review switch (before Phase 1 reads)
+```
 
 ### Phase 1: Gather context
 
@@ -709,11 +723,17 @@ after its state turned terminal, so Phase 1's fresh read before every write keep
 1. Exclude an already addressed thread when it is `resolved` or carries an
    `<!-- effective-flow-iterate -->` reply. Exclude a thread carrying
    `<!-- effective-flow-pr-review -->` as well — that is Effective Flow's own published review
-   output, not third-party input — unless the user names those threads explicitly. The
+   output, not third-party input — unless the user names those threads explicitly. The Phase 0
+   own-review switch, the `own-review findings` form `next-steps` recommends, is that explicit
+   naming: with it, marked threads and the top-level findings of the loaded
+   `iterate-own-review-surfaces` enter classification next to every other remaining thread, while
+   a `resolved` thread or one with an `<!-- effective-flow-iterate -->` reply stays excluded. A bare
+   invocation keeps excluding every marked thread. The
    {{SKILL:merge-gate}} gate needs no exclusion of its own: it writes nothing into a review thread,
    so no thread on a pull request is ever the gate's own reply.
    In hidden mode (`visibility: hidden`) no marker is evidence: take both exclusions from the
    loaded `pr-thread-ledger` lookup instead, which excludes every `resolved` and `recorded` thread.
+
 2. **Apply the optional item filter** from Phase 0, after the exclusions above:
    - **no filter** — every remaining thread plus the free text enters classification. This is the
      unchanged default and the only behavior an interactive invocation ever sees.

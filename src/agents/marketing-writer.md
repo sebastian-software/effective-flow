@@ -30,6 +30,10 @@ task-tracking
 delegation-mandate
 ```
 
+```include
+worker-git-history
+```
+
 ## Recommended skills
 
 - `effective-marketing › copywriting › copy-editing › marketing-psychology` (fallback)

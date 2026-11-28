@@ -326,7 +326,7 @@ when: a `review-thread-reply`, `pr-comment` or `review-create` failed with `muta
 ### No history rewriting
 
 New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –
-consistent with `{{SKILL:pr}}` and "Updating existing PRs" in the delivery
+consistent with `{{SKILL:pr}}` and "Update existing PRs" in the delivery
 and worktree integration. No `commit --amend`, no rebase, no squash, no force-push.
 If the push is rejected because of diverged remote history, stop and report the conflict
 instead of overwriting history.
@@ -336,9 +336,9 @@ A head branch that has fallen **behind** its base is brought forward the same wa
 `{{SKILL:merge-gate}}`, is the sanctioned repair; a rebase or a force-push of the head branch is not,
 whatever the forge suggests.
 
-A head branch that **conflicts** with its base is brought forward by the same merge, with its
-conflicts resolved inside it: that is the **second** sanctioned repair, likewise performed by
-`{{SKILL:merge-gate}}` and scoped to it – no other workflow resolves a conflict on a head branch.
-It changes nothing about the rule above: the result is still one ordinary merge commit pushed
-normally, and a resolution that would need a rebase, a squash, an amend, or a force-push to succeed
-is reported instead of performed.
+A head branch that **conflicts** with its base is brought forward by the same merge, with its conflicts
+resolved inside it: that is the **second** sanctioned repair, likewise performed by `{{SKILL:merge-gate}}`;
+besides it, only autopilot's delivery-base step (`autopilot-delivery-conflict`) resolves a conflict on a
+head branch, within its own bound. It changes nothing about the rule above: the result is still one
+ordinary merge commit pushed normally, and a resolution that would need a rebase, a squash, an amend,
+or a force-push to succeed is reported instead of performed.
