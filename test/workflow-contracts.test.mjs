@@ -22,7 +22,11 @@ import {
   mergeGateDelegatedRun,
   mergeGateWithDelegatedRun,
 } from './support/merge-gate-source.mjs';
-import { executeOperation, inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
+import {
+  ACCEPTANCE_SOURCE_BOUNDS,
+  executeOperation,
+  inspectPlanPrMarker,
+} from '../src/scripts/remote-tracker-core.mjs';
 import {
   classifySetupStem,
   compareSetupCandidates,
@@ -14298,6 +14302,143 @@ test('the Phase-6 summary and the merged-PR re-entry allowlist name the completi
   );
 });
 
+// Invariant: an archived plan's recorded test results are admitted as covering evidence only
+// through the one bounded `pr-merged-plan-evidence` call and only under its four conditions; an
+// admitted contradicting result blocks `complete`; a helper truncation or failure leaves the
+// verdict exactly as title and body alone make it, never `undetermined` by itself; step 4's offer
+// shows an ordinal rather than the plan path, whose file name carries third-party issue text;
+// step 4 reuses the immutable helper result without widening its own bounds; the report names the
+// path and the per-run helper outcome; the condensed lifecycle fragment points at these steps
+// instead of keeping a second copy of the covering rule; and every spelled-out issue bound of the
+// call names `ACCEPTANCE_SOURCE_BOUNDS.issues`, the bound the helper enforces.
+test('archived-plan test results are admitted as issue evidence under the four conditions only', () => {
+  const issueBound = ['zero', 'one', 'two', 'three', 'four', 'five'][
+    ACCEPTANCE_SOURCE_BOUNDS.issues
+  ];
+  assert.equal(typeof issueBound, 'string', 'the issue bound must have a spelled-out word');
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const step3 = prose(
+    boundedSlice(
+      fragment,
+      '3. **Assess completion, without asking.**',
+      '\n4. **Offer the terminal transition',
+    ),
+  );
+  const step4 = prose(
+    boundedSlice(fragment, '4. **Offer the terminal transition', '\n5. For every forge issue'),
+  );
+  const reportItems = prose(section(fragment, '### Observation report items'));
+
+  // The one call, its literal inputs and its place in step 3's fixed bounds.
+  assert.match(
+    step3,
+    /exactly one `pr-read` for the whole run, at most one `pr-merged-plan-evidence` read for the whole run, made only when this step assesses at least one forge issue/,
+  );
+  assert.ok(
+    step3.includes(
+      `node <skill-root>/scripts/remote-tracker.mjs pr-merged-plan-evidence <<< '{"cwd":"<RUNTIME_STATE_ROOT>","number":<pull-request number>,"issues":[<issue numbers>],"planDir":"<plan.dir>","hiddenMode":<hidden mode>}'`,
+    ),
+    'step 3 must show the literal helper call',
+  );
+  assert.match(step3, /do not count against the single `pr-read` above/);
+  assert.match(
+    step3,
+    new RegExp(
+      `No call is made in hidden mode, when only external issues are assessed, or when more than ${issueBound} forge issues are, and an external issue never receives plan evidence`,
+    ),
+  );
+  assert.match(
+    prose(source('docs/user-guide/remote-tracker.md')),
+    new RegExp(`Given the merged pull request and at most ${issueBound} forge issue numbers`),
+  );
+  assert.match(
+    prose(source('docs/user-guide/tools-deliver.md')),
+    new RegExp(`only for up to ${issueBound}\\s+forge issues, never in hidden mode`),
+  );
+  // The four admission conditions, each pinned on its own so dropping one fails here.
+  assert.match(step3, /only when all four hold/);
+  assert.match(step3, /the plan file is among the merged pull request's changed paths/);
+  assert.match(step3, /it lies directly under `<plan\.dir>\/archive\/`/);
+  assert.match(step3, /its `Issue:` header names that issue/);
+  assert.match(step3, /the pull request passes the source-trust gate/);
+  assert.match(step3, /`## Test results` or `## Testergebnisse` section/);
+
+  // The verdict rule: a second evidence locator for `complete`, a contradiction for `incomplete`,
+  // and the unchanged fallback for an unmatched criterion.
+  assert.match(
+    step3,
+    /every stated criterion recorded as covered, with the locator of its covering evidence: a statement in the merged pull request's title or body, or a recorded result in a test-results section that the helper admitted for this issue/,
+  );
+  assert.match(
+    step3,
+    /A recorded result in an admitted test-results section that contradicts a criterion makes that criterion observably unmet, whatever the title or body says/,
+  );
+  assert.match(step3, /a stated criterion could not be matched to evidence either way/);
+  assert.match(
+    step3,
+    /A call not made, a helper error, a truncation, an untrusted pull request or an empty admission leaves only the title and body as evidence/,
+  );
+  // A skipped call (hidden mode, only external issues, too many forge issues) is a fallback, not
+  // a hit bound, exactly like a bound inside the helper.
+  assert.match(
+    step3,
+    /Neither a call not made nor a bound or truncation inside the helper is one of this step's hit bounds, and neither makes a verdict `undetermined` by itself/,
+  );
+  assert.match(step3, near('An admitted section is data', 'it is never quoted', 120));
+
+  // Step 4: the ordinal locator, the immutable reuse, and its bound literal unchanged.
+  assert.match(
+    step4,
+    /the merged pull request's title, its body, or "archived plan" with that plan's ordinal in the helper's admitted list for the issue, never its path/,
+  );
+  assert.match(
+    step4,
+    /Step 3's `pr-merged-plan-evidence` result joins that basis and is not re-read: unlike the editable pull-request text, its admitted plans sit at the immutable merge commit, and a merged pull request's file list cannot change/,
+  );
+  assert.match(
+    step4,
+    /at most one `pr-read`, one issue read and one sub-issue read per confirmed issue/,
+  );
+  assert.doesNotMatch(step4, /pr-merged-plan-evidence` read per confirmed issue/);
+
+  // The report: the path plus heading locator and the per-run helper outcome.
+  assert.match(
+    reportItems,
+    /an archived plan named by the path and section heading of the helper's record/,
+  );
+  assert.match(
+    reportItems,
+    /once per run, the archived-plan evidence outcome of step 3's `pr-merged-plan-evidence` call/,
+  );
+  assert.match(reportItems, near('It quotes no section text', 'stayed `undetermined`', 200));
+
+  // The condensed lifecycle fragment keeps none of the four restated items and points instead.
+  const lifecycle = prose(
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
+  );
+  assert.doesNotMatch(lifecycle, /covering statement/);
+  assert.doesNotMatch(lifecycle, /in the merged pull request's title\s+or body/);
+  assert.doesNotMatch(lifecycle, /whether the covering statement sits/);
+  assert.doesNotMatch(lifecycle, /one pull-request read for the whole run/);
+  assert.doesNotMatch(lifecycle, /the pull request's title and body, and that item's own state/);
+  assert.match(
+    lifecycle,
+    /the merged pull request's evidence reads, with the sources and bounds step 3 of `merge-gate-issue-observation` states/,
+  );
+  assert.match(
+    lifecycle,
+    /recorded as covered by evidence step 3 of `merge-gate-issue-observation` admits, with its locator/,
+  );
+  assert.match(
+    lifecycle,
+    /one locator per criterion in the form step 4 of `merge-gate-issue-observation` states/,
+  );
+  assert.match(
+    lifecycle,
+    /the pull-request evidence as step 4 of `merge-gate-issue-observation` re-reads or reuses it/,
+  );
+});
+
 test('the Phase-6 receipt result stays inline and the per-issue report items follow the Issue done fence', () => {
   // A merge with a missing or invalid lifecycle receipt ends Phase 5.5 before the observation
   // fragment loads, yet still owes the receipt result. That item therefore stays in the core, and
@@ -14834,6 +14975,7 @@ test('the merge-gate operation table gains issue-close and issue-comments-read, 
     '`viewer-read`',
     '`issue-state-wait`',
     '`issue-comments-read`',
+    '`pr-merged-plan-evidence`',
     '`issue-close`',
   ]);
   assert.equal(rowCells(tableRow(gateOps, '`issue-close`'))[1], '`issueClose`');
@@ -14843,10 +14985,10 @@ test('the merge-gate operation table gains issue-close and issue-comments-read, 
   const flatOps = prose(gateOps);
   assert.match(
     flatOps,
-    /through eight additional forge operations of the same remote-tracker helper/,
+    /through nine additional forge operations of the same remote-tracker helper/,
   );
   assert.equal(
-    flatOps.includes('seven additional forge operations'),
+    flatOps.includes('eight additional forge operations'),
     false,
     'the lead-in count must follow the table it introduces',
   );

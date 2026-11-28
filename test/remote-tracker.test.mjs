@@ -20,6 +20,8 @@ import {
   ACCEPTANCE_CRITERION_TRUNCATION_MARKER,
   ACCEPTANCE_SOURCE_BOUNDS,
   DEFAULT_ACCEPTANCE_PLAN_DIR,
+  MERGED_PLAN_EVIDENCE_BOUNDS,
+  MERGED_PLAN_REJECTION_REASONS,
   adrCandidateKey8,
   classifyAdrCandidate,
   classifyFirstParentCommit,
@@ -17614,4 +17616,557 @@ test('public Forgejo label-list preserves pagination and rejects tea silent labe
     },
   );
   assert.equal(failed.error.code, 'COMMAND_FAILED');
+});
+
+// ---------------------------------------------------------------------------------------------
+// pr-merged-plan-evidence: the archived plans of a merged pull request as issue evidence.
+// Invariants protected: only a plan this merged, trusted pull request archived under
+// `<plan.dir>/archive/`, bound by its `**Issue:**` header to an observed issue, with one implemented
+// status and one non-blank test-results section, is admitted, with its path, exact heading and the
+// whole section text; a listed path that is not a `.md` file under the archive is no candidate and
+// is never echoed or counted; every other candidate is rejected once with its closed reason; a listing that
+// is not provably complete admits nothing; hidden mode and an empty issue list read nothing; and
+// every forge or Git failure outside those outcomes fails closed instead of returning a guess.
+// ---------------------------------------------------------------------------------------------
+
+const MPE_MERGE = 'd'.repeat(40);
+const MPE_ARCHIVE = 'docs/plan/archive/2026-11-27-issue-842-docs-check.md';
+const MPE_TOP = 'docs/plan/2026-11-27-issue-842-docs-check.md';
+const MPE_RESULTS =
+  '- `rg -n "foo" docs/`: printed nothing (exit 1, no match)\n- `pnpm agent:check`: passed';
+
+function mpePlan({
+  status = '**Plan status:** Implemented',
+  issue = '**Issue:** #842',
+  results = `## Test results\n\n${MPE_RESULTS}\n`,
+  extra = '',
+} = {}) {
+  return `# Docs check\n\n${status}\n**Source:** effective-flow plan\n${issue}\n\n## Requirement\n\nR.\n\n${results}\n## Open points\n\n- No open points.\n${extra}`;
+}
+
+function mpePull(extra = {}) {
+  return {
+    number: 7,
+    title: 'docs: check',
+    body: 'Docs only.',
+    state: 'closed',
+    merged: true,
+    merge_commit_sha: MPE_MERGE,
+    user: { login: 'alice' },
+    head: { ref: 'docs-check', sha: 'a'.repeat(40), repo: { id: 1 } },
+    base: { ref: 'develop', repo: { id: 1 } },
+    ...extra,
+  };
+}
+
+const mpeAdded = (filename) => ({ filename, status: 'added' });
+
+// A scripted forge and Git for the merged-plan read. `files` are raw provider entries, served
+// `pageSize` per page; `blobs` maps a path to its text at the merge commit, `trees` names paths
+// that are not blobs there.
+function mpeRunner(world = {}) {
+  const w = {
+    files: [],
+    pageSize: 100,
+    blobs: {},
+    trees: new Set(),
+    permissions: { alice: 'write' },
+    remoteObjects: new Set([MPE_MERGE]),
+    localObjects: new Set(),
+    failOn: null,
+    provider: 'github',
+    ...world,
+  };
+  const pull = w.pullRaw ?? mpePull({ changed_files: w.files.length, ...w.pullExtra });
+  const calls = [];
+  const local = new Set(w.localObjects);
+  const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
+  const page = (number) => {
+    const start = (number - 1) * w.pageSize;
+    return w.files.slice(start, start + w.pageSize);
+  };
+  const forge = (key) => {
+    let match;
+    if ((match = key.match(/\/pulls\/7\/files\?(\S+)/))) {
+      return JSON.stringify(page(Number(new URLSearchParams(match[1]).get('page'))));
+    }
+    if (/\/pulls\/7(?:\s|$)/.test(key)) return JSON.stringify(pull);
+    if ((match = key.match(/collaborators\/([^/\s]+)\/permission/))) {
+      const permission = w.permissions[match[1].toLowerCase()];
+      return permission === undefined ? null : JSON.stringify({ permission });
+    }
+    return undefined;
+  };
+  const runner = async (call) => {
+    calls.push(call);
+    const key = `${call.executable} ${call.args.join(' ')}`;
+    if (w.failOn?.test(key)) return { status: 1, stdout: '', stderr: 'boom' };
+    if (call.executable === 'gh') {
+      const body = forge(key);
+      if (body === undefined) return { status: 1, stdout: '', stderr: `unhandled gh ${key}` };
+      if (body === null) return { status: 1, stdout: '', stderr: 'HTTP 404' };
+      return ok(/\/pulls\/7(?:\s|$)/.test(key) ? `HTTP/2 200\r\n\r\n${body}` : body);
+    }
+    if (call.executable === 'tea') {
+      const body = forge(key);
+      if (body === undefined || body === null) {
+        return {
+          status: 0,
+          stdout: '{"message":"not found"}',
+          stderr: 'HTTP/1.1 404 Not Found\r\n',
+        };
+      }
+      return { status: 0, stdout: body, stderr: TEA_OK };
+    }
+    const args = call.args;
+    if (args[0] === 'check-ref-format') return ok(`${args[2]}\n`);
+    if (args[0] === 'cat-file' && args[1] === '-e') {
+      return {
+        status: local.has(args[2].replace(/\^\{commit\}$/, '')) ? 0 : 1,
+        stdout: '',
+        stderr: '',
+      };
+    }
+    if (args[0] === 'fetch') {
+      const target = args.at(-1);
+      if (target.startsWith('refs/heads/')) return ok();
+      if (!w.remoteObjects.has(target)) return { status: 128, stdout: '', stderr: 'unadvertised' };
+      local.add(target);
+      return ok();
+    }
+    const objects = () =>
+      call.stdin
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => ({ line, path: line.slice(line.indexOf(':') + 1) }));
+    if (args[0] === 'cat-file' && args[1] === '--batch-check') {
+      const lines = objects().map(({ line, path }) => {
+        if (w.trees.has(path)) return `${'2'.repeat(40)} tree 40\n`;
+        const text = w.blobs[path];
+        return text === undefined
+          ? `${line} missing\n`
+          : `${'1'.repeat(40)} blob ${Buffer.byteLength(text)}\n`;
+      });
+      return ok(lines.join(''));
+    }
+    if (args[0] === 'cat-file' && args[1] === '--batch') {
+      const parts = objects().map(({ path }) => {
+        const text = w.blobs[path];
+        return `${'1'.repeat(40)} blob ${Buffer.byteLength(text)}\n${text}\n`;
+      });
+      return { status: 0, stdout: Buffer.from(parts.join('')), stderr: '' };
+    }
+    return { status: 1, stdout: '', stderr: `unhandled git ${key}` };
+  };
+  runner.calls = calls;
+  runner.keys = () => calls.map((call) => `${call.executable} ${call.args.join(' ')}`);
+  runner.git = () => calls.filter((call) => call.executable === 'git');
+  return runner;
+}
+
+async function mpeRun(world = {}, input = {}) {
+  const runner = mpeRunner(world);
+  const repository = world.provider === 'forgejo' ? forgejoRepository : githubRepository;
+  const envelope = await executeOperation(
+    'pr-merged-plan-evidence',
+    { repository, number: 7, issues: [842], cwd: tmpdir(), ...input },
+    { runner, skipProbe: true },
+  );
+  return { envelope, runner, result: envelope.data?.result };
+}
+
+// The world of one candidate archived plan beside an unrelated docs change.
+function mpeOne(text, entry = mpeAdded(MPE_ARCHIVE), extra = {}) {
+  return {
+    files: [{ filename: 'docs/user-guide/x.md', status: 'modified' }, entry],
+    blobs: { [entry.filename]: text },
+    ...extra,
+  };
+}
+
+test('pr-merged-plan-evidence: a docs pull request admits its archived plan with path, heading and the whole section', async () => {
+  const { envelope, runner, result } = await mpeRun(mpeOne(mpePlan()));
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(result.outcome, 'evaluated');
+  assert.deepEqual(result.trust, { trusted: true, reason: 'trusted', authorPermission: 'write' });
+  assert.equal(result.pullRequest.mergeCommit, MPE_MERGE);
+  assert.deepEqual(result.issues, [
+    {
+      number: 842,
+      plans: [
+        {
+          ordinal: 1,
+          path: MPE_ARCHIVE,
+          section: '## Test results',
+          sectionLine: 11,
+          text: MPE_RESULTS,
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(result.rejected, []);
+  assert.deepEqual(result.truncated, []);
+  // The non-plan path is never echoed, the blobs are read at the merge commit, and no comment,
+  // review or search surface is read.
+  assert.doesNotMatch(JSON.stringify(result), /user-guide/);
+  assert.ok(runner.git().some((call) => call.stdin?.includes(`${MPE_MERGE}:${MPE_ARCHIVE}`)));
+  for (const key of runner.keys()) assert.doesNotMatch(key, /comments|reviews|timeline|search/);
+  assert.equal(envelope.data.commands.length, runner.calls.length);
+});
+
+test('pr-merged-plan-evidence: a plan renamed from its top-level path into the archive is admitted', async () => {
+  const { result } = await mpeRun(
+    mpeOne(mpePlan(), { filename: MPE_ARCHIVE, previous_filename: MPE_TOP, status: 'renamed' }),
+  );
+  assert.equal(result.issues[0].plans.length, 1);
+  assert.equal(result.issues[0].plans[0].path, MPE_ARCHIVE);
+});
+
+test('pr-merged-plan-evidence: Forgejo statuses map onto the neutral set and the tea transport is read', async () => {
+  const plan = mpePlan();
+  const { envelope, runner, result } = await mpeRun({
+    provider: 'forgejo',
+    files: [
+      { filename: MPE_ARCHIVE, previous_filename: MPE_TOP, status: 'renamed' },
+      { filename: 'docs/plan/archive/changed.md', status: 'changed' },
+      { filename: 'docs/plan/archive/deleted.md', status: 'deleted' },
+      { filename: 'docs/plan/archive/copied.md', status: 'copied' },
+    ],
+    blobs: { [MPE_ARCHIVE]: plan },
+  });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(result.issues[0].plans[0].path, MPE_ARCHIVE);
+  assert.deepEqual(result.rejected, [
+    { path: 'docs/plan/archive/changed.md', reason: 'not-archived-here' },
+    { path: 'docs/plan/archive/copied.md', reason: 'unsupported-status' },
+    { path: 'docs/plan/archive/deleted.md', reason: 'removed' },
+  ]);
+  assert.ok(
+    runner
+      .keys()
+      .some((key) =>
+        /^tea api repos\/team\/flow\/pulls\/7\/files\?limit=100&page=1 --include/.test(key),
+      ),
+  );
+});
+
+test('pr-merged-plan-evidence: no archived plan in the listing admits nothing and reads no Git', async () => {
+  const { result, runner } = await mpeRun({
+    files: [{ filename: 'docs/user-guide/x.md', status: 'modified' }, mpeAdded(MPE_TOP)],
+  });
+  assert.equal(result.outcome, 'evaluated');
+  assert.deepEqual(result.issues, [{ number: 842, plans: [] }]);
+  assert.deepEqual(result.rejected, []);
+  assert.deepEqual(runner.git(), []);
+});
+
+test('pr-merged-plan-evidence: an unchanged archived plan is no candidate, since evidence comes from the merged diff', async () => {
+  // The plan sits in the archive at the merge commit, but the pull request did not change it.
+  const { result, runner } = await mpeRun({
+    files: [{ filename: 'docs/user-guide/x.md', status: 'modified' }],
+    blobs: { [MPE_ARCHIVE]: mpePlan() },
+  });
+  assert.deepEqual(result.issues, [{ number: 842, plans: [] }]);
+  assert.deepEqual(runner.git(), []);
+});
+
+test('pr-merged-plan-evidence: a non-Markdown archive file is ignored, never echoed and never counted as a candidate', async () => {
+  // More non-Markdown archive files than the candidate bound, one with a character that would make
+  // a plan path unsafe: none is a candidate, so none is rejected, echoed or counted.
+  const assets = Array.from({ length: MERGED_PLAN_EVIDENCE_BOUNDS.candidates + 1 }, (_, index) =>
+    mpeAdded(`docs/plan/archive/figure-${String(index).padStart(2, '0')}.png`),
+  );
+  const { envelope, result } = await mpeRun({
+    files: [...assets, mpeAdded('docs/plan/archive/a\u202eb.txt'), mpeAdded(MPE_ARCHIVE)],
+    blobs: { [MPE_ARCHIVE]: mpePlan() },
+  });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(result.outcome, 'evaluated');
+  assert.deepEqual(
+    result.issues[0].plans.map((plan) => plan.path),
+    [MPE_ARCHIVE],
+  );
+  assert.deepEqual(result.rejected, []);
+  assert.deepEqual(result.truncated, []);
+  assert.doesNotMatch(JSON.stringify(result), /figure-|\.png|\.txt/);
+});
+
+// One fixture per closed rejection reason: the world, the expected rejection, and whether the path
+// is echoed. `unsafe-path` never carries the path.
+const MPE_REJECTIONS = {
+  'unsafe-path': mpeOne(mpePlan(), mpeAdded('docs/plan/archive/a‮b.md')),
+  'outside-archive': mpeOne(mpePlan(), mpeAdded('docs/plan/archive/nested/p.md')),
+  removed: mpeOne(mpePlan(), { filename: MPE_ARCHIVE, status: 'removed' }),
+  'unsupported-status': mpeOne(mpePlan(), { filename: MPE_ARCHIVE, status: 'copied' }),
+  'not-archived-here': mpeOne(mpePlan(), { filename: MPE_ARCHIVE, status: 'modified' }),
+  oversized: {
+    ...mpeOne(mpePlan({ extra: 'x'.repeat(ACCEPTANCE_SOURCE_BOUNDS.planBytes) })),
+  },
+  'section-oversized': mpeOne(
+    mpePlan({
+      results: `## Test results\n\n${'y'.repeat(MERGED_PLAN_EVIDENCE_BOUNDS.sectionBytes + 1)}\n`,
+    }),
+  ),
+  'blob-missing': { files: [mpeAdded(MPE_ARCHIVE)], blobs: {} },
+  'status-not-implemented': mpeOne(mpePlan({ status: '**Plan status:** Not implemented' })),
+  'issue-header-missing': mpeOne(mpePlan({ issue: '' })),
+  'issue-header-ambiguous': mpeOne(mpePlan({ issue: '**Issue:** #842\n**Issue:** #843' })),
+  'issue-header-invalid': mpeOne(mpePlan({ issue: '**Issue:** other/repo#842' })),
+  'other-issue': mpeOne(mpePlan({ issue: '**Issue:** #9' })),
+  'no-test-results': mpeOne(mpePlan({ results: '## Test results\n\n   \n' })),
+  'test-results-ambiguous': mpeOne(mpePlan({ extra: '\n## Testergebnisse\n\n- erneut\n' })),
+};
+
+test('pr-merged-plan-evidence: every closed rejection reason has a fixture that admits nothing', async () => {
+  assert.deepEqual(Object.keys(MPE_REJECTIONS).sort(), [...MERGED_PLAN_REJECTION_REASONS].sort());
+  for (const [reason, world] of Object.entries(MPE_REJECTIONS)) {
+    const { envelope, result } = await mpeRun(world);
+    assert.equal(envelope.ok, true, `${reason}: ${JSON.stringify(envelope.error)}`);
+    assert.equal(result.outcome, 'evaluated', reason);
+    assert.deepEqual(result.issues, [{ number: 842, plans: [] }], reason);
+    assert.equal(result.rejected.length, 1, reason);
+    assert.equal(result.rejected[0].reason, reason);
+    if (reason === 'unsafe-path') assert.deepEqual(result.rejected[0], { reason });
+    else assert.equal(typeof result.rejected[0].path, 'string', reason);
+  }
+});
+
+test('pr-merged-plan-evidence: bound rejections name their bound, and unsafe or unsupported candidates cost no Git read', async () => {
+  const oversized = await mpeRun(MPE_REJECTIONS.oversized);
+  assert.deepEqual(
+    oversized.result.truncated.map((entry) => [entry.bound, entry.limit]),
+    [['planBytes', ACCEPTANCE_SOURCE_BOUNDS.planBytes]],
+  );
+  // An oversized blob is sized and never buffered.
+  assert.ok(!oversized.runner.git().some((call) => call.args.join(' ') === 'cat-file --batch'));
+  const section = await mpeRun(MPE_REJECTIONS['section-oversized']);
+  assert.deepEqual(
+    section.result.truncated.map((entry) => [entry.bound, entry.limit]),
+    [['sectionBytes', MERGED_PLAN_EVIDENCE_BOUNDS.sectionBytes]],
+  );
+  for (const reason of [
+    'unsafe-path',
+    'outside-archive',
+    'removed',
+    'unsupported-status',
+    'not-archived-here',
+  ]) {
+    const { runner } = await mpeRun(MPE_REJECTIONS[reason]);
+    assert.deepEqual(runner.git(), [], `${reason} reads no Git`);
+  }
+  // A path that is not a blob at the merge commit is missing too.
+  const tree = await mpeRun({ files: [mpeAdded(MPE_ARCHIVE)], trees: new Set([MPE_ARCHIVE]) });
+  assert.deepEqual(tree.result.rejected, [{ path: MPE_ARCHIVE, reason: 'blob-missing' }]);
+});
+
+test('pr-merged-plan-evidence: a test-results heading only inside a code fence is no section', async () => {
+  const { result } = await mpeRun(
+    mpeOne(mpePlan({ results: '```text\n## Test results\n- passed\n```\n' })),
+  );
+  assert.deepEqual(result.rejected, [{ path: MPE_ARCHIVE, reason: 'no-test-results' }]);
+});
+
+test('pr-merged-plan-evidence: an archive-to-archive rename was not archived here', async () => {
+  const { result } = await mpeRun(
+    mpeOne(mpePlan(), {
+      filename: MPE_ARCHIVE,
+      previous_filename: 'docs/plan/archive/old.md',
+      status: 'renamed',
+    }),
+  );
+  assert.deepEqual(result.rejected, [{ path: MPE_ARCHIVE, reason: 'not-archived-here' }]);
+});
+
+test('pr-merged-plan-evidence: with two observed issues a plan is admitted for its own issue only', async () => {
+  const other = 'docs/plan/archive/2026-11-27-issue-843-other.md';
+  const { result } = await mpeRun(
+    {
+      files: [mpeAdded(MPE_ARCHIVE), mpeAdded(other)],
+      blobs: { [MPE_ARCHIVE]: mpePlan(), [other]: mpePlan({ issue: '**Issue:** #843' }) },
+    },
+    { issues: [843, 842] },
+  );
+  assert.deepEqual(
+    result.issues.map((issue) => [
+      issue.number,
+      issue.plans.map((plan) => [plan.ordinal, plan.path]),
+    ]),
+    [
+      [843, [[1, other]]],
+      [842, [[1, MPE_ARCHIVE]]],
+    ],
+  );
+  assert.deepEqual(result.rejected, []);
+});
+
+test('pr-merged-plan-evidence: a plan for one of two observed issues is not other-issue for the other', async () => {
+  const { result } = await mpeRun(mpeOne(mpePlan()), { issues: [842, 843] });
+  assert.deepEqual(
+    result.issues.map((issue) => [issue.number, issue.plans.map((plan) => plan.path)]),
+    [
+      [842, [MPE_ARCHIVE]],
+      [843, []],
+    ],
+  );
+  assert.deepEqual(result.rejected, []);
+  // A header naming none of the observed issues is rejected once, as other-issue.
+  const none = await mpeRun(mpeOne(mpePlan({ issue: '**Issue:** #9' })), { issues: [842, 843] });
+  assert.deepEqual(none.result.rejected, [{ path: MPE_ARCHIVE, reason: 'other-issue' }]);
+});
+
+test('pr-merged-plan-evidence: several admitted plans for one issue are ordered by path', async () => {
+  const second = 'docs/plan/archive/2026-11-28-issue-842-follow-up.md';
+  const { result } = await mpeRun({
+    files: [mpeAdded(second), mpeAdded(MPE_ARCHIVE)],
+    blobs: { [MPE_ARCHIVE]: mpePlan(), [second]: mpePlan() },
+  });
+  assert.deepEqual(
+    result.issues[0].plans.map((plan) => [plan.ordinal, plan.path]),
+    [
+      [1, MPE_ARCHIVE],
+      [2, second],
+    ],
+  );
+});
+
+test('pr-merged-plan-evidence: a pull request that is not merged returns not-merged and reads nothing else', async () => {
+  const { result, runner } = await mpeRun({
+    ...mpeOne(mpePlan()),
+    pullRaw: mpePull({ merged: false, state: 'open', changed_files: 2 }),
+  });
+  assert.equal(result.outcome, 'not-merged');
+  assert.deepEqual(result.issues, [{ number: 842, plans: [] }]);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('pr-merged-plan-evidence: an untrusted pull request admits nothing and lists no file', async () => {
+  for (const world of [
+    { permissions: { alice: 'read' } },
+    { permissions: {} },
+    { pullExtra: { head: { ref: 'x', sha: 'a'.repeat(40), repo: { id: 2 } } } },
+  ]) {
+    const { result, runner } = await mpeRun({ ...mpeOne(mpePlan()), ...world });
+    assert.equal(result.outcome, 'untrusted');
+    assert.equal(result.trust.trusted, false);
+    assert.deepEqual(result.issues, [{ number: 842, plans: [] }]);
+    assert.ok(!runner.keys().some((key) => key.includes('/files')));
+    assert.deepEqual(runner.git(), []);
+  }
+});
+
+test('pr-merged-plan-evidence: a listing truncated by a bound or a count admits nothing', async () => {
+  const world = mpeOne(mpePlan());
+  const cases = [
+    // The stated count exceeds the file bound: nothing is listed at all.
+    [{ pullExtra: { changed_files: MERGED_PLAN_EVIDENCE_BOUNDS.listedFiles + 1 } }, 'listedFiles'],
+    // The listing ends below the stated count (GitHub stops silently at its cap).
+    [{ pullExtra: { changed_files: 3 } }, 'changedFiles'],
+    // A missing or non-integer count cannot prove completeness.
+    [{ pullRaw: mpePull({ changed_files: undefined }) }, 'changedFiles'],
+    [{ pullRaw: mpePull({ changed_files: '2' }) }, 'changedFiles'],
+    // A forge that serves one file per page needs more pages than the page bound.
+    [
+      {
+        files: Array.from({ length: MERGED_PLAN_EVIDENCE_BOUNDS.listingPages + 1 }, (_, index) =>
+          mpeAdded(`docs/x-${index}.md`),
+        ),
+        pageSize: 1,
+      },
+      'listingPages',
+    ],
+  ];
+  for (const [extra, bound] of cases) {
+    const { envelope, result, runner } = await mpeRun({ ...world, ...extra });
+    assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+    assert.equal(result.outcome, 'truncated', bound);
+    assert.deepEqual(result.issues, [{ number: 842, plans: [] }], bound);
+    assert.equal(result.truncated.length, 1, bound);
+    assert.equal(result.truncated[0].bound, bound);
+    assert.deepEqual(runner.git(), [], bound);
+  }
+});
+
+test('pr-merged-plan-evidence: more archive candidates than the candidate bound admit nothing', async () => {
+  const files = Array.from({ length: MERGED_PLAN_EVIDENCE_BOUNDS.candidates + 1 }, (_, index) =>
+    mpeAdded(`docs/plan/archive/p-${String(index).padStart(2, '0')}.md`),
+  );
+  const { result, runner } = await mpeRun({
+    files,
+    blobs: Object.fromEntries(files.map((file) => [file.filename, mpePlan()])),
+  });
+  assert.equal(result.outcome, 'truncated');
+  assert.deepEqual(result.truncated, [
+    {
+      source: 'candidates',
+      bound: 'candidates',
+      limit: MERGED_PLAN_EVIDENCE_BOUNDS.candidates,
+      listed: files.length,
+    },
+  ]);
+  assert.deepEqual(result.issues, [{ number: 842, plans: [] }]);
+  assert.deepEqual(runner.git(), []);
+});
+
+test('pr-merged-plan-evidence: hidden mode and an empty issue list return before any read', async () => {
+  const hidden = await mpeRun(mpeOne(mpePlan()), { hiddenMode: true });
+  assert.equal(hidden.envelope.ok, true);
+  assert.equal(hidden.result.outcome, 'hidden-mode');
+  assert.deepEqual(hidden.result.issues, [{ number: 842, plans: [] }]);
+  assert.equal(hidden.runner.calls.length, 0);
+  // Not even the repository is resolved: no `repository` override and still no runner call.
+  const runner = mpeRunner();
+  const empty = await executeOperation(
+    'pr-merged-plan-evidence',
+    { number: 7, issues: [], cwd: tmpdir() },
+    { runner },
+  );
+  assert.equal(empty.ok, true, JSON.stringify(empty.error));
+  assert.equal(empty.data.result.outcome, 'no-issues');
+  assert.equal(runner.calls.length, 0);
+});
+
+test('pr-merged-plan-evidence: invalid input is rejected before any provider call', async () => {
+  for (const input of [
+    { number: 7, cwd: tmpdir() },
+    { number: 7, issues: [0], cwd: tmpdir() },
+    { number: 7, issues: [5, 5], cwd: tmpdir() },
+    { number: 7, issues: [1, 2, 3, 4], cwd: tmpdir() },
+    { number: 7, issues: ['842'], cwd: tmpdir() },
+    { number: 7, issues: [842], cwd: tmpdir(), hiddenMode: 'no' },
+    { number: 7, issues: [842], cwd: tmpdir(), planDir: '../x' },
+    { issues: [842], cwd: tmpdir() },
+  ]) {
+    const runner = mpeRunner();
+    const envelope = await executeOperation(
+      'pr-merged-plan-evidence',
+      { repository: githubRepository, ...input },
+      { runner, skipProbe: true },
+    );
+    assert.equal(envelope.ok, false, JSON.stringify(input));
+    assert.match(envelope.error.code, /^INVALID_(?:PAYLOAD|REFERENCE)$/);
+    assert.equal(runner.calls.length, 0);
+  }
+});
+
+test('pr-merged-plan-evidence: an unsafe base, a malformed merge commit, a missing merge commit or a failing step fails closed', async () => {
+  const world = mpeOne(mpePlan());
+  const unsafeBase = await mpeRun({
+    ...world,
+    pullExtra: { base: { ref: '-x', repo: { id: 1 } } },
+  });
+  assert.equal(unsafeBase.envelope.error.code, 'UNSAFE_TARGET');
+  const malformed = await mpeRun({ ...world, pullExtra: { merge_commit_sha: 'main' } });
+  assert.equal(malformed.envelope.error.code, 'INVALID_PAYLOAD');
+  const absent = await mpeRun({ ...world, remoteObjects: new Set() });
+  assert.equal(absent.envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(absent.envelope.error.details.reason, 'merge-commit-missing');
+  for (const failOn of [/\/files/, /--batch-check/, /cat-file --batch$/]) {
+    const failed = await mpeRun({ ...world, failOn });
+    assert.equal(failed.envelope.ok, false, String(failOn));
+    // An error envelope carries no partial result.
+    assert.equal(failed.envelope.data ?? null, null, String(failOn));
+  }
+  // A malformed changed-file entry is no partial listing either.
+  const entry = await mpeRun({ ...world, files: [{ status: 'added' }, mpeAdded(MPE_ARCHIVE)] });
+  assert.equal(entry.envelope.error.code, 'INVALID_PAYLOAD');
 });
