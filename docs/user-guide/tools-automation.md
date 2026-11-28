@@ -70,10 +70,11 @@ residual risk of this consent. A repository whose visibility cannot be read is t
   `pr` supports. The plan must lie under `<plan.dir>/` (not its archive), carry an open plan status
   and name a recognized recommended workflow.
 - **Hidden mode** is not supported yet; autopilot stops at once.
-- **Optional `curl`.** On Forgejo and Gitea, publishing the plan needs proof that anonymous
-  visitors can read the repository, which the helper obtains with `curl`. Without `curl` the
-  visibility is `unknown`, and publication stops with or without per-run consent; install `curl`
-  to publish. Plan
+- **Optional `curl`.** On Forgejo and Gitea, publishing the plan of a public repository needs
+  proof that anonymous visitors can read it, which the helper obtains with `curl`. Without `curl`
+  the visibility of a public candidate is `unknown`, and publication stops with or without
+  per-run consent; install `curl` to publish it. An authenticated private repository needs no
+  anonymous proof, so it publishes with per-run consent without `curl`. Plan
   publication also needs a `tea` that supports draft pull requests, title edits and marking ready;
   an older `tea` stops with the missing capability named.
 
