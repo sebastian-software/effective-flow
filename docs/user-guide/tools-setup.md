@@ -272,7 +272,7 @@ the report suggests no next step.
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 85 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 86 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
@@ -280,7 +280,7 @@ for each non-destructive operation of the runtime-state helper (`lock acquire`, 
 `worktree reuse-facts`, `cleanup plan`, `ledger init`, `ledger append`,
 `ledger reconcile`, `presence register`, `presence refresh`, `presence list`, `presence release`,
 `planning-claim key`, `planning-claim acquire`, `planning-claim release`, `planning-claim list`),
-four for `config-resolve` (`resolve`, `no-ci-policy`, `conflict-validation` and `review-fix-validation`), 49 for the remote tracker's read-only operations:
+four for `config-resolve` (`resolve`, `no-ci-policy`, `conflict-validation` and `review-fix-validation`), 50 for the remote tracker's read-only operations:
 its forge reads, its pure local computations and `thread-ledger-lookup` (`pr-acceptance-sources` also
 writes its private review snapshot, two no-clobber files below `.effective-flow/`, never the forge), and four for
 `conflict-validation` (`ci-detect`, `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`), which only read. `worktree resume-check`, `worktree path-resolve`, `worktree reuse-facts` and

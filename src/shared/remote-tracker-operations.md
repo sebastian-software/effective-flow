@@ -56,6 +56,7 @@ and workflow prose names keys only for its own step.
 | `pr-read`                            | forge read     | `number`                                                                                 | —                                                                                                   | pull-request record                                        | —                                                                                    |
 | `pr-acceptance-sources`              | forge read     | `number`, `headSha`                                                                      | `planDir`, `hiddenMode`, `snapshotSessionId`                                                        | `pullRequest`, `sources`, `issues`, `plan`, `snapshot`     | see list                                                                             |
 | `issue-acceptance-criteria`          | forge read     | `numbers`                                                                                | —                                                                                                   | `issues`, `truncated`; `data.commands`                     | read-only; see list                                                                  |
+| `pr-merged-plan-evidence`            | forge read     | `number`, `issues`                                                                       | `planDir`, `hiddenMode`                                                                             | `outcome`, `issues`, `rejected`, `truncated`               | read-only; see list                                                                  |
 | `pr-comments-read`                   | forge read     | `number`                                                                                 | —                                                                                                   | comment list                                               | —                                                                                    |
 | `pr-reviews-read`                    | forge read     | `number`                                                                                 | `limit`, `maxPages`                                                                                 | review list                                                | —                                                                                    |
 | `pr-list`                            | forge read     | —                                                                                        | `state`, `head`, `planPath`, `limit`, `maxPages`                                                    | pull-request list                                          | `state` default `open`; `planPath`: no bodies                                        |
@@ -115,5 +116,10 @@ Notes that need more than a phrase:
   private runtime snapshot, named in `snapshot`.
 - `issue-acceptance-criteria`: `numbers` is a non-empty array of distinct positive integers; only the
   first bound-many are read, and an unreadable number yields its own `unreadable` entry.
+- `pr-merged-plan-evidence`: `issues` holds at most bound-many distinct forge issue numbers; hidden
+  mode or an empty list returns before any read. The result also carries `pullRequest`, the read pull
+  request, and `trust`, its source-trust result. Each observed issue lists its admitted archived
+  plans with `ordinal`, `path`, `section`, `sectionLine` and `text`; every other candidate is
+  `rejected` once with a closed `reason`, and a truncated listing admits nothing.
 - `review-create`: each `line` is a positive integer, and `side` is `LEFT` or `RIGHT` (default
   `RIGHT`).

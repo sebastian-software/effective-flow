@@ -55,6 +55,7 @@ import {
   publicationMetadataFromText,
   PlanLintError,
   UNATTENDED_PLAN_NAME,
+  readIssueHeader,
   refPathProblem,
 } from './plan-lint-core.mjs';
 import {
@@ -690,25 +691,18 @@ function requireUnblocked(scan, stage) {
 // ---------------------------------------------------------------------------------------------
 // Issue, title, keywords, marker, branch
 
-const ISSUE_HEADER = /^\*\*Issue:\*\*/;
-const ISSUE_HEADER_EXACT = /^\*\*Issue:\*\* #([1-9]\d*)[ \t]*$/;
-
 // The `**Issue:** #<N>` line of the plan's header block (the lines before the first `##` heading),
-// or null when there is none. A malformed or repeated header line is refused, never guessed.
+// or null when there is none. A malformed or repeated header line is refused, never guessed. The
+// classification is `readIssueHeader`'s in `plan-lint-core.mjs`; this wrapper only throws.
 export function parseIssueHeader(text) {
-  const lines = splitLines(text);
-  const end = lines.findIndex((line) => /^#{2,6}\s/.test(line));
-  const header = end === -1 ? lines : lines.slice(0, end);
-  const values = [];
-  for (const line of header) {
-    if (!ISSUE_HEADER.test(line)) continue;
-    const match = line.match(ISSUE_HEADER_EXACT);
-    if (!match) fail('ISSUE_HEADER_INVALID', 'the **Issue:** header is not `#<positive integer>`');
-    values.push(Number(match[1]));
+  const { issue, error } = readIssueHeader(text);
+  if (error === 'invalid') {
+    fail('ISSUE_HEADER_INVALID', 'the **Issue:** header is not `#<positive integer>`');
   }
-  if (values.length > 1)
+  if (error === 'ambiguous') {
     fail('ISSUE_HEADER_INVALID', 'the **Issue:** header appears more than once');
-  return values[0] ?? null;
+  }
+  return issue;
 }
 
 function agreeingIssue(inputIssue, headerIssue) {
