@@ -985,9 +985,6 @@ async function readObservationHandle(context, generationId, observationId, deps)
   return validateObservationHandle(value, generationId, observationId);
 }
 
-// Replaces a raw capability file by its consumed marker once the finalized record is durable. A
-// failure is swallowed: the remaining raw file only lets a repeat call answer `finalized` again,
-// until its generation is removed.
 async function consumeObservationHandle(
   context,
   generationId,
@@ -995,27 +992,23 @@ async function consumeObservationHandle(
   capabilityHash,
   deps,
 ) {
-  try {
-    await observationHandleGuard(context, deps);
-    const target = observationHandlePath(context, generationId, observationId);
-    await atomicWrite(
-      context,
-      target,
-      {
-        schema: HANDLE_SCHEMA,
-        kind: CONSUMED_HANDLE_KIND,
-        generationId,
-        observationId,
-        capabilityHash,
-      },
-      'finalize-gate-observation',
+  await observationHandleGuard(context, deps);
+  await atomicWrite(
+    context,
+    observationHandlePath(context, generationId, observationId),
+    {
+      schema: HANDLE_SCHEMA,
+      kind: CONSUMED_HANDLE_KIND,
       generationId,
-      deps,
-      HANDLE_MAX_BYTES,
-      { skipCapacity: true },
-    );
-    await syncDirectory(context, path.dirname(target), deps);
-  } catch {}
+      observationId,
+      capabilityHash,
+    },
+    'finalize-gate-observation',
+    generationId,
+    deps,
+    HANDLE_MAX_BYTES,
+    { skipCapacity: true },
+  );
 }
 
 // The requested generation's capability-file names, or null without a directory. Only
@@ -4421,7 +4414,6 @@ async function finalizeGateObservation(input, deps) {
         const directory = path.join(root, 'gate-observations');
         const target = path.join(directory, `${input.observationId}.json`);
         const reservation = await readJson(target);
-        const finalized = { status: 'finalized', observationId: input.observationId };
         // The helper's own capability file authenticates; a missing one is a caller-side loss.
         const handle = await readObservationHandle(
           context,
@@ -4430,16 +4422,31 @@ async function finalizeGateObservation(input, deps) {
           deps,
         );
         if (handle === null) fail('AUTHENTICATION_FAILED');
-        const consume = async () => {
-          // A surviving consumed marker always implies a durable finalized record.
-          await syncDirectory(context, directory, deps);
-          await consumeObservationHandle(
-            context,
-            input.generationId,
-            input.observationId,
-            reservation.capabilityHash,
-            deps,
-          );
+        const finishCleanup = async () => {
+          if (handle.kind !== CONSUMED_HANDLE_KIND) {
+            // A surviving consumed marker always implies a durable finalized record.
+            await syncDirectory(context, directory, deps);
+          }
+          let status = 'finalized';
+          try {
+            if (handle.kind !== CONSUMED_HANDLE_KIND) {
+              await consumeObservationHandle(
+                context,
+                input.generationId,
+                input.observationId,
+                reservation.capabilityHash,
+                deps,
+              );
+            }
+            await syncDirectory(
+              context,
+              observationHandleDirectory(context, input.generationId),
+              deps,
+            );
+          } catch {
+            status = 'finalized-cleanup-pending';
+          }
+          return { status, observationId: input.observationId };
         };
         if (handle.kind === CONSUMED_HANDLE_KIND) {
           // A consumed marker proves an earlier finalization; beside an open reservation it is
@@ -4447,13 +4454,12 @@ async function finalizeGateObservation(input, deps) {
           if (reservation.kind === 'gate-observation-reservation') fail('UNSAFE_STORAGE');
           if (handle.capabilityHash !== reservation.capabilityHash) fail('AUTHENTICATION_FAILED');
           if (reservation.kind !== 'gate-observation') fail('INVALID_STATE');
-          return finalized;
+          return await finishCleanup();
         }
         authenticate(handle.capability, reservation.capabilityHash);
         if (reservation.kind === 'gate-observation') {
           // A crash after the record write left the raw file behind.
-          await consume();
-          return finalized;
+          return await finishCleanup();
         }
         if (reservation.kind !== 'gate-observation-reservation') fail('INVALID_STATE');
         const observation = {
@@ -4473,8 +4479,7 @@ async function finalizeGateObservation(input, deps) {
           input.generationId,
           deps,
         );
-        await consume();
-        return finalized;
+        return await finishCleanup();
       },
     );
   });

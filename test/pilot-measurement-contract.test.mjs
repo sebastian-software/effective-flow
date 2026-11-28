@@ -87,6 +87,20 @@ test('reservation, correction counters, and exactly-once finalization are placed
   assert.match(fragment, /finalization failure leaves the current merge\/report result unchanged/);
 });
 
+test('the gate retries only explicit pending handle cleanup without changing the outcome', () => {
+  const finalization = fragment
+    .slice(fragment.indexOf('### Phase 6 observation finalization'))
+    .replace(/\s+/g, ' ');
+  ordered(
+    finalization,
+    '`finalized-cleanup-pending` confirms the record is durable but not the handle invalidation',
+    'In this case only, repeat the identical request once',
+    'If the retry does not confirm cleanup, say so without identifiers',
+    'This does not change the merge/report result or imply a pilot suspension',
+    'Do not retry an ambiguous mutation',
+  );
+});
+
 // Invariant: only an actually dispatched correction increments a counter.
 test('correction counters exclude waits, resumes, assessment-only work, and undispatched attempts', () => {
   const counterSection = fragment.slice(

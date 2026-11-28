@@ -1027,9 +1027,7 @@ test('a failed state or reservation write rolls the capability file back', async
   }
 });
 
-// Invariant: once the finalized record is durable, a failing consumed-marker write is swallowed:
-// finalization still succeeds without a suspension, and a repeat call finishes the marker.
-test('a failed consumed-marker write still finalizes and a repeat call completes the marker', async (t) => {
+test('a failed consumed-marker write reports pending cleanup and a repeat completes it', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
   const reserved = await reserveGateObservation(fx, generationId);
@@ -1045,7 +1043,7 @@ test('a failed consumed-marker write still finalizes and a repeat call completes
   const input = gateFinalizationInput(fx, generationId, reserved.observationId);
   const envelope = await executeOperation('finalize-gate-observation', input, deps);
   assert.equal(envelope.ok, true);
-  assert.equal(envelope.result.status, 'finalized');
+  assert.equal(envelope.result.status, 'finalized-cleanup-pending');
   assert.equal(existsSync(join(generationRoot(fx, generationId), 'suspension.json')), false);
   assert.equal(readFileSync(statePath, 'utf8'), state);
   const finalized = readFileSync(record, 'utf8');
@@ -1057,7 +1055,13 @@ test('a failed consumed-marker write still finalizes and a repeat call completes
   );
 
   assert.equal(
-    (await executeOperation('finalize-gate-observation', input, fx.deps)).result.status,
+    (
+      await executeOperation(
+        'finalize-gate-observation',
+        { ...input, terminalOutcome: 'failed' },
+        fx.deps,
+      )
+    ).result.status,
     'finalized',
   );
   assert.equal(readFileSync(record, 'utf8'), finalized);
@@ -1065,6 +1069,39 @@ test('a failed consumed-marker write still finalizes and a repeat call completes
     readHandle(fx, generationId, reserved.observationId).kind,
     'gate-observation-handle-consumed',
   );
+});
+
+test('a visible consumed marker does not prove cleanup until its directory sync succeeds', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const { observationId } = await reserveGateObservation(fx, generationId);
+  const input = gateFinalizationInput(fx, generationId, observationId);
+  const afterMarkerRename = failingOnce(
+    fx,
+    ({ args }) =>
+      args.includes('--show-toplevel') &&
+      readHandle(fx, generationId, observationId).kind === 'gate-observation-handle-consumed',
+  );
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, afterMarkerRename)).result.status,
+    'finalized-cleanup-pending',
+  );
+  const record = observationRecordPath(fx, generationId, observationId);
+  const finalized = readFileSync(record, 'utf8');
+  let handleGuardSeen = false;
+  const duringRetrySync = failingOnce(fx, ({ args }) => {
+    if (args.includes(HANDLE_ROOT_ARG)) handleGuardSeen = true;
+    return handleGuardSeen && args.includes('--show-toplevel');
+  });
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, duringRetrySync)).result.status,
+    'finalized-cleanup-pending',
+  );
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, fx.deps)).result.status,
+    'finalized',
+  );
+  assert.equal(readFileSync(record, 'utf8'), finalized);
 });
 
 test('a finalize retry must sync the record directory before consuming the handle', async (t) => {
@@ -1220,9 +1257,24 @@ test('purge and discard remove only the requested generation capability files', 
     assert.deepEqual(readdirSync(foreign), [`${'H'.repeat(32)}.json`]);
   });
 
-  await t.test('discard of a present generation', async (t) => {
+  await t.test('discard of a present generation with an unfinished observation', async (t) => {
     const fx = fixture(t);
-    const generationId = await reviewedGeneration(fx);
+    const { generationId } = await beginBaseline(fx);
+    const { observationId } = await reserveGateObservation(fx, generationId);
+    const inventory = await executeOperation('inventory', { ...fx.common, generationId }, fx.deps);
+    const review = await executeOperation(
+      'begin-review',
+      {
+        ...fx.common,
+        generationId,
+        configState: 'disabled',
+        expectedInventoryDigest: inventory.result.inventoryDigest,
+        confirmation: true,
+      },
+      fx.deps,
+    );
+    assert.equal(review.result.incompleteCounts.gateObservations, 1);
+    assert.equal(readHandle(fx, generationId, observationId).kind, 'gate-observation-handle');
     const foreign = writeLeftoverHandles(fx, foreignId);
     const dryRun = await executeOperation(
       'discard-generation',
@@ -1244,6 +1296,7 @@ test('purge and discard remove only the requested generation capability files', 
       fx.deps,
     );
     assert.equal(existsSync(handleDirectory(fx, generationId)), false);
+    assert.equal(existsSync(generationRoot(fx, generationId)), false);
     assert.deepEqual(readdirSync(foreign), [`${'H'.repeat(32)}.json`]);
   });
 

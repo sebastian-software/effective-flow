@@ -181,7 +181,11 @@ terminal outcome `failed`; it never discards product changes or changes the gate
    finalization. The three left-to-right counter mappings above are exact; do not rename, merge, or
    infer counters.
 
-4. A finalization failure leaves the current merge/report result unchanged. Consume only its
+4. `finalized-cleanup-pending` confirms the record is durable but not the handle invalidation.
+   In this case only, repeat the identical request once to finish cleanup without rewriting the
+   record. If the retry does not confirm cleanup, say so without identifiers.
+   This does not change the merge/report result or imply a pilot suspension.
+   A finalization failure leaves the current merge/report result unchanged. Consume only its
    explicit `pilotControlOutcome`, `controlStatePersisted`, and `alert` metadata under Phase-0 step 6. Do not claim suspension or incomplete evidence without that confirmation. Apply an
    incomplete-evidence or `evidence-gap` control path only when the explicit outcome and persisted
    flag confirm it. When metadata supplies it, emit only the stable value-free pilot-control alert.
