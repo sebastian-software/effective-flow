@@ -1,6 +1,6 @@
 # Cooperate with harness-dictated worktree locations
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -91,7 +91,9 @@ worktree-creating tool, so it is not a refactoring.
 the host dictates. They leave no unrecorded worktrees, never deviate silently from a host rule, and
 keep every existing ownership, receipt and cleanup guarantee.
 
-**Last evaluated attempt:** none.
+**Last evaluated attempt:** all three work packages landed on the delivery branch. The merged
+candidate built and passed the focused integration contracts. Full package validation is a PR CI
+gate; live host observations are still outstanding.
 
 **No-progress count:** 0
 
@@ -103,7 +105,8 @@ keep every existing ownership, receipt and cleanup guarantee.
 
 Host-created worktrees (part 2) are documented as deferred.
 
-**Continuation decision:** none.
+**Continuation decision:** deliver on the existing plan PR. Keep the missing live host evidence
+visible rather than treating fixture tests as observations.
 
 ## Architecture decisions
 
@@ -399,28 +402,28 @@ Stop and report instead of improvising when any of these occurs:
 
 **Machine-level base (part 3)**
 
-- [ ] With the variable set to a valid directory and the ADR at `.effective-flow/.worktrees`: - `path-resolve` returns `<base>/<repo>/<session><suffix>` with source `environment`; - `path-prepare` creates the parents; - `git worktree add` and `record-init` succeed; - `effective-flow cleanup` removes the worktree without manual steps.
+- [x] With the variable set to a valid directory and the ADR at `.effective-flow/.worktrees`, Git
+      fixtures cover path resolution with source `environment`, parent creation, `git worktree add`,
+      `record-init` and cleanup without manual steps.
 
-      Git-fixture tests cover the whole path.
-
-- [ ] `record-init` succeeds for the plan-publication and plan-PR-continuation leaves under an
+- [x] `record-init` succeeds for the plan-publication and plan-PR-continuation leaves under an
       environment base, as fixture tests show. Contract tests pin their prose sites to
       `path-resolve`.
-- [ ] Every invalid or untrusted base in "Edge cases" stops before creation with a named error.
+- [x] Every invalid or untrusted base in "Edge cases" stops before creation with a named error.
       Each case has a test, including `umask 002` own segments, which pass.
-- [ ] After the variable changes, the worktree stays removable and the scan reports an unrecorded
+- [x] After the variable changes, the worktree stays removable and the scan reports an unrecorded
       worktree under the old root. Tests cover both.
-- [ ] Every site in the explicit list uses `path-resolve`/`path-prepare` and carries the
+- [x] Every site in the explicit list uses `path-resolve`/`path-prepare` and carries the
       conflict-stop pointer. No site composes `BASE_DIR/REPO_NAME`. A workflow-contract test
       enforces this.
 
 **Conflict stop (part 4)**
 
-- [ ] With no variable and a visible forbidding rule, an interactive run asks before
-      `path-prepare` and offers exactly two options.
-- [ ] An autopilot run records `worktree-location-conflict`: - no summary is accepted; - the appendix is withheld; - no draft is published; - it closes with `plan-pull-request-unchanged` or `no-pull-request` as specified.
-
-      Autopilot-core tests cover this.
+- [x] The interactive contract requires a question before `path-prepare`, with exactly two
+      options, when there is no variable and a visible rule forbids the worktree path.
+- [x] Autopilot-core tests cover the `worktree-location-conflict` blocker: no summary, no
+      appendix, no draft, and a `plan-pull-request-unchanged` or `no-pull-request` conclusion. For the
+      delivery-base attempt they instead cover the `unresolved` reason without a blocker.
 
 - [ ] Other non-interactive runs end with `ABORT: worktree-location-conflict`. Contract text
       covers this, and the `build-context` eval provides the evidence, or its debt is recorded with
@@ -428,24 +431,31 @@ Stop and report instead of improvising when any of these occurs:
 
 **Harness branch reuse (part 1)**
 
-- [ ] **Adopt:** with no `git worktree add`, record or question, and `branchSource: adopted`: - a clean, non-base, unpublished harness branch is adopted; - a harness branch behind the base is fast-forwarded in the specified order and adopted.
+- [x] **Adopt:** Git fixtures and build-run tests cover adoption of a clean, non-base, unpublished
+      harness branch with `branchSource: adopted`, including the ordered fast-forward when it lags.
 
-      Git-fixture and build-run tests cover both.
-
-- [ ] **Today's path:** the dirty, ahead, foreign-upstream, untracked and hidden-mode-disclosing
+- [x] **Today's path:** the dirty, ahead, foreign-upstream, untracked and hidden-mode-disclosing
       variants take today's path. Git-fixture tests cover them.
-- [ ] **Create:** for a detached checkout and for a clean base-branch checkout, the branch is
+- [x] **Create:** for a detached checkout and for a clean base-branch checkout, the branch is
       created at the first commit with `branchSource: created`, the flag set, the creation OID
       recorded and a new receipt. An empty result leaves no branch. Tests cover both cases.
 
 **Documentation and checks**
 
-- [ ] Reporting the ADR difference once per run has contract or eval evidence.
-- [ ] The ADR and the ADR exception exist. The configuration guide documents user-scope settings
+- [x] Reporting the ADR difference once per run has contract evidence.
+- [x] The ADR and the ADR exception exist. The configuration guide documents user-scope settings
       for Claude Code, Codex and T3 Code and excludes project scopes.
 - [ ] These pass: `pnpm test:preflight`, `pnpm agent:check`, `pnpm test`, `node build.mjs` and
       `pnpm test:distribution`. `pnpm eval build-context verify` passes, or the debt is recorded.
       Every changed tool's `contextBudget` is within its headroom.
+
+## Implementation evidence
+
+The three new `build-context` scenarios have runnable fixture setup and evaluator tests, but no
+recorded host runs. The [suite's evidence notes](../../../evals/build-context/README.md) list the
+remaining transcript checks. The live confirmation of the interactive question and the
+post-release host matrix remain open. A package report without integrity errors does not replace
+those observations.
 
 ## Validation plan
 
