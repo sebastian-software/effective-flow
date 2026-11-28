@@ -76,9 +76,33 @@ export function observedExecResult(value) {
   );
   return results.length === 1 ? results[0] : null;
 }
+// The runtime-state helper's one shipped call shape (`helper-call-shape`): two operation tokens and
+// a single-quoted here-string whose only escape is `'\\''`. Any other shape stays unobserved.
+function stateInvocation(command) {
+  const match = command.match(
+    /^node\s+([^\s'";|&]+\/effective-flow-state\.mjs)\s+([a-z]+(?:-[a-z]+)*)\s+([a-z-]+)\s+<<<\s+'((?:[^']|'\\'')*)'\s*$/,
+  );
+  if (!match) return null;
+  const text = match[4].replaceAll("'\\''", "'");
+  try {
+    return {
+      script: match[1],
+      family: 'state',
+      apply: false,
+      operation: match[2] + ' ' + match[3],
+      input: JSON.parse(text),
+      inputBytes: Buffer.byteLength(text),
+      inputDigest: digest(text),
+    };
+  } catch {
+    return null;
+  }
+}
 export function helperInvocation(argumentsValue) {
   const command = argumentsValue?.cmd ?? argumentsValue?.command;
   if (typeof command !== 'string') return null;
+  const state = stateInvocation(command);
+  if (state) return state;
   const match = command.match(
     /^node\s+([^\s'";|&]+\/(build-run|pilot-measurement|remote-tracker)\.mjs)\s+([a-z-]+)(?:\s+(--apply))?\s+<<'([A-Z][A-Z0-9_]*)'\n([\s\S]*?)\n\5\s*$/,
   );
@@ -195,6 +219,33 @@ export function observedHelperEvent(
           .filter(Boolean)
       : [],
     worktreeRemoved: result.finalCheckout?.worktreeRemoved ?? null,
+    // `authorize-execution` returns only a record reference, so the recorded source is not in its
+    // result. The helper accepts the call only where the reported `reuseBase.branchSource` matches
+    // its own re-derivation (an `existing` report is never upgraded), so a successful call's input
+    // states the recorded value. `worktree reuse-facts` carries it in its result instead.
+    branchSource:
+      typeof result.branchSource === 'string'
+        ? result.branchSource
+        : envelope.ok === true &&
+            call.operation === 'authorize-execution' &&
+            typeof input.reuseBase?.branchSource === 'string'
+          ? input.reuseBase.branchSource
+          : null,
+    // `worktree path-resolve` and `path-prepare`: where the base came from and which diagnostics it
+    // carried, never the machine path itself.
+    baseSource: ['environment', 'configuration', 'default'].includes(result.source)
+      ? result.source
+      : null,
+    diagnostics: Array.isArray(result.diagnostics)
+      ? result.diagnostics
+          .map((d) => (typeof d === 'string' ? d : d?.code))
+          .filter((code) => ['configured-base-differs', 'configured-base-invalid'].includes(code))
+      : [],
+    // A `terminal` conclusion's leading completion keyword, such as `ABORT: <reason>`.
+    conclusionKeyword:
+      typeof input.conclusion === 'string'
+        ? (input.conclusion.match(/^(DONE|ABORT: [a-z][a-z0-9-]*)(?![a-z0-9-])/)?.[1] ?? null)
+        : null,
     questionBytes: typeof input.question === 'string' ? Buffer.byteLength(input.question) : null,
     conclusionBytes:
       typeof input.conclusion === 'string' ? Buffer.byteLength(input.conclusion) : null,

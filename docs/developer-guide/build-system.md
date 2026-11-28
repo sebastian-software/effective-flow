@@ -1116,7 +1116,7 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
 - **Build-run.** Invoke it as `node <skill-root>/scripts/build-run.mjs <operation>` with one
   JSON object on standard input. The supported operations are `create`, `validate`, `bind-agent`,
-  `authorize-execution`, `transition-execution`, `prepare-completion`, `seal-delivery`, `handoff`,
+  `authorize-execution`, `transition-execution`, `record-branch`, `prepare-completion`, `seal-delivery`, `handoff`,
   `record-return`, `retain-evidence`, `checkpoint`, `question`, `reply`, `resume`, `receipt`, `terminal`,
   `verify-terminal`, `continuation`, and `verify-continuation`; the operation name is the only argv
   value. The
@@ -1176,7 +1176,14 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
 
   `authorize-execution` records an already resolved delivery mode and owning agent before setup;
   `transition-execution` binds the fresh receipt and lifecycle proof before baseline capture or
-  worker writes. `prepare-completion` binds the existing independent-review and final-validation
+  worker writes. For a reused harness checkout, `authorize-execution` takes the caller's
+  `reuseBase.branchSource`, accepts `existing` as is, re-derives `adopted` or `created` from the reuse
+  facts of `worktree-reuse-facts-core.mjs`, refuses a mismatch with `AUTHORITY_MISMATCH` and records
+  `branchSource`. Both start at the fresh base OID: an adopted branch behind it is fast-forwarded
+  with `merge --ff-only`, a created checkout behind it moves there with `switch --detach` and its
+  `creationOid` is that OID. `record-branch` verifies HEAD is still `creationOid` and issues the
+  branch receipt once, right before its first commit, taking the checkpoint's `completionBasis` and
+  `currentPlan` (optional `retainedFiles`) after the plan's archival. `prepare-completion` binds the existing independent-review and final-validation
   receipts before the approved plan receives its deterministic completion section and status/archive
   transformation. `seal-delivery` proves that staged paths and modes match that basis; changed
   product bytes require the independent marked `code-validator` formatting-only proof or renewed
@@ -1385,13 +1392,13 @@ Plan …` in German) cut to the 72-UTF-16-code-unit subject limit commitlint cou
   argv is rejected before stdin is read, so an allowlisted prefix cannot be widened by an extra
   argument. The operations are `lock acquire|release|inspect|break`, `memory
 reserve|set-marker|migrate-directory`, `commit create`, `review open-report`, `review write-report`, `harness
-allow-rules`, `worktree record-init|transition|inspect|resume-check|remove`, `ledger
+allow-rules`, `worktree record-init|transition|inspect|resume-check|path-resolve|path-prepare|reuse-facts|remove`, `ledger
 init|append|reconcile`, `cleanup plan|apply`, `presence register|refresh|list|release|prune` and
   `planning-claim key|acquire|release|list|prune`. The
-  twenty-five allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
+  twenty-eight allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
 reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`, `review
 open-report`, `review write-report`, `worktree record-init`, `worktree transition`, `worktree
-inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`, `ledger reconcile`,
+inspect`, `worktree resume-check`, `worktree path-resolve`, `worktree path-prepare`, `worktree reuse-facts`, `cleanup plan`, `ledger init`, `ledger append`, `ledger reconcile`,
   `presence register`, `presence refresh`, `presence list`, `presence release`, `planning-claim
 key`, `planning-claim acquire`, `planning-claim release` and `planning-claim list`, are non-destructive,
   bounded or read-only (`commit create` writes Git history; see below). The `presence` group
@@ -1503,7 +1510,15 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   The `worktree` and `cleanup` operations (`effective-flow-state-worktree-core.mjs`, contract in
   `src/shared/worktree-lifecycle.md`) own the lifecycle records below `worktree-runs/`, their
   per-record `<RECORD_ID>.lock` locks, removal eligibility and the claim, remove and reconcile
-  sequence. `worktree record-init`, `transition` and `inspect` create, change and read records;
+  sequence. `worktree path-resolve` and `path-prepare` (the same module) resolve and prepare the
+  one location of a worktree to create: the base from `EFFECTIVE_FLOW_WORKTREE_BASE_DIR`, else the
+  ADR key, else the default, the leaf `<base>/<repo>/<SESSION_ID>…`, and the missing parent segments,
+  with the errors `WORKTREE_BASE_INVALID` (also a missing or non-directory configured base outside
+  `.effective-flow/`, its details naming `key` or `variable`), `WORKTREE_PATH_UNTRUSTED`,
+  `WORKTREE_PATH_EXISTS` and `WORKTREE_SANDBOX_DENIED` (a denied write in an existing parent, which
+  `path-prepare` probes with a directory it removes, or while creating parents below
+  `.effective-flow/`); `reuse-facts` reads the Git facts of a reused harness checkout.
+  `worktree record-init`, `transition` and `inspect` create, change and read records;
   `worktree remove` withdraws the listed records of one session. `cleanup plan` is read-only: it
   classifies every record and returns actionable `items` (`worktree:<RECORD_ID>`,
   `invalid-record:<RECORD_ID>`, `legacy:.firmo`, `legacy:.sf-plugin`,
@@ -1542,7 +1557,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 83 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 86 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1612,7 +1627,10 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   `branch`, set exactly when `checkout` is), a `resolved` tip is exactly one merge commit with
   parents `[headOid, baseOid]`, an `unresolved` branch is still at `headOid` with no merge in
   progress; `pr-appendix` renders it as the "Delivery base" section. `run-close` returns the
-  recorded fit, `baseMove` and `deliveryBase` without their timestamps, or `null`. `plan-copy-restore` (`{cwd, runId, sourceRoot}`) is
+  recorded fit, `baseMove` and `deliveryBase` without their timestamps, or `null`. A
+  `worktree-location-conflict` blocker (`{cwd, runId, kind}`, no `summary` or `site`) makes
+  `pr-appendix` return `withheld` on every repository, and `run-close` then accepts only
+  `no-pull-request` or, on an issue source, `plan-pull-request-unchanged`. `plan-copy-restore` (`{cwd, runId, sourceRoot}`) is
   the helper's one project-file write: only after a confirmed delivery whose head carries the
   recorded archive path, with `HEAD:<P>` unchanged since preflight, nothing staged and the working
   copy still at `reviewedPlanSha256`, it moves the reviewed copy aside, re-hashes it, retains it as
@@ -1627,7 +1645,8 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   the appendix path from the run directory, and refuses with `APPENDIX_MISMATCH` unless
   `appendixSha256` equals the digest `pr-appendix` returned and recorded in the ledger and the
   file still has it, and with `APPENDIX_WITHHELD` while a security blocker stands on a repository
-  whose recorded visibility is not `private`; it replaces the one appendix block of a pull-request
+  whose recorded visibility is not `private` or a `worktree-location-conflict` blocker stands at
+  all; it replaces the one appendix block of a pull-request
   body, or appends it, for `pr`'s `Appendix:` input. A `blocked` or `withheld` render and every
   later `decision-record`, `blocker-record`, `fit-record`, `base-move-record`, `delivery-base-record`, `plan-reviewed` and `delivery-record`
   withdraw the recorded digest; `delivery-confirm` does not. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
@@ -1737,7 +1756,7 @@ and directive syntax").
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
-  `config-migration-edge-cases`, `worktree-integration`, `worktree-lifecycle`, `issue-tracker`, `issue-tracker-forge`,
+  `config-migration-edge-cases`, `worktree-integration`, `worktree-lifecycle`, `worktree-conflict-stop`, `harness-branch-reuse`, `issue-tracker`, `issue-tracker-forge`,
   `issue-lifecycle-receipt`,
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-lint`, `plan-archival`,

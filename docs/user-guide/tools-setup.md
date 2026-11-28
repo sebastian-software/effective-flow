@@ -272,18 +272,20 @@ the report suggests no next step.
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 83 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 86 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
-`worktree inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`,
+`worktree inspect`, `worktree resume-check`, `worktree path-resolve`, `worktree path-prepare`,
+`worktree reuse-facts`, `cleanup plan`, `ledger init`, `ledger append`,
 `ledger reconcile`, `presence register`, `presence refresh`, `presence list`, `presence release`,
 `planning-claim key`, `planning-claim acquire`, `planning-claim release`, `planning-claim list`),
 four for `config-resolve` (`resolve`, `no-ci-policy`, `conflict-validation` and `review-fix-validation`), 50 for the remote tracker's read-only operations:
 its forge reads, its pure local computations and `thread-ledger-lookup` (`pr-acceptance-sources` also
 writes its private review snapshot, two no-clobber files below `.effective-flow/`, never the forge), and four for
-`conflict-validation` (`ci-detect`, `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`), which only read. `worktree resume-check` and
-`ledger reconcile` only read. `ledger init` writes the delivery ledger once during an active
+`conflict-validation` (`ci-detect`, `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`), which only read. `worktree resume-check`, `worktree path-resolve`, `worktree reuse-facts` and
+`ledger reconcile` only read (`reuse-facts` also fetches the base ref and the upstream of the current branch);
+`worktree path-prepare` only creates the missing parent directories of a new worktree path. `ledger init` writes the delivery ledger once during an active
 `deliver` run, for that run's own record, and only within a size bound of 256 KiB; `ledger append`
 adds one proven commit to it. `worktree transition` stays within its bounds: its release restores
 only the changes it proved equal to that ledger. An earlier release's smaller set shows as stale,

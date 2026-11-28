@@ -22,8 +22,9 @@ worktree, Effective Flow reuses it and does not create a nested one. The result 
   state.
 
 An Effective Flow-owned worktree is created under
-`<worktree.baseDir>/<repo-name>/<session-id>` (default base
-`.effective-flow/.worktrees`) via `git worktree add` together with the delivery branch. Only
+`<base>/<repo-name>/<session-id>` via `git worktree add` together with the delivery branch. The
+base is `worktree.baseDir` (default `.effective-flow/.worktrees`), unless the machine declares its
+own, see [Machine-level worktree location](#machine-level-worktree-location). Only
 that newly created worktree runs automatic setup according to `worktree.setup`: lockfile-based
 dependency installation, no setup (`none`), or a command you specify. A reused worktree is
 assumed to have been prepared by its user or harness, so setup is not repeated unless you
@@ -32,6 +33,25 @@ explicitly request it or a missing prerequisite requires a decision.
 Whoever explicitly wants to work in their current checkout – for example for a quick,
 non-delivered trial run – sets `worktree.enabled: false` or requests it explicitly in the task
 ("without worktree", "directly on the current branch").
+
+### Machine-level worktree location
+
+Some machines allow worktrees only below one directory, for example through the global instructions
+of your host. Declare that directory once with the environment variable
+`EFFECTIVE_FLOW_WORKTREE_BASE_DIR`, an absolute path to an existing directory. It wins over
+`worktree.baseDir` and `applyReview.worktree.baseDir`, and no machine path enters your repository.
+Set it only in a user-level scope of your host (never in a project-level settings file), together
+with the host's write access for that directory. The
+[configuration guide](../developer-guide/configuration.md#machine-level-worktree-base) lists the
+settings for Claude Code, Codex and T3 Code.
+
+A relative or missing value, a missing configured base outside `.effective-flow/`, a directory
+other users can write to, a symbolic link below the base, a sandbox that denies writing there, or
+an existing target path stops the run before anything is created; Effective Flow never falls
+back to another location. If you do not set the variable and your loaded instructions forbid the
+resolved location, Effective Flow stops the same way and asks you to set the variable and restart or
+to abort; an unattended run ends with `ABORT: worktree-location-conflict`. See
+[Troubleshooting](./troubleshooting.md#worktree-provisioning-stopped-location-conflict).
 
 ### Verified execution-location receipt
 
@@ -170,7 +190,7 @@ When [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with
 merge the base into a pull request's head branch, it works in your checkout when that is clean and
 already on the branch, and stops when it is dirty or another worktree holds the branch. It
 provisions nothing for a fork or a missing head branch. When no checkout holds the branch, it
-creates one worktree at `<worktree.baseDir>/<repo>/<SESSION_ID>-merge-gate`, with the purpose
+creates one worktree at `<base>/<repo>/<SESSION_ID>-merge-gate` below the resolved base, with the purpose
 `merge-gate` and the branch policy `retain`. It checks out the pull request's existing head branch,
 never a new branch name. The worktree is provisioned in a fixed order:
 
@@ -211,7 +231,7 @@ branch is always kept.
 
 When [`/effective-flow build`](./tools-implement.md#effective-flow-build) must check whether a failing
 test was already failing before your change, it creates one temporary worktree at
-`<worktree.baseDir>/<repo>/<SESSION_ID>-base-validation` on the branch `base-validation/<SESSION_ID>`,
+`<base>/<repo>/<SESSION_ID>-base-validation` below the resolved base, on the branch `base-validation/<SESSION_ID>`,
 with the purpose `base-validation`, at the baseline commit. On every exit path – completion,
 failure or abort – the run restores the checkout, removes the output the validator reported as
 generated, and removes the worktree. If that removal is refused, for example because the worktree
@@ -231,8 +251,16 @@ forms of isolation are never stacked.
 [Codex app worktrees and Handoff](https://learn.chatgpt.com/docs/environments/git-worktrees)
 remain Codex-managed. Effective Flow reuses such a worktree, revalidates it after Handoff or
 resume, and never removes it. A detached Codex worktree is accepted only while its recorded
-commit still matches; branch-based delivery first needs a branch created or adopted through
-the supported app flow and a new verified receipt.
+commit still matches. For branch-based delivery in a clean harness checkout, Effective Flow decides
+from Git facts alone: a harness branch that is not the base branch and has no commits beyond it is
+adopted as the delivery branch, and a detached checkout or a clean checkout on the base branch gets
+a new delivery branch right before the first commit. The work always starts at the fresh base: a
+harness branch behind it is fast-forwarded, and a detached or base-branch checkout behind it is
+moved there detached, so your local base branch keeps its tip. In every other case, such as uncommitted changes, extra commits, an upstream commit
+that is not yet in the checkout, or untracked files, branch-based delivery still needs a branch
+created or adopted through the supported app flow and a new verified receipt. The checkout stays
+harness-managed: Effective Flow still records no lifecycle and never removes it, and it never
+switches the harness back after a commit.
 
 ## Delivery: the delivery branch
 

@@ -173,7 +173,11 @@ test('every local report consumer retains and uses the absolute main-checkout ha
     applyReviewMechanics,
     /<RUNTIME_STATE_ROOT>\/\.effective-flow\/apply-review-commit\.lock/,
   );
-  assert.match(applyReviewMechanics, /Resolve a relative BaseDir against `RUNTIME_STATE_ROOT`/);
+  // The helper resolves a relative base against its `cwd`, which is the verified runtime root.
+  assert.match(
+    applyReviewMechanics,
+    /`worktree path-resolve`[\s\S]{0,80}with `cwd` the verified `RUNTIME_STATE_ROOT`/,
+  );
   assert.match(
     review,
     /<RUNTIME_STATE_ROOT>\/\.sf-memory\.json[\s\S]*<RUNTIME_STATE_ROOT>\/\.effective-flow\/cache\.json/,

@@ -46,6 +46,14 @@ first or further range that is there or may be) and branch tip or plan blob drif
 without spending an issue retry. Preserved plan files are reported with the operator action; the
 pass never deletes an ambiguous or earlier file.
 
+**Exception: worktree location conflict.** An autopilot run that records a
+`worktree-location-conflict` blocker ([Harness-dictated worktree locations](harness-dictated-worktree-locations.md),
+part 4) publishes no plan-only draft and no appendix, on every repository visibility. The blocker
+carries no summary, `pr-appendix` withholds the appendix, and the run closes with
+`plan-pull-request-unchanged` and the plan pull request's number when an issue source already has
+one, otherwise with `no-pull-request`, as a public security blocker does. The machine path and the
+forbidding instruction stay in the local report.
+
 Reports keep version 1 as the default schema. Version 2 is explicit and adds repository visibility
 and normalized leftover metadata. New readers accept both versions; v1 behavior remains unchanged.
 Collection filters leftover metadata before judgment limits, slicing, and recovery authorization.

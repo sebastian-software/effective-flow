@@ -25696,7 +25696,8 @@ test('plan publication commits only the plan, in a temporary worktree, and opens
       'harness-managed receipt',
       'sibling',
       'never nested',
-      '`BASE_DIR/REPO_NAME/<SESSION_ID>-plan-publication`',
+      'purpose `plan-publication` and `cwd` `RUNTIME_STATE_ROOT`',
+      '`<base>/<repo>/<SESSION_ID>-plan-publication`',
       "caller's worktree-record exit self-check",
       'calling workflow',
       'purpose `plan-publication`',
@@ -29853,7 +29854,7 @@ test('deliver records step 4.3, builds at step 6 from the final head tree and pr
   );
   assert.ok(
     step12.includes(
-      'Read `delivery.baseBranch`, `delivery.branchPrefix`, `plan.dir`, `worktree.baseDir`, and `worktree.setup`',
+      'Read `delivery.baseBranch`, `delivery.branchPrefix`, `plan.dir`, and `worktree.setup`',
     ),
     'deliver step 1.2 reads plan.dir',
   );
@@ -31442,6 +31443,228 @@ test('a possibly applied PR comment write is re-read on its own target and never
     section(watch, 'Bounds.', 'Report-and-stop'),
     near('For an unconfirmed re-trigger', 'no review absent from the recorded baseline', 40),
   );
+});
+
+// Invariant: every site that creates an Effective Flow worktree carries the conflict-stop lazy
+// pointer, whose trigger names the rare condition itself (no environment source and a loaded
+// instruction that forbids the path), so a forbidden path is stopped before `worktree path-prepare`
+// creates anything and the fragment loads only in that case. The explicit list is the site list;
+// the scan finds every source that names `path-resolve`, runs `git worktree add` or says it creates
+// a worktree, so a new creation site without the pointer fails unless it is a listed non-site.
+const WORKTREE_PATH_SITES = Object.freeze([
+  'src/shared/worktree-integration.md',
+  'src/shared/plan-publication.md',
+  'src/shared/plan-pr-continuation.md',
+  'src/shared/merge-gate-checkout-boundary.md',
+  'src/shared/autopilot-blockers.md',
+  'src/shared/autopilot-issue-source.md',
+  'src/shared/autopilot-delivery-conflict.md',
+  'src/shared/build-delegated-run.md',
+  'src/tools/apply-review-commit-mechanics.md',
+  'src/tools/iterate.md',
+  'src/tools/issue-buddy.md',
+  'src/tools/apply-issues.md',
+  'src/tools/deliver.md',
+]);
+// Sources that name the operations or worktree creation without building a path: the helper's
+// call-shape contract, the allowlist, the stop itself, the setup prompts that point at the base
+// precedence, the build-run authorization order, the receipt, guard and record-obligation
+// contracts, harness reuse (which creates no worktree), apply-review's pointer to its
+// commit-mechanics site and autopilot's report of the sites.
+const WORKTREE_PATH_NON_SITES = Object.freeze([
+  'src/shared/worktree-lifecycle.md',
+  'src/shared/setup-allowlist.md',
+  'src/shared/worktree-conflict-stop.md',
+  'src/shared/setup-advanced-settings.md',
+  'src/shared/setup-targeted-change.md',
+  'src/tools/setup.md',
+  'src/shared/build-run-contract.md',
+  'src/shared/execution-location.md',
+  'src/shared/runtime-state-safety.md',
+  'src/shared/worktree-record-obligation.md',
+  'src/shared/harness-branch-reuse.md',
+  'src/tools/apply-review.md',
+  'src/tools/autopilot.md',
+]);
+const CONFLICT_STOP_FENCE =
+  /```lazy-include\nworktree-conflict-stop\nwhen: [^\n]*`worktree path-resolve`[^\n]* returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE\.md`, `AGENTS\.md` or host instruction forbids, and [^\n]*`worktree path-prepare` has not run\n```/;
+const WORKTREE_CREATION = [
+  /\bpath-resolve\b/,
+  /\bgit (?:-C \S+ )?worktree add\b/,
+  /\bcreate (?:the|one|a|an|its|this run.s own) (?:[\w`.-]+ ){0,3}worktree\b/i,
+];
+
+test('every worktree creation site carries the conflict-stop lazy pointer', () => {
+  for (const path of WORKTREE_PATH_SITES) {
+    const text = source(path);
+    assert.match(text, CONFLICT_STOP_FENCE, `${path} carries the conflict-stop pointer`);
+    assert.doesNotMatch(text, /```include\nworktree-conflict-stop\n```/, `${path} stays lazy`);
+  }
+  const scanned = [];
+  for (const dir of ['src/shared', 'src/tools']) {
+    for (const name of readdirSync(new URL(`${dir}/`, repositoryRoot))) {
+      if (!name.endsWith('.md')) continue;
+      const path = `${dir}/${name}`;
+      const text = flat(source(path));
+      if (WORKTREE_CREATION.some((pattern) => pattern.test(text))) scanned.push(path);
+    }
+  }
+  assert.deepEqual(
+    scanned.filter((path) => !WORKTREE_PATH_NON_SITES.includes(path)).sort(),
+    [...WORKTREE_PATH_SITES].sort(),
+    'every source that creates a worktree is a listed site or a listed non-site',
+  );
+  for (const path of WORKTREE_PATH_NON_SITES) {
+    assert.doesNotMatch(source(path), CONFLICT_STOP_FENCE, `${path} is no creation site`);
+  }
+  const step2 = flat(source('src/shared/worktree-integration.md'));
+  assert.match(
+    step2,
+    /Then, unless `worktree-conflict-stop` stops the run, create its parent directories with `worktree path-prepare`/,
+  );
+  // The base-validation worktree and the apply-issues target-PR checkout are sites of their own.
+  assert.ok(
+    flat(source('src/shared/build-delegated-run.md')).includes(
+      '`worktreePath` of `worktree path-resolve` for purpose `base-validation`, with `worktree-conflict-stop` before its `worktree path-prepare`',
+    ),
+  );
+  assert.ok(
+    flat(source('src/tools/apply-issues.md')).includes(
+      "in an isolated worktree at the issue worktree's path and lifecycle above (`worktree-conflict-stop` before `path-prepare`)",
+    ),
+  );
+});
+
+// Invariant: in a build run the conflict stop precedes `authorize-execution`, which precedes
+// `worktree path-prepare`, so a forbidden path authorizes and creates nothing.
+test('a build run authorizes its owned worktree between the conflict stop and path-prepare', () => {
+  ordered(
+    flat(source('src/shared/build-run-contract.md')),
+    'For an `owned-worktree` the order is `worktree path-resolve`, `worktree-conflict-stop`, `authorize-execution`',
+    '`worktree path-prepare`, then `git worktree add`; a conflict stop therefore authorizes nothing.',
+  );
+  assert.ok(
+    flat(source('src/shared/worktree-integration.md')).includes(
+      "a build run's `authorize-execution` comes between the stop and `path-prepare`",
+    ),
+  );
+});
+
+// Invariant: the conflict stop applies only without a machine-level base and under a visible
+// instruction, decides from run-state signals alone, stops every outcome as a refused
+// `path-prepare` does, offers exactly two options to an interactive run (a same-session
+// delegation and `Run state: gated` included), records the dedicated autopilot blocker without
+// text except at the delivery-base attempt worktree, aborts every other unattended run with a fixed
+// token, and never quotes the path or the instruction publicly.
+test('the worktree conflict stop asks, blocks or aborts and keeps public text neutral', () => {
+  const stop = flat(source('src/shared/worktree-conflict-stop.md'));
+  for (const part of [
+    "the result's `source` is not `environment`",
+    "the system context, a loaded `CLAUDE.md` or `AGENTS.md`, or the host's runtime information",
+    'an `environment` source always continues',
+    'never from host identity',
+    'Nothing is created: no parent directory, worktree, receipt or lifecycle record.',
+    'Ask before `path-prepare`',
+    'with exactly these two options and no other, no agent-supplied location and no "continue here"',
+    '**Set the variable and restart:**',
+    '**Abort:**',
+    'An unanswered or skipped question resolves to **Abort**.',
+    'exactly `{cwd, runId, kind: "worktree-location-conflict"}`, without `summary` or `site`',
+    'ends under `autopilot-blockers` "Worktree location conflict"',
+    'stop and return `ABORT: worktree-location-conflict` with the neutral message',
+    "a build run's `terminal` `ABORT` conclusion starts with that keyword",
+    'never retries the provisioning at another path',
+    'never quotes the machine path or the instruction',
+    'Every outcome below stops as the site stops on a refused `path-prepare`',
+    'The run-state signals alone decide the outcome, in this order.',
+    'A run carrying `Run state: non-interactive` or `Run state: relayed`, an `{{SKILL:issue-buddy}}` pass, and a leaf or subagent without a user channel',
+    "including a same-session workflow delegation such as `{{SKILL:apply}}` → `{{SKILL:build}}` and a run carrying `Run state: gated`, which inherit the caller's interactivity.",
+    'step 4: it records no blocker, step 11 records `unresolved` with reason `worktree-location-conflict`, and the run continues to publish.',
+  ]) {
+    assert.ok(stop.includes(part), part);
+  }
+  ordered(
+    stop,
+    '**Autopilot.**',
+    '**Abort.**',
+    'Every other run is interactive',
+    '**Interactive run.**',
+  );
+  const attempt = flat(source('src/shared/autopilot-delivery-conflict.md'));
+  assert.ok(
+    attempt.includes(
+      'A location conflict there creates nothing and records `unresolved` with `worktree-location-conflict`, no blocker.',
+    ),
+  );
+  assert.ok(attempt.includes('`checkout-unavailable` and `worktree-location-conflict`.'));
+  const options = [...stop.matchAll(/- \*\*([^*]+):\*\*/g)].map((match) => match[1]);
+  assert.deepEqual(options, ['Set the variable and restart', 'Abort']);
+  const neutral = stop.match(/uses this fixed text: "([^"]+)"/);
+  assert.ok(neutral, 'the neutral message is fixed text');
+  assert.doesNotMatch(neutral[1], /<|\/home|\.effective-flow/, 'the neutral message names no path');
+
+  const blockers = flat(source('src/shared/autopilot-blockers.md'));
+  ordered(
+    blockers,
+    '### Worktree location conflict',
+    '### Security blocker on a public repository',
+    '### Issue source: appendix-only update',
+    '### Plan source: plan-only draft pull request',
+  );
+  for (const part of [
+    'When the ledger holds a `worktree-location-conflict` blocker, whatever else stands and on every repository, push nothing and open or update no pull request: not the implementation, not the plan-only draft, not an appendix.',
+    '`pr-appendix` returns `withheld` for this state and `appendix-merge` refuses it.',
+    "with `plan-pull-request-unchanged` and that pull request's number; `run-close` refuses any other outcome.",
+  ]) {
+    assert.ok(blockers.includes(part), part);
+  }
+  const adr = flat(source('docs/adr/plan-only-unattended-publication.md'));
+  assert.ok(adr.includes('**Exception: worktree location conflict.**'));
+  assert.ok(
+    adr.includes('publishes no plan-only draft and no appendix, on every repository visibility'),
+  );
+});
+
+// Invariant: a reused linked or harness-native checkout loads harness branch reuse whenever
+// delivery is active, not only when a branch is "required"; the build run hands the
+// `branchSource` of `worktree reuse-facts` to `authorize-execution` as `reuseBase`, which always
+// accepts `existing` and refuses any other mismatch; a created branch starts at the fresh base OID
+// through a detached switch, never a fast-forward of the local base branch.
+test('harness branch reuse loads with active delivery and starts a created branch at the base', () => {
+  const integration = source('src/shared/worktree-integration.md');
+  assert.match(
+    integration,
+    /```lazy-include\nharness-branch-reuse\nwhen: step 1 reuses a linked or harness-native checkout while delivery is active\n```/,
+  );
+  assert.doesNotMatch(flat(integration), /delivery requires a branch/);
+  assert.ok(
+    flat(integration).includes(
+      'A pending `harness-branch-reuse` `created` branch is created before the first commit.',
+    ),
+  );
+  const reuse = flat(source('src/shared/harness-branch-reuse.md'));
+  for (const part of [
+    "passes the two results and the returned `branchSource` as `authorize-execution`'s `reuseBase`",
+    'the helper always accepts `existing`, re-derives `adopted` and `created`, and refuses a mismatch with `AUTHORITY_MISMATCH`, never downgrading it',
+    "the fact's `creationOid` is the fresh base OID",
+    'A HEAD strictly behind it first moves there detached with `git -C <EXECUTION_ROOT> switch --detach <creationOid>`, never `merge --ff-only`, so the local base branch keeps its tip',
+    'a checkout already there keeps its original identity',
+    'verify that HEAD is still `creationOid`',
+  ]) {
+    assert.ok(reuse.includes(part), part);
+  }
+  const contract = flat(source('src/shared/build-run-contract.md'));
+  for (const part of [
+    '`reuseBase:{baseRef,localBaseBranch,branchSource}`',
+    'It always accepts `existing`',
+    'a mismatch is refused with `AUTHORITY_MISMATCH`, never downgraded',
+    "`created` requires a new, creatable `branch` and `baseHead` the fact's `creationOid`, the fresh base OID",
+    'a strictly behind HEAD moves there with `git switch --detach <creationOid>`, never `merge --ff-only`, and transitions at `branch:null, head:creationOid`',
+    '`record-branch` `{agentHandle,execution}` verifies HEAD is still `creationOid`',
+    "after the plan's archival it also takes the checkpoint's `completionBasis` and `currentPlan` (optional `retainedFiles`)",
+  ]) {
+    assert.ok(contract.includes(part), part);
+  }
 });
 
 // Pins the two named performers in each fragment plus the removal of the old exclusivity phrase,

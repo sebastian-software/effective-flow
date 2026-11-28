@@ -244,7 +244,7 @@ test('conditional row blockers record their site and the siteless kinds are name
   const flatFragment = FRAGMENT.replace(/\s+/g, ' ');
   assert.match(
     flatFragment,
-    /only a blocker without a site \(`plan-not-approved`, `appendix-scan`, `post-branch-failure`, `unknown-question`, and a `scoring-failure` from a malformed `decision-extract` block\) omits it/,
+    /only a blocker without a site \(`plan-not-approved`, `appendix-scan`, `post-branch-failure`, `unknown-question`, `worktree-location-conflict`, and a `scoring-failure` from a malformed `decision-extract` block\) omits it/,
   );
   assert.match(
     flatFragment,

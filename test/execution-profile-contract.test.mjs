@@ -177,6 +177,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'issue-intake-core.mjs',
   'model-selection-core.mjs',
   'model-selection.mjs',
+  'path-trust-core.mjs',
   'pilot-measurement-core.mjs',
   'pilot-measurement-protocol.mjs',
   'pilot-measurement.mjs',
@@ -206,6 +207,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'triage.mjs',
   'verification-evidence-core.mjs',
   'verification-evidence.mjs',
+  'worktree-reuse-facts-core.mjs',
 ];
 
 function cloneContract() {

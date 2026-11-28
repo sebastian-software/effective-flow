@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -27,6 +36,17 @@ import {
 } from '../evals/build-context/_scaffold/evidence.mjs';
 import { parseState } from '../evals/build-context/_scaffold/capture.mjs';
 import suite from '../evals/build-context/suite.config.mjs';
+import { discoverSuite } from '../evals/_scaffold/suite.mjs';
+import {
+  FORBIDDING_RULE,
+  HARNESS_BRANCH,
+  MACHINE_BASE,
+  prepareVariantFixture,
+} from '../evals/build-context/_scaffold/setup.mjs';
+import {
+  helperInvocation,
+  observedHelperEvent,
+} from '../evals/build-context/_scaffold/helper-observation.mjs';
 import { BASELINE_COMMIT, envelope } from '../evals/build-context/_scaffold/host-receipt.mjs';
 import { claudeUserInput } from '../evals/build-context/_scaffold/claude-process.mjs';
 import { runtimePin } from '../evals/build-context/_scaffold/claude-runtime.mjs';
@@ -138,7 +158,10 @@ test('build-context evidence protocol declares the complete behavioural and comp
     'claude-code:simple',
     'claude-code:review-correction',
   ]);
-  assert.equal(Object.keys(CASES).length, 6);
+  assert.equal(Object.keys(CASES).length, 9);
+  assert.deepEqual(CASES['harness-branch-adoption'], ['adopted-clean-branch']);
+  assert.deepEqual(CASES['worktree-location-conflict'], ['visible-rule-no-variable']);
+  assert.deepEqual(CASES['worktree-base-difference'], ['difference-reported-once']);
   assert.deepEqual(REQUIRED_ROLES, [
     'implementer',
     'test-writer',
@@ -151,6 +174,268 @@ test('build-context evidence protocol declares the complete behavioural and comp
     assert.ok(cases.length > 0);
     assert.ok(cases.every((name) => typeof name === 'string' && name.length > 0));
   }
+});
+
+// Invariant: the three worktree-location scenarios are registered, defined, fixtured and branched
+// on by the evaluator (the corpus parity), and each is recordable: the generated project documents
+// and the host-controlled variant setup supply exactly the rule, ADR base, harness worktree and
+// machine base the scenario names, and the evaluator fails each variant on its observable breach.
+test('the worktree-location scenarios keep the corpus in parity and are recordable', (t) => {
+  const names = [
+    'harness-branch-adoption',
+    'worktree-location-conflict',
+    'worktree-base-difference',
+  ];
+  const { scenarios } = discoverSuite(suite);
+  for (const name of names) assert.ok(scenarios.includes(name), name);
+
+  const docs = (scenario) => suite.projectDocuments({ scenario, rows: [] });
+  assert.match(docs('approved-single-module').setupAdr, /\| worktree\.enabled \| false \|/);
+  for (const name of names) assert.match(docs(name).setupAdr, /\| worktree\.enabled \| true \|/);
+  assert.ok(docs('worktree-location-conflict').agents.includes(FORBIDDING_RULE.trim()));
+  assert.ok(!docs('approved-single-module').agents.includes('Worktree locations'));
+  assert.match(
+    docs('worktree-base-difference').setupAdr,
+    /\| worktree\.baseDir \| \.effective-flow\/\.configured-worktrees \|/,
+  );
+  const prompt = readFileSync(
+    new URL('../evals/build-context/scenarios/worktree-location-conflict.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(prompt.split('<!-- prompt:end -->')[0], /\nRun state: non-interactive\n/);
+
+  // Variant setup on a fresh fixture root: a clean harness worktree on its own untracked branch
+  // at the base, and a private existing machine base the launch environment declares.
+  const root = mkdtempSync(path.join(tmpdir(), 'build-context-variant-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fixture = (name) => {
+    const project = path.join(root, name, 'project');
+    mkdirSync(project, { recursive: true });
+    const git = (...args) => execFileSync('git', args, { cwd: project, stdio: 'pipe' });
+    git('init', '--quiet', '--initial-branch=develop');
+    git('config', 'user.email', 'eval@example.invalid');
+    git('config', 'user.name', 'Eval');
+    git('config', 'commit.gpgsign', 'false');
+    git('remote', 'add', 'origin', 'https://example.invalid/flow.git');
+    writeFileSync(path.join(project, 'README.md'), '# fixture\n');
+    git('add', '--all');
+    git('-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'seed');
+    suite.prepareCheckout({
+      scenario: name,
+      fixture: JSON.parse(
+        readFileSync(
+          new URL(`../evals/build-context/fixtures/${name}.json`, import.meta.url),
+          'utf8',
+        ),
+      ),
+      projectRoot: project,
+    });
+    return project;
+  };
+  const harness = fixture('harness-branch-adoption');
+  const adoption = prepareVariantFixture({
+    scenario: 'harness-branch-adoption',
+    fixtureRoot: harness,
+  });
+  assert.deepEqual(adoption.environment, {});
+  const linked = (...args) =>
+    execFileSync('git', args, {
+      cwd: adoption.executionRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    }).trim();
+  assert.equal(linked('branch', '--show-current'), HARNESS_BRANCH);
+  assert.equal(linked('rev-parse', 'HEAD'), linked('rev-parse', 'refs/remotes/origin/develop'));
+  assert.equal(linked('status', '--porcelain'), '');
+  assert.throws(() => linked('rev-parse', '--abbrev-ref', '@{upstream}'));
+  assert.equal(
+    execFileSync('git', ['status', '--porcelain'], { cwd: harness, encoding: 'utf8' }),
+    '',
+    'the harness worktree stays outside the main checkout status',
+  );
+  assert.throws(
+    () => prepareVariantFixture({ scenario: 'harness-branch-adoption', fixtureRoot: harness }),
+    'a started root is never prepared twice',
+  );
+  const based = fixture('worktree-base-difference');
+  const difference = prepareVariantFixture({
+    scenario: 'worktree-base-difference',
+    fixtureRoot: based,
+  });
+  const base = difference.environment.EFFECTIVE_FLOW_WORKTREE_BASE_DIR;
+  assert.equal(base, realpathSync(path.join(based, MACHINE_BASE)));
+  assert.equal(statSync(base).mode & 0o777, 0o700);
+  assert.equal(
+    execFileSync('git', ['status', '--porcelain'], { cwd: based, encoding: 'utf8' }),
+    '',
+  );
+  assert.deepEqual(
+    prepareVariantFixture({ scenario: 'approved-single-module', fixtureRoot: based }),
+    { environment: {}, executionRoot: null },
+  );
+
+  // The evaluator fails each variant on its observable breach and passes its observable part.
+  const findings = (name, run) =>
+    suite.evaluator.scenarioFindings(
+      name,
+      { schema: SCHEMA, scenario: name, errors: [], variants: [run] },
+      [],
+    );
+  const state = (operation, extra = {}) => ({
+    family: 'state',
+    operation,
+    ok: true,
+    baseSource: 'default',
+    diagnostics: [],
+    ...extra,
+  });
+  const buildRun = (operation, extra = {}) => ({
+    family: 'build-run',
+    operation,
+    ok: true,
+    ...extra,
+  });
+  const conflict = (helperEvents) =>
+    findings('worktree-location-conflict', { name: 'visible-rule-no-variable', helperEvents });
+  const conflictProblems = (events) =>
+    conflict(events).filter((problem) => problem.startsWith('visible-rule-no-variable:'));
+  const stopped = [
+    state('worktree path-resolve'),
+    buildRun('terminal', { conclusionKeyword: 'ABORT: worktree-location-conflict' }),
+  ];
+  assert.deepEqual(conflictProblems(stopped), []);
+  assert.ok(
+    conflictProblems([...stopped, state('worktree path-prepare')]).some((p) =>
+      /path-prepare ran/.test(p),
+    ),
+  );
+  assert.ok(
+    conflictProblems([...stopped, buildRun('transition-execution')]).some((p) =>
+      /created its worktree/.test(p),
+    ),
+  );
+  assert.ok(
+    conflictProblems([state('worktree path-resolve'), buildRun('terminal')]).some((p) =>
+      /no observed ABORT: worktree-location-conflict/.test(p),
+    ),
+  );
+  assert.ok(
+    conflictProblems([
+      state('worktree path-resolve', { baseSource: 'environment' }),
+      stopped[1],
+    ]).some((p) => /no path resolved without an environment base/.test(p)),
+  );
+  const differenceProblems = (helperEvents) =>
+    findings('worktree-base-difference', { name: 'difference-reported-once', helperEvents }).filter(
+      (problem) => problem.startsWith('difference-reported-once:'),
+    );
+  const environment = state('worktree path-resolve', {
+    baseSource: 'environment',
+    diagnostics: ['configured-base-differs'],
+  });
+  assert.deepEqual(differenceProblems([environment]), []);
+  assert.ok(differenceProblems([state('worktree path-resolve')]).length);
+  assert.ok(differenceProblems([environment, state('worktree path-resolve')]).length);
+  const adoptionProblems = (helperEvents) =>
+    findings('harness-branch-adoption', { name: 'adopted-clean-branch', helperEvents }).filter(
+      (problem) => problem.startsWith('adopted-clean-branch:'),
+    );
+  const adopted = [buildRun('authorize-execution', { branchSource: 'adopted' })];
+  assert.deepEqual(adoptionProblems(adopted), []);
+  assert.ok(adoptionProblems([...adopted, state('worktree path-prepare')]).length);
+  assert.ok(adoptionProblems([...adopted, state('worktree record-init')]).length);
+});
+
+// Invariant: the instrument observes the runtime-state helper only in its one shipped here-string
+// shape, reading the base source and diagnostics but never the path, and a terminal conclusion's
+// leading keyword.
+test('runtime-state helper calls and terminal keywords are observed without paths', () => {
+  const call = helperInvocation({
+    cmd: `node /skill/scripts/effective-flow-state.mjs worktree path-resolve <<< '{"cwd":"/repo","purpose":"delivery","sessionId":"it'\\''s"}'`,
+  });
+  assert.equal(call.family, 'state');
+  assert.equal(call.operation, 'worktree path-resolve');
+  assert.equal(call.input.sessionId, "it's");
+  assert.equal(
+    helperInvocation({
+      cmd: `node /skill/scripts/effective-flow-state.mjs worktree path-resolve <<< '{}' | cat`,
+    }),
+    null,
+  );
+  const tool = {
+    callAt: 1,
+    at: 2,
+    id: 'call-1',
+    name: 'exec_command',
+    arguments: {
+      cmd: `node /skill/scripts/effective-flow-state.mjs worktree path-resolve <<< '{"cwd":"/repo"}'`,
+    },
+  };
+  const event = observedHelperEvent(
+    tool,
+    {
+      ok: true,
+      operation: 'worktree path-resolve',
+      result: {
+        source: 'environment',
+        worktreePath: '/machine/base/repo/session',
+        diagnostics: [{ code: 'configured-base-differs', key: 'worktree.baseDir' }],
+      },
+    },
+    {
+      session: 'root',
+      sourceDigest: 'digest',
+      alias: (value) => value,
+      agentSession: () => null,
+      roots: { state: '/skill/scripts/effective-flow-state.mjs' },
+    },
+  );
+  assert.equal(event.baseSource, 'environment');
+  assert.deepEqual(event.diagnostics, ['configured-base-differs']);
+  assert.ok(!JSON.stringify(event).includes('/machine/base'), 'no machine path is observed');
+  const terminal = observedHelperEvent(
+    {
+      ...tool,
+      arguments: {
+        cmd: 'node /skill/scripts/build-run.mjs terminal <<\'EOF\'\n{"conclusion":"ABORT: worktree-location-conflict — Worktree provisioning stopped."}\nEOF',
+      },
+    },
+    { ok: true, operation: 'terminal', result: {} },
+    {
+      session: 'root',
+      sourceDigest: 'digest',
+      alias: (value) => value,
+      agentSession: () => null,
+      roots: { 'build-run': '/skill/scripts/build-run.mjs' },
+    },
+  );
+  assert.equal(terminal.conclusionKeyword, 'ABORT: worktree-location-conflict');
+  // `authorize-execution` returns a record reference: the recorded branch source is observed from
+  // the successful call's verified `reuseBase` input, never from a result field it does not carry.
+  const authorize = (ok, reuseBase) =>
+    observedHelperEvent(
+      {
+        ...tool,
+        arguments: {
+          cmd: `node /skill/scripts/build-run.mjs authorize-execution <<'EOF'\n${JSON.stringify({ reuseBase })}\nEOF`,
+        },
+      },
+      { ok, operation: 'authorize-execution', result: { root: '/r', path: 'p', digest: 'd' } },
+      {
+        session: 'root',
+        sourceDigest: 'digest',
+        alias: (value) => value,
+        agentSession: () => null,
+        roots: { 'build-run': '/skill/scripts/build-run.mjs' },
+      },
+    );
+  const adoptedReuse = {
+    baseRef: 'origin/develop',
+    localBaseBranch: 'develop',
+    branchSource: 'adopted',
+  };
+  assert.equal(authorize(true, adoptedReuse).branchSource, 'adopted');
+  assert.equal(authorize(false, adoptedReuse).branchSource, null);
 });
 
 test('build-context protocol helpers fail closed at the evidence boundary', () => {

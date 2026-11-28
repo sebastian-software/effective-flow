@@ -188,6 +188,31 @@ its delivery branch and the base before it opens the draft pull request and publ
 unchanged if that attempt fails. Both resolve in a delegated worker whose result is verified before
 anything is committed. `mergeGate.conflictResolution: off` switches both off.
 
+## Worktree provisioning stopped: location conflict
+
+Effective Flow stops with the message "Worktree provisioning stopped: the resolved worktree location
+conflicts with a location rule of this environment" when your loaded instructions (system context,
+`CLAUDE.md`, `AGENTS.md` or host runtime information) forbid the location it would use for a new
+worktree and you have not declared another one. Nothing is created. Set
+`EFFECTIVE_FLOW_WORKTREE_BASE_DIR` to an allowed directory in the user-level settings of your host
+and start a new session; see
+[Machine-level worktree location](./worktree-and-delivery.md#machine-level-worktree-location).
+An interactive run offers exactly this or an abort. A non-interactive run ends with
+`ABORT: worktree-location-conflict`, and `autopilot` records a `worktree-location-conflict` blocker
+and publishes nothing, no draft and no appendix, except at its delivery-base attempt, which only
+leaves the base conflict unresolved. The message and every published text omit the path
+and the instruction; both appear only in the local report.
+
+Errors with the variable set stop just as early: `WORKTREE_BASE_INVALID` (relative, missing or not a
+directory), `WORKTREE_PATH_UNTRUSTED` (writable by others or a symbolic link below the base),
+`WORKTREE_PATH_EXISTS` (the target path exists already) and `WORKTREE_SANDBOX_DENIED` (the sandbox
+denies a write in an existing parent directory, which Effective Flow tests with a probe directory it
+removes again, or creating the parent directories below `.effective-flow/`). An external
+`worktree.baseDir` or `applyReview.worktree.baseDir` outside `.effective-flow/` passes the same
+checks without the variable, too: a missing or non-directory one stops with
+`WORKTREE_BASE_INVALID`, whose details name the configuration key, and an untrusted one with
+`WORKTREE_PATH_UNTRUSTED`.
+
 ## Cleanup keeps a linked worktree
 
 [`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup) always reports every remaining

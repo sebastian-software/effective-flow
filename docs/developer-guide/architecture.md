@@ -503,6 +503,19 @@ the dirty or detached harness checkout as immutable and creates a separate Effec
 delivery worktree from the refreshed configured base. The source and delivery receipts remain distinct, and neither may be
 substituted for the other.
 
+Two clean harness checkouts are the exception to "never switch": a harness branch with no commits
+beyond the base is adopted as the delivery branch, and a detached checkout or a clean checkout on
+the base branch gets its delivery branch created right before the first commit. The facts come from
+the read operation `worktree reuse-facts`, whose `branchSource` (`adopted`, `created`, `existing`)
+the caller passes in `reuseBase` and `authorize-execution` re-derives (accepting `existing` as is,
+refusing any other mismatch with `AUTHORITY_MISMATCH`) and records; both start at the fresh base
+OID, an adopted branch behind it through `merge --ff-only`, a created one through
+`switch --detach`; the checkout stays `harness-managed` without a
+lifecycle record. Where Effective Flow-created worktrees live is resolved by one helper, `worktree
+path-resolve`, with the machine-level base `EFFECTIVE_FLOW_WORKTREE_BASE_DIR` winning over the ADR
+keys ([Configuration](configuration.md#machine-level-worktree-base)). Both decisions are recorded in
+[Harness-dictated worktree locations](../adr/harness-dictated-worktree-locations.md).
+
 Effective Flow-created delivery, partial-diff and review-component worktrees have distinct receipts
 and may be cleaned up only after fresh ownership and state verification. Cleanup never targets or
 alters `RUNTIME_STATE_ROOT`, which is why local reports and memory survive component and delivery
@@ -1161,9 +1174,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 83 non-destructive or bounded rules, in four
-families (twenty-five runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 50 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+a prose removal of that state too. `setup` can write 86 non-destructive or bounded rules, in four
+families (twenty-eight runtime-state helper operations including `commit create`, `review
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check|path-resolve|path-prepare|reuse-facts`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 50 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

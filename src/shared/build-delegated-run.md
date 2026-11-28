@@ -261,7 +261,9 @@ run's one full-suite point:
 
    **Base attribution.** When the validator returns `attribution: pending-base-run`, wait until
    that candidate run has ended; never run the base in parallel with it. Then create the
-   `base-validation` worktree with its lifecycle record per `worktree-lifecycle`, and start
+   `base-validation` worktree with its lifecycle record per `worktree-lifecycle`, at the
+   `worktreePath` of `worktree path-resolve` for purpose `base-validation`, with
+   `worktree-conflict-stop` before its `worktree path-prepare`, and start
    `{{AGENT:code-validator}}` there with `Failure attribution: base-ci-then-local`, a
    `Base attribution run:` line naming only the pending identities, the same signature rule, and the
    reason step 2 ran.
@@ -273,6 +275,11 @@ run's one full-suite point:
    `git -C <WORKTREE_PATH> clean -f -d -- <PATH>...` on only the untracked, non-ignored paths the
    validator reported as generated, never `-x`, skipping the clean when it reported none; then
    remove the worktree. The report states why step 2 ran.
+
+```lazy-include
+worktree-conflict-stop
+when: the `base-validation` worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
 
 ```lazy-include
 protected-validation

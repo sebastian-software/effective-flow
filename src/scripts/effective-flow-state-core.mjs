@@ -6,7 +6,8 @@
 // `review open-report` and `review write-report` in `effective-flow-state-review-core.mjs` (the
 // report renderer of `write-report` in `review-report-render.mjs`), and the worktree-lifecycle and
 // cleanup operations (`worktree record-init`, `worktree transition`, `worktree inspect`, `worktree
-// remove`, `cleanup plan`, `cleanup apply`) in `effective-flow-state-worktree-core.mjs`, and the
+// remove`, `worktree path-resolve`, `worktree path-prepare`, `worktree reuse-facts`, `cleanup plan`,
+// `cleanup apply`) in `effective-flow-state-worktree-core.mjs`, and the
 // delivery-progress ledger operations (`ledger init`, `ledger append`, `ledger reconcile`), the
 // read-only `worktree resume-check`, plus every `worktree transition` input that carries `release`
 // (the release of a retained `partial-diff` record) or `adoption: "partial-diff-resume"` (its
@@ -105,6 +106,9 @@ export const STATE_OPERATIONS = Object.freeze([
   'worktree inspect',
   'worktree remove',
   'worktree resume-check',
+  'worktree path-resolve',
+  'worktree path-prepare',
+  'worktree reuse-facts',
   'cleanup plan',
   'cleanup apply',
   'ledger init',
@@ -149,6 +153,12 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'worktree remove': 'not-allowlisted',
   // Read-only: no lock, no write.
   'worktree resume-check': 'allowlisted',
+  // `path-resolve` only reads; `path-prepare` creates only the missing parent directories of the
+  // one leaf the purpose table requires, below the resolved base, and never the leaf.
+  'worktree path-resolve': 'allowlisted',
+  'worktree path-prepare': 'allowlisted',
+  // Reads the reuse facts of a linked checkout; its fetches update only remote-tracking refs.
+  'worktree reuse-facts': 'allowlisted',
   'cleanup plan': 'allowlisted',
   'cleanup apply': 'not-allowlisted',
   // The ledger writes, bounded to the private ledger of the caller's own `active` record.
@@ -243,6 +253,10 @@ export const STATE_ERROR_CODES = Object.freeze([
   'LEGACY_CHANGED',
   'GIT_FAILED',
   'INTERNAL_ERROR',
+  'WORKTREE_BASE_INVALID',
+  'WORKTREE_PATH_UNTRUSTED',
+  'WORKTREE_PATH_EXISTS',
+  'WORKTREE_SANDBOX_DENIED',
 ]);
 
 // INPUT_TOO_LARGE shares the exit class of INVALID_INPUT: the caller's input is refused, nothing ran.
@@ -257,6 +271,11 @@ const EXIT_CODES = Object.freeze({
   LEGACY_CHANGED: 3,
   GIT_FAILED: 1,
   INTERNAL_ERROR: 1,
+  // The refusals of `worktree path-resolve` and `worktree path-prepare`: nothing was created.
+  WORKTREE_BASE_INVALID: 3,
+  WORKTREE_PATH_UNTRUSTED: 3,
+  WORKTREE_PATH_EXISTS: 3,
+  WORKTREE_SANDBOX_DENIED: 3,
 });
 
 export const OUTCOME_EXIT_CODE = 4;
@@ -387,6 +406,15 @@ export const OPERATION_KEYS = Object.freeze({
     'integrationRoot',
   ]),
   'worktree resume-check': Object.freeze(['cwd', 'executionRoot', 'recordId', 'visibility']),
+  'worktree path-resolve': Object.freeze(['cwd', 'purpose', 'sessionId', 'group']),
+  'worktree path-prepare': Object.freeze(['cwd', 'purpose', 'sessionId', 'group']),
+  'worktree reuse-facts': Object.freeze([
+    'cwd',
+    'executionRoot',
+    'baseRef',
+    'localBaseBranch',
+    'visibility',
+  ]),
   'cleanup plan': Object.freeze(['cwd', 'executionRoot', 'decisions']),
   'cleanup apply': Object.freeze(['cwd', 'executionRoot', 'decisions', 'items']),
   'ledger init': Object.freeze([
@@ -1270,6 +1298,9 @@ const HANDLERS = Object.freeze({
   'worktree inspect': async (input, deps) => (await loadWorktree()).inspect(input, deps),
   'worktree remove': async (input, deps) => (await loadWorktree()).removeRecords(input, deps),
   'worktree resume-check': async (input, deps) => (await loadRecovery()).resumeCheck(input, deps),
+  'worktree path-resolve': async (input, deps) => (await loadWorktree()).pathResolve(input, deps),
+  'worktree path-prepare': async (input, deps) => (await loadWorktree()).pathPrepare(input, deps),
+  'worktree reuse-facts': async (input, deps) => (await loadWorktree()).reuseFacts(input, deps),
   'cleanup plan': async (input, deps) => (await loadWorktree()).cleanupPlan(input, deps),
   'cleanup apply': async (input, deps) => (await loadWorktree()).cleanupApply(input, deps),
   'ledger init': async (input, deps) => (await loadRecovery()).ledgerInit(input, deps),

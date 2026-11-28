@@ -6,4 +6,7 @@ export const SCENARIOS = Object.freeze([
   'unsupported-nesting',
   'checkpoint-drift-and-cleanup',
   'control-boundary-abuse',
+  'harness-branch-adoption',
+  'worktree-location-conflict',
+  'worktree-base-difference',
 ]);

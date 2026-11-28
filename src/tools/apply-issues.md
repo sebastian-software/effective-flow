@@ -318,8 +318,8 @@ any such worktree is created, reading that fragment is mandatory, not a judgemen
 record with `worktree record-init` immediately after the `effective-flow-created` receipt is
 verified, and withdraw it once the issue's work is durably secured on the pushed branch — for the
 default strategy that is after its pull request exists. Each issue worktree gets its own
-`sessionId` `<SESSION_ID>-issue-<n>` (`<n>` the issue number), path
-`BASE_DIR/REPO_NAME/<SESSION_ID>-issue-<n>` and purpose `delivery`, so parallel issues each meet the
+`sessionId` `<SESSION_ID>-issue-<n>` (`<n>` the issue number), purpose `delivery` and the path
+`worktree path-resolve` and `worktree path-prepare` give for both, so parallel issues each meet the
 helper's purpose table; its record, transitions, withdrawal and the exit self-check use that
 `sessionId`. A worktree reused from the harness or
 created by the user keeps its own ownership and never receives a record.
@@ -329,11 +329,17 @@ worktree-lifecycle
 when: Phase 4 is about to create an Effective Flow-owned worktree, for an issue's delivery branch or for a target-PR checkout
 ```
 
+```lazy-include
+worktree-conflict-stop
+when: an issue worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
 If an issue body or non-Effective Flow comment names a target PR (`Ziel-PR: #<nr>`, `Target PR: #<nr>` or a PR URL), **"new commit on existing PR"** applies instead:
 
 1. Do not create a new delivery branch and no new PR.
-2. Fetch the head branch of the target PR, check it out in an isolated worktree or in the clean
-   current checkout, issue and verify the downstream workflow's execution-location receipt, and
+2. Fetch the head branch of the target PR, check it out without `-b` in an isolated worktree at the
+   issue worktree's path and lifecycle above (`worktree-conflict-stop` before `path-prepare`) or in
+   the clean current checkout, issue and verify the downstream workflow's execution-location receipt, and
    update it via rooted pull/fetch operations without any rebase or force operation.
 3. Implement the issue there and commit the change as a new commit on the PR branch. Existing PR commits must not be rewritten via `commit --amend`, rebase, squash or force-push.
 4. Push the PR branch normally. If the push is rejected due to diverged remote history, mark the issue as failed and report the conflict instead of overwriting history.

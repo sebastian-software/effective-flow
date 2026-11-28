@@ -319,7 +319,7 @@ Report in the chat language, with project paths relative to the project root:
 - the source (issue `#<N>` or plan path), its routed workflow and the run id;
 - the draft pull request URL, or the reason there is none (preflight, a held planning claim with
   its holder, an existing open pull request, an issue-buddy stop or pass failure, a public
-  security blocker, a blocked appendix or a failed publication step);
+  security blocker, a worktree location conflict, a blocked appendix or a failed publication step);
 - the counts of silent, documented and tie-resolved decisions, and the remaining budget;
 - every blocker with its kind and, for a security blocker, only its report path and finding ID;
 - every retained worktree and branch with its path, the run-owned worktree included when it was

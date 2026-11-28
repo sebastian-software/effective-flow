@@ -1,6 +1,6 @@
 ---
 description: "Internal sub-file of apply-review: git commit mutex, worktree isolation and cherry-pick conflict assessment. Loaded by tools/apply-review.md only when a committing strategy was chosen."
-contextBudget: 697
+contextBudget: 714
 ---
 
 # Effective Flow Apply Review – Commit mechanics
@@ -92,23 +92,26 @@ Preconditions:
 
 Worktree paths:
 
-1. `REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`, never of a linked checkout.
-2. Use `applyReview.worktree.baseDir` from the Effective Flow configuration (project-setup ADR) as the BaseDir, or the default `.effective-flow/.worktrees`.
-   Resolve a relative BaseDir against `RUNTIME_STATE_ROOT`; an explicitly configured absolute
-   external BaseDir remains absolute and must still pass the environment and ownership checks.
-3. Create worktrees under:
-   `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
-4. `GROUP_NAME` must be deterministic, short and filesystem-safe and identify the component from Phase 4.2, e.g. `component-1`, `component-2` or a slugified component description. Not an action-bound name, since a component can contain findings of multiple actions.
+1. `WORKTREE_PATH` is the `worktreePath` of `worktree path-resolve` (`worktree-lifecycle`
+   "Helper operations") with `cwd` the verified `RUNTIME_STATE_ROOT`, purpose `apply-review`, the
+   `SESSION_ID` and `group` `GROUP_NAME`: `<base>/<repo>/SESSION_ID/GROUP_NAME` below
+   `applyReview.worktree.baseDir` or the machine-level base that wins over it. Never compose it.
+2. `GROUP_NAME` must be deterministic, short and filesystem-safe and identify the component from Phase 4.2, e.g. `component-1`, `component-2` or a slugified component description. Not an action-bound name, since a component can contain findings of multiple actions.
 
-The default deliberately lies inside the project root. This keeps worktree creation, file changes and setup commands within the usual workspace sandbox. External BaseDirs are to be used only if they are explicitly fixed in the Effective Flow configuration (project-setup ADR) and the environment allows write and execute rights for them.
+The default deliberately lies inside the project root. This keeps worktree creation, file changes and setup commands within the usual workspace sandbox. An external base needs write and execute rights for it in the environment; a denied creation is `WORKTREE_SANDBOX_DENIED`.
+
+```lazy-include
+worktree-conflict-stop
+when: a component's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
 
 Branch convention:
 
 - Per component: `apply-review/<SESSION_ID>/<GROUP_NAME>`
-- When the concrete worktree path is below `.effective-flow/`, resolve every missing base or
-  parent directory. From `RUNTIME_STATE_ROOT`, apply “Runtime-state write safety” to each exact
-  directory immediately before its `mkdir`. Guard the exact absolute `WORKTREE_PATH` separately
-  from that same root and immediately before the worktree operation. Create the worktree with:
+- Create the missing parents with `worktree path-prepare` on the same input once
+  `worktree-conflict-stop` let the run continue; a refusal stops before any worktree exists. When `WORKTREE_PATH` is below `.effective-flow/`, guard it from
+  `RUNTIME_STATE_ROOT` with “Runtime-state write safety” immediately before the worktree
+  operation. Create the worktree with:
   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
 - Immediately issue and verify a separate `effective-flow-created` execution-location receipt
   for the component path, branch, repository, component owner and `apply-review` purpose. Keep

@@ -24,6 +24,9 @@ export const CASES = Object.freeze({
     'missing-evidence',
     'third-party-instruction',
   ],
+  'harness-branch-adoption': ['adopted-clean-branch'],
+  'worktree-location-conflict': ['visible-rule-no-variable'],
+  'worktree-base-difference': ['difference-reported-once'],
 });
 export const GATES = Object.freeze([
   'implementation',

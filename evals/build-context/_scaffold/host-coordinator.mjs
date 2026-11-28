@@ -35,6 +35,7 @@ import {
   trackerLedgerProblems,
 } from './native-sandbox.mjs';
 import { observeToolFailure } from './tool-failure.mjs';
+import { prepareVariantFixture } from './setup.mjs';
 import {
   captureNativeTurn,
   verifyNativeTranscriptPrefix,
@@ -327,6 +328,8 @@ export class HostCoordinator {
       !existsSync(transcripts) || readdirSync(transcripts).length === 0,
       'prelaunch transcript destination must be empty',
     );
+    // Host-controlled variant setup of this fresh root, before every prelaunch capture below.
+    const variantSetup = prepareVariantFixture({ scenario: scenario ?? null, fixtureRoot });
     const target = input.target ?? 'portable',
       builtSkill = resolve(build.outputRoot, 'dist', target, 'effective-flow');
     const deployed = fileMembership(skillRoot),
@@ -389,6 +392,7 @@ export class HostCoordinator {
         target,
         fixtureRoot,
         skillRoot,
+        environment: variantSetup.environment,
         protectedMailbox:
           protectedValidation?.mailboxRoot ===
           resolve(fixtureRoot, '.effective-flow/protected-validation')
@@ -460,6 +464,9 @@ export class HostCoordinator {
               policyDigest: protectedValidation.policyDigest,
             },
           }
+        : {}),
+      ...(Object.keys(variantSetup.environment).length || variantSetup.executionRoot
+        ? { variantSetup }
         : {}),
       transcriptDestinationWasEmpty: true,
       targetDigest: digest(JSON.stringify(fileMembership(skillRoot))),
@@ -589,8 +596,10 @@ export class HostCoordinator {
         verifyEnvelope(state.receipt, 'prepared').settingsDigest,
       'actual settings changed after prelaunch',
     );
+    const variantEnvironment =
+      verifyEnvelope(state.receipt, 'prepared').variantSetup?.environment ?? {};
     const environment = isClaude
-      ? claudeEnvironment(state.command, state.nativePolicy)
+      ? { ...claudeEnvironment(state.command, state.nativePolicy), ...variantEnvironment }
       : {
           PATH: process.env.PATH,
           HOME: state.command.home,
@@ -598,6 +607,7 @@ export class HostCoordinator {
           CLAUDE_CONFIG_DIR: state.command.claudeHome,
           EVAL_TRACKER_LOG: state.nativePolicy.ledger,
           EVAL_TRACKER_FIXTURE: state.nativePolicy.fixtureFile,
+          ...variantEnvironment,
         };
     const actualArgs = resume
       ? isClaude
@@ -1102,6 +1112,8 @@ export class HostCoordinator {
         'refusal',
         'refused-before-mutation',
         'removed-checkout',
+        'adopted-clean-branch',
+        'difference-reported-once',
       ].includes(prepared.variant);
     const hostInput = {
       ...manifest.host,

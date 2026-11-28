@@ -616,6 +616,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     'existing returning delivery ownership; no new spawn',
   ],
   [
+    'shared/worktree-conflict-stop.md',
+    'a leaf or subagent without a user channel stop and return',
+    'aborts an already running worker without a user channel; no spawn',
+  ],
+  [
     'shared/host-pr-watch.md',
     '**The host owns every pull-request wait.**',
     'host-pr-watch: no-watch rule for a delegated context; no spawn',

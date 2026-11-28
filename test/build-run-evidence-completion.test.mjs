@@ -642,6 +642,9 @@ test('a foreign lifecycle session or held lifecycle lock cannot prove new worktr
   );
 });
 
+// A detached checkout `worktree reuse-facts` reported as `existing` (a failed fetch, say) keeps the
+// harness-supported flow although the fetch-free re-derivation would qualify it as `created`: the
+// harness creates the pre-authorized branch before the transition.
 test('detached external checkout can adopt only the pre-authorized harness branch without worktree ownership', async (t) => {
   const fx = fixture(t);
   const linked = path.join(fx.root, '.effective-flow', 'harness');
@@ -663,7 +666,12 @@ test('detached external checkout can adopt only the pre-authorized harness branc
     branch: 'harness-feature',
     baseHead: fx.input.execution.head,
     authority: { kind: 'configuration' },
+    reuseBase: { baseRef: 'develop', localBaseBranch: 'develop', branchSource: 'existing' },
   });
+  assert.equal(
+    JSON.parse(readFileSync(path.join(authorization.root, authorization.path))).branchSource,
+    'existing',
+  );
   git(linked, 'switch', '-c', 'harness-feature');
   await live.call('transition-execution', {
     ...live.common,

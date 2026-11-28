@@ -22,6 +22,12 @@ import {
   parseValidationJSON,
   safeValidationRead,
 } from './protected-validation-core.mjs';
+import {
+  REUSE_BRANCH_SOURCES,
+  ReuseFactsError,
+  creatableBranch,
+  deriveReuseFacts,
+} from './worktree-reuse-facts-core.mjs';
 
 export const BUILD_RUN_VERSION = 1;
 export const MAX_DISPATCH_BYTES = 8 * 1024;
@@ -34,6 +40,7 @@ export const BUILD_RUN_OPERATIONS = Object.freeze([
   'bind-agent',
   'authorize-execution',
   'transition-execution',
+  'record-branch',
   'prepare-completion',
   'seal-delivery',
   'handoff',
@@ -581,16 +588,22 @@ async function load(input, deps, mutation = false) {
   strings(context.source.restrictions);
   if (await present(context, 'execution.json')) {
     const transition = await localRecord(context, 'execution.json');
-    exact(transition, [
-      'protocol',
-      'runId',
-      'requestDigest',
-      'authorization',
-      'execution',
-      'ownership',
-      'ownershipProof',
-    ]);
+    exact(
+      transition,
+      [
+        'protocol',
+        'runId',
+        'requestDigest',
+        'authorization',
+        'execution',
+        'ownership',
+        'ownershipProof',
+      ],
+      ['branchSource'],
+    );
     executionShape(transition.execution);
+    if (transition.branchSource !== undefined && transition.branchSource !== null)
+      one(transition.branchSource, REUSE_BRANCH_SOURCES);
     context.transition = transition;
     context.request = {
       ...context.request,
@@ -609,6 +622,32 @@ async function load(input, deps, mutation = false) {
     if (context.transition.ownershipProof !== null)
       await dataRead(context, context.transition.ownershipProof);
   }
+  // The branch receipt of a `created` harness checkout replaces the transitioned one.
+  if (await present(context, 'execution-branch.json')) {
+    const created = await localRecord(context, 'execution-branch.json');
+    exact(created, [
+      'protocol',
+      'runId',
+      'requestDigest',
+      'authorization',
+      'transition',
+      'execution',
+      'creationOid',
+    ]);
+    executionShape(created.execution);
+    if (
+      !context.transition ||
+      context.transition.branchSource !== 'created' ||
+      !same(await readRecord(context, created.authorization), context.authorization) ||
+      !same(await readRecord(context, created.transition), context.transition) ||
+      created.creationOid !== context.authorization.creationOid ||
+      created.execution.executionRoot !== context.transition.execution.executionRoot ||
+      created.execution.branch !== context.authorization.branch
+    )
+      fail('DIGEST_MISMATCH', 'created delivery branch record changed');
+    context.branchRecord = created;
+    context.request = { ...context.request, execution: created.execution };
+  }
   if (await present(context, 'checkout-return.json'))
     context.checkoutReturn = await localRecord(context, 'checkout-return.json');
   if (await present(context, 'handoff.json')) {
@@ -619,7 +658,8 @@ async function load(input, deps, mutation = false) {
 }
 // Read-only: the `execution.branch` of every non-terminal run below
 // `<runtimeStateRoot>/.effective-flow/build-runs/` (a run directory without `terminal.json`;
-// `execution.json`'s execution, once a transition wrote one, else the request's). Returns
+// `execution-branch.json`'s execution once a created delivery branch was recorded, else
+// `execution.json`'s, once a transition wrote one, else the request's). Returns
 // `{state: 'ok', branches}` (sorted, distinct, no detached `null`) or `{state: 'unreadable',
 // reason}` for anything it cannot read safely: a foreign entry, a run without a readable request,
 // or a malformed execution. A missing namespace is `ok` with no branch. `cleanup` reads it to keep
@@ -634,7 +674,11 @@ export async function nonTerminalBuildRunBranches(runtimeStateRoot) {
       const run = await safeDirectory(path.join(namespace, runId));
       const entries = await readdir(run);
       if (entries.includes('terminal.json')) continue;
-      const file = entries.includes('execution.json') ? 'execution.json' : 'request.json';
+      const file = entries.includes('execution-branch.json')
+        ? 'execution-branch.json'
+        : entries.includes('execution.json')
+          ? 'execution.json'
+          : 'request.json';
       const value = await jsonRead(path.join(run, file));
       executionShape(value?.execution);
       if (value.execution.branch !== null) branches.add(value.execution.branch);
@@ -1725,6 +1769,73 @@ async function planContinuation(context, input) {
   return { ...proof, beforeOwnership: null };
 }
 
+// `git -C <root>` through the injected runner, in the result shape the reuse-facts module reads.
+function gitAt(deps, root) {
+  if (typeof deps.runner !== 'function') fail('INVALID_PAYLOAD', 'process runner is required');
+  return (args) => deps.runner({ executable: 'git', args: ['-C', root, ...args], cwd: root });
+}
+// The branch source of a reused harness checkout: the one `worktree reuse-facts` reported
+// (`reuseBase.branchSource`), checked against a re-derivation from Git. That call fetched the refs
+// the re-derivation reads; this one fetches nothing, so it cannot see a failed fetch and never
+// upgrades: a reported `existing` stays `existing`, and `adopted` or `created` holds only where
+// the re-derivation agrees. `adopted` keeps the host branch and starts at the fresh base, a
+// strictly behind HEAD naming its pre-fast-forward OID in `fastForwardFrom`; `created` names a new
+// delivery branch, created at the fresh base (`creationOid`) through `record-branch` immediately
+// before the first commit, a HEAD behind it detached there at setup; `existing` keeps the checks
+// that applied before. The plan-PR continuation keeps its own branch rule.
+async function reuseDecision(context, input, original, continuation) {
+  const none = { creationOid: null, fastForwardFrom: null };
+  if (continuation !== null) {
+    if (input.reuseBase !== undefined)
+      fail('INVALID_PAYLOAD', 'plan continuation keeps its own branch rule');
+    return { branchSource: 'existing', ...none };
+  }
+  exact(input.reuseBase, ['baseRef', 'localBaseBranch', 'branchSource']);
+  text(input.reuseBase.baseRef);
+  text(input.reuseBase.localBaseBranch);
+  one(input.reuseBase.branchSource, REUSE_BRANCH_SOURCES);
+  const reported = input.reuseBase.branchSource;
+  const git = gitAt(context.deps, original.root);
+  const visibility = context.request.policy.visibility;
+  let facts;
+  try {
+    facts = await deriveReuseFacts(
+      {
+        baseRef: input.reuseBase.baseRef,
+        localBaseBranch: input.reuseBase.localBaseBranch,
+        visibility,
+        fetch: false,
+      },
+      { git },
+    );
+  } catch (error) {
+    if (!(error instanceof ReuseFactsError)) throw error;
+    fail(error.code === 'INVALID_INPUT' ? 'INVALID_PAYLOAD' : 'REPOSITORY_MISMATCH', error.message);
+  }
+  if (facts.head !== original.head)
+    fail('CONTENT_DRIFT', 'reused checkout HEAD changed before authorization');
+  if (reported === 'existing') return { branchSource: 'existing', ...none };
+  if (facts.branchSource !== reported)
+    fail('AUTHORITY_MISMATCH', `the reused checkout no longer qualifies as ${reported}`);
+  if (reported === 'adopted') {
+    if (input.branch !== facts.branch || input.baseHead !== facts.baseOid)
+      fail('AUTHORITY_MISMATCH', 'adoption keeps the host branch and starts at the fresh base');
+    return {
+      branchSource: 'adopted',
+      creationOid: null,
+      fastForwardFrom: facts.fastForward ? facts.head : null,
+    };
+  }
+  if (
+    input.branch === null ||
+    input.branch === facts.branch ||
+    input.baseHead !== facts.creationOid ||
+    !(await creatableBranch(git, input.branch, visibility))
+  )
+    fail('AUTHORITY_MISMATCH', 'a created delivery branch is new and starts at the fresh base');
+  return { branchSource: 'created', creationOid: facts.creationOid, fastForwardFrom: null };
+}
+
 async function authorizeExecution(context, input) {
   if (context.authorization || context.transition || context.handoff)
     fail('INVALID_STATE', 'execution setup is already bound');
@@ -1788,6 +1899,12 @@ async function authorizeExecution(context, input) {
     fail('AUTHORITY_MISMATCH', 'reused/in-place execution cannot adopt another root');
   if (input.mode === 'reuse-worktree' && original.root === context.root)
     fail('AUTHORITY_MISMATCH', 'reuse-worktree requires an existing external linked checkout');
+  const reuse =
+    input.mode === 'reuse-worktree'
+      ? await reuseDecision(context, input, original, continuation)
+      : { branchSource: null, creationOid: null, fastForwardFrom: null };
+  if (input.mode !== 'reuse-worktree' && input.reuseBase !== undefined)
+    fail('INVALID_PAYLOAD', 'only reuse-worktree derives reuse facts');
   if (
     input.mode === 'in-place-no-delivery' &&
     (input.branch !== context.request.execution.branch || input.baseHead !== original.head)
@@ -1833,6 +1950,9 @@ async function authorizeExecution(context, input) {
     authority: input.authority,
     returnCheckout,
     planContinuation: continuation,
+    branchSource: reuse.branchSource,
+    creationOid: reuse.creationOid,
+    fastForwardFrom: reuse.fastForwardFrom,
     originalSnapshot: await snapshot(context),
   });
 }
@@ -1953,14 +2073,26 @@ async function transitionExecution(context, input) {
   if (!same(input.authorization, authRef))
     fail('FOREIGN_RECORD', 'execution transition has a foreign setup authorization');
   executionShape(input.execution);
+  // A `created` branch does not exist yet: setup keeps the original checkout identity at the
+  // creation OID, a HEAD behind it detached there (branch null), and `record-branch` issues the
+  // branch receipt right before the first commit. An adoption whose fast-forward failed keeps the
+  // HEAD it had and is no adoption.
+  const created = auth.branchSource === 'created';
+  const fastForwardFailed =
+    typeof auth.fastForwardFrom === 'string' && input.execution.head === auth.fastForwardFrom;
+  const setupBranch = !created
+    ? auth.branch
+    : context.originalRequest.execution.head === auth.creationOid
+      ? context.originalRequest.execution.branch
+      : null;
   if (
     input.execution.executionRoot !== auth.executionRoot ||
-    input.execution.branch !== auth.branch ||
-    input.execution.head !== auth.baseHead
+    input.execution.branch !== setupBranch ||
+    (input.execution.head !== auth.baseHead && !fastForwardFailed)
   )
     fail('AUTHORITY_MISMATCH', 'execution transition exceeds authorized setup');
   const candidate = { ...context.request, execution: input.execution };
-  await executionGuard(candidate, context.deps, auth.baseHead);
+  await executionGuard(candidate, context.deps, input.execution.head);
   if (auth.mode === 'owned-worktree') {
     if (input.execution.origin !== 'effective-flow-created')
       fail('AUTHORITY_MISMATCH', 'owned transition requires owned receipt');
@@ -2004,6 +2136,57 @@ async function transitionExecution(context, input) {
     execution: input.execution,
     ownership: input.ownership,
     ownershipProof,
+    branchSource: fastForwardFailed ? 'existing' : (auth.branchSource ?? null),
+  });
+}
+// `record-branch`: the branch receipt of a `created` harness checkout, issued once, after the
+// caller created the authorized delivery branch at the creation OID (`git switch -c`) and before
+// its first commit. The transitioned receipt's checkout identity ends with that switch. After the
+// plan's archival it takes the same `completionBasis` and `currentPlan` as a checkpoint.
+async function recordBranch(context, input) {
+  if (!context.authorization || !context.transition || context.handoff || context.branchRecord)
+    fail(
+      'INVALID_STATE',
+      'a created delivery branch is recorded once, after setup, before handoff',
+    );
+  await agent(context, input.agentHandle);
+  // As for the other non-transition operations: the plan is unchanged, or its archival is proven
+  // by an exact completion basis (the usual case, since the first commit follows the seal).
+  await currentPlan(context, input);
+  await policyUnchanged(context);
+  const auth = context.authorization;
+  if (auth.mode !== 'reuse-worktree' || context.transition.branchSource !== 'created')
+    fail('AUTHORITY_MISMATCH', 'only a created-branch harness checkout records its branch');
+  if (await outstanding(context))
+    fail('OUTSTANDING_QUESTION', 'resume the trusted reply before creating the delivery branch');
+  executionShape(input.execution);
+  const current = context.request.execution;
+  if (
+    input.execution.executionRoot !== current.executionRoot ||
+    input.execution.branch !== auth.branch ||
+    input.execution.head !== auth.creationOid ||
+    current.head !== auth.creationOid ||
+    input.execution.origin !== 'harness-managed'
+  )
+    fail('AUTHORITY_MISMATCH', 'branch receipt exceeds the authorized creation');
+  const candidate = { ...context.request, execution: input.execution };
+  await executionGuard(candidate, context.deps, auth.creationOid);
+  if (
+    (await git(context.deps, context.root, ['rev-parse', `refs/heads/${auth.branch}`])) !==
+    auth.creationOid
+  )
+    fail('CONTENT_DRIFT', 'created delivery branch is not at its creation OID');
+  const transitionFile = path.join(context.run, 'execution.json');
+  const transition = reference(context, transitionFile, await safeRead(transitionFile));
+  const authorizationFile = path.join(context.run, 'authorization.json');
+  const authorization = reference(context, authorizationFile, await safeRead(authorizationFile));
+  context.request = candidate;
+  return record(context, 'execution-branch.json', {
+    ...base(context),
+    authorization,
+    transition,
+    execution: input.execution,
+    creationOid: auth.creationOid,
   });
 }
 
@@ -3142,6 +3325,13 @@ async function makeHandoff(context, input) {
   const mode = context.authorization?.mode;
   if (!mode) fail('INVALID_STATE', 'handoff needs verified delivery mode');
   const head = current.snapshot.head;
+  // A `created` checkout commits only on its recorded delivery branch; without a commit it has none.
+  if (
+    context.transition?.branchSource === 'created' &&
+    !context.branchRecord &&
+    head !== context.authorization.creationOid
+  )
+    fail('INVALID_STATE', 'record the created delivery branch before its first commit');
   let finalPlan = input.finalPlan;
   let dirty = false;
   const retainedPlan = retainedOriginal(seal.finalPlan, retained);
@@ -3956,6 +4146,7 @@ const SCHEMAS = {
     'authority',
   ],
   'transition-execution': ['agentHandle', 'authorization', 'execution', 'ownership'],
+  'record-branch': ['agentHandle', 'execution'],
   'prepare-completion': ['agentHandle', 'preparationId', 'gates'],
   'seal-delivery': ['agentHandle', 'sealId', 'basis', 'finalPlan', 'expectedTree', 'judgments'],
   handoff: ['agentHandle', 'seal', 'head', 'finalPlan'],
@@ -4096,7 +4287,7 @@ async function operate(operation, input, context) {
         'handoff permits only runtime control and remaining gate outcomes',
       );
     if (operation !== 'record-return') await verifyHandoff(context, context.handoff);
-  } else if (!['transition-execution'].includes(operation)) {
+  } else if (!['transition-execution', 'record-branch'].includes(operation)) {
     await executionGuard(context.request, context.deps);
     if (context.transition?.ownership !== null && context.transition?.ownership !== undefined) {
       const origin = context.transition.ownership;
@@ -4129,6 +4320,7 @@ async function operate(operation, input, context) {
   }
   if (operation === 'authorize-execution') return authorizeExecution(context, input);
   if (operation === 'transition-execution') return transitionExecution(context, input);
+  if (operation === 'record-branch') return recordBranch(context, input);
   if (operation === 'prepare-completion') return prepareCompletion(context, input);
   if (operation === 'seal-delivery') return sealDelivery(context, input);
   if (operation === 'handoff') return makeHandoff(context, input);
@@ -4360,10 +4552,10 @@ export async function executeOperation(operation, input, deps = {}) {
       : operation === 'seal-delivery'
         ? ['renewedGates', 'archivalRefusal', 'retainedFiles']
         : operation === 'authorize-execution'
-          ? ['returnBranch', 'planContinuation']
+          ? ['returnBranch', 'planContinuation', 'reuseBase']
           : operation === 'retain-evidence'
             ? ['content', 'source']
-            : COMPLETION_OPERATIONS.includes(operation)
+            : COMPLETION_OPERATIONS.includes(operation) || operation === 'record-branch'
               ? COMPLETION_PROOF_FIELDS
               : [],
   );

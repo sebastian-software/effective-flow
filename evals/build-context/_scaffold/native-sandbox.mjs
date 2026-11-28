@@ -43,6 +43,7 @@ export function nativePolicy({
   privateRoots = [],
   protectedMailbox = null,
   target = 'portable',
+  environment = {},
 }) {
   const fixture = realpathSync(fixtureRoot),
     skill = realpathSync(skillRoot);
@@ -139,7 +140,7 @@ export function nativePolicy({
     'permissions.' + NAME + '=' + toml(definition),
     'mcp_servers={}',
     'shell_environment_policy.set=' +
-      toml({ EVAL_TRACKER_LOG: ledger, EVAL_TRACKER_FIXTURE: fixtureFile }),
+      toml({ EVAL_TRACKER_LOG: ledger, EVAL_TRACKER_FIXTURE: fixtureFile, ...environment }),
     ...DISABLED.map((k) => 'features.' + k + '=false'),
     ...nativeRegistrations.map((r) => r.config),
   ];

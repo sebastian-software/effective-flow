@@ -550,6 +550,7 @@ export function captureHostEvidence(manifest) {
             'build-run': resolve(manifest.skillRoot ?? '/unproven', 'scripts/build-run.mjs'),
             pilot: resolve(manifest.skillRoot ?? '/unproven', 'scripts/pilot-measurement.mjs'),
             tracker: resolve(manifest.skillRoot ?? '/unproven', 'scripts/remote-tracker.mjs'),
+            state: resolve(manifest.skillRoot ?? '/unproven', 'scripts/effective-flow-state.mjs'),
           },
         });
         if (event) {

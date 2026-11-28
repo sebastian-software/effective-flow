@@ -215,15 +215,19 @@ other trusted comment starting with `<!-- effective-flow-triage ` (with the spac
 Leftovers create no verdict, retry or recovery authority. Changed collection metadata cannot be
 replayed. Never fabricate a candidate, fingerprint or recovery record.
 
+```lazy-include
+worktree-conflict-stop
+when: the planning worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
 **Planning worktree.** In publishing mode, immediately after collection and before recovery or
-judgment, create the pass's `issue-planning` worktree at `collect.baseOid`, so no second fetch
-runs: guard every parent below `.effective-flow/` and the exact path per `runtime-state-safety`,
-then run `git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT>
-<collect.baseOid>` with `PLANNING_ROOT` = `BASE_DIR/REPO_NAME/<passId>-issue-planning`
-(`worktree.baseDir`, default `.effective-flow/.worktrees`, against `RUNTIME_STATE_ROOT`). Issue its `effective-flow-created` receipt and write its record with
-`worktree record-init` (workflow `issue-buddy`, purpose `issue-planning`, `sessionId` the
-`passId`, `creationOid` = `collect.baseOid`); a failed step stops the pass. Then require
-`git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
+judgment, create the pass's `issue-planning` worktree at `collect.baseOid`, so no second fetch runs.
+Use `worktree path-resolve` (purpose `issue-planning`, `sessionId`: `passId`): its `worktreePath` is `PLANNING_ROOT`.
+Run `worktree path-prepare` only if `worktree-conflict-stop` permits it. Guard `PLANNING_ROOT` below `.effective-flow/` per `runtime-state-safety`, then run
+`git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT> <collect.baseOid>`.
+Issue the `effective-flow-created` receipt and run `worktree record-init` (workflow `issue-buddy`,
+purpose `issue-planning`, `sessionId`: `passId`, `creationOid`: `collect.baseOid`). Stop on any failed step.
+Require `git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
 `consent-check` when it applies. Every plan file, lint and publication of this pass uses
 `PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 4 or
 Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason

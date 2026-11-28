@@ -1,13 +1,14 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 83
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 86
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
 - one per non-destructive or bounded runtime-state helper operation: `lock acquire`, `lock release`,
   `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`,
   `commit create`, `review open-report`, `review write-report`, `worktree record-init`,
-  `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
+  `worktree transition`, `worktree inspect`, `worktree resume-check`, `worktree path-resolve`,
+  `worktree path-prepare`, `worktree reuse-facts`, `cleanup plan`,
   `ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
   `presence list`, `presence release`, `planning-claim key`, `planning-claim acquire`,
   `planning-claim release` and `planning-claim list`;
@@ -44,7 +45,11 @@ own `active` `partial-diff` record, from descriptors the helper computes itself,
 when that worst case exceeds the bound; `ledger append` adds one commit entry to it, only for a
 branch tip it proved the next group's exact commit (parent, paths, blobs and modes). Neither
 touches a worktree, branch or record. `worktree resume-check` and `ledger reconcile` only
-read: they take no lock and write nothing. `presence register` creates only the calling run's own
+read: they take no lock and write nothing. `worktree path-resolve` only reads; `worktree
+path-prepare` creates only the missing parent directories of the one worktree path the purpose
+table requires below the resolved base, never that path itself, and removes nothing. `worktree
+reuse-facts` only reads, apart from fetching the base ref and the HEAD branch's upstream into
+remote-tracking refs. `presence register` creates only the calling run's own
 marker below `.effective-flow/merge-gate-presence/`, no-clobber and at most 2 KiB; `presence refresh`
 and `presence release` rewrite or remove only that marker and only with its token; `presence list`
 only reads. `planning-claim key` only computes a claim key; `planning-claim acquire` creates one
@@ -79,7 +84,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 83 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 86 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

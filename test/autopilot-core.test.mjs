@@ -3516,6 +3516,7 @@ test('the delivery-base vocabularies are the recorded enums', () => {
     [
       'conflict-resolution-off',
       'checkout-unavailable',
+      'worktree-location-conflict',
       'resolver-abort',
       'verification-failed',
       'review-failed',
@@ -3640,6 +3641,12 @@ test('delivery-base-record keeps its schema closed', async (t) => {
       reason: 'checkout-unavailable',
       checkout: null,
     },
+    'location conflict with a checkout': { ...unresolved, reason: 'worktree-location-conflict' },
+    'location conflict without a checkout but a branch': {
+      ...unresolved,
+      reason: 'worktree-location-conflict',
+      checkout: null,
+    },
   };
   for (const [label, extra] of Object.entries(cases)) {
     const refused = await op('delivery-base-record', deliveryInput(root, runId, extra));
@@ -3670,6 +3677,14 @@ test('delivery-base-record accepts the per-result shapes that need no checkout',
       result: 'unresolved',
       reason: 'checkout-unavailable',
       conflictResolution: 'ask',
+      conflictCount: 1,
+      conflictedPaths: ['src/a.mjs'],
+    },
+    'unresolved worktree-location-conflict': {
+      result: 'unresolved',
+      reason: 'worktree-location-conflict',
+      conflictResolution: 'auto',
+      validationMode: 'full',
       conflictCount: 1,
       conflictedPaths: ['src/a.mjs'],
     },
@@ -3881,4 +3896,166 @@ test('run-close returns the delivery base, or null without one', async (t) => {
   assert.equal(recordedResult.ok, true, JSON.stringify(recordedResult));
   const closed = await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
   assert.deepEqual(closed.data.deliveryBase, withoutInputKeys(input));
+});
+
+// Invariant: a worktree location conflict stores nothing but its kind: no summary, no site and no
+// local-only reference, so the computed path and the forbidding instruction never reach the ledger.
+test('a worktree-location-conflict blocker accepts no summary, site or local-only reference', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  for (const extra of [
+    { summary: 'The path /home/user/.worktrees is forbidden by CLAUDE.md.' },
+    { site: 'S-LOC' },
+    { localOnly: { reportPath: '.effective-flow/review/r.md', findingId: 'R-0000001' } },
+  ]) {
+    const refused = await op('blocker-record', {
+      cwd: root,
+      runId,
+      kind: 'worktree-location-conflict',
+      ...extra,
+    });
+    assert.equal(refused.error.code, 'INVALID_INPUT', JSON.stringify(extra));
+  }
+  assert.deepEqual(ledger(root, runId).blockers, []);
+  const recorded = await op('blocker-record', {
+    cwd: root,
+    runId,
+    kind: 'worktree-location-conflict',
+  });
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  const [entry] = ledger(root, runId).blockers;
+  assert.deepEqual(Object.keys(entry).sort(), ['kind', 'recordedAt']);
+  assert.equal(entry.kind, 'worktree-location-conflict');
+  // Every other kind still requires its summary.
+  const bare = await op('blocker-record', { cwd: root, runId, kind: 'post-branch-failure' });
+  assert.equal(bare.error.code, 'INVALID_INPUT');
+});
+
+test('a worktree-location-conflict blocker renders the fixed neutral line', () => {
+  for (const [language, line] of [
+    ['en', /needs maintainer attention/],
+    ['de', /Aufmerksamkeit der Maintainer/],
+  ]) {
+    const { appendix } = renderAppendix(
+      ledgerFixture({
+        language,
+        blockers: [{ kind: 'worktree-location-conflict', summary: '/home/user/forbidden' }],
+      }),
+    );
+    assert.match(appendix, line, language);
+    assert.doesNotMatch(appendix, /forbidden|\/home|worktree/i, language);
+  }
+});
+
+// Invariant: a worktree location conflict publishes nothing on any repository visibility: the
+// appendix is withheld and its earlier digest withdrawn, and `appendix-merge` refuses even a
+// digest restored by hand, so no plan-only draft or appendix-only update can carry it.
+test('a worktree-location-conflict blocker withholds the appendix on every visibility', async (t) => {
+  for (const visibility of ['private', 'public', 'unknown']) {
+    const root = repository(t);
+    const runId = await init(root, { visibility });
+    const rendered = await op('pr-appendix', { cwd: root, runId });
+    assert.equal(rendered.data.status, 'rendered', visibility);
+    await op('blocker-record', { cwd: root, runId, kind: 'worktree-location-conflict' });
+    const withheld = await op('pr-appendix', { cwd: root, runId });
+    assert.deepEqual(
+      withheld.data,
+      { status: 'withheld', reason: 'worktree-location-conflict' },
+      visibility,
+    );
+    assert.equal(ledger(root, runId).appendixSha256, undefined, visibility);
+    const target = join(root, AUTOPILOT_DIR, runId, 'run.json');
+    const stored = JSON.parse(readFileSync(target, 'utf8'));
+    stored.appendixSha256 = rendered.data.sha256;
+    writeFileSync(target, `${JSON.stringify(stored, null, 2)}\n`);
+    const refused = await op('appendix-merge', {
+      cwd: root,
+      runId,
+      appendixSha256: rendered.data.sha256,
+      body: '',
+    });
+    assert.equal(refused.error.code, 'APPENDIX_WITHHELD', visibility);
+  }
+});
+
+// Invariant: a worktree location conflict at the delivery-base attempt only leaves the base
+// conflict unresolved: the record names no checkout, no blocker is recorded, and the appendix still
+// renders with the unresolved line and its flag, so the run publishes as usual.
+test('a location conflict at the delivery-base attempt is unresolved, not a blocker', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const input = deliveryInput(root, runId, {
+    result: 'unresolved',
+    reason: 'worktree-location-conflict',
+    conflictResolution: 'auto',
+    conflictCount: 1,
+    conflictedPaths: ['src/a.mjs'],
+  });
+  const recorded = await op('delivery-base-record', input);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  assert.deepEqual(ledger(root, runId).blockers ?? [], []);
+  const rendered = (await op('pr-appendix', { cwd: root, runId })).data;
+  assert.equal(rendered.status, 'rendered', JSON.stringify(rendered));
+  assert.ok(
+    rendered.appendix.includes(
+      'The conflict in 1 path is unresolved (`worktree-location-conflict`); the branch is unchanged.',
+    ),
+    rendered.appendix,
+  );
+  assert.ok(rendered.appendix.includes('Unresolved delivery conflict:'), rendered.appendix);
+  assert.equal(ledger(root, runId).appendixSha256, rendered.sha256);
+});
+
+// Invariant: a run holding a worktree location conflict closes like a public security blocker:
+// on an issue source with a plan pull request as `plan-pull-request-unchanged` with its number,
+// otherwise as `no-pull-request`. A publishing outcome, the plan-only draft included, is refused
+// and leaves the run open.
+test('a worktree-location-conflict blocker closes only unchanged or without a pull request', async (t) => {
+  const root = repository(t);
+  const conflict = async (extra) => {
+    const runId = await init(root, extra);
+    const envelope = await op('blocker-record', {
+      cwd: root,
+      runId,
+      kind: 'worktree-location-conflict',
+    });
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    return runId;
+  };
+
+  const issueRun = await conflict(issueSource(701));
+  for (const [outcome, pullRequest] of [
+    ['pull-request', 7],
+    ['plan-only-pull-request', 7],
+    ['appendix-update', 7],
+  ]) {
+    const refused = await closeRun(root, issueRun, outcome, { pullRequest });
+    assert.equal(refused.error.code, 'INVALID_INPUT', outcome);
+    assert.equal(ledger(root, issueRun).status, 'open', outcome);
+  }
+  const unchanged = await closeRun(root, issueRun, 'plan-pull-request-unchanged', {
+    pullRequest: 7,
+  });
+  assert.equal(unchanged.ok, true, JSON.stringify(unchanged));
+  assert.equal(ledger(root, issueRun).outcome, 'plan-pull-request-unchanged');
+  assert.equal(ledger(root, issueRun).pullRequest, 7);
+
+  const issueWithout = await conflict(issueSource(702));
+  const none = await closeRun(root, issueWithout);
+  assert.equal(none.ok, true, JSON.stringify(none));
+  assert.equal(ledger(root, issueWithout).outcome, 'no-pull-request');
+
+  const plan = { kind: 'plan', planPath: 'docs/plan/x.md', planSha256: SHA };
+  const planRun = await conflict({ source: plan });
+  for (const [outcome, pullRequest] of [
+    ['plan-only-pull-request', 8],
+    ['plan-pull-request-unchanged', 8],
+  ]) {
+    const refused = await closeRun(root, planRun, outcome, { pullRequest });
+    assert.equal(refused.error.code, 'INVALID_INPUT', outcome);
+    assert.equal(ledger(root, planRun).status, 'open', outcome);
+  }
+  const planNone = await closeRun(root, planRun);
+  assert.equal(planNone.ok, true, JSON.stringify(planNone));
+  assert.equal(ledger(root, planRun).outcome, 'no-pull-request');
 });

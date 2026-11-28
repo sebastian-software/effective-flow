@@ -38,11 +38,14 @@
 //   recorded visibility is `private`.
 // - `run-check` (reads only): an open ledger for the run id, or RUN_NOT_OPEN.
 // - `pr-appendix`: renders, sanitizes and scans the appendix, writes it beside the ledger and
-//   records its SHA-256 in the ledger. A `blocked` or `withheld` result and every later
-//   `decision-record`, `blocker-record`, `fit-record`, `base-move-record`, `delivery-base-record`,
-//   `plan-reviewed` and `delivery-record` withdraw that digest, so only a render of the current
-//   ledger can be merged. `delivery-confirm` changes nothing the appendix renders and keeps it. A
-//   recorded base move and a recorded delivery base each render as their own appendix section.
+//   records its SHA-256 in the ledger; it is `withheld` under a public security blocker and under
+//   any `worktree-location-conflict` blocker, which `run-close` also limits to `no-pull-request`
+//   or, on an issue source, `plan-pull-request-unchanged`. A `blocked` or `withheld` result and
+//   every later `decision-record`, `blocker-record`, `fit-record`, `base-move-record`,
+//   `delivery-base-record`, `plan-reviewed` and `delivery-record` withdraw that digest, so only a
+//   render of the current ledger can be merged. `delivery-confirm` changes nothing the appendix
+//   renders and keeps it. A recorded base move and a recorded delivery base each render as their
+//   own appendix section.
 // - `plan-copy-restore`: the one project-file write. It replaces the run's own review edit of a
 //   tracked plan in the invocation checkout (`sourceRoot`) with `HEAD`'s working-tree bytes, and
 //   only when every precondition holds; otherwise it reports `kept` or `not-applicable`. It never
@@ -56,7 +59,7 @@
 // - `appendix-merge` (reads only): replaces the one appendix block of a pull-request body or
 //   appends it, for `pr`'s `Appendix:` input; it reads the run's appendix only when its SHA-256 is
 //   the one `pr-appendix` recorded, and never while a security blocker stands on a repository whose
-//   recorded visibility is not `private`.
+//   recorded visibility is not `private` or a `worktree-location-conflict` blocker stands at all.
 // - `ledger-list` (reads only) and `ledger-prune`: `cleanup`'s inventory and removal of run
 //   ledgers. A ledger is removable only when its run is closed and it produced no pull request or
 //   its pull request is merged or closed, as the caller's `pr-read` stated; an unavailable forge
@@ -193,11 +196,25 @@ export const BLOCKER_KINDS = Object.freeze([
   'security',
   'appendix-scan',
   'post-branch-failure',
+  // A worktree path that an instruction in the run's loaded context forbids, with no machine-level
+  // base declared (`shared/worktree-conflict-stop.md`). It carries no summary, withholds the
+  // appendix and closes without publishing.
+  'worktree-location-conflict',
   // A `blocker` row of the question-site table; it always carries that row's `site`.
   'site-blocker',
 ]);
 // The blocker kinds that always name the question site they arose at.
 export const SITE_REQUIRED_KINDS = Object.freeze(['site-blocker']);
+// The blocker kind whose ledger entry is `{kind, recordedAt}` and nothing else: no summary, no
+// site, no local-only reference. Its computed path and the forbidding instruction stay in the
+// local report, so nothing of it can reach an appendix or a forge.
+export const WORKTREE_LOCATION_CONFLICT = 'worktree-location-conflict';
+// The outcomes a run holding a worktree-location-conflict blocker closes with: nothing published,
+// or on an issue source the plan pull request it left as it was.
+export const WORKTREE_LOCATION_CONFLICT_OUTCOMES = Object.freeze([
+  'plan-pull-request-unchanged',
+  'no-pull-request',
+]);
 // The pull-request states `cleanup` passes to `ledger-prune`: `pr-read`'s `state` (`open`,
 // `closed`, `merged`), or `unavailable` when the forge could not be read.
 export const PULL_REQUEST_STATES = Object.freeze(['open', 'closed', 'merged', 'unavailable']);
@@ -207,10 +224,11 @@ export const RUN_OUTCOMES = Object.freeze([
   'pull-request',
   'plan-only-pull-request',
   'appendix-update',
-  // A plan pull request whose appendix a blocker left unchanged: on an issue source a public security blocker, a
-  // blocked appendix or a failed appendix-only update; on a plan source a rerun whose update of
-  // the verified draft failed. Its appendix stayed as it was, and the ledger records that pull
-  // request so `cleanup` keeps it while the pull request is open.
+  // A plan pull request whose appendix a blocker left unchanged: on an issue source a public
+  // security blocker, a worktree location conflict, a blocked appendix or a failed appendix-only
+  // update; on a plan source a rerun whose update of the verified draft failed. Its appendix
+  // stayed as it was, and the ledger records that pull request so `cleanup` keeps it while the
+  // pull request is open.
   'plan-pull-request-unchanged',
   'no-pull-request',
 ]);
@@ -1024,6 +1042,8 @@ async function decisionRecordOperation(input, deps) {
 async function blockerRecordOperation(input, deps) {
   if (isObject(input) && input.kind === 'security') {
     closed(input, ['cwd', 'runId', 'kind', 'localOnly'], ['site'], 'input');
+  } else if (isObject(input) && input.kind === WORKTREE_LOCATION_CONFLICT) {
+    closed(input, ['cwd', 'runId', 'kind'], [], 'input');
   } else {
     closed(input, ['cwd', 'runId', 'kind', 'summary'], ['site'], 'input');
   }
@@ -1038,7 +1058,8 @@ async function blockerRecordOperation(input, deps) {
   const details = input.site === undefined ? {} : { site: input.site };
   if (input.kind === 'security')
     details.localOnly = localOnlyReference(input.localOnly, 'localOnly');
-  else details.summary = text(input.summary, 'summary', LIMITS.summary);
+  else if (input.kind !== WORKTREE_LOCATION_CONFLICT)
+    details.summary = text(input.summary, 'summary', LIMITS.summary);
   const ctx = await rootContext(input, deps);
   const ledger = await openLedger(ctx, input.runId);
   ledger.blockers.push(blockerEntry(input.kind, details, deps));
@@ -1189,16 +1210,20 @@ function storedBaseMove(ledger) {
 // a conflict left unresolved with the branch unchanged, or a merge that could not be checked.
 export const DELIVERY_BASE_RESULTS = Object.freeze(['none', 'resolved', 'unresolved', 'unchecked']);
 // Why a conflict stayed unresolved: `mergeGate.conflictResolution` is `off` (or unreadable), no
-// clean checkout was available, or the one attempt failed at its resolver, verification, review or
-// merge.
+// clean checkout was available, the attempt's checkout location is forbidden
+// (`worktree-location-conflict`, which at this step records no blocker), or the one attempt failed
+// at its resolver, verification, review or merge.
 export const DELIVERY_BASE_UNRESOLVED_REASONS = Object.freeze([
   'conflict-resolution-off',
   'checkout-unavailable',
+  'worktree-location-conflict',
   'resolver-abort',
   'verification-failed',
   'review-failed',
   'merge-failed',
 ]);
+// The unresolved reasons of an attempt that never had a checkout.
+const NO_CHECKOUT_REASONS = Object.freeze(['checkout-unavailable', 'worktree-location-conflict']);
 export const DELIVERY_CONFLICT_RESOLUTION_MODES = Object.freeze(['off', 'ask', 'auto']);
 export const DELIVERY_VALIDATION_MODES = Object.freeze(['full', 'quick']);
 const DELIVERY_BASE_FIELDS = Object.freeze([
@@ -1328,8 +1353,8 @@ function conflictedPathList(value, conflictCount) {
 // unavailable proof, `reason` one of MERGE_PROOF_UNAVAILABLE_REASONS. `resolved`: `ask` or `auto`,
 // a validation mode, `mergeOid` and `checkout`. `unresolved`: a reason of
 // DELIVERY_BASE_UNRESOLVED_REASONS; `conflict-resolution-off` pairs with `off` and no checkout,
-// `checkout-unavailable` names no checkout either, every other reason names the checkout of the
-// attempt.
+// `checkout-unavailable` and `worktree-location-conflict` name no checkout either, every other
+// reason names the checkout of the attempt.
 // `branch`, the delivery branch, is set exactly when `checkout` is.
 function validateDeliveryBase(input) {
   objectId(input.mergeBaseOid, 'mergeBaseOid');
@@ -1376,7 +1401,7 @@ function validateDeliveryBase(input) {
   if (off !== (input.conflictResolution === 'off')) {
     invalid('reason conflict-resolution-off pairs exactly with conflictResolution off');
   }
-  if (off || input.reason === 'checkout-unavailable') {
+  if (off || NO_CHECKOUT_REASONS.includes(input.reason)) {
     nullField(input.checkout, 'checkout');
     nullField(input.branch, 'branch');
     if (off) nullField(input.validationMode, 'validationMode');
@@ -1689,6 +1714,20 @@ async function runCloseOperation(input, deps) {
   const ledger = await openLedger(ctx, input.runId);
   if (input.outcome === 'appendix-update' && ledger.source.kind !== 'issue') {
     invalid('appendix-update requires an issue source');
+  }
+  // A worktree location conflict publishes nothing: the run closes without a pull request, or on
+  // an issue source with the plan pull request it left unchanged, like a public security blocker.
+  if (worktreeLocationConflict(ledger)) {
+    if (!WORKTREE_LOCATION_CONFLICT_OUTCOMES.includes(input.outcome)) {
+      invalid(
+        `a worktree-location-conflict blocker closes only with ${WORKTREE_LOCATION_CONFLICT_OUTCOMES.join(' or ')}`,
+      );
+    }
+    if (input.outcome === 'plan-pull-request-unchanged' && ledger.source.kind !== 'issue') {
+      invalid(
+        'a worktree-location-conflict blocker keeps a plan pull request only on an issue source',
+      );
+    }
   }
   // The closed ledger is written first and the claim released only afterwards, whatever the
   // outcome and whatever blockers stand: a failed ledger write leaves the run open with its claim,
@@ -2182,6 +2221,7 @@ export function renderAppendix(ledger, { planPullRequest } = {}) {
     for (const [index, entry] of ledger.blockers.entries()) {
       const neutral =
         entry.kind === 'security' ||
+        entry.kind === WORKTREE_LOCATION_CONFLICT ||
         entry.localOnly !== undefined ||
         typeof entry.summary !== 'string' ||
         entry.summary.trim() === '';
@@ -2239,6 +2279,12 @@ function publicSecurityBlocker(ledger) {
   );
 }
 
+// A worktree location conflict on any repository: the run publishes nothing, so no appendix is
+// rendered or merged whatever its visibility.
+function worktreeLocationConflict(ledger) {
+  return ledger.blockers.some((entry) => entry.kind === WORKTREE_LOCATION_CONFLICT);
+}
+
 async function prAppendixOperation(input, deps) {
   closed(input, ['cwd', 'runId'], ['planPullRequest'], 'input');
   requireRunId(input.runId);
@@ -2251,6 +2297,11 @@ async function prAppendixOperation(input, deps) {
     withdrawAppendix(ledger);
     await writeLedger(ctx, ledger);
     return { status: 'withheld', reason: 'public-security-blocker' };
+  }
+  if (worktreeLocationConflict(ledger)) {
+    withdrawAppendix(ledger);
+    await writeLedger(ctx, ledger);
+    return { status: 'withheld', reason: WORKTREE_LOCATION_CONFLICT };
   }
   const { appendix, sanitized } = renderAppendix(ledger, {
     planPullRequest: input.planPullRequest,
@@ -2356,6 +2407,9 @@ async function appendixMergeOperation(input, deps) {
       'APPENDIX_WITHHELD',
       'a security blocker on a non-private repository withholds the appendix',
     );
+  }
+  if (worktreeLocationConflict(ledger)) {
+    fail('APPENDIX_WITHHELD', 'a worktree-location-conflict blocker withholds the appendix');
   }
   const directory = runDirectory(ctx, ledger.runId);
   await assertDirectoryChain(ctx.cwd, directory);

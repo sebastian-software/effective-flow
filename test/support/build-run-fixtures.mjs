@@ -545,6 +545,7 @@ export async function preparedForSourceOnlyPlan(t, refusal, additionalRoots = []
         executionRoot: fx.targetExecutionRoot,
         branch: 'feature',
         baseHead: fx.input.execution.head,
+        reuseBase: { baseRef: 'develop', localBaseBranch: 'develop', branchSource: 'adopted' },
         authority: {
           kind: 'source',
           source: 'instruction',

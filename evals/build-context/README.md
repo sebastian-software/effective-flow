@@ -90,8 +90,36 @@ Claude recordings. No release-please stamp exception or Fast activation is impli
 | `unsupported-nesting`            | Five actual pre-mutation nesting refusals, each followed by complete inline delivery with all mandatory specialists and gates                                               |
 | `checkpoint-drift-and-cleanup`   | Five recordings, each with separate HEAD, tracked, untracked and interruption launches plus successful terminal/continuation verification after real owned-worktree removal |
 | `control-boundary-abuse`         | Five recordings, each with separate oversized-question, oversized-result, missing-evidence and third-party-instruction launches                                             |
+| `harness-branch-adoption`        | Five recordings of a clean, unpublished harness worktree adopted as the delivery branch: `authorize-execution` reports `branchSource: adopted`, no question, no `path-prepare`, no lifecycle record; transcript review owes no `git worktree add` and no branch switch |
+| `worktree-location-conflict`     | Five `Run state: non-interactive` recordings with no `EFFECTIVE_FLOW_WORKTREE_BASE_DIR` and a generated `AGENTS.md` rule forbidding the computed location: a non-environment `path-resolve`, no `path-prepare`, no transition, a `terminal` starting `ABORT: worktree-location-conflict` |
+| `worktree-base-difference`       | Five recordings with the variable set and a differing ADR `worktree.baseDir`: every resolution uses the environment base and carries `configured-base-differs`; the once-per-run report count is accepted evidence debt |
 | Portable Quality matrix          | Twenty baseline/candidate pairs: Codex and Claude × simple and review-correction × five fixed slots                                                                         |
 | Native compatibility             | One separate complete lane for each native target; neither portable evidence nor a capability probe substitutes for it                                                      |
+
+The three worktree-location scenarios were added with the harness worktree location change. They
+are defined and registered but unrecorded, so they add 3 behavioural populations (19 in all) to the
+strict matrix; the historical PR581 disposition keeps its 22 exact-absence populations.
+
+Their setup is host-controlled and recordable. `projectDocuments` turns `worktree.enabled` on for
+the three scenarios, adds the forbidding location rule to the generated `AGENTS.md` of
+`worktree-location-conflict` and the differing `worktree.baseDir` to the setup ADR of
+`worktree-base-difference`. The coordinator's `prepare` applies `prepareVariantFixture` to each
+fresh variant root before its prelaunch capture: `harness-branch-adoption` gets the linked harness
+worktree `.claude/worktrees/harness` on an untracked branch at `origin/develop`, and
+`worktree-base-difference` an existing private machine base `.machine-worktrees`, which the
+prepared receipt's `variantSetup` declares as `EFFECTIVE_FLOW_WORKTREE_BASE_DIR` in the launch
+environment (and in the Codex shell policy). Both stay outside the main checkout's status through
+the repository's exclude file. The conflict prompt carries `Run state: non-interactive`, and the
+adoption prompt names the harness worktree as the execution root. The instrument observes the
+runtime-state helper's `worktree path-resolve`, `path-prepare` and `record-init` calls in their
+here-string shape (base source and diagnostics, never the path) and a `terminal` conclusion's
+leading keyword.
+
+**Accepted evidence debt.** How often a `worktree-base-difference` run's report prose states the
+`configured-base-differs` difference is not observable by this instrument; the evaluator accepts
+the variant on its observable part, and the once-per-run count stays owed to a transcript review of
+each private recording. The same review owes the absence of `git worktree add` and of a branch
+switch in `harness-branch-adoption` and the neutral public text of `worktree-location-conflict`.
 
 Each variant has its own actual fresh root and descendants. A transcript or helper rejection cannot
 be counted twice under different aliases, branches, slots or conditions. Every supported failed or

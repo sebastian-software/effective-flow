@@ -128,8 +128,8 @@ Targeted and Status offer it after the configuration write. In Claude Code, the 
 each non-destructive or bounded helper operation: the runtime-state helper operations
 (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
 `memory migrate-directory`, `commit create`, `review open-report`, `review write-report`,
-`worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
-`ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
+`worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `worktree path-resolve`, `worktree path-prepare`, `worktree reuse-facts`,
+`cleanup plan`, `ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
 `presence list`, `presence release`, `planning-claim key`, `planning-claim acquire`,
 `planning-claim release`, `planning-claim list`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
 `config-resolve.mjs conflict-validation`, `config-resolve.mjs review-fix-validation`, the four read-only `conflict-validation.mjs` operations,
@@ -186,8 +186,8 @@ project-setup ADR.
 
 Records and locks change only through the `worktree` and `cleanup` operations of the
 runtime-state helper; prose never writes or deletes them
-([Build system](build-system.md#guards)). `worktree record-init`, `transition`, `inspect` and
-`resume-check`, `cleanup plan` and the `ledger` operations are allowlisted. The destructive
+([Build system](build-system.md#guards)). `worktree record-init`, `transition`, `inspect`,
+`resume-check`, `path-resolve`, `path-prepare` and `reuse-facts`, `cleanup plan` and the `ledger` operations are allowlisted. The destructive
 `worktree remove` and `cleanup apply` are not, so the user confirms once and the whole selection runs
 as one call. The delivery ledger of a `deliver` run is part of the same runtime state: a private file
 below `worktree-runs/ledgers/`, at most 256 KiB, deleted with its record
@@ -197,6 +197,52 @@ Merge-gate run-presence markers are the same kind of runtime state: one file per
 `.effective-flow/merge-gate-presence/`, written only through the state helper's `presence` group
 (`register`, `refresh`, `list`, `release`, and cleanup's `prune`, which removes a marker only when
 its run's wisdom file is absent). They add no configuration key.
+
+### Machine-level worktree base
+
+`EFFECTIVE_FLOW_WORKTREE_BASE_DIR` lets a machine declare where Effective Flow creates its
+worktrees, without a machine path entering the repository. It is an environment variable, not an
+ADR key, and it is available from the first release containing this change. Precedence, resolved
+by the state helper's `worktree path-resolve` for every worktree-creating workflow:
+
+1. `EFFECTIVE_FLOW_WORKTREE_BASE_DIR`, when set and not empty: an absolute path to an existing
+   directory. It wins over both `worktree.baseDir` and `applyReview.worktree.baseDir`.
+2. The ADR key: `worktree.baseDir`, or `applyReview.worktree.baseDir` for `apply-review`, relative
+   values against `RUNTIME_STATE_ROOT`.
+3. The default `.effective-flow/.worktrees`.
+
+Worktrees then live at `<base>/<repo>/<SESSION_ID>…`. An ADR value that differs from the variable
+is reported once per run and otherwise ignored. A relative or missing variable value, a missing or
+non-directory configured base outside `.effective-flow/` (`WORKTREE_BASE_INVALID`, naming the
+`variable` or the `key`), a base or ancestor directory writable by another user or group (the
+user's private group and a root-owned sticky directory pass), a symbolic link below the base, an
+existing leaf, or a sandbox that denies a write in an existing parent (which `path-prepare` probes
+with a directory it removes) or creating a parent stops the run before anything is created; nothing falls back to the ADR value or
+the default. Lifecycle records keep schema version 1: a worktree created under an earlier base stays
+removable by `effective-flow cleanup` and visible to `worktree inspect` after the variable changes.
+
+Set the variable only in a **user-level** scope of the host, together with the host's write access
+for that directory:
+
+| Host        | Variable                                                                       | Write access for the base                                                                      |
+| ----------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Claude Code | `env` in `~/.claude/settings.json`                                             | an additional directory (`permissions.additionalDirectories` in the same file, or `--add-dir`) |
+| Codex       | `shell_environment_policy` in `~/.codex/config.toml` (e.g. its `set` table)    | `sandbox_workspace_write.writable_roots` in `~/.codex/config.toml`                             |
+| T3 Code     | the provider environment of the Claude or Codex provider in T3 Code's settings | the provider's own sandbox settings above                                                      |
+
+Never set it in a project-level `.claude/settings.json` or `.codex/config.toml`: a repository could
+then steer where worktrees are created. The helper cannot tell which scope set the variable; the
+[decision record](../adr/harness-dictated-worktree-locations.md) names this residual risk.
+
+Without the variable, a run whose loaded instructions (system context, `CLAUDE.md` or `AGENTS.md`,
+host runtime information) forbid the resolved worktree path creates nothing there
+([`worktree-conflict-stop`](../../src/shared/worktree-conflict-stop.md)). Run-state signals alone
+classify the run. `autopilot` records a `worktree-location-conflict` blocker and publishes nothing,
+except at its delivery-base attempt worktree, where the base conflict stays `unresolved` with that
+reason and the draft is still published. `Run state: non-interactive` or `relayed`, an Issue Buddy
+pass and a leaf or subagent without a user channel return `ABORT: worktree-location-conflict`.
+Every other run, a same-session workflow delegation and `Run state: gated` included, asks whether to
+set the variable and restart or to abort. Public text never names the path or the instruction.
 
 ## Resolution order and ownership
 
@@ -416,7 +462,9 @@ present, Claude Code offers no `model` parameter on its Agent tool; the orchestr
 forced model by that missing parameter, passes only the tier's effort, says so once, and the
 workers run on the forced model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort of every subagent; Effective Flow
 documents it and does not detect it. The tiers read no environment variable. The Fast pilot checks the force variable's presence, and
-its value is never read, relayed, displayed or persisted. The one other environment read is
+its value is never read, relayed, displayed or persisted. Besides `EFFECTIVE_FLOW_WORKTREE_BASE_DIR`
+in the state helper ([Machine-level worktree base](#machine-level-worktree-base)), the one other
+environment read is
 `CLAUDE_CODE_SESSION_ID` (with `CLAUDE_CONFIG_DIR` for the root) in the `claude-subagent-transcript`
 adapter of `model-selection verify`, which locates the child's own transcript under
 `<root>/<project>/<session>/subagents/`, where `<root>` is `$CLAUDE_CONFIG_DIR/projects` when that

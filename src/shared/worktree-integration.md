@@ -132,7 +132,8 @@ At the start of the actual implementation work, determine the effective mode:
   in-place work ("without worktree", "directly on the current branch").
 - When the current receipt points to an existing linked or harness-native worktree rather than
   the repository's main worktree, reuse it as `harness-managed`. Do not create a nested delivery
-  worktree, switch its branch, repeat automatic setup or remove it during handback.
+  worktree, repeat automatic setup or remove it during handback, and switch its branch only as
+  `harness-branch-reuse` creates a delivery branch (see "Worktree execution" step 1).
 - **Delivery is active as soon as work happens in a worktree or on a dedicated delivery
   branch** – so in the default case always. In addition, delivery is active when the
   user explicitly requests PR, branch or merge work (even with in-place work; then
@@ -188,28 +189,40 @@ Carry this state through baseline validation and every later phase:
 - for an Effective Flow-created worktree, its lifecycle record ID.
 
 For a reused `harness-managed` or user-managed worktree or branch, both creation flags stay
-false and no lifecycle record is created. For in-place execution without delivery, no delivery
+false and no lifecycle record is created; only a `harness-branch-reuse` `created` branch sets the
+branch flag, when it is created. For in-place execution without delivery, no delivery
 artifact is recorded.
 
 ### Worktree execution
+
+```lazy-include
+worktree-conflict-stop
+when: step 2's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
+```lazy-include
+harness-branch-reuse
+when: step 1 reuses a linked or harness-native checkout while delivery is active
+```
 
 When worktree execution is active:
 
 1. If the current receipt identifies a linked or harness-native worktree, keep that root and
    checkout identity and mark setup as `externally managed`. A detached harness-native checkout
-   remains valid only at its pinned OID. If delivery requires a branch, create or adopt it
-   through the harness-supported flow and issue a new verified receipt before committing; never
-   silently switch a harness-managed worktree. The linked or native checkout becomes
-   `EXECUTION_ROOT`; the porcelain main checkout remains `RUNTIME_STATE_ROOT`.
-2. Otherwise `REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`, never of a linked or
-   harness checkout; use `worktree.baseDir` (default `.effective-flow/.worktrees`) as the base dir. Worktree path:
-   `BASE_DIR/REPO_NAME/SESSION_ID`. Resolve a relative `BASE_DIR` against
-   `RUNTIME_STATE_ROOT`, never against a disposable worktree. When that path is below
-   `.effective-flow/`, resolve every missing base or parent directory that will be created.
-   From `RUNTIME_STATE_ROOT`, apply the owning workflow's loaded “Runtime-state write safety”
-   contract to each exact directory path immediately before its `mkdir`; a guard for the
-   eventual worktree path does not authorize creating its parents. Apply the contract again to
-   the exact `WORKTREE_PATH` immediately before `git worktree add`.
+   remains valid only at its pinned OID. While delivery is active, `harness-branch-reuse` decides
+   its delivery branch: it adopts the host branch, creates one immediately before the first commit,
+   or keeps the checkout (`existing`), whose missing branch is created or adopted through the
+   harness-supported flow with a new verified receipt before committing; never silently switch a
+   harness-managed worktree. The linked or native checkout becomes `EXECUTION_ROOT`; the porcelain
+   main checkout remains `RUNTIME_STATE_ROOT`.
+2. Otherwise `WORKTREE_PATH` is the `worktreePath` of `worktree path-resolve` with `cwd` the
+   verified `RUNTIME_STATE_ROOT`, never a linked or harness checkout, the run's purpose (here
+   `delivery`) and `sessionId`. Then, unless `worktree-conflict-stop` stops the run, create its
+   parent directories with `worktree path-prepare` on the same input; a build run's
+   `authorize-execution` comes between the stop and `path-prepare`. Both calls and their refusals
+   are `worktree-lifecycle`'s "Helper operations"; a refusal stops before anything is created. When `WORKTREE_PATH` is below
+   `.effective-flow/`, apply the owning workflow's loaded “Runtime-state write safety” contract
+   to it from `RUNTIME_STATE_ROOT` immediately before `git worktree add`.
    Create the worktree and delivery branch with
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, where `<BASE_REF>` is the
    recorded resolved base ref, then immediately issue and verify an `effective-flow-created`
@@ -411,7 +424,8 @@ stop and report the conflict instead of overwriting history.
    documentation deliverables plus the plan state from step 1. An unselected changed path blocks
    handback rather than being swept into the commit. Under an Automation caller's scored decision
    mode, first run the pre-commit security classification of `scored-decisions`; a `local-only`
-   finding stops the handback here, before anything is staged, committed or pushed.
+   finding stops the handback here, before anything is staged, committed or pushed. A pending
+   `harness-branch-reuse` `created` branch is created before the first commit.
    - When residual output exists, stage exclusively its literal known paths, reconcile the complete
      staged set, and record the exact staged-tree OID and pre-commit `HEAD`. Delegate the actual
      commit to `{{SKILL:commit}}` with the full verified execution-location receipt, expected branch,
@@ -511,7 +525,8 @@ source path from a removed execution worktree. Suppressed delegations still emit
 6. **Restore checkout:** For in-place delivery that switched the current checkout, after
    successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
    `auto`, to the recorded resolved local base branch, provided the working tree is clean.
-   Do not switch a reused harness-managed checkout. If an applicable switch-back fails,
+   Do not switch a reused harness-managed checkout back, including from a branch
+   `harness-branch-reuse` created there. If an applicable switch-back fails,
    explicitly report the actual branch as a side effect.
 
 ### Build user pause
