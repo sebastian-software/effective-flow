@@ -116,6 +116,14 @@ last one the report lists the observed terminal candidates; check the displayed 
 and persist it with `/effective-flow setup`, exactly as for the started state. An unresolvable
 `externalDoneState` never fails a run – the merge already succeeded – it only leaves the issue open.
 
+An `incomplete` issue whose only gap is unticked task-list entries can carry one more note, about
+the `Tick & close` offer. It appears only when the missing qualifying review is the sole condition
+the issue failed, and it is advice for the next run, since this one has already passed the offer.
+On GitHub the report suggests running `/effective-flow review <PR>` on the final head before the
+next `merge-gate` run. On a `tea`-backed forge it says the offer is unavailable on this forge, and in
+hidden mode that it is unavailable in hidden mode, because a hidden review publishes no summary the
+gate could read.
+
 The row also gives you what the issue's canonical planning comment recorded as **open points** – the
 implementation-blocking decisions `/effective-flow plan-issue` left standing there rather than in the
 issue body. You get them for every issue the run assessed, whichever next action it named, and their

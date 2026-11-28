@@ -5165,7 +5165,10 @@ test('the retrospective slot is one contract section with closed signals T1 to T
     t3,
     /at least two relayed answers to the exceptional questions `checks-pending`, `reviews-unestablished`, `check-list-waiver`, `conflict-resolution` or `set-aside`/,
   );
-  assert.match(t3, /`iterate-approval`, `issue-done` and `iterate-in-flight` never count/);
+  assert.match(
+    t3,
+    /`iterate-approval`, `issue-tick-done`, `issue-done` and `iterate-in-flight` never count/,
+  );
   // T4: aborts after real domain work only; capability, entry and user-initiated endings never count.
   const t4 = boundedSlice(slot, 'T4', 'Report duty and visibility');
   assert.match(
@@ -13699,6 +13702,316 @@ test('the terminal-transition offer quotes no text and its option discloses the 
   // under the open-points exception, so an option claiming the whole run quotes none would assert
   // something false - and the falsehood would be pinned here, which is how it would survive.
   assert.match(setToDone, /this question quotes no criterion and no pull-request text/);
+});
+
+// Invariant: the tick offer is its own confirmation-gated question, deferred to its own fragment
+// that loads at step 3's tick-eligible decision and runs before `Issue done` is posed, with a fixed
+// question text, and a `Leave open` decline ticks and closes nothing.
+test('the tick offer is a separate gated question posed before Issue done and a decline writes nothing', () => {
+  const observationFragment = source('src/shared/merge-gate-issue-observation.md');
+  const fragment = source('src/shared/merge-gate-issue-tick-offer.md');
+  const observation = prose(fragment);
+
+  // The pointer sits between step 3 and step 4, whose one clause orders the tick loop first.
+  const pointers = [...observationFragment.matchAll(LAZY_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === 'merge-gate-issue-tick-offer',
+  );
+  assert.equal(pointers.length, 1, 'the observation steps defer the tick offer exactly once');
+  assert.match(pointers[0][2], /step 3[\s\S]*`tick-eligible`/);
+  ordered(
+    observationFragment,
+    '3. **Assess completion, without asking.**',
+    '```lazy-include\nmerge-gate-issue-tick-offer',
+    '4. **Offer the terminal transition, then perform it.**',
+    'header: Issue done',
+  );
+  assert.match(
+    prose(section(observationFragment, '### Observation steps')),
+    /the loaded `merge-gate-issue-tick-offer` fragment's `Tick & close` question and loop run first, before this step lists or poses `Issue done`/,
+  );
+  assert.doesNotMatch(observationFragment, /header: Tick & close/);
+
+  const headerIndex = fragment.indexOf('header: Tick & close');
+  assert.notEqual(headerIndex, -1, 'missing the Tick & close ask fence header');
+  const fenceStart = fragment.lastIndexOf('```ask', headerIndex);
+  assert.notEqual(fenceStart, -1, 'the Tick & close header must sit inside an ask fence');
+  const fence = fragment.slice(fenceStart, fragment.indexOf('\n```', fenceStart));
+  assert.match(fence, /when: at least one linked issue is tick-eligible per step 3/);
+  assert.match(fence, /label: Tick and set to done/);
+  assert.match(fence, /label: Leave open/);
+  // A decline: nothing ticked, nothing transitioned, body and state untouched.
+  const leaveOpen = fence.slice(fence.indexOf('label: Leave open'));
+  assert.match(leaveOpen, /Tick and transition nothing/);
+  assert.match(
+    leaveOpen,
+    /keeps its body, its state, its in-progress label and its container entry/,
+  );
+  // The confirmation discloses every write it authorizes.
+  const confirm = fence.slice(
+    fence.indexOf('label: Tick and set to done'),
+    fence.indexOf('label: Leave open'),
+  );
+  assert.match(confirm, /hash-guarded body update/);
+  assert.match(confirm, /effective-flow-issue-in-progress/);
+  assert.match(confirm, /container entry/);
+
+  assert.match(observation, /Pose the question once for the whole run, before `Issue done`/);
+  assert.match(observation, /A decline ticks and closes nothing/);
+  assert.match(
+    observation,
+    /A ticked issue never enters the `Issue done` listing, which holds only the issues step 3 rated `complete`, so a decline of either question leaves the other's set alone/,
+  );
+  assert.match(observation, /Steps 5 to 7 run after both questions/);
+});
+
+// Invariant: criterion display text is quoted only in the gated tick listing and its relayed
+// evidence; never in an ask fence, the Phase 6 report or the assessment, and raw text stays unquoted.
+test('the displayText quoting exception reaches the gated listing and relayed evidence only', () => {
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const tickOffer = source('src/shared/merge-gate-issue-tick-offer.md');
+  const observation = prose(section(fragment, '### Observation steps'));
+  const listing = prose(tickOffer);
+  const reportItems = prose(section(fragment, '### Observation report items'));
+  const lifecycle = prose(
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
+  );
+
+  assert.match(
+    observation,
+    /Two stated exceptions exist, each scoped to one venue and resting on its own reason: the recorded open points below, which only the Phase 6 summary quotes, and the criterion display text of step 4's tick listing, which only that listing and its relayed evidence quote/,
+  );
+  assert.match(
+    listing,
+    /It reaches this listing and the relayed `BLOCKED-USER issue-tick-done` evidence, the only place a relayed user sees the listing, and nowhere else: never the question's own fixed text, never the Phase 6 summary/,
+  );
+  assert.match(
+    listing,
+    /rendered from the `pr-acceptance-verdicts` record — the review's id or URL, its `commitSha` and `issue-<n>#criterion-<key8>: complete` — and never copied from a review body/,
+  );
+  // No ask fence of either fragment carries display text or any per-run data.
+  for (const [header, text] of [
+    ['Tick & close', tickOffer],
+    ['Issue done', fragment],
+  ]) {
+    const start = text.lastIndexOf('```ask', text.indexOf(`header: ${header}`));
+    const fence = text.slice(start, text.indexOf('\n```', start));
+    assert.doesNotMatch(fence, /displayText|display text/i, `${header} fence`);
+  }
+  // The Phase 6 report names outcomes by locators and never by criterion text.
+  assert.match(reportItems, /by locators and never by criterion text/);
+  assert.doesNotMatch(reportItems, /displayText/);
+  // The open points stay quoted by the summary alone, never by either listing.
+  assert.match(
+    observation,
+    /never this assessment, never either of step 4's listings, never a question/,
+  );
+  // The general contract scopes the exception rather than copying its detail.
+  assert.match(lifecycle, /its chat listing of each criterion's neutralized display text/);
+});
+
+// Invariant: "nothing enters late" keeps its force for the confirmed `Issue done` set, with exactly
+// one scoped clause for the separately confirmed tick set.
+test('the nothing-enters-late rule gains one scoped clause for the separately confirmed tick set', () => {
+  const observation = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
+  );
+
+  assert.match(
+    observation,
+    /Nothing that was not listed and confirmed enters this loop — the issues the tick loop closes are a separately confirmed set and never enter it/,
+  );
+  assert.match(
+    prose(source('src/shared/merge-gate-issue-tick-offer.md')),
+    /This loop's confirmed set only shrinks, and nothing that was not listed and confirmed enters it/,
+  );
+  assert.match(
+    observation,
+    /a smaller set stays inside that authorization while a larger one would not/,
+  );
+  // The general contract keeps its rule and scopes the one exception to the hosting fragment.
+  assert.match(lifecycle, /The confirmed set only ever shrinks, and nothing enters it late/);
+  assert.match(
+    lifecycle,
+    /A hosting fragment may define one further, confirmation-gated offer for an item that is `incomplete` only because entries of its own task list are unchecked/,
+  );
+  assert.match(
+    lifecycle,
+    /that nothing enters a confirmed set late, while the verdict rule above stays unchanged/,
+  );
+});
+
+// Invariant: the offer is fail-closed per issue: forge only, every capability probed, only one
+// unmet `complete` dimension, and any other case keeps today's verdict and behaviour.
+test('the tick offer is forge-only, capability-gated and leaves every other case unchanged', () => {
+  const observation = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
+  );
+
+  assert.match(
+    observation,
+    /Where the only unmet dimension of `complete` is unchecked entries of the issue's own task list, the verdict stays `incomplete`/,
+  );
+  assert.match(
+    observation,
+    /Only a forge issue can be, and only when the probe shows `issueUpdate`, `issueClose`, `prReviewsRead` and `collaboratorPermissionRead`; a missing one is named/,
+  );
+  assert.match(observation, /neither counted against the bounds above/);
+  assert.match(
+    observation,
+    /one `issue-acceptance-criteria` call with every such issue as `numbers`/,
+  );
+  assert.match(observation, /one dry `task-list-tick` over the body this step already read/);
+  assert.match(
+    observation,
+    /no review lists any of them `incomplete` or `undetermined`; a review that omits a key is neutral/,
+  );
+  assert.match(
+    observation,
+    /Every other case leaves the verdict and everything after it exactly as without this check/,
+  );
+  // GitHub gets the actionable hint; a tea-backed forge is told the offer cannot exist.
+  assert.match(
+    observation,
+    /on GitHub, the hint to run `[^`]*review[^`]*<PR>` on the final head before this gate/,
+  );
+  assert.match(observation, /on a `tea`-backed forge "tick offer unavailable on this forge"/);
+  // Hidden mode publishes no review summary, so no review can qualify and no review hint is given.
+  assert.match(
+    observation,
+    /in hidden mode "tick offer unavailable in hidden mode", because a hidden review publishes no summary; otherwise, on GitHub, the hint/,
+  );
+  // The own task list stays no signal by itself: only the confirmation ticks.
+  assert.match(
+    observation,
+    /this run ticks an entry only after step 4's `Tick & close` confirmation/,
+  );
+});
+
+// Invariant: a confirmed tick revalidates, writes through the hash-guarded body update, re-derives
+// the verdict, and closes through the existing transition re-read; a terminal issue replaces its outcome.
+test('a confirmed tick revalidates, writes hash-guarded, re-derives the verdict and closes through the re-read', () => {
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const observation = prose(source('src/shared/merge-gate-issue-tick-offer.md'));
+  const reportItems = prose(section(fragment, '### Observation report items'));
+
+  assert.match(
+    observation,
+    /its fresh criterion `key8` set must lie inside the listed set, and a fresh dry `task-list-tick` must return `remainingUnchecked: 0`/,
+  );
+  assert.match(
+    observation,
+    /write its `body` through `issue-update-body` — dry run, then `--apply` — with its `inputHash` as `expectedBodyHash`\. A `STALE_WRITE` ticks and closes nothing for that issue, is reported, and is never retried/,
+  );
+  assert.match(
+    observation,
+    /Re-read the issue, its sub-issues and the pull request, and re-derive the verdict by step 3's rules; only `complete` proceeds/,
+  );
+  assert.match(
+    observation,
+    /Close it through step 4's transition: `issue-close` dry run, then `--apply`, and the re-read that must show `terminal \(done\)`/,
+  );
+  assert.match(
+    observation,
+    /Loop items 1 and 4 apply step 4's three revalidation outcomes word for word, and the post-transition re-read replaces the recorded outcome as step 4 states/,
+  );
+  assert.match(observation, /A failed transition follows step 4's failure rule/);
+  // The report names every tick outcome, including the one that became terminal during the loop.
+  for (const outcome of [
+    /ticked and closed/,
+    /declined, still open with the unchanged closure guidance/,
+    /stale write, still open with nothing ticked/,
+    /no longer eligible on revalidation, naming the dimension/,
+    /ticked, but the pre-close verdict was no longer `complete`, with its reason/,
+    /ticked, but the transition failed with its blocker/,
+    /terminal during the tick loop, with its split outcome/,
+    /A non-interactive run reports the recommendation instead/,
+  ]) {
+    assert.match(reportItems, outcome);
+  }
+});
+
+// Invariant: a relayed run returns `issue-tick-done` before `issue-done`, one per dispatch; the
+// consumed answer is a once-per-run record so a relayed decline followed by an `issue-done` answer is
+// not re-asked; a non-interactive run writes nothing.
+test('the relayed tick question precedes issue-done, is never re-posed once consumed, and a non-interactive run writes nothing', () => {
+  const observation = prose(source('src/shared/merge-gate-issue-tick-offer.md'));
+  const mergeGate = prose(source('src/tools/merge-gate.md'));
+  const delegated = prose(source('src/shared/merge-gate-delegated-run.md'));
+
+  assert.match(
+    observation,
+    /returns `BLOCKED-USER issue-tick-done` before `BLOCKED-USER issue-done`, one per dispatch; a consumed `Tick and set to done` confirms exactly as a posed answer does/,
+  );
+  assert.match(
+    observation,
+    /once it exists, no later dispatch of the gate run poses `Tick & close` again, whatever its digest, and an issue that becomes tick-eligible only afterwards stays open/,
+  );
+  assert.match(
+    observation,
+    /non-interactive run poses nothing, ticks nothing, and carries the recommendation into the Phase-6 summary/,
+  );
+  // The relayed table row and the digest subject key for the new id.
+  assert.match(
+    mergeGate,
+    /\| `issue-tick-done` \| Phase 5\.5 step 4 in `merge-gate-issue-tick-offer`, posed before `issue-done`/,
+  );
+  assert.match(
+    mergeGate,
+    /`#<n>=<key8>\+<key8>…` per tick-eligible issue, `key8`s sorted, for `issue-tick-done`/,
+  );
+  // The once-per-run record lives in the delegated run's wisdom file.
+  assert.match(
+    delegated,
+    /the consumed `issue-tick-done` answer, once per gate run: its instance digest, its option and each listed issue's outcome/,
+  );
+});
+
+// Invariant: the consumed `issue-tick-done` outcomes reach Phase 6 through the always-loaded report
+// items, not the lazy tick-offer fragment: a relayed summary dispatch sees ticked issues already
+// terminal, records none tick-eligible, and never loads that fragment. The rule is stated once.
+test('the relayed tick outcomes reach Phase 6 through the always-loaded report item', () => {
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const reportItems = prose(section(fragment, '### Observation report items'));
+  const tickOffer = prose(source('src/shared/merge-gate-issue-tick-offer.md'));
+  const delegated = prose(source('src/shared/merge-gate-delegated-run.md'));
+
+  assert.match(
+    reportItems,
+    /A relayed run reports each outcome the consumed `issue-tick-done` record holds, even when the dispatch writing this summary observes that issue already terminal and step 3 therefore never assesses it/,
+  );
+  assert.doesNotMatch(tickOffer, /reach Phase 6/);
+  assert.match(
+    delegated,
+    /each listed issue's outcome, which the tick-outcome item of `### Observation report items` in the loaded `merge-gate-issue-observation` fragment reports/,
+  );
+  // The reader loads whenever Phase 5.5 runs, independent of any issue's tick eligibility.
+  assert.match(
+    source('src/shared/merge-gate-delegated-run.md'),
+    /```lazy-include\nmerge-gate-issue-observation\nwhen: Phase 5\.5 begins because a fresh read proves the merge or observer-only mode\n```/,
+  );
+});
+
+// Invariant: the acceptance summary lines the merge gate parses are pinned to one exact form, plus
+// the `reviewed-head` line binding the verdicts to the head they were collected at.
+test('the acceptance summary pins the criterion line and reviewed-head line formats the merge gate parses', () => {
+  const lens = prose(source('src/shared/review-acceptance-lens.md'));
+
+  assert.match(
+    lens,
+    /List each criterion as exactly one line: `- <source>#criterion-<key8>: complete` with nothing after it, or `- <source>#criterion-<key8>: <verdict> — <fixed reason>` for `incomplete` and `undetermined`, with the fixed reason above/,
+  );
+  assert.match(
+    lens,
+    /Open the list with the one line `reviewed-head: <headSha>`, the `headSha` the sources were collected at/,
+  );
+  assert.match(
+    lens,
+    /parses both line forms for an `issue-<n>` source before it offers to tick an issue's criteria, so never reword, wrap or quote them/,
+  );
+  assert.match(lens, /nothing parses it/);
 });
 
 // Invariant: criteria come only from a closed heading set, are never derived
@@ -26489,6 +26802,7 @@ const RELAYED_QUESTION_IDS = [
   'conflict-resolution',
   'set-aside',
   'ready-for-review',
+  'issue-tick-done',
   'issue-done',
   'iterate-in-flight',
   'iterate-approval',
@@ -26645,6 +26959,7 @@ test('the relayed question table carries the option labels of each owning ask fe
     ['conflict-resolution', source('src/shared/merge-gate-conflict-resolution.md'), 'Conflict'],
     ['set-aside', configuredReviewerRoute(), 'Findings'],
     ['ready-for-review', mergeGateDelegatedRun(repositoryRoot), 'Ready'],
+    ['issue-tick-done', source('src/shared/merge-gate-issue-tick-offer.md'), 'Tick & close'],
     ['issue-done', source('src/shared/merge-gate-issue-observation.md'), 'Issue done'],
     ['iterate-in-flight', source('src/tools/iterate.md'), 'In flight'],
     ['iterate-approval', source('src/tools/iterate.md'), 'Approval'],
@@ -26673,6 +26988,7 @@ test('every relayed gate returns its own question id, and no source names an id 
     [source('src/shared/merge-gate-conflict-resolution.md'), 'conflict-resolution'],
     [configuredReviewerRoute(), 'set-aside'],
     [mergeGateDelegatedRun(repositoryRoot), 'ready-for-review'],
+    [source('src/shared/merge-gate-issue-tick-offer.md'), 'issue-tick-done'],
     [source('src/shared/merge-gate-issue-observation.md'), 'issue-done'],
     [source('src/tools/iterate.md'), 'iterate-in-flight'],
     [source('src/tools/iterate.md'), 'iterate-approval'],

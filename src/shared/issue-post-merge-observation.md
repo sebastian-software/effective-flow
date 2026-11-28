@@ -105,6 +105,14 @@ Record one verdict per item from a closed vocabulary of three values:
 `incomplete` and `undetermined` are reported differently and treated identically: neither ever
 reaches the offer.
 
+**A hosting fragment may define one further, confirmation-gated offer** for an item that is
+`incomplete` only because entries of its own task list are unchecked — to tick exactly its listed
+criteria and then set it to done — and its eligibility reads, its chat listing of each criterion's
+neutralized display text and its separately confirmed set are scoped there: they are the only
+exceptions to this fragment's rules that only a `complete` verdict leads to an offer, that the
+open points are the single quoted text, that the pull request is read once for the whole run, and
+that nothing enters a confirmed set late, while the verdict rule above stays unchanged.
+
 **The item's recorded open points are observed as well — for the report, and for nothing else.** The
 richest record of what is still open in a tracker item is not its body but the canonical planning
 comment `{{SKILL:plan-issue}}` writes, which keeps its open points — the implementation-blocking

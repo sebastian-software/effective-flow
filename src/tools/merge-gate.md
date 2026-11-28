@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 985
+contextBudget: 990
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -114,6 +114,7 @@ consequence.
 | `conflict-resolution`   | `mergeGate.conflictResolution: ask` in `merge-gate-conflict-resolution`                                                                                                    | `Resolve`, `Report only`                       | `Resolve` commits and pushes one merge commit onto the head branch                                |
 | `set-aside`             | "The set-aside confirmation" in `merge-gate-configured-reviewer`                                                                                                           | `Confirm`, `Stop`                              | `Confirm` sets the listed findings aside, so they no longer block the merge                       |
 | `ready-for-review`      | "Draft ready for review" of Phase 4, a draft with a delivered implementation and no blocker                                                                                | `Mark ready and continue`, `Keep draft`        | `Mark ready and continue` marks the pull request ready for review and continues towards the merge |
+| `issue-tick-done`       | Phase 5.5 step 4 in `merge-gate-issue-tick-offer`, posed before `issue-done`                                                                                               | `Tick and set to done`, `Leave open`           | `Tick and set to done` ticks the listed criteria, then closes each listed issue still complete    |
 | `issue-done`            | Phase 5.5 step 4 in `merge-gate-issue-observation`                                                                                                                         | `Set to done`, `Leave open`                    | `Set to done` closes each listed issue; read each criterion, the question quotes none             |
 | `iterate-in-flight`     | `{{SKILL:iterate}}` Phase 1.5; never reached here, as every delegation carries `Review guard: established`                                                                 | `Wait`, `Proceed`, `Abort`                     | none                                                                                              |
 | `iterate-approval`      | `{{SKILL:iterate}}` Phase 2.5 approval                                                                                                                                     | `Yes`, `Adjust` (deselect listed durable keys) | `Yes` implements, pushes and replies for each listed item with its proposed outcome               |
@@ -126,8 +127,9 @@ this run delegated as `<key>=<proposed outcome>` (for a CI repair, the failing c
 SHA and the conflicted paths for `conflict-resolution`; `class=<class>`,
 `appendix=<appendixDigest>`, the SHA-256 of the raw appendix block or `none`, and
 `trust=<appendixTrust>` for `ready-for-review`; the eligible issue references for
-`issue-done`; the reviewer logins for `iterate-in-flight`; and none otherwise. A re-ask after the
-state drifted is a new instance.
+`issue-done`; `#<n>=<key8>+<key8>…` per tick-eligible issue, `key8`s sorted, for
+`issue-tick-done`; the reviewer logins for `iterate-in-flight`; and none otherwise. A re-ask after
+the state drifted is a new instance.
 
 The delegated run returns exactly one of:
 

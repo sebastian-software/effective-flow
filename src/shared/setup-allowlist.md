@@ -1,6 +1,6 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 82
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 84
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
@@ -79,7 +79,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 82 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 84 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

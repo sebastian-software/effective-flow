@@ -190,6 +190,7 @@ const REMOTE_OPERATIONS = new Set([
   'pr-read',
   'pr-acceptance-sources',
   'issue-acceptance-criteria',
+  'pr-acceptance-verdicts',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',
@@ -235,6 +236,7 @@ const LOCAL_OPERATIONS = Object.freeze([
   'sf-label-migration-plan',
   'marker-patch',
   'checklist-patch',
+  'task-list-tick',
   'body-hash',
   'issue-lifecycle-receipt-build',
   'issue-lifecycle-receipt-parse',
@@ -327,6 +329,8 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'pr-acceptance-sources': 'pullRequestRead',
   // Its issue reads gate the call; each permission read checks its own capability as it runs.
   'issue-acceptance-criteria': 'issueRead',
+  // Its review read gates the call; its `pr-read` and permission reads check their own.
+  'pr-acceptance-verdicts': 'prReviewsRead',
   'pr-comments-read': 'prCommentsRead',
   // A named entry, never an absent one. The operation gate tests `capabilities[key] === false`, so
   // an operation missing from this table is waved through unprobed on every provider — which for a
@@ -4489,6 +4493,8 @@ function localOperation(operation, input, options) {
       return () => patchMarkedBlock(input.body, input.patch ?? input);
     case 'checklist-patch':
       return () => patchChecklistEntry(input.body, input.patch ?? input);
+    case 'task-list-tick':
+      return () => tickTaskListCriteria(input.body, input.keys);
     case 'body-hash':
       return () => ({ hash: bodyHash(input.body) });
     case 'issue-lifecycle-receipt-build':
@@ -5457,27 +5463,32 @@ function headingText(raw) {
 // indentation) is not supported: it ends the open item instead of extending it. `positions[i]` is
 // item `i`'s 1-based section (one per matching heading) and its 1-based raw ordinal within that
 // section, counted before any empty or duplicate item is dropped, as Merge Gate's locator counts.
+// `lineIndices[i]` is the 0-based index of item `i`'s first line among the body's lines split at
+// every `\r\n`, `\r` or `\n`, which is what lets `task-list-tick` edit that one raw line.
 function sectionListItems(text, { headings, level }) {
   const lines = String(text ?? '')
     .replace(/\r\n?/g, '\n')
     .split('\n');
   const items = [];
   const positions = [];
+  const lineIndices = [];
   let headingFound = false;
   let sectionLevel = null;
   let section = 0;
   let ordinal = 0;
   let fence = null;
   let open = null;
+  let openLine = null;
   const close = () => {
     if (open !== null) {
       items.push(open);
       ordinal += 1;
       positions.push({ section, ordinal });
+      lineIndices.push(openLine);
     }
     open = null;
   };
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const fenceMatch = line.match(MARKDOWN_FENCE);
     if (fence !== null) {
       if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) {
@@ -5513,6 +5524,7 @@ function sectionListItems(text, { headings, level }) {
     if (item && !item[1].includes('\t') && item[1].length < 2) {
       close();
       open = item[2];
+      openLine = index;
       continue;
     }
     if (line.trim() === '') continue;
@@ -5523,7 +5535,7 @@ function sectionListItems(text, { headings, level }) {
     close();
   }
   close();
-  return { items, positions, headingFound };
+  return { items, positions, lineIndices, headingFound };
 }
 
 // `outcomes[i]` says what became of `texts[i]`: `kept` (with its criterion), `empty`, or
@@ -5591,9 +5603,10 @@ export function extractIssueAcceptanceCriteria(
 }
 
 // The `issue-acceptance-criteria` projection of one walk: every item up to the bound at its raw
-// section and ordinal. An empty or repeated item stays as `dropped: true` without display text; a
-// repeat names its kept first occurrence's ordinal in `duplicateOf`, plus that occurrence's section
-// in `duplicateOfSection` when it lies in an earlier section. An empty item names neither.
+// section and ordinal, a kept one with its `key8`. An empty or repeated item stays as
+// `dropped: true` without display text; a repeat names its kept first occurrence's ordinal in
+// `duplicateOf`, plus that occurrence's section in `duplicateOfSection` when it lies in an earlier
+// section. An empty item names neither.
 function issueCriteriaProjection(positions, outcomes) {
   return outcomes.map((outcome, index) => {
     const { section, ordinal } = positions[index];
@@ -5601,6 +5614,7 @@ function issueCriteriaProjection(positions, outcomes) {
       return {
         section,
         ordinal,
+        key8: outcome.criterion.key8,
         displayText: outcome.criterion.displayText,
         displayTruncated: outcome.criterion.displayTruncated,
         dropped: false,
@@ -5614,6 +5628,206 @@ function issueCriteriaProjection(positions, outcomes) {
     }
     return entry;
   });
+}
+
+// `task-list-tick`: a pure local transform for Merge Gate's confirmed tick offer. `keys` are all of
+// an issue's criterion `key8`s; each must name exactly one top-level item across every criteria
+// section of `body`, found by the same walk and key the acceptance lens uses, or the operation fails
+// and returns no body. An unchecked item gets `[x]` on its first line only; an `[x]`/`[X]` item is
+// `alreadyTicked` and a plain item `notTask`, both untouched, and every other byte survives, line
+// endings included. `remainingUnchecked` counts every unchecked task item left anywhere in the
+// result outside fenced code, at any indentation and inside a blockquote or an HTML comment too.
+// `inputHash` is the `body-hash` of the exact input, the `expectedBodyHash` of the write.
+//
+// The count is a safety bound, so it may over-count but must never skip a rendered item. A skipped
+// line is the only way to under-count, so the counter skips only a fence it can prove: one opened at
+// column 0, which no list item or blockquote can contain, by CommonMark's opener rule (a backtick
+// opener's info string holds no backtick, otherwise the line is inline code), outside an HTML block
+// of any of CommonMark's seven types, where a fence line is not a fence, until that block's end
+// condition (its end marker for types 1-5, a blank line for types 6 and 7), and closed by
+// CommonMark's closer rule (only spaces or tabs after the run). Lines inside an HTML block are
+// counted through. An indented fence is counted through, which can only add. Not modelled:
+// containers (an HTML block starts at up to three spaces even inside a list item or behind a `>`,
+// and the end of the item that holds it does not close it), an HTML-looking line inside an indented
+// fence, and the paragraph state type 7 reads, taken from the raw previous line, container markers
+// included. Each can misplace an HTML block and so hide the fence after it, so the count is the
+// number of lines this walk or the same walk without HTML blocks counts, each line once: an item is
+// skipped only if both models are wrong at its line.
+const TASK_LIST_KEY8 = /^[0-9a-f]{8}$/;
+const UNCHECKED_TASK_ITEM = /^\[ \](?:[ \t]|$)/;
+const TICKABLE_ITEM_LINE = /^([ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+)\[ \]/;
+
+function requireTaskListKeys(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    fail('INVALID_PAYLOAD', 'keys must be a non-empty array', { field: 'keys' });
+  }
+  for (const key of value) {
+    if (typeof key !== 'string' || !TASK_LIST_KEY8.test(key)) {
+      fail('INVALID_PAYLOAD', 'keys must contain eight-character lowercase hex keys', {
+        field: 'keys',
+      });
+    }
+  }
+  if (new Set(value).size !== value.length) {
+    fail('INVALID_PAYLOAD', 'keys must be distinct', { field: 'keys' });
+  }
+  return value;
+}
+
+const COMMONMARK_FENCE_LINE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
+const BLANK_LINE = /^[ \t]*$/;
+const HTML_BLOCK_TYPE6_TAGS =
+  'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|' +
+  'dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|' +
+  'hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|' +
+  'search|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul';
+const HTML_ATTRIBUTE = String.raw`[ \t]+[A-Za-z_:][\w.:-]*(?:[ \t]*=[ \t]*(?:[^\s"'=<>\x60]+|'[^']*'|"[^"]*"))?`;
+const HTML_TYPE1_TAG = '(?:pre|script|style|textarea)(?![A-Za-z0-9-])';
+// CommonMark's HTML block start conditions (type 6 names the tags of 0.29 and 0.31 alike); `end` is
+// the marker types 1-5 close on, searched after the start, and `null` the blank line of 6 and 7.
+const HTML_BLOCK_STARTS = [
+  {
+    start: /^ {0,3}<(?:pre|script|style|textarea)(?:[ \t>]|$)/i,
+    end: /<\/(?:pre|script|style|textarea)>/i,
+  },
+  { start: /^ {0,3}<!--/, end: /-->/ },
+  { start: /^ {0,3}<\?/, end: /\?>/ },
+  { start: /^ {0,3}<![A-Za-z]/, end: />/ },
+  { start: /^ {0,3}<!\[CDATA\[/, end: /\]\]>/ },
+  { start: new RegExp(`^ {0,3}</?(?:${HTML_BLOCK_TYPE6_TAGS})(?:[ \\t>]|/>|$)`, 'i'), end: null },
+  {
+    start: new RegExp(
+      `^ {0,3}(?:<(?!${HTML_TYPE1_TAG})[A-Za-z][A-Za-z0-9-]*(?:${HTML_ATTRIBUTE})*[ \\t]*/?>|</(?!${HTML_TYPE1_TAG})[A-Za-z][A-Za-z0-9-]*[ \\t]*>)[ \\t]*$`,
+      'i',
+    ),
+    end: null,
+    interruptsParagraph: false,
+  },
+];
+// A line after which no paragraph continues, beside a blank one and an indented code line: a heading,
+// a thematic break or a setext underline. Only type 7 reads it, since only type 7 cannot interrupt one.
+const NO_PARAGRAPH_LINE = /^ {0,3}(?:#{1,6}(?:[ \t]|$)|(?:[-*_=][ \t]*)+$)/;
+const INDENTED_CODE_LINE = /^(?: {4}|\t)/;
+
+// The open block's end condition, `closed` for a type 1-5 block ending on its own start line, or
+// `null` when the line starts no HTML block.
+function htmlBlockStart(raw, paragraph) {
+  for (const type of HTML_BLOCK_STARTS) {
+    const match = raw.match(type.start);
+    if (!match || (paragraph && type.interruptsParagraph === false)) continue;
+    if (type.end === null) return { end: null };
+    return type.end.test(raw.slice(match[0].length)) ? 'closed' : { end: type.end };
+  }
+  return null;
+}
+
+function countUncheckedTaskItems(text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const counted = walkUncheckedTaskItems(lines, true);
+  for (const index of walkUncheckedTaskItems(lines, false)) counted.add(index);
+  return counted.size;
+}
+
+// The indices of the lines one walk counts as unchecked task items.
+function walkUncheckedTaskItems(lines, htmlBlocks) {
+  let fence = null;
+  let html = null;
+  let paragraph = false;
+  const counted = new Set();
+  for (const [index, raw] of lines.entries()) {
+    const fenceLine = raw.match(COMMONMARK_FENCE_LINE);
+    if (fence !== null) {
+      if (
+        fenceLine &&
+        fenceLine[2][0] === fence[0] &&
+        fenceLine[2].length >= fence.length &&
+        BLANK_LINE.test(fenceLine[3])
+      ) {
+        fence = null;
+        paragraph = false;
+      }
+      continue;
+    }
+    const blank = BLANK_LINE.test(raw);
+    if (html !== null) {
+      if (html.end === null ? blank : html.end.test(raw)) html = null;
+      paragraph = false;
+    } else if (htmlBlocks && (html = htmlBlockStart(raw, paragraph)) !== null) {
+      if (html === 'closed') html = null;
+      paragraph = false;
+    } else if (
+      fenceLine &&
+      fenceLine[1] === '' &&
+      !(fenceLine[2][0] === '`' && fenceLine[3].includes('`'))
+    ) {
+      fence = fenceLine[2];
+      paragraph = false;
+      continue;
+    } else {
+      paragraph =
+        !blank && !NO_PARAGRAPH_LINE.test(raw) && (paragraph || !INDENTED_CODE_LINE.test(raw));
+    }
+    const item = raw.replace(/^(?:[ \t]*>)+/, '').match(MARKDOWN_LIST_ITEM);
+    if (item && UNCHECKED_TASK_ITEM.test(item[2])) counted.add(index);
+  }
+  return counted;
+}
+
+export function tickTaskListCriteria(body, keys) {
+  const text = requireString(body, 'body', { allowEmpty: true });
+  const wanted = requireTaskListKeys(keys);
+  const inputHash = bodyHash(text);
+  const { items, lineIndices } = sectionListItems(text, { headings: ISSUE_CRITERIA_HEADINGS });
+  const matches = new Map(wanted.map((key) => [key, []]));
+  for (const [index, item] of items.entries()) {
+    const criterion = normalizeCriterionText(item.match(MARKDOWN_CHECKBOX)?.[2] ?? item);
+    if (criterion === '') continue;
+    matches.get(criterionKey(criterion).key8)?.push(index);
+  }
+  for (const [key, found] of matches) {
+    if (found.length === 0) {
+      fail('TARGET_NOT_FOUND', 'no criterion item matches the key', { key8: key });
+    }
+    if (found.length > 1) {
+      fail('AMBIGUOUS_TARGET', 'more than one criterion item matches the key', {
+        key8: key,
+        matches: found.length,
+      });
+    }
+  }
+  // The split keeps each line ending as its own element, so joining restores the input exactly.
+  const parts = text.split(/(\r\n|\r|\n)/);
+  const ticked = [];
+  const alreadyTicked = [];
+  const notTask = [];
+  for (const [key, [index]] of matches) {
+    const box = items[index].match(MARKDOWN_CHECKBOX)?.[1];
+    if (box === undefined) {
+      notTask.push(key);
+      continue;
+    }
+    if (box !== ' ') {
+      alreadyTicked.push(key);
+      continue;
+    }
+    const part = lineIndices[index] * 2;
+    const replaced = parts[part].replace(TICKABLE_ITEM_LINE, '$1[x]');
+    if (replaced === parts[part]) {
+      fail('INVALID_PAYLOAD', 'criterion checkbox is not on its first line', { key8: key });
+    }
+    parts[part] = replaced;
+    ticked.push(key);
+  }
+  const result = parts.join('');
+  return {
+    body: result,
+    changed: result !== text,
+    ticked,
+    alreadyTicked,
+    notTask,
+    remainingUnchecked: countUncheckedTaskItems(result),
+    inputHash,
+  };
 }
 
 // A plan's criteria: the top-level checkbox items under `## Acceptance criteria` or
@@ -7129,6 +7343,221 @@ async function executeIssueAcceptanceCriteria(input, repository, runner, probe) 
   return { result: { issues, truncated: context.truncated }, commands: context.commands };
 }
 
+// ---------------------------------------------------------------------------------------------
+// pr-acceptance-verdicts: Merge Gate's read-only evidence for its tick offer
+//
+// The per-criterion verdicts a trusted `review <PR>` published on the merged head, read from the
+// pinned acceptance-summary lines of `review-acceptance-lens.md` and never from other prose. One
+// `pr-read` states the merged head (`raw.head.sha`; a caller `headSha` must equal it, `HEAD_MOVED`
+// otherwise) and whether the pull request is merged; only then, and only on GitHub, is
+// `pr-reviews-read` read. A review qualifies only when its body opens with the review marker, its
+// `commitSha` and its one `reviewed-head:` line both equal the merged head, it is submitted and
+// neither pending nor dismissed, and its author holds write permission. Every other review is named
+// in `excludedReviews` with its reason. A tea-backed forge binds no review to a head, so there
+// `reviewEvidence` is `unsupported-provider` and no review is read.
+
+const ACCEPTANCE_VERDICT_LINE =
+  /^- issue-(\d+)#criterion-([0-9a-f]{8}): (complete|incomplete|undetermined)(?: — (.+))?$/;
+const ACCEPTANCE_VERDICT_TOKEN = /issue-(\d+)#criterion-([0-9a-f]{8})/gi;
+const ACCEPTANCE_REVIEWED_HEAD_LINE = /^reviewed-head: (.*)$/;
+const QUALIFYING_REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED']);
+const ACCEPTANCE_VERDICTS_INPUT_KEYS = Object.freeze([
+  'cwd',
+  'number',
+  'pullRequest',
+  'issues',
+  'headSha',
+  'repository',
+  'remote',
+  'provider',
+  'teaLogins',
+  'probe',
+]);
+
+// Validated before the first provider call, so a malformed request never costs a probe or a read.
+function validatePrAcceptanceVerdictsInput(input) {
+  const unknown = Object.keys(input).filter((key) => !ACCEPTANCE_VERDICTS_INPUT_KEYS.includes(key));
+  if (unknown.length > 0) {
+    fail(
+      'INVALID_PAYLOAD',
+      `pr-acceptance-verdicts accepts only ${ACCEPTANCE_VERDICTS_INPUT_KEYS.join(', ')}`,
+      { keys: unknown },
+    );
+  }
+  requireString(input.cwd, 'cwd');
+  prNumber(input);
+  const { issues } = input;
+  if (!Array.isArray(issues) || issues.length === 0) {
+    fail('INVALID_PAYLOAD', 'issues must be a non-empty array', { field: 'issues' });
+  }
+  for (const number of issues) {
+    if (!Number.isSafeInteger(number) || number <= 0) {
+      fail('INVALID_PAYLOAD', 'issues must contain positive integers', { field: 'issues' });
+    }
+  }
+  if (new Set(issues).size !== issues.length) {
+    fail('INVALID_PAYLOAD', 'issues must be distinct', { field: 'issues' });
+  }
+  if (input.headSha !== undefined) requireAcceptanceHeadSha(input.headSha);
+}
+
+// The lines a reader of the rendered summary sees as its own: outside fenced code and not quoted.
+function acceptanceSummaryLines(body) {
+  const lines = [];
+  let fence = null;
+  for (const line of String(body).replace(/\r\n?/g, '\n').split('\n')) {
+    const fenceMatch = line.match(MARKDOWN_FENCE);
+    if (fence !== null) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      continue;
+    }
+    if (/^[ \t]*>/.test(line)) continue;
+    lines.push(line);
+  }
+  return lines;
+}
+
+// The reviewed head the summary states, or why it states none usable: exactly one line, a full SHA.
+function reviewedHeadOf(lines) {
+  const stated = lines
+    .map((line) => line.match(ACCEPTANCE_REVIEWED_HEAD_LINE)?.[1])
+    .filter((value) => value !== undefined);
+  if (stated.length === 0) return { reason: 'reviewed-head-missing' };
+  if (stated.length > 1 || !GIT_OBJECT_NAME.test(stated[0])) {
+    return { reason: 'reviewed-head-invalid' };
+  }
+  return { sha: stated[0] };
+}
+
+// One review's verdict per requested `issue`/`key8`. An exact line gives its verdict, except that a
+// `complete` with a suffix reads `undetermined`; a line naming a requested key without matching the
+// grammar, in any letter case, or lines that disagree on one key, read `undetermined` too.
+function reviewVerdicts(lines, requested) {
+  const seen = new Map();
+  const note = (issue, key8, verdict) => {
+    if (!requested.has(issue)) return;
+    const id = `${issue}#${key8}`;
+    const previous = seen.get(id);
+    seen.set(id, {
+      issue,
+      key8,
+      verdict: previous === undefined || previous.verdict === verdict ? verdict : 'undetermined',
+    });
+  };
+  for (const line of lines) {
+    const exact = line.match(ACCEPTANCE_VERDICT_LINE);
+    if (exact) {
+      const verdict = exact[3] === 'complete' && exact[4] !== undefined ? 'undetermined' : exact[3];
+      note(Number(exact[1]), exact[2], verdict);
+      continue;
+    }
+    for (const token of line.matchAll(ACCEPTANCE_VERDICT_TOKEN)) {
+      note(Number(token[1]), token[2].toLowerCase(), 'undetermined');
+    }
+  }
+  return [...seen.values()];
+}
+
+async function executePrAcceptanceVerdicts(input, repository, runner, probe) {
+  const context = {
+    repository,
+    runner,
+    probe,
+    commands: [],
+    permissions: new Map(),
+    truncated: [],
+  };
+  const number = prNumber(input);
+  const numbers = input.issues.slice(0, ACCEPTANCE_SOURCE_BOUNDS.issues);
+  if (input.issues.length > numbers.length) {
+    context.truncated.push({
+      source: 'issues',
+      bound: 'issues',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.issues,
+    });
+  }
+  const { raw, record } = await acceptanceForgeRead(context, 'pr-read', { number });
+  const headSha = typeof raw?.head?.sha === 'string' ? raw.head.sha.trim().toLowerCase() : '';
+  if (!GIT_OBJECT_NAME.test(headSha)) {
+    fail('INVALID_PAYLOAD', 'pull request states no head commit', { number });
+  }
+  if (input.headSha !== undefined) {
+    const expected = requireAcceptanceHeadSha(input.headSha);
+    if (expected !== headSha) headMoved(expected, headSha, 'pr-read');
+  }
+  const merged = raw?.merged === true || record.state === 'merged' || record.mergedAt !== undefined;
+  const reviews = [];
+  const excludedReviews = [];
+  let reviewEvidence = 'read';
+  if (!merged) reviewEvidence = 'not-merged';
+  else if (repository.provider !== 'github') reviewEvidence = 'unsupported-provider';
+  else {
+    const { record: listed } = await acceptanceForgeRead(context, 'pr-reviews-read', { number });
+    const marker = `<!-- ${commentMarker('pr-review')} -->`;
+    const requested = new Set(numbers);
+    for (const review of Array.isArray(listed) ? listed : []) {
+      const body = typeof review.body === 'string' ? review.body : '';
+      const lines = acceptanceSummaryLines(body);
+      const reviewedHead = reviewedHeadOf(lines);
+      // The cheap filters run first, so a permission read is spent only on an otherwise
+      // qualifying review.
+      let reason = null;
+      if (body.replace(/\r\n?/g, '\n').split('\n')[0] !== marker) reason = 'no-marker';
+      else if (review.state === 'PENDING') reason = 'pending';
+      else if (review.state === 'DISMISSED') reason = 'dismissed';
+      else if (!QUALIFYING_REVIEW_STATES.has(review.state)) reason = 'state-unknown';
+      else if (review.submittedAt === undefined) reason = 'not-submitted';
+      else if (String(review.commitSha ?? '').toLowerCase() !== headSha) reason = 'other-head';
+      else if (reviewedHead.sha === undefined) reason = reviewedHead.reason;
+      else if (reviewedHead.sha !== headSha) reason = 'reviewed-head-mismatch';
+      else {
+        const permission = await acceptanceAuthorPermission(context, review.author?.login);
+        if (permission === null) reason = 'author-permission-unavailable';
+        else if (!isSourceTrustPermission(permission)) reason = 'author-without-write-permission';
+      }
+      if (reason !== null) {
+        excludedReviews.push({ id: review.id ?? null, reason });
+        continue;
+      }
+      reviews.push({
+        id: review.id ?? null,
+        ...(typeof review.url === 'string' ? { url: review.url } : {}),
+        commitSha: headSha,
+        author: review.author?.login ?? null,
+        submittedAt: review.submittedAt,
+        verdicts: reviewVerdicts(lines, requested),
+      });
+    }
+  }
+  const issues = numbers.map((issue) => ({
+    number: issue,
+    reviews: reviews.map(({ verdicts, ...review }) => ({
+      ...review,
+      verdicts: Object.fromEntries(
+        verdicts
+          .filter((entry) => entry.issue === issue)
+          .map((entry) => [entry.key8, entry.verdict]),
+      ),
+    })),
+  }));
+  return {
+    result: {
+      pullRequest: { number, headSha, merged },
+      reviewEvidence,
+      issues,
+      excludedReviews,
+      truncated: context.truncated,
+    },
+    commands: context.commands,
+  };
+}
+
 // The pull request head changed since the review started: the whole operation fails closed.
 function headMoved(expected, actual, step) {
   fail('HEAD_MOVED', 'pull-request head differs from the reviewed head', {
@@ -7419,6 +7848,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
     if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
     if (operation === 'pr-acceptance-sources') validatePrAcceptanceInput(input);
     if (operation === 'issue-acceptance-criteria') validateIssueAcceptanceCriteriaInput(input);
+    if (operation === 'pr-acceptance-verdicts') validatePrAcceptanceVerdictsInput(input);
     if (
       operation === 'pr-status-read' &&
       input.includeCheckIdentity !== undefined &&
@@ -7561,6 +7991,17 @@ export async function executeOperation(operation, input = {}, options = {}) {
         runner,
         probe,
       );
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: { result: collected.result, commands: collected.commands },
+        dryRun: false,
+      };
+    }
+    // The pull request, its reviews and their authors' permissions, listed as above.
+    if (operation === 'pr-acceptance-verdicts') {
+      const collected = await executePrAcceptanceVerdicts(input, activeRepository, runner, probe);
       return {
         ok: true,
         operation,

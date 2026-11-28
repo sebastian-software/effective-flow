@@ -15383,8 +15383,22 @@ test('issue-acceptance-criteria: a trusted author yields ordinals and display te
       trust: 'trusted',
       headingFound: true,
       criteria: [
-        { section: 1, ordinal: 1, displayText: 'First', displayTruncated: false, dropped: false },
-        { section: 1, ordinal: 2, displayText: 'Second', displayTruncated: false, dropped: false },
+        {
+          section: 1,
+          ordinal: 1,
+          key8: criterionKey('First').key8,
+          displayText: 'First',
+          displayTruncated: false,
+          dropped: false,
+        },
+        {
+          section: 1,
+          ordinal: 2,
+          key8: criterionKey('Second').key8,
+          displayText: 'Second',
+          displayTruncated: false,
+          dropped: false,
+        },
       ],
     },
   ]);
@@ -15443,7 +15457,14 @@ test('issue-acceptance-criteria: empty and duplicate items keep raw ordinals and
   const body = '## Acceptance criteria\n- first\n- \n- first\n- third\n';
   const { result } = await criteriaRun({ issues: { 17: criteriaIssue(body) } });
   assert.deepEqual(result.issues[0].criteria, [
-    { section: 1, ordinal: 1, displayText: 'first', displayTruncated: false, dropped: false },
+    {
+      section: 1,
+      ordinal: 1,
+      key8: criterionKey('first').key8,
+      displayText: 'first',
+      displayTruncated: false,
+      dropped: false,
+    },
     { section: 1, ordinal: 2, displayText: null, displayTruncated: false, dropped: true },
     {
       section: 1,
@@ -15453,7 +15474,14 @@ test('issue-acceptance-criteria: empty and duplicate items keep raw ordinals and
       dropped: true,
       duplicateOf: 1,
     },
-    { section: 1, ordinal: 4, displayText: 'third', displayTruncated: false, dropped: false },
+    {
+      section: 1,
+      ordinal: 4,
+      key8: criterionKey('third').key8,
+      displayText: 'third',
+      displayTruncated: false,
+      dropped: false,
+    },
   ]);
 });
 
@@ -15462,9 +15490,30 @@ test("issue-acceptance-criteria: two criteria headings are two sections, ordinal
     '## Acceptance criteria\n- alpha\n- beta\n\n## Other\n\n## Akzeptanzkriterien\n- gamma\n- alpha\n';
   const { result } = await criteriaRun({ issues: { 17: criteriaIssue(body) } });
   assert.deepEqual(result.issues[0].criteria, [
-    { section: 1, ordinal: 1, displayText: 'alpha', displayTruncated: false, dropped: false },
-    { section: 1, ordinal: 2, displayText: 'beta', displayTruncated: false, dropped: false },
-    { section: 2, ordinal: 1, displayText: 'gamma', displayTruncated: false, dropped: false },
+    {
+      section: 1,
+      ordinal: 1,
+      key8: criterionKey('alpha').key8,
+      displayText: 'alpha',
+      displayTruncated: false,
+      dropped: false,
+    },
+    {
+      section: 1,
+      ordinal: 2,
+      key8: criterionKey('beta').key8,
+      displayText: 'beta',
+      displayTruncated: false,
+      dropped: false,
+    },
+    {
+      section: 2,
+      ordinal: 1,
+      key8: criterionKey('gamma').key8,
+      displayText: 'gamma',
+      displayTruncated: false,
+      dropped: false,
+    },
     {
       section: 2,
       ordinal: 2,
@@ -15622,6 +15671,448 @@ test('issue-acceptance-criteria: invalid input is rejected before any provider c
     assert.equal(outcome.ok, false, JSON.stringify(bad));
     assert.equal(outcome.error.code, 'INVALID_PAYLOAD', JSON.stringify(bad));
     assert.equal(runner.calls.length, 0, `no provider call for ${JSON.stringify(bad)}`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// task-list-tick and pr-acceptance-verdicts: Merge Gate's tick offer. Invariants protected: a tick
+// changes only the listed unchecked criterion lines and no other byte, fails on a zero or ambiguous
+// match, and counts every unchecked task item left; only a marked, submitted, writer-authored
+// review of the merged head whose summary names that head yields verdicts, and on a tea-backed
+// forge no review is read at all.
+// ---------------------------------------------------------------------------------------------
+
+const tickKey = (text) => criterionKey(text).key8;
+
+async function tickRun(body, keys) {
+  return executeOperation('task-list-tick', { body, keys }, {});
+}
+
+test('task-list-tick: ticks exactly the listed unchecked lines and keeps every other byte, CRLF included', async () => {
+  const body =
+    '# Title\r\n- [ ] foreign\r\n\r\n## Acceptance criteria\r\n- [ ] First one\r\n  continues here\r\n- [X] Second\r\n- Plain\r\n';
+  const envelope = await tickRun(body, [
+    tickKey('First one continues here'),
+    tickKey('Second'),
+    tickKey('Plain'),
+  ]);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  const result = envelope.data;
+  assert.equal(result.body, body.replace('- [ ] First one', '- [x] First one'));
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.ticked, [tickKey('First one continues here')]);
+  assert.deepEqual(result.alreadyTicked, [tickKey('Second')]);
+  assert.deepEqual(result.notTask, [tickKey('Plain')]);
+  // The foreign unchecked item outside the criteria section is left and counted.
+  assert.equal(result.remainingUnchecked, 1);
+  assert.equal(result.inputHash, bodyHash(body));
+});
+
+test('task-list-tick: a fenced checkbox is not counted, a nested one is', async () => {
+  const body =
+    '## Acceptance criteria\n- [ ] A\n  - [ ] nested\n\n## Notes\n```\n- [ ] fenced\n```\n';
+  const envelope = await tickRun(body, [tickKey('A')]);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.remainingUnchecked, 1);
+});
+
+test('task-list-tick: a zero or ambiguous match fails and returns no body', async () => {
+  const missing = await tickRun('## Acceptance criteria\n- [ ] A\n', ['00000000']);
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, 'TARGET_NOT_FOUND');
+  const ambiguous = await tickRun(
+    '## Acceptance criteria\n- [ ] A\n\n## Done criteria\n- [ ] A\n',
+    [tickKey('A')],
+  );
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.error.code, 'AMBIGUOUS_TARGET');
+  assert.equal(ambiguous.data?.body, undefined);
+});
+
+const VERDICT_HEAD = 'a'.repeat(40);
+const REVIEW_MARKER = '<!-- effective-flow-pr-review -->';
+
+function verdictReview(id, extra = {}) {
+  return {
+    id,
+    html_url: `https://github.com/example/flow/pull/5#pullrequestreview-${id}`,
+    user: { login: 'alice' },
+    commit_id: VERDICT_HEAD,
+    state: 'COMMENTED',
+    submitted_at: '2026-01-01T00:00:00Z',
+    body: `${REVIEW_MARKER}\nSummary\n\nreviewed-head: ${VERDICT_HEAD}\n- issue-7#criterion-${tickKey('A')}: complete`,
+    ...extra,
+  };
+}
+
+function verdictRunner({ reviews = [], pull = {}, permissions = { alice: 'write' } } = {}) {
+  const keys = [];
+  const runner = async (call) => {
+    const key = `${call.executable} ${call.args.join(' ')}`;
+    keys.push(key);
+    if (/pulls\/5\/reviews/.test(key)) {
+      return { status: 0, stdout: JSON.stringify([reviews]), stderr: '' };
+    }
+    if (/pulls\/5(?:\s|$)/.test(key)) {
+      const raw = {
+        number: 5,
+        title: 't',
+        body: '',
+        state: 'closed',
+        merged: true,
+        head: { sha: VERDICT_HEAD, ref: 'feat' },
+        base: { ref: 'develop' },
+        user: { login: 'alice' },
+        ...pull,
+      };
+      return { status: 0, stdout: `HTTP/2 200\r\n\r\n${JSON.stringify(raw)}`, stderr: '' };
+    }
+    const match = key.match(/collaborators\/([^/\s]+)\/permission/);
+    if (match && permissions[match[1]] !== undefined) {
+      return {
+        status: 0,
+        stdout: JSON.stringify({ permission: permissions[match[1]] }),
+        stderr: '',
+      };
+    }
+    return { status: 1, stdout: '', stderr: `unhandled ${key}` };
+  };
+  runner.keys = () => keys;
+  return runner;
+}
+
+async function verdictRun(world, extra = {}, repository = githubRepository) {
+  const runner = verdictRunner(world);
+  const envelope = await executeOperation(
+    'pr-acceptance-verdicts',
+    { repository, cwd: tmpdir(), number: 5, issues: [7], ...extra },
+    { runner, skipProbe: true },
+  );
+  return { envelope, runner, result: envelope.data?.result };
+}
+
+test('pr-acceptance-verdicts: a qualifying review yields its per-key verdicts and is never written to', async () => {
+  const { envelope, runner, result } = await verdictRun(
+    { reviews: [verdictReview(1)] },
+    { headSha: VERDICT_HEAD },
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(result.reviewEvidence, 'read');
+  assert.deepEqual(result.issues[0].reviews[0].verdicts, { [tickKey('A')]: 'complete' });
+  assert.equal(result.issues[0].reviews[0].commitSha, VERDICT_HEAD);
+  assert.ok(runner.keys().every((key) => !/ -X |--method (?:POST|PUT|PATCH|DELETE)/.test(key)));
+});
+
+test('pr-acceptance-verdicts: each review filter excludes the review with its reason', async () => {
+  const { result } = await verdictRun({
+    permissions: { alice: 'write', mallory: 'read' },
+    reviews: [
+      verdictReview(1, { body: `Text\n${REVIEW_MARKER}` }),
+      verdictReview(2, { commit_id: 'b'.repeat(40) }),
+      verdictReview(3, { state: 'PENDING', submitted_at: undefined }),
+      verdictReview(4, { state: 'DISMISSED' }),
+      verdictReview(5, { submitted_at: undefined }),
+      verdictReview(6, { body: `${REVIEW_MARKER}\n- issue-7#criterion-${tickKey('A')}: complete` }),
+      verdictReview(7, { body: `${REVIEW_MARKER}\nreviewed-head: ${'b'.repeat(40)}` }),
+      verdictReview(8, { user: { login: 'mallory' } }),
+    ],
+  });
+  assert.deepEqual(result.issues[0].reviews, []);
+  assert.deepEqual(
+    result.excludedReviews.map(({ reason }) => reason),
+    [
+      'no-marker',
+      'other-head',
+      'pending',
+      'dismissed',
+      'not-submitted',
+      'reviewed-head-missing',
+      'reviewed-head-mismatch',
+      'author-without-write-permission',
+    ],
+  );
+});
+
+test('pr-acceptance-verdicts: quoted, fenced, unrequested, suffixed, malformed and contradicting lines', async () => {
+  const lines = [
+    `> - issue-7#criterion-${tickKey('Q')}: complete`,
+    '```',
+    `- issue-7#criterion-${tickKey('F')}: complete`,
+    '```',
+    `- issue-9#criterion-${tickKey('U')}: complete`,
+    `- issue-7#criterion-${tickKey('S')}: complete — extra`,
+    `- issue-7#criterion-${tickKey('M')}: done`,
+    `- issue-7#criterion-${tickKey('C')}: complete`,
+    `- issue-7#criterion-${tickKey('C')}: incomplete — finding`,
+    `- issue-7#criterion-${tickKey('I')}: incomplete — finding`,
+  ];
+  const body = `${REVIEW_MARKER}\nreviewed-head: ${VERDICT_HEAD}\n${lines.join('\n')}`;
+  const { result } = await verdictRun({ reviews: [verdictReview(1, { body })] });
+  assert.deepEqual(result.issues[0].reviews[0].verdicts, {
+    [tickKey('S')]: 'undetermined',
+    [tickKey('M')]: 'undetermined',
+    [tickKey('C')]: 'undetermined',
+    [tickKey('I')]: 'incomplete',
+  });
+});
+
+test('pr-acceptance-verdicts: a headSha mismatch fails closed, an unmerged pull request and a Forgejo forge read no review', async () => {
+  const moved = await verdictRun({}, { headSha: 'c'.repeat(40) });
+  assert.equal(moved.envelope.ok, false);
+  assert.equal(moved.envelope.error.code, 'HEAD_MOVED');
+
+  const unmerged = await verdictRun({ pull: { merged: false, state: 'open' } });
+  assert.equal(unmerged.result.reviewEvidence, 'not-merged');
+  assert.ok(!unmerged.runner.keys().some((key) => /reviews/.test(key)));
+
+  const runner = async (call) => {
+    const key = call.args.join(' ');
+    if (/reviews/.test(key)) throw new Error('no review read on Forgejo');
+    return {
+      status: 0,
+      // tea writes the status line to stderr and the body to stdout.
+      stderr: 'HTTP/1.1 200 OK\n',
+      stdout: JSON.stringify({
+        number: 5,
+        title: 't',
+        body: '',
+        state: 'closed',
+        merged: true,
+        head: { sha: VERDICT_HEAD, ref: 'feat' },
+        base: { ref: 'develop' },
+        user: { login: 'alice' },
+      }),
+    };
+  };
+  const forgejo = await executeOperation(
+    'pr-acceptance-verdicts',
+    { repository: forgejoRepository, cwd: tmpdir(), number: 5, issues: [7] },
+    { runner, skipProbe: true },
+  );
+  assert.equal(forgejo.ok, true, JSON.stringify(forgejo.error));
+  assert.equal(forgejo.data.result.reviewEvidence, 'unsupported-provider');
+  assert.deepEqual(forgejo.data.result.issues[0].reviews, []);
+});
+
+test('task-list-tick: a checkbox inside an HTML comment is neither ticked as a criterion nor lost', async () => {
+  const body = '## Acceptance criteria\n- [ ] Real one\n\n<!--\n- [ ] commented out\n-->\n\nTail\n';
+  const envelope = await tickRun(body, [tickKey('Real one')]);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.body, body.replace('- [ ] Real one', '- [x] Real one'));
+  assert.deepEqual(envelope.data.ticked, [tickKey('Real one')]);
+  // The commented-out entry counts, the ticked one does not: over-counting is fail-closed.
+  assert.equal(envelope.data.remainingUnchecked, 1);
+});
+
+// Invariant: the counter never skips a line CommonMark renders, so a line that only looks like a
+// fence cannot hide an unchecked item from `remainingUnchecked`.
+test('task-list-tick: a line that is no CommonMark fence hides no unchecked item', async () => {
+  const cases = [
+    // A backtick info string holding a backtick is inline code, not a fence opener.
+    ['```js `x`\n- [ ] hidden\n', 1],
+    // A fence line inside an HTML comment opens nothing.
+    ['<!--\n```\n-->\n- [ ] hidden\n', 1],
+    // A line with an info string closes no fence, so the real closer is not read as an opener.
+    ['```\n```js\n```\n- [ ] after\n', 1],
+    // An indented fence an item's end closes is counted through.
+    ['- [ ] a\n  ```\n- [ ] b\n', 2],
+    // A real tilde fence still hides its content.
+    ['~~~ `ok`\n- [ ] fenced\n~~~\n', 0],
+    // A fence line inside a non-comment HTML block opens nothing; the block ends at the blank line,
+    // so the item after it renders and the later fence line is the opener.
+    ['<details><summary>Log</summary>\n```\nlog\n\n- [ ] shown\n```\n</details>\n', 1],
+    // An alone-on-its-line tag after a heading starts an HTML block too (type 7).
+    ['<img src="a.png">\n```\n\n- [ ] shown\n```\n', 1],
+    // After paragraph text that tag is no HTML block, so the fence it precedes is real.
+    ['text\n<span>\n```\n\n```\n- [ ] after\n', 1],
+    // Unicode whitespace after a fence run is an info string, so that line closes no fence.
+    ['```\n```\u00a0\n```\n- [ ] after\n', 1],
+    // An HTML block inside a list item ends with the item, so the column-0 fence is real and the
+    // item after it renders; the walk without HTML blocks counts it although the HTML walk does not.
+    [
+      '- note\n  <details><summary>Log</summary>\n```\nlog\n\nmore\n```\n  </details>\n\n- [ ] Follow-up\n',
+      1,
+    ],
+    // Each walk misses a different rendered item: the HTML walk reads `X` as fenced, the walk
+    // without HTML blocks `Y2`. Counting the lines either walk counts keeps both; the larger total
+    // of the two walks would be 1.
+    [
+      '<div>\n```\n\n- [ ] Y2\n<div>\n```\n\n' +
+        '- note\n  <details><summary>Log</summary>\n```\nlog\n\nmore\n```\n  </details>\n\n- [ ] X\n',
+      2,
+    ],
+    // A type 1 block ends at its end marker, not at a blank line; the raw item inside it counts.
+    // The walk without HTML blocks reads `<pre>` as text, so its fence spans `in pre` and leaves
+    // `fenced` outside; counting both walks' lines over-counts here, which is fail-closed.
+    ['<pre>\n```\n\n- [ ] in pre\n</pre>\n```\n- [ ] fenced\n```\n', 2],
+    // A comment closed on its own start line leaves the following fence real.
+    ['<!-- x -->\n```\n- [ ] fenced\n```\n- [ ] after\n', 1],
+  ];
+  for (const [tail, expected] of cases) {
+    const envelope = await tickRun(`## Acceptance criteria\n- [ ] Real\n\n## Notes\n${tail}`, [
+      tickKey('Real'),
+    ]);
+    assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+    assert.equal(envelope.data.remainingUnchecked, expected, JSON.stringify(tail));
+  }
+});
+
+test('task-list-tick: a lowercase [x] criterion is already ticked and its body stays unchanged', async () => {
+  const body = '## Acceptance criteria\n- [x] Done one\n';
+  const envelope = await tickRun(body, [tickKey('Done one')]);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.data.body, body);
+  assert.equal(envelope.data.changed, false);
+  assert.deepEqual(envelope.data.alreadyTicked, [tickKey('Done one')]);
+  assert.deepEqual(envelope.data.ticked, []);
+});
+
+test('task-list-tick: non-hex, uppercase, duplicate, empty or missing keys are rejected', async () => {
+  const body = '## Acceptance criteria\n- [ ] A\n';
+  for (const keys of [
+    ['zzzzzzzz'],
+    [tickKey('A').toUpperCase()],
+    [tickKey('A').slice(0, 7)],
+    [tickKey('A'), tickKey('A')],
+    [],
+    undefined,
+    tickKey('A'),
+  ]) {
+    const envelope = await tickRun(body, keys);
+    assert.equal(envelope.ok, false, JSON.stringify(keys));
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD', JSON.stringify(keys));
+  }
+});
+
+test('pr-acceptance-verdicts: an invalid reviewed-head line, an unknown state and an unreadable permission exclude the review', async () => {
+  const head = (line) => `${REVIEW_MARKER}\n${line}\n- issue-7#criterion-${tickKey('A')}: complete`;
+  const { result, runner } = await verdictRun({
+    permissions: { alice: 'write' },
+    reviews: [
+      verdictReview(1, {
+        body: head(`reviewed-head: ${VERDICT_HEAD}\nreviewed-head: ${VERDICT_HEAD}`),
+      }),
+      verdictReview(2, { body: head('reviewed-head: not-a-sha') }),
+      verdictReview(3, { state: 'SOMETHING_NEW' }),
+      verdictReview(4, { user: { login: 'ghost' } }),
+    ],
+  });
+  assert.deepEqual(result.issues[0].reviews, []);
+  assert.deepEqual(
+    result.excludedReviews.map(({ reason }) => reason),
+    [
+      'reviewed-head-invalid',
+      'reviewed-head-invalid',
+      'state-unknown',
+      'author-permission-unavailable',
+    ],
+  );
+  // Only the otherwise qualifying review costs a permission read.
+  assert.deepEqual(
+    runner
+      .keys()
+      .filter((key) => /collaborators\//.test(key))
+      .map((key) => key.match(/collaborators\/([^/\s]+)/)[1]),
+    ['ghost'],
+  );
+});
+
+test('pr-acceptance-verdicts: upper-case key lines read undetermined, never as omitted', async () => {
+  const key = tickKey('A');
+  const body = `${REVIEW_MARKER}\nreviewed-head: ${VERDICT_HEAD}\n- issue-7#criterion-${key.toUpperCase()}: complete\n- ISSUE-7#CRITERION-${tickKey('B')}: complete`;
+  const { result } = await verdictRun({ reviews: [verdictReview(1, { body })] });
+  assert.deepEqual(result.issues[0].reviews[0].verdicts, {
+    [key]: 'undetermined',
+    [tickKey('B')]: 'undetermined',
+  });
+});
+
+test('pr-acceptance-verdicts: a refused prReviewsRead capability fails before any call, and issues past the bound are truncated', async () => {
+  const runner = verdictRunner({});
+  const refused = await executeOperation(
+    'pr-acceptance-verdicts',
+    {
+      repository: githubRepository,
+      cwd: tmpdir(),
+      number: 5,
+      issues: [7],
+      probe: { capabilities: { prReviewsRead: false } },
+    },
+    { runner, skipProbe: true },
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(runner.keys().length, 0);
+
+  const bound = ACCEPTANCE_SOURCE_BOUNDS.issues;
+  const issues = Array.from({ length: bound + 1 }, (_, index) => index + 7);
+  const { result } = await verdictRun({ reviews: [verdictReview(1)] }, { issues });
+  assert.deepEqual(
+    result.issues.map(({ number }) => number),
+    issues.slice(0, bound),
+  );
+  assert.deepEqual(result.truncated, [{ source: 'issues', bound: 'issues', limit: bound }]);
+});
+
+test('task-list-tick: criteria across several sections tick together and a stale hash blocks the write', async () => {
+  const body = '## Acceptance criteria\n- [ ] One\n\n## Done criteria\n- [ ] Two\n';
+  const envelope = await tickRun(body, [tickKey('One'), tickKey('Two')]);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(
+    envelope.data.body,
+    '## Acceptance criteria\n- [x] One\n\n## Done criteria\n- [x] Two\n',
+  );
+  assert.equal(envelope.data.remainingUnchecked, 0);
+
+  // The helper's inputHash is the write's expectedBodyHash: a body edited in between is refused.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({ number: 3, title: 'x', body: `${body}edited\n`, labels: [] }),
+      stderr: '',
+    },
+  ]);
+  const stale = await executeOperation(
+    'issue-update-body',
+    {
+      repository: githubRepository,
+      number: 3,
+      expectedBodyHash: envelope.data.inputHash,
+      payload: { body: envelope.data.body },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(stale.ok, false);
+  assert.equal(stale.error.code, 'STALE_WRITE');
+  assert.equal(runner.calls.length, 1, 'nothing is written after the stale read');
+});
+
+test('pr-acceptance-verdicts: conflicting qualifying reviews are both returned, and invalid input is rejected before any call', async () => {
+  const { result } = await verdictRun({
+    reviews: [
+      verdictReview(1),
+      verdictReview(2, {
+        body: `${REVIEW_MARKER}\nreviewed-head: ${VERDICT_HEAD}\n- issue-7#criterion-${tickKey('A')}: incomplete — finding`,
+      }),
+    ],
+  });
+  assert.deepEqual(
+    result.issues[0].reviews.map((review) => review.verdicts[tickKey('A')]),
+    ['complete', 'incomplete'],
+  );
+
+  for (const bad of [{ issues: [] }, { issues: [0] }, { issues: [7, 7] }, { extra: true }]) {
+    const runner = verdictRunner({});
+    const outcome = await executeOperation(
+      'pr-acceptance-verdicts',
+      { repository: githubRepository, cwd: tmpdir(), number: 5, issues: [7], ...bad },
+      { runner, skipProbe: true },
+    ).catch((error) => ({ ok: false, error }));
+    assert.equal(outcome.ok, false, JSON.stringify(bad));
+    assert.equal(outcome.error.code, 'INVALID_PAYLOAD', JSON.stringify(bad));
+    assert.equal(runner.keys().length, 0, `no provider call for ${JSON.stringify(bad)}`);
+    // An unknown key is answered with every key the caller may send, `pullRequest` included.
+    if (bad.extra) assert.match(outcome.error.message, /\bnumber\b.*\bpullRequest\b.*\bheadSha\b/);
   }
 });
 

@@ -138,8 +138,12 @@ before the review submission, from the leaf's verdicts:
 - The review body never carries the leaf's free-text reasons, only a fixed one per verdict:
   `complete` none, `incomplete` its published finding, `undetermined` "not confirmed in this
   review". The leaf's reasons stay in the chat report and the local report.
-- List the criteria per source token and key8, plus "ADR changed by this PR" for a candidate with
-  `changedByPr`.
+- List each criterion as exactly one line: `- <source>#criterion-<key8>: complete` with nothing
+  after it, or `- <source>#criterion-<key8>: <verdict> — <fixed reason>` for `incomplete` and
+  `undetermined`, with the fixed reason above. Open the list with the one line `reviewed-head: <headSha>`, the `headSha` the sources
+  were collected at. `{{SKILL:merge-gate}}` parses both line forms for an `issue-<n>` source before
+  it offers to tick an issue's criteria, so never reword, wrap or quote them. Add the line
+  "ADR changed by this PR" for a candidate with `changedByPr`; nothing parses it.
 - A trusted appendix adds its decisions for display only: the close decisions as returned, the
   automatic-decision count and the architecture-fit score or its status. Never judge, rank or
   question a decision.

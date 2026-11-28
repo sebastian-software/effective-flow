@@ -211,7 +211,12 @@ says "no acceptance source" in one line. The automatic review after a delivery n
   review", and the reviewer's own reasons stay in the chat report. The summary also shows the
   autopilot record's decisions, their count and the architecture-fit score; these are shown, never
   judged. With an `incomplete` criterion, the suggested next step is `iterate <PR> own-review findings`, so the
-  run also takes up the review's own published findings; otherwise it is `merge-gate <PR>`.
+  run also takes up the review's own published findings; otherwise it is `merge-gate <PR>`. Each
+  criterion is exactly one fixed line below a `reviewed-head: <sha>` line:
+  `- <source>#criterion-<key8>: complete`, or `- <source>#criterion-<key8>: <verdict> — <fixed reason>`
+  for `incomplete` and `undetermined`. `merge-gate` reads these lines to offer ticking an issue's
+  criteria before it closes the issue. A review on the final head is therefore the evidence for that
+  offer; do not reword the lines.
 
 **Interplay:** Each admitted finding carries a recommendation for the appropriate follow-up action –
 `/effective-flow fix` (defect), `/effective-flow refactor` (structural problem), `/effective-flow build` (missing

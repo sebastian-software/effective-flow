@@ -194,6 +194,7 @@ const FIXTURES = {
   'pr-read': { number: 1 },
   'pr-acceptance-sources': { number: 1, headSha: SHA },
   'issue-acceptance-criteria': { numbers: [1] },
+  'pr-acceptance-verdicts': { number: 1, issues: [1] },
   'pr-comments-read': { number: 1 },
   'pr-reviews-read': { number: 1 },
   'pr-list': {},
@@ -264,6 +265,8 @@ const FIXTURES = {
   'sf-label-migration-plan': { issues: [] },
   'marker-patch': { body: '<!-- m -->\nold', patch: { marker: 'm', replacement: 'new' } },
   'checklist-patch': { body: '- [ ] #1', patch: { reference: '#1' } },
+  // `2d711642` is the `key8` of the criterion text `x`.
+  'task-list-tick': { body: '## Acceptance criteria\n- [ ] x\n', keys: ['2d711642'] },
   'body-hash': { body: '' },
   'issue-lifecycle-receipt-build': {
     receipt: {
