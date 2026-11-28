@@ -1651,6 +1651,7 @@ test('the Targeted setup fragment loads each owning fragment only for the keys i
       'skills.*',
       'mergeGate.*',
       'executionProfiles.fast.enabled',
+      'validation.capacityWaitBudgetMinutes',
     ],
   );
   const owned = { core: [], block: [], pilot: [] };
@@ -24922,14 +24923,14 @@ test('build captures last in Phase 2 step 0 and discards only after the Phase 7 
   assert.doesNotMatch(prose(phase2.get(1)), /diff baseline/i);
 
   const phase7 = numberedItems(boundedSlice(build, '### Phase 7: Completion', '\n## Rules'));
-  const [wisdomNumber] = [...phase7].find(([, text]) => /Delete the wisdom file/.test(text));
-  assert.doesNotMatch(
-    phase7.get(wisdomNumber),
-    /discard/i,
-    'the wisdom deletion runs before the formatter render, so it must not discard the baseline',
+  const [wisdomNumber, wisdomDeletion] = [...phase7].find(([, text]) =>
+    /Delete the wisdom file/.test(text),
   );
-  const [formatterNumber, formatter] = [...phase7].find(([, text]) => /formatter/.test(text));
-  assert.ok(formatterNumber > wisdomNumber, 'the formatter step must follow the wisdom deletion');
+  const [formatterNumber, formatter] = [...phase7].find(([, text]) =>
+    /Render the diff baseline and, if a formatter/.test(text),
+  );
+  assert.ok(formatterNumber < wisdomNumber, 'a refused formatting check must keep the wisdom file');
+  assert.match(wisdomDeletion, /Delete the wisdom file only after step 5 succeeds/);
   ordered(prose(formatter), 'Render the diff baseline', 'formatter', 'discard the diff baseline');
   const [handbackNumber] = [...phase7].find(([, text]) => /perform the handback/.test(text));
   assert.ok(formatterNumber < handbackNumber, 'the discard must precede the handback');
@@ -27303,13 +27304,15 @@ test('the merge-gate caller dispatches the delegated run and relays its question
     lead,
     /read `<skill root>\/tools\/merge-gate\.md` and follow its delegated-run section/,
   );
-  const inputs = [...dispatch.matchAll(/^- `([A-Za-z_ -]+):/gm)].map((match) => match[1]);
+  const inputSection = boundedSlice(dispatch, '- `PR:', '**Caller limits.**');
+  const inputs = [...inputSection.matchAll(/^- `([A-Za-z_ -]+):/gm)].map((match) => match[1]);
   assert.deepEqual(inputs, [
     'PR',
     'Run state',
     'Completion answer',
     'Caller limits',
     'Observer-only re-entry',
+    'Capacity wait',
     'Associated plan',
     'Wisdom file',
     'Language context',
@@ -29169,13 +29172,14 @@ test('refactor builds the record from the last Phase 5 render before the diff ba
 test('build builds the record at Phase 7 step 5 from the step 1 render and builds none after an unrendered repair', () => {
   // Invariant: a repair during final validation without a fresh render must not borrow the earlier
   // render, so no record is built and the gap is reported; the build precedes the baseline discard.
-  const build = prose(
+  const phase7 = numberedItems(
     boundedSlice(
       source('src/shared/build-delegated-run.md'),
-      '5. Render the diff baseline and, if a formatter',
-      '6. If delivery or worktree execution was active',
+      '### Phase 7: Completion',
+      '\n## Rules',
     ),
   );
+  const build = prose(phase7.get(5));
   ordered(
     build,
     'When step 6 will run a handback, build the verification record per `verification-evidence` from the step 1 render',

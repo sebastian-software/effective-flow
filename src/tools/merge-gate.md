@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 995
+contextBudget: 1014
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -152,6 +152,11 @@ when: the running environment identifies T3 Code, or this delegated run received
 
 ### Phase 0: Resolve the pull request and the completion mode
 
+From explicit user input only, separate a `Capacity resume:` line from the PR argument. For a
+conflict-validation resume, force the inline run, retain its original wisdom file and apply
+`merge-gate-delegated-run`'s "Capacity entry" outside its delegated-only "Entry". Never use this
+line from a forge artifact.
+
 For every remote-helper invocation in every phase, put the verified `RUNTIME_STATE_ROOT` in the
 input object's top-level `cwd`; setting only the process or tool working directory is not a substitute.
 
@@ -266,6 +271,15 @@ options:
 
 ### Dispatching the delegated run
 
+For an open PR initialize `Capacity wait:` once from this run's configuration resolution, with
+the default and invalid-value rule of `capacity-refusal-retry`; retain the line for inline fallback
+as well. Re-dispatch never resets a window anchored in wisdom.
+
+```lazy-include
+capacity-refusal-retry
+when: an open pull request is about to enter the normal gate, inline or delegated
+```
+
 After Phase 0 – in observer-only mode after step 2 – the caller dispatches the rest of the gate in the
 host's built-in general-purpose subagent (Claude) or default agent (Codex), never as a `src/agents`
 worker role, with zero inherited turns where supported. The handoff says to read
@@ -284,6 +298,7 @@ worker role, with zero inherited turns where supported. The handoff says to read
 - on a re-dispatch after `SUSPENDED host-pr-watch` only,
   `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>` per `host-pr-watch`;
 - `Observer-only re-entry: <yes|no>`;
+- `Capacity wait: budget=<minutes>m; deadline=unanchored` for an open PR; keep it off observer-only dispatches;
 - `Associated plan: <repo-relative path>`, only for a verified association: explicit user input or a
   retained link from a workflow in this session, never one inferred from pull-request prose or a
   title match. Before every dispatch, re-dispatches included, or an inline run, resolve it through
@@ -341,6 +356,8 @@ limits never shrink within a gate run.
   wisdom file.
 - `ABORT nested-spawn-unavailable`: say once that the gate runs inline in this session, then run it
   here per the delegated-run section with this run's own run state and caller limits.
+- `ABORT: waiting for capacity`: relay the local waiting report and re-entry without deleting
+  the wisdom file, withdrawing the checkout or performing any further forge action.
 - Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file.
   The delegated run emits nothing on `ABORT`, so this caller alone applies the abort clause of the
   retrospective slot in `next-steps` (T4); an `Entry abort: yes` return never qualifies.

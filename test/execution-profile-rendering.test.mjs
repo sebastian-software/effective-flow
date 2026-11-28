@@ -509,8 +509,9 @@ test('the pilot fragments render their own build target and measure portable run
 // merge-conflict resolver, and the unsupported-environment pointers and forbidden substitutes in the
 // code validator, test writer and merge-conflict resolver, and build's targeted scope, the shared
 // environment-signature classes and the failure-attribution pointer in the code validator and the
-// merge-conflict resolver, and the project-routing skill-source paragraph in every worker embedding it,
-// and the worker-git-history ban in every write-capable worker except the merge-conflict resolver;
+// merge-conflict resolver, their capacity-refusal classification and reporting, and the
+// project-routing skill-source paragraph in every worker embedding it, and the worker-git-history
+// ban in every write-capable worker except the merge-conflict resolver;
 // any other configuration change or body change fails; the one declared added worker has no
 // base sidecar and any other base-worker membership change fails.
 // The pinned stdout names each delta and exactly the workers showing it.
@@ -550,6 +551,8 @@ test('the executable baseline proof preserves every Quality native configuration
       'Expected delta merge-conflict-resolver-forbidden-substitutes: effective-flow-merge-conflict-resolver\n' +
       'Expected delta code-validator-build-validation-budget: effective-flow-code-validator\n' +
       'Expected delta merge-conflict-resolver-environment-signature-classes: effective-flow-merge-conflict-resolver\n' +
+      'Expected delta code-validator-capacity-refusal: effective-flow-code-validator\n' +
+      'Expected delta merge-conflict-resolver-capacity-refusal: effective-flow-merge-conflict-resolver\n' +
       'Expected delta project-routing-skill-sources: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-test-writer\n' +
       'Expected delta worker-git-history: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-marketing-writer, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta code-span-placeholder-pairs: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',

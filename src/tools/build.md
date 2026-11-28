@@ -1,7 +1,7 @@
 ---
 description: "Orchestrates the complete feature workflow: clarified plan, bounded build runner, guarded question relay and verified completion."
 catalogHint: "Fully implements a new feature – plan, code, tests, review, completion."
-contextBudget: 218
+contextBudget: 230
 ---
 
 # Effective Flow Build
@@ -51,6 +51,14 @@ the loaded retired-key contract over every successor this workflow can resolve:
 `delivery.baseBranch`, `delivery.branchPrefix`, and `delivery.completion`. Complete its stop or
 report decision before any delegation or write. This preflight does not replace or move any later
 purpose-specific configuration read; perform each one at its documented workflow point.
+
+**Capacity lines.** A trusted caller's `Capacity wait:` line beside the plan argument goes to
+`build-delegated-run`. A user invocation that adds a `Capacity resume:` line to the plan argument
+of a build that ended waiting for capacity passes the clarification gate as that referenced plan
+and continues inline at its interrupted gate per `build-delegated-run`, never reimplementing.
+Enter the resume branch of that fragment before Phase 2 or any setup that mutates the checkout.
+A resume of a previously scored run accepts no Automation lines and follows gated local recovery,
+retaining its approved scope but never using the closed Autopilot ledger or publishing automatically.
 
 ```lazy-include
 scored-decisions

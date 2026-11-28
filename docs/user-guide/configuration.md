@@ -677,6 +677,31 @@ finding; `review.validation` and `applyReview.finalValidation` stay untouched.
 
 Decision record: [merge-gate conflict validation](../adr/merge-gate-conflict-validation.md).
 
+## Block `validation`
+
+One optional key, read by every workflow that validates locally (`build`, `iterate`, `merge-gate`,
+`autopilot` and the workers they start).
+
+| Key                         | Values                       | Default | Meaning                                                                                                                    |
+| --------------------------- | ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `capacityWaitBudgetMinutes` | non-negative integer minutes | `120`   | How long a run retries a validation command that the execution environment refused to start for temporary lack of capacity |
+
+**`validation.capacityWaitBudgetMinutes` bounds the wait, not the check.** It applies only when the
+environment's structured launch metadata shows that a command never started because of temporary lack of capacity; a bare
+exit status, project output after launch or any real failure never counts. The window starts at
+the run's first refusal and is shared by every validation step of the run. The refused command is
+retried unchanged after 1, 2, 5, then 10 minutes.
+
+- `0` disables automatic retry: the first refusal ends the gate at once.
+- An unset key means `120`. A value that is not a non-negative integer (at most one year) is
+  reported and also means `120`.
+- When the window ends, the run stops as **waiting for capacity** and keeps its branch, worktree and
+  plan; it neither fails nor delivers. Once capacity is back, follow the local report's re-entry
+  command with its `Capacity resume:` line; see
+  [Troubleshooting](./troubleshooting.md#a-run-stopped-as-waiting-for-capacity).
+- Setting it: `/effective-flow setup` asks it in the advanced settings (block 11), or use
+  `/effective-flow setup set validation.capacityWaitBudgetMinutes to 30`.
+
 ## Block `plan`
 
 Controls [`/effective-flow plan`](./tools-understand.md) and every tool that reads or writes plan

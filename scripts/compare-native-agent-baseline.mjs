@@ -72,6 +72,23 @@ const ENVIRONMENT_SIGNATURE_CLASSES =
 const WORKER_GIT_HISTORY =
   '**Git history.** Never rewrite or move back the Git history of the checkout, branches and remote you were handed: no `rebase` of any kind, including `pull --rebase` or a `pull` under `pull.rebase`; no `commit --amend`; no squash; no `reset --hard` at all and no `reset` of any other mode to an earlier commit; no command that points an existing branch at another commit, such as `branch -f`, `checkout -B` or `update-ref`; and no force-push in any form, `--force-with-lease` included. Report a rejected push, or a branch that is behind or conflicts with its base, to the orchestrator instead of updating it. Git commands inside a temporary or fixture repository you create yourself are not covered.\n';
 
+// The capacity-refusal classification the environment-signature classes fragment gained (issue
+// #829), with its rendered pointer to the lazily loaded retry contract; two body deltas below append
+// it after the fragment's last line.
+const ENVIRONMENT_SIGNATURE_CLASSES_TAIL =
+  'temporary space, is a failing check, reported `FAILED` and never skipped.\n';
+const CAPACITY_REFUSAL_CLASS =
+  '\n' +
+  '**Capacity refusal.** A check is `not executed (capacity)` only when documented, structured\n' +
+  'launch metadata from the execution environment identifies the exact attempt and attests that the\n' +
+  'command never started because of temporary lack of capacity. Diagnostic text alone is not proof.\n' +
+  'A bare exit status, such as 75 under the common `EX_TEMPFAIL`\n' +
+  'convention, output from the project after launch, an unknown launch status and the four classes\n' +
+  'above are none, and keep their handling. A capacity refusal is no signature and no failure, also\n' +
+  'where the environment-signature rule is off.\n' +
+  '\n' +
+  '**Load on demand:** Read `shared/capacity-refusal-retry.md`, when a check is classified `not executed (capacity)`.\n';
+
 // The only deltas a native worker sidecar may show against the base build; any other byte
 // difference fails the proof. A delta is permitted, never required: a worker that builds
 // byte-identically always passes. A configuration delta changes exactly one key line; body deltas
@@ -544,6 +561,59 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
             ENVIRONMENT_SIGNATURE_CLASSES +
             '\n' +
             'Carry the exact commands',
+        }),
+      ]),
+    }),
+    // A capacity refusal is classified in the embedded environment-signature classes and reported
+    // by both test-executing roles; the resolver hands a still-refused check back as a waiting
+    // result instead of an abort (issue #829).
+    Object.freeze({
+      id: 'code-validator-capacity-refusal',
+      edits: Object.freeze([
+        Object.freeze({
+          from: ENVIRONMENT_SIGNATURE_CLASSES_TAIL,
+          to: ENVIRONMENT_SIGNATURE_CLASSES_TAIL + CAPACITY_REFUSAL_CLASS,
+        }),
+        Object.freeze({
+          from: '- validation-generated working-tree changes and skipped prerequisites;\n',
+          to:
+            '- validation-generated working-tree changes and skipped prerequisites;\n' +
+            '- each `not executed (capacity)` check with its `Capacity refusal:` line, and the current\n' +
+            '  `Capacity wait:` line;\n',
+        }),
+      ]),
+    }),
+    Object.freeze({
+      id: 'merge-conflict-resolver-capacity-refusal',
+      edits: Object.freeze([
+        Object.freeze({
+          from:
+            'delegation, the validation mode (`full` or `quick`), and the environment-signature rule with its\n' +
+            'signature classes. Work only\n',
+          to:
+            'delegation, the validation mode (`full` or `quick`), the environment-signature rule with its\n' +
+            "signature classes, and the run's `Capacity wait:` line. Work only\n",
+        }),
+        Object.freeze({
+          from: 'regardless of what you return.\n',
+          to:
+            'regardless of what you return. A check that stays `not executed (capacity)` returns\n' +
+            '`ABORT: waiting for capacity` instead, with the checkout and index left exactly as they are.\n' +
+            'Include the partial per-file record, scope and pending checks for re-entry. A verified\n' +
+            'validation-only resume continues from the supplied resolved tree and pending gate, not conflict\n' +
+            'editing; complete staging and the normal return only after validation succeeds.\n',
+        }),
+        Object.freeze({
+          from:
+            '  including every check skipped with its reason and every environment signature with its\n' +
+            '  diagnostic;\n',
+          to:
+            '  including every check skipped with its reason, every environment signature with its\n' +
+            '  diagnostic, and every `not executed (capacity)` check with its `Capacity refusal:` line;\n',
+        }),
+        Object.freeze({
+          from: ENVIRONMENT_SIGNATURE_CLASSES_TAIL,
+          to: ENVIRONMENT_SIGNATURE_CLASSES_TAIL + CAPACITY_REFUSAL_CLASS,
         }),
       ]),
     }),

@@ -50,8 +50,8 @@ one.
 
 You are handed, by the gate: the provisioned checkout's absolute root, the base and head refs, the
 conflicted paths, the resolved language values, whether this run is gated or a non-interactive
-delegation, the validation mode (`full` or `quick`), and the environment-signature rule with its
-signature classes. Work only
+delegation, the validation mode (`full` or `quick`), the environment-signature rule with its
+signature classes, and the run's `Capacity wait:` line. Work only
 inside that checkout, and use its absolute root for every command and every path — never a
 relative path resolved against some other working directory.
 
@@ -212,7 +212,11 @@ reason: a resolution nobody could check is not a verified resolution. Where ever
 came back skipped — a missing runtime, an unavailable tool, no established command for the affected
 roles — report `ABORT` naming each check and its concrete reason, rather than `DONE` on an empty
 evidence list. An unprovable validation is never an assumed pass, and the gate treats one as `ABORT`
-regardless of what you return.
+regardless of what you return. A check that stays `not executed (capacity)` returns
+`ABORT: waiting for capacity` instead, with the checkout and index left exactly as they are.
+Include the partial per-file record, scope and pending checks for re-entry. A verified
+validation-only resume continues from the supplied resolved tree and pending gate, not conflict
+editing; complete staging and the normal return only after validation succeeds.
 
 **Uncertainty resolves to `ABORT`, never to a guess.** A wrong merge resolution is invisible in the
 diff of the merge commit and survives every later review; an `ABORT` costs one round and leaves the
@@ -274,8 +278,8 @@ every executed check passed, and the index holds exactly the paths you name belo
 - **per adjacent file**: the file, the named check that failed without the change, that check's
   verbatim pre-change failure output, and the change that fixed it;
 - the validation mode you applied and the exact validation commands with their terminal results,
-  including every check skipped with its reason and every environment signature with its
-  diagnostic;
+  including every check skipped with its reason, every environment signature with its
+  diagnostic, and every `not executed (capacity)` check with its `Capacity refusal:` line;
 - the complete list of paths staged, so the gate can reconcile it against the working tree;
 - on `ABORT`: the file and the concrete contradiction or missing evidence, plus the state the
   checkout was left in.

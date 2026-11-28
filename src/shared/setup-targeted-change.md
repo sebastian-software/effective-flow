@@ -152,6 +152,7 @@ switches" below are `setup-guided-core-switches`, numbered blocks those of
 | `skills.*`                                                                                  | block 8                                                | `agents.<name>` / `tools.<name>` only with source agent or tool names             |
 | `mergeGate.*`, `.bots`, `.trigger`, `.check`, `.botAccounts`, `iterate.reviewFixValidation` | block 9, Step 5 collapse                               | see below                                                                         |
 | `executionProfiles.fast.enabled`                                                            | block 10 (`setup-execution-profiles`), loaded directly | its question alone, the requested answer pre-selected, then the pilot action step |
+| `validation.capacityWaitBudgetMinutes`                                                      | block 11                                               | a non-negative integer only; `0` turns automatic retry off                        |
 
 - Adding a reviewer to `mergeGate.bots` also touches its `.trigger` and `.check`. Collapse first
   ("Collapsing two `mergeGate.bots` spellings of one reviewer", Step 5), then block 9's
@@ -187,7 +188,7 @@ when: a Targeted operation touches a core-switch key: `worktree.enabled`, `deliv
 
 ```lazy-include
 setup-advanced-settings
-when: a Targeted operation touches a block key: `review.*`, `applyReview.*`, `plan.dir`, `concept.dir`, `delivery.branchPrefix`, `delivery.mergeMethod`, `worktree.setup`, `worktree.baseDir`, a `tracker.external*` key, `skills.*`, `mergeGate.*`, or `iterate.reviewFixValidation`
+when: a Targeted operation touches a block key: `review.*`, `applyReview.*`, `plan.dir`, `concept.dir`, `delivery.branchPrefix`, `delivery.mergeMethod`, `worktree.setup`, `worktree.baseDir`, a `tracker.external*` key, `skills.*`, `mergeGate.*`, `iterate.reviewFixValidation`, or `validation.capacityWaitBudgetMinutes`
 ```
 
 ### Hidden mode

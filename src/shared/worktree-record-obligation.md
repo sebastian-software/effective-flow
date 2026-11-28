@@ -19,5 +19,5 @@ or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` rec
 `unrecorded` worktree as its own entry with path and branch: `{{SKILL:cleanup}}` cannot remove it,
 and manual reconciliation is required. Set a record left `active` once with `worktree transition`
 – a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop,
-otherwise to `failed` – and report only a call that is not `ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+otherwise to `failed`; a run waiting for capacity leaves its retained record `active` and reports it – and report only a call that is not `ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
 worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.

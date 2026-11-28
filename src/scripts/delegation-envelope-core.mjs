@@ -1,7 +1,7 @@
 // Sender-side builder and validator for the message `merge-gate` hands to `iterate`.
 //
 // `build` turns structured input into the canonical envelope (six control lines, the optional
-// progress, authorized-scope, review-fix validation and approval lines, an optional CI-repair
+// progress, authorized-scope, review-fix validation, capacity wait and approval lines, an optional CI-repair
 // instruction, the boundary token, the manifest, the delimiter, the body spans), checks
 // its own output with the same structural validator `validate` uses, and writes it to a fresh file
 // below `<cwd>/.effective-flow/merge-gate/` together with a snapshot of the expected structure.
@@ -17,6 +17,11 @@ import { createHash, randomBytes as cryptoRandomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { lstat, mkdir, open, realpath, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import {
+  CAPACITY_WAIT_KEYWORD,
+  formatCapacityWait,
+  parseCapacityWait,
+} from './capacity-wait-core.mjs';
 
 // Snapshot versions, not wire headers. Context-free output retains the legacy version.
 export const DELEGATION_ENVELOPE_VERSION = 2;
@@ -45,6 +50,13 @@ export const REVIEW_FIX_QUICK_CANDIDATE = 'quick-candidate';
 const REVIEW_FIX_VALIDATION_KEYS = Object.freeze(['baseCommit']);
 const BASE_COMMIT_FORMAT = /^[0-9a-f]{40}$/;
 const REVIEW_FIX_VALIDATION_LINE = /^quick-candidate ([0-9a-f]{40})$/;
+
+// The optional capacity wait line, `Capacity wait: budget=<minutes>m; deadline=<instant|unanchored>`:
+// the run's one shared capacity wait budget and its anchored deadline, so a delegated round never
+// starts a fresh clock. It is version-neutral, never a required control keyword, and legal in a
+// review round and a CI repair alike; `capacity-wait-core.mjs` owns its form and
+// `shared/capacity-refusal-retry.md` its meaning.
+export { CAPACITY_WAIT_KEYWORD };
 
 export const DELEGATION_ENVELOPE_OPERATIONS = Object.freeze(['build', 'validate']);
 
@@ -104,6 +116,7 @@ export const INSTRUCTION_FORBIDDEN_PREFIXES = Object.freeze([
   'Progress context:',
   'Authorized scope:',
   'Review-fix validation:',
+  'Capacity wait:',
   'Approved outcomes:',
   'Item:',
   'Thread item:',
@@ -433,6 +446,18 @@ export function parseReviewFixValidation(value) {
   return match ? match[1] : null;
 }
 
+// The capacity wait: exactly `budgetMinutes` and `deadline` (null while unanchored), rendered as
+// its canonical line value.
+function normalizeCapacityWait(value) {
+  requireObject(value, 'capacityWait');
+  requireExactKeys(value, ['budgetMinutes', 'deadline'], 'capacityWait');
+  try {
+    return formatCapacityWait({ budgetMinutes: value.budgetMinutes, deadline: value.deadline });
+  } catch (error) {
+    fail('INVALID_PAYLOAD', `capacityWait is invalid: ${error.message}`);
+  }
+}
+
 // `approvedOutcomes` maps every delegated item's durable key to its approved outcome. It is legal
 // only beside `runState: non-interactive`, because only the approval round carries it, and it must
 // name exactly the durable keys of the thread and body items, so no item travels unapproved and no
@@ -489,6 +514,11 @@ export function normalizeBuildInput(input) {
     input.reviewFixValidation === undefined || input.reviewFixValidation === null
       ? null
       : normalizeReviewFixValidation(input.reviewFixValidation);
+
+  const capacityWait =
+    input.capacityWait === undefined || input.capacityWait === null
+      ? null
+      : normalizeCapacityWait(input.capacityWait);
 
   const rawThreads = input.threadItems ?? [];
   const rawBodies = input.bodyItems ?? [];
@@ -572,6 +602,7 @@ export function normalizeBuildInput(input) {
     progressReceiver,
     authorizedScope,
     reviewFixValidation,
+    capacityWait,
     threadItems,
     bodyItems,
     instruction,
@@ -644,6 +675,7 @@ function callerValues(normalized) {
   }
   if (normalized.reviewFixValidation !== null)
     values.push(normalized.reviewFixValidation.baseCommit);
+  if (normalized.capacityWait !== null) values.push(normalized.capacityWait);
   for (const item of normalized.threadItems) values.push(item.durableKey, item.threadId);
   for (const item of normalized.bodyItems) {
     values.push(item.durableKey, item.reviewId, item.author, item.url, item.text);
@@ -694,7 +726,8 @@ export function bodyItemLine(identifier, { reviewId, author, url }) {
 }
 
 // The entries above the delimiter, in order: six control lines, optional progress context, the
-// optional authorized scope, the optional review-fix validation line, the approval line when the
+// optional authorized scope, the optional review-fix validation line, the optional capacity wait
+// line, the approval line when the
 // control values carry one, the instruction (one entry, which may itself span lines), the token
 // line, the manifest lines.
 export function headerLines({ controlValues, instruction, token, manifestLines }) {
@@ -707,6 +740,9 @@ export function headerLines({ controlValues, instruction, token, manifestLines }
   }
   if (controlValues[REVIEW_FIX_VALIDATION_KEYWORD] !== undefined) {
     lines.push(`${REVIEW_FIX_VALIDATION_KEYWORD}: ${controlValues[REVIEW_FIX_VALIDATION_KEYWORD]}`);
+  }
+  if (controlValues[CAPACITY_WAIT_KEYWORD] !== undefined) {
+    lines.push(`${CAPACITY_WAIT_KEYWORD}: ${controlValues[CAPACITY_WAIT_KEYWORD]}`);
   }
   if (controlValues[APPROVAL_KEYWORD] !== undefined) {
     lines.push(`${APPROVAL_KEYWORD}: ${controlValues[APPROVAL_KEYWORD]}`);
@@ -748,6 +784,7 @@ function requireSnapshot(snapshot) {
     PROGRESS_KEYWORD,
     SCOPE_KEYWORD,
     REVIEW_FIX_VALIDATION_KEYWORD,
+    CAPACITY_WAIT_KEYWORD,
     APPROVAL_KEYWORD,
   ];
   if (Object.keys(controls).some((key) => !allowedControls.includes(key)))
@@ -787,6 +824,12 @@ function requireSnapshot(snapshot) {
     if (scopeLine === undefined) {
       invalid(`controlValues.${REVIEW_FIX_VALIDATION_KEYWORD} requires ${SCOPE_KEYWORD}`);
     }
+  }
+  // Version-neutral and independent of every other optional line.
+  const capacityLine = controls[CAPACITY_WAIT_KEYWORD];
+  const capacityCount = capacityLine === undefined ? 0 : 1;
+  if (capacityLine !== undefined && parseCapacityWait(capacityLine) === null) {
+    invalid(`controlValues.${CAPACITY_WAIT_KEYWORD}`);
   }
   for (const keyword of CONTROL_KEYWORDS) {
     if (typeof controls[keyword] !== 'string') invalid(`controlValues.${keyword}`);
@@ -846,6 +889,7 @@ function requireSnapshot(snapshot) {
     progressCount -
     scopeCount -
     reviewFixCount -
+    capacityCount -
     approvalCount -
     1 -
     snapshot.manifestLines.length;
@@ -861,7 +905,12 @@ function requireSnapshot(snapshot) {
     instruction:
       instructionCount === 1
         ? header[
-            CONTROL_KEYWORDS.length + progressCount + scopeCount + reviewFixCount + approvalCount
+            CONTROL_KEYWORDS.length +
+              progressCount +
+              scopeCount +
+              reviewFixCount +
+              capacityCount +
+              approvalCount
           ]
         : null,
     token: snapshot.token,
@@ -1056,6 +1105,46 @@ export function validateStructure(text, snapshotInput) {
           line: reviewFixLines[0].line,
         },
       );
+    }
+  }
+
+  // The capacity wait line: at most once, present exactly when the snapshot declares one, well
+  // formed, and equal to the snapshot's value.
+  const capacityLines = [];
+  aboveLines.forEach((line, index) => {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith(`${CAPACITY_WAIT_KEYWORD}:`)) return;
+    capacityLines.push({
+      line: index + 1,
+      value: trimmed.slice(CAPACITY_WAIT_KEYWORD.length + 1).trim(),
+    });
+  });
+  if (capacityLines.length > 1) {
+    fail('CONTROL_LINE_DUPLICATED', `"${CAPACITY_WAIT_KEYWORD}:" appears more than once`, {
+      line: capacityLines[1].line,
+    });
+  }
+  const expectedCapacity = snapshot.controlValues[CAPACITY_WAIT_KEYWORD];
+  if (expectedCapacity === undefined && capacityLines.length === 1) {
+    fail('CONTROL_LINE_MISMATCH', `"${CAPACITY_WAIT_KEYWORD}:" is not in the snapshot`, {
+      line: capacityLines[0].line,
+    });
+  }
+  if (expectedCapacity !== undefined && capacityLines.length === 0) {
+    fail('CONTROL_LINE_MISSING', `"${CAPACITY_WAIT_KEYWORD}:" is missing above the delimiter`, {
+      line: delimiterLine,
+    });
+  }
+  if (capacityLines.length === 1) {
+    if (parseCapacityWait(capacityLines[0].value) === null) {
+      fail('CONTROL_LINE_MISMATCH', `"${CAPACITY_WAIT_KEYWORD}:" is malformed`, {
+        line: capacityLines[0].line,
+      });
+    }
+    if (capacityLines[0].value !== expectedCapacity) {
+      fail('CONTROL_LINE_MISMATCH', `"${CAPACITY_WAIT_KEYWORD}:" differs from the snapshot`, {
+        line: capacityLines[0].line,
+      });
     }
   }
 
@@ -1467,6 +1556,9 @@ export async function buildEnvelope(input, deps = {}) {
     controlValues[REVIEW_FIX_VALIDATION_KEYWORD] = reviewFixValidationValue(
       normalized.reviewFixValidation,
     );
+  }
+  if (normalized.capacityWait !== null) {
+    controlValues[CAPACITY_WAIT_KEYWORD] = normalized.capacityWait;
   }
   // Every approved item `build` refused is undelegated, so an approval that leaves no identifier
   // writes no line, exactly as a round without approved items writes none.

@@ -24,6 +24,12 @@ schema in `{{SKILL:setup}}`, and the current config value or default as the pre-
 9. `mergeGate` – the **merge gate** of `{{SKILL:merge-gate}}`, asked as its own block together with `iterate.reviewFixValidation`: see below.
 10. `executionProfiles`: the field-pilot opt-in `executionProfiles.fast.enabled` (strict Boolean) and its confirmed baseline-start and resume actions, owned by the fragment below; activation is automatic in `{{SKILL:build}}`, `{{SKILL:refactor}}`, and `{{SKILL:fix}}`. Profile and Express never ask this block and preserve an existing value.
 
+11. `validation`: `validation.capacityWaitBudgetMinutes` (non-negative integer minutes, default
+    `120`, `0` = no automatic retry) — how long a run keeps retrying a validation command that the
+    execution environment refused to start for temporary lack of capacity, counted from the first
+    refusal. Accept only a non-negative integer; on other input ask again or keep the default and
+    report that.
+
 ```lazy-include
 setup-execution-profiles
 when: the user chose the advanced settings and block 10 (`executionProfiles`) is being asked

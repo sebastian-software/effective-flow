@@ -1029,6 +1029,19 @@ checks, headSha }`) is pure and rejects a detected `detection` without its full 
   back as stable error codes with a nonzero exit code. The canonical envelope shapes, and the
   rationale for the minting order, the absence-check scope, the token and the helper itself, live
   in the lazily loaded `delegation-envelope-examples` fragment.
+- **Capacity-wait.** Invoke it as `node <skill-root>/scripts/capacity-wait.mjs
+<schedule|bind|verify|forge-line>` with one JSON object on standard input. `schedule` computes the
+  next retry delay (1, 2, 5, then 10 minutes, capped before the deadline and at the host's longest
+  safe wait) or a stop reason; it never launches or sleeps. `bind` reads a waiting checkout's
+  identity (root, branch, HEAD, in-progress merge, index, tracked and untracked content) through
+  read-only Git calls and returns the `Capacity resume:` line; `verify` names every drifted field.
+  `forge-line` renders the only capacity text a forge may carry. `capacity-wait-core.mjs` owns
+  the `Capacity wait: budget=<minutes>m; deadline=<instant|unanchored>` line form, which
+  `delegation-envelope` also carries as an optional, version-neutral line that `iterate` Phase 0
+  parses fail-closed. `config-resolve` reports `validation.capacityWaitBudgetMinutes` as `minutes`
+  (invalid value: an `invalid-value` diagnostic; unset: unreported). The classification is owned by
+  `environment-signature-classes`, the retry, wait and resume contract by
+  [`capacity-refusal-retry`](../../src/shared/capacity-refusal-retry.md).
 - **Repair-attempt.** Invoke it as `node <skill-root>/scripts/repair-attempt.mjs
 <scope-read|scope-check|attribute|post-check|record|evaluate|scope-bind|scope-release>` with one
   JSON object on standard input; it emits one `{ ok, operation, data }` envelope. `merge-gate` uses

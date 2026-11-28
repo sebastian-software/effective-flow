@@ -197,6 +197,8 @@ const RUNTIME_SCRIPT_FILES = [
   'config-resolve-core.mjs',
   'conflict-validation.mjs',
   'conflict-validation-core.mjs',
+  'capacity-wait.mjs',
+  'capacity-wait-core.mjs',
   'setup-status.mjs',
   'setup-status-core.mjs',
   'capture.mjs',
