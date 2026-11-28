@@ -441,9 +441,14 @@ identifiers, requires its bound identifiers to match, and authenticates its capa
 stored hash. A missing file or a mismatching one is a neutral `AUTHENTICATION_FAILED` that keeps the
 reservation open; a symlinked, non-regular, oversized, or malformed file, or a consumed marker
 beside an open reservation, is `UNSAFE_STORAGE`. After the finalized record is durable, the helper
-atomically replaces the file by a consumed marker that holds only the capability hash; a failed
-replacement still returns `finalized`, and a repeat call that finds the raw file or a matching
-marker returns `finalized` without changing the record. The capability check therefore detects only
+atomically replaces the file by a consumed marker that holds only the capability hash and syncs
+its directory. `finalized` confirms both the durable record and the handle invalidation.
+`finalized-cleanup-pending` confirms the durable record only: marker replacement or directory sync
+failed. Repeating the request with the same identifiers finishes cleanup without changing the
+record: it replaces a surviving raw file or syncs the directory of a matching marker. If cleanup
+still fails, the status stays pending. Discard and purge also remove the requested generation's
+handles; `abandon-reservation` applies to workflow reservations, not gate observations.
+The capability check therefore detects only
 a capability file inconsistent with its reservation: an unknown identifier fails `NOT_FOUND` when
 the reservation is read, and the identifier pair is a bearer reference inside the private, ignored
 runtime root, so a run holding another run's open `observationId` could finalize that observation. `requiredCheckCount` is taken from the final `pr-status-read` check list after its
