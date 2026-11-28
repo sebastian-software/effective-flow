@@ -80,6 +80,16 @@ and Target path fields.
 - A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
   not automatically rewritten. A requested translation converts the complete plan contract.
 
+Nested list items and continuation lines under a `- [ ]` item start at the item's content column,
+two spaces, and a paragraph after a list is separated by a blank line at column 0. The repository
+formatter keeps this form:
+
+```markdown
+- [ ] The parent criterion holds.
+  - The first nested condition holds.
+  - The second nested condition holds.
+```
+
 ### Single review-result line
 
 The plan-review section, `##` in a plan file and `###` in a planning comment, holds exactly one

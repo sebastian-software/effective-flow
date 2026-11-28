@@ -82,3 +82,5 @@ is no runtime application – you edit `src/`, never `dist/`.
 - [T3 acceptance runs](t3-acceptance-runs.md) – how manual acceptance runs that must watch a PR and
   be woken are set up on T3 Code: own top-level thread, announcement, two-way links, host-timestamp
   durations, waits for work started during a run and evidence.
+- [T3 delegation transport acceptance](t3-delegation-transport-acceptance.md) – dated spike evidence
+  for T3 Code `delegate_task`: completion wake, nesting, child tool surface, settings and questions.
