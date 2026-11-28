@@ -603,6 +603,56 @@ test('metadata blob drift preserves the new plan and refuses publication before 
   await release(world, passId);
 });
 
+// Invariant (issue #800): the parent's own formatting changes the plan bytes after the first
+// metadata call; the second `publication-metadata` call keeps `planFile`, `reviewResult` and
+// `openPointCount`, and its retained `blobOid` is the one `publish --apply` binds, so the formatted
+// bytes, not the unformatted ones, are published.
+test('a plan formatted after the first metadata call publishes with the second call blobOid', async (t) => {
+  const world = createWorld(t);
+  const passId = await acquire(world);
+  const collected = await collect(world, passId);
+  await writePlan(world);
+  const first = checked(await world.lint('publication-metadata'));
+  const target = path.join(world.root, PLAN);
+  // Stand-in for the formatter: align the Affected files table in place.
+  const formatted = fs
+    .readFileSync(target, 'utf8')
+    .replace(
+      '| File | Description |\n|---|---|\n| `README.md` | A tracked file |\n| `src/widgets/*.js` | A glob entry |\n| `widget-core.mjs` | A shorthand entry |',
+      [
+        '| File               | Description       |',
+        '| ------------------ | ----------------- |',
+        '| `README.md`        | A tracked file    |',
+        '| `src/widgets/*.js` | A glob entry      |',
+        '| `widget-core.mjs`  | A shorthand entry |',
+      ].join('\n'),
+    );
+  assert.notEqual(formatted, planText());
+  fs.writeFileSync(target, formatted);
+  const second = checked(await world.lint('publication-metadata'));
+  assert.notEqual(second.blobOid, first.blobOid);
+  assert.equal(second.planFile, first.planFile);
+  assert.equal(second.reviewResult, first.reviewResult);
+  assert.equal(second.openPointCount, first.openPointCount);
+  const published = checked(
+    await world.publication(
+      'publish',
+      publicationInput(collected.baseOid, { expectedBlobOid: second.blobOid }),
+    ),
+  );
+  assert.equal(published.state, 'pull-request-opened');
+  assert.equal(world.state().creates.length, 1);
+  assert.equal(world.git(world.bare, 'show', `${published.commitOid}:${PLAN}`), formatted.trim());
+  const verdict = await record(world, passId, collected, { pullRequest: published.pullRequest });
+  const stored = await report(world, passId, collected, {
+    verdicts: [verdict],
+    pullRequestsOpened: [prIdentity(published)],
+    leftoverPlanFiles: leftovers,
+  });
+  assert.equal(stored.counts.published, 1);
+  await release(world, passId);
+});
+
 // Invariant (issue #734): a base that moves after collection, without touching anything the plan
 // cites, is assessed `fits`; the fragment's `publication-metadata` re-run yields the identical
 // projection, `blobOid` included, the one re-publish builds the plan commit on the new tip, and the

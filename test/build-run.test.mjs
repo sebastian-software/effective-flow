@@ -11,6 +11,8 @@ import {
   MAX_DISPATCH_BYTES,
   MAX_RETAINED_EVIDENCE_BYTES,
   REQUIRED_GATES,
+  canonicalPlanStatusLines,
+  planCompletionMismatch,
 } from '../src/scripts/build-run-core.mjs';
 import {
   authorizePlan,
@@ -867,4 +869,57 @@ test('a no-PR lane stops a limited final validation as an ABORT naming its prere
     stop({ conclusion: `Stopped: ${limitationText('git-checkout')}.` }),
   );
   assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'ABORT');
+});
+
+// Invariant: the plan-completion convention has one owner. A later plan text completes an earlier
+// one only with exactly one canonical status line on each side and, status values masked, an
+// identical or `## Build completion`-continued body; `fatalUtf8` alone makes undecodable bytes a
+// distinct refusal and changes no other verdict.
+test('planCompletionMismatch accepts equal or completed plans and names every refusal', () => {
+  const open = '# Plan\n\n**Plan status:** Not implemented\n\n## Requirement\n\nGo.\n';
+  const done = open.replace('Not implemented', 'Implemented');
+  const completed = `${done}\n## Build completion\n\nDone.\n`;
+  assert.deepEqual(canonicalPlanStatusLines(open), ['**Plan status:** Not implemented']);
+  assert.deepEqual(canonicalPlanStatusLines('no status\n'), []);
+  assert.equal(planCompletionMismatch(open, open), null);
+  assert.equal(planCompletionMismatch(open, done), null);
+  assert.equal(planCompletionMismatch(open, completed), null);
+  assert.equal(
+    planCompletionMismatch(open, completed.replace('Build completion', 'Workflow-Abschluss')),
+    null,
+  );
+  assert.equal(planCompletionMismatch(Buffer.from(open), Buffer.from(completed)), null);
+  assert.equal(planCompletionMismatch(open, `${done}\n## Notes\n\nMore.\n`), 'not-preserved');
+  assert.equal(planCompletionMismatch(open, done.replace('Go.', 'Revised.')), 'not-preserved');
+  assert.equal(planCompletionMismatch(`${open}\nx\n`, open), 'not-preserved');
+  assert.equal(
+    planCompletionMismatch(open, `${done}\n**Plan status:** Implemented\n`),
+    'status-count',
+  );
+  assert.equal(planCompletionMismatch('no status\n', 'no status\n'), 'status-count');
+  assert.equal(planCompletionMismatch(open, 'no status\n'), 'status-count');
+
+  const bad = Buffer.concat([
+    Buffer.from(open.replace('Go.', 'Go ')),
+    Buffer.from([0xff]),
+    Buffer.from('\n'),
+  ]);
+  const badDone = Buffer.concat([
+    Buffer.from(done.replace('Go.', 'Go ')),
+    Buffer.from([0xfe]),
+    Buffer.from('\n'),
+  ]);
+  assert.equal(planCompletionMismatch(bad, bad, { fatalUtf8: true }), 'invalid-utf8');
+  assert.equal(planCompletionMismatch(Buffer.from(open), bad, { fatalUtf8: true }), 'invalid-utf8');
+  assert.equal(planCompletionMismatch(bad, badDone, { fatalUtf8: true }), 'invalid-utf8');
+  // Without `fatalUtf8` the bytes decode leniently, so two different invalid sequences compare equal.
+  assert.equal(planCompletionMismatch(bad, badDone), null);
+  assert.equal(
+    planCompletionMismatch(Buffer.from(open), Buffer.from(completed), { fatalUtf8: true }),
+    null,
+  );
+  assert.equal(
+    planCompletionMismatch(open, `${done}\n## Notes\n`, { fatalUtf8: true }),
+    'not-preserved',
+  );
 });

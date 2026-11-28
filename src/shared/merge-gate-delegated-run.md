@@ -18,9 +18,12 @@ In this order, before any other write:
    than `none` returns `ABORT unparseable input line`. Of these, an `Associated plan:` line is
    malformed only when its value is empty. `Caller limits:` holds one or more
    comma-separated tokens; an unknown, duplicated or empty token returns the same `ABORT`.
-   `Host:` accepts only `t3-code`. `Resumed wait:` is accepted only together with `Host: t3-code`,
-   under every run state, alone or with one `Relayed answer:` line, whose answer the digest rule of
-   "Answers and returns" consumes or discards; it never sets `report` mode itself.
+   `Host:` accepts only `t3-code`. An `Associated plan:` value may end in exactly one suffix
+   anchored at the line end, `; head=` followed by 40 or 64 lower-case hexadecimal characters;
+   everything before it, any other `;` included, is the path. `Resumed wait:` is accepted only
+   together with `Host: t3-code`, under every run state, alone or with one `Relayed answer:` line,
+   whose answer the digest rule of "Answers and returns" consumes or discards; it never sets
+   `report` mode itself.
    Optional `Progress context:` is the sole additional line: read `shared/subagent-progress.md`
    on demand and validate it before any authority-bearing work; missing context is valid legacy
    input with progress disabled. Unknown/malformed/duplicate/injected context returns
@@ -32,7 +35,9 @@ In this order, before any other write:
    Hold its path and reason – the helper's `outcome` verbatim, "not exact" for a `resolved` one
    that fails, the error code of an `ok: false` envelope, or "nonzero exit" where there is no
    envelope – and the dispatch continues without an associated plan. Only that validated plan
-   feeds the merged-run candidate order of `next-steps`.
+   feeds the merged-run candidate order of `next-steps`. A line with a head is checked in one call
+   with the line's head as `headSha` and fetches nothing; a line without one is checked without
+   `headSha` and never takes the fallback.
 3. **Wisdom file.** The path must resolve under the verified `RUNTIME_STATE_ROOT/.effective-flow/`,
    its name must match `.wisdom-accumulation-*.tmp.md`, and it must be absent or a regular file,
    absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file` and touch nothing at that path, never cleaning up a
@@ -586,9 +591,8 @@ gate run inline generates it at the start. Use
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
 - per "Draft ready for review": every `merge-proof-local` result, the class with its blocker count
   and `appendixTrust`, why no question was posed or the answer, and the ready step's result
-- when a pilot observation was reserved, its three anonymous correction counters; never its
-  observation identifier or capability outside the handle `pilot-measurement` keeps across a
-  `SUSPENDED host-pr-watch` return
+- when a pilot observation was reserved, its three anonymous correction counters; its identifiers
+  only in the handle `pilot-measurement` keeps across a `SUSPENDED host-pr-watch` return
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
   every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
   retain that every delegated `{{SKILL:iterate}}` round carried `Summary comment: suppressed`, so it
@@ -1451,9 +1455,15 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 ### Phase 5.5: Observe linked issues after merge
 
 Enter this phase only after a fresh PR read proves either that Phase 5 merged the pull request or
-that Phase 0 selected observer-only mode. If the open-PR path did not merge, perform no issue
-observation or container completion. A missing or invalid receipt preserves the merge result and
-ends this phase without heuristic tracker access.
+that Phase 0 selected observer-only mode. Without a valid receipt, preserve the merge result and
+end this phase without heuristic tracker access.
+
+```lazy-include
+pilot-measurement
+when: observer-only Phase 5.5 starts after waking with a suspended observation handle
+```
+
+Apply “Observer-only wake” before issue observation when that fragment is loaded for this wake.
 
 ```lazy-include
 merge-gate-issue-observation
@@ -1462,14 +1472,11 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
 
 ### Phase 6: Summary
 
-Before step 1, if Phase 0 reserved or restored a pilot observation and no earlier controlled ending
-finalized it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement`
-fragment; a `SUSPENDED host-pr-watch` return writes its handle per "Suspended observation" instead. This
-ordering is mandatory: finalization needs the counters and final status evidence that step 1
-deletes. The mutually exclusive earlier-ending and normal-Phase-6 routes together finalize every
-reservation exactly once. On the T3 path of `host-pr-watch`, step 1 keeps the wisdom file on a
-`SUSPENDED host-pr-watch` return as on `BLOCKED-USER`, and a report naming a pending wait follows
-that fragment's report-and-stop path.
+Before step 1, finalize a reserved or restored pilot observation only if it has not already been
+finalized, per `pilot-measurement`'s Phase 6; a `SUSPENDED host-pr-watch` return writes its handle
+per "Suspended observation" instead.
+On T3, keep the wisdom file on that return as on `BLOCKED-USER`; a report naming a pending wait
+follows `host-pr-watch`'s report-and-stop path.
 
 ```lazy-include
 merge-gate-repair-report
@@ -1641,8 +1648,9 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
    blockers, as `finish-incomplete`, as `marker-invalid` or without `pullRequestMarkReady`, or at
    `mergeGate.maxRounds` after its ready step takes the matching `ended without merge` or
    `marked ready` row; every other ending of that subsection takes the generic selection. Its
-   `<plan-file>` is the classification's `planPath`, or for an `unmarked` draft the validated
-   `Associated plan:` line; without either, `{{SKILL:review}} <PR>` leads with no alternative.
+   `<plan-file>` is the classification's `planPath`, or for an `unmarked` draft the path of a
+   validated `Associated plan:` line that carries no `; head=`; without either,
+   `{{SKILL:review}} <PR>` leads with no alternative.
    A dispatched run returning `ABORT` emits nothing here: its caller alone emits that ending's block.
    The block stays chat only: nothing of it is written onto the pull request.
 

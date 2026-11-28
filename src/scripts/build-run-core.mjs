@@ -2235,12 +2235,53 @@ async function carriedCompletionGate(context, proof, ref, current) {
     ),
   );
 }
-function normalizedPlan(bytes) {
-  const text = bytes.toString('utf8');
+function normalizedPlan(text) {
   return text.replace(
     /^\*\*(Plan status|Planungsstatus):\*\* (Not implemented|Implemented|Nicht umgesetzt|Umgesetzt)$/gm,
     (_, key) => `**${key}:** <status>`,
   );
+}
+// The canonical plan status lines of `text`, in order.
+export function canonicalPlanStatusLines(text) {
+  return (
+    text.match(
+      /^(?:\*\*(?:Plan status|Planungsstatus):\*\* (?:Not implemented|Implemented|Nicht umgesetzt|Umgesetzt))$/gm,
+    ) ?? []
+  );
+}
+// The plan-completion convention, stated once: the `later` plan text completes the `earlier` one
+// when each has exactly one canonical status line and, with both status values masked, `later`
+// equals `earlier` or continues it with a remainder that starts with a `## Build completion` or
+// `## Workflow-Abschluss` heading. Returns null when it does, else `status-count` or
+// `not-preserved`. Both are Buffers or strings. With `fatalUtf8`, a text that is not valid UTF-8
+// returns `invalid-utf8`, so replacement characters never make two different byte sequences
+// compare equal; without it the bytes decode leniently, as the build-run recheck always did.
+export function planCompletionMismatch(earlier, later, { fatalUtf8 = false } = {}) {
+  const decode = (value) => {
+    if (typeof value === 'string') return value;
+    if (!fatalUtf8) return value.toString('utf8');
+    try {
+      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(value);
+    } catch {
+      return null;
+    }
+  };
+  const before = decode(earlier);
+  const after = decode(later);
+  if (before === null || after === null) return 'invalid-utf8';
+  if (canonicalPlanStatusLines(before).length !== 1 || canonicalPlanStatusLines(after).length !== 1)
+    return 'status-count';
+  const normalizedBefore = normalizedPlan(before);
+  const normalizedAfter = normalizedPlan(after);
+  if (
+    !normalizedAfter.startsWith(normalizedBefore) ||
+    (normalizedAfter.length !== normalizedBefore.length &&
+      !/^\s*## (Build completion|Workflow-Abschluss)\s*\n/.test(
+        normalizedAfter.slice(normalizedBefore.length),
+      ))
+  )
+    return 'not-preserved';
+  return null;
 }
 function archivePlanPath(context) {
   const source = context.request.plan.path;
@@ -2729,22 +2770,10 @@ async function planCompletion(context, prepared, finalPlan, allowOpen = false, r
     fail('AUTHORITY_MISMATCH', 'completion plan is not the owning plan/archive path');
   const before = await artifact(prepared.plan, [context.root]);
   const after = await artifact(finalPlan, context.request.allowedRoots);
-  const statuses =
-    /^(?:\*\*(?:Plan status|Planungsstatus):\*\* (?:Not implemented|Implemented|Nicht umgesetzt|Umgesetzt))$/gm;
-  if (
-    (before.toString('utf8').match(statuses) ?? []).length !== 1 ||
-    (after.toString('utf8').match(statuses) ?? []).length !== 1
-  )
+  const mismatch = planCompletionMismatch(before, after);
+  if (mismatch === 'status-count')
     fail('RECHECK_REQUIRED', 'plan completion requires exactly one canonical status');
-  const normalizedBefore = normalizedPlan(before);
-  const normalizedAfter = normalizedPlan(after);
-  if (
-    !normalizedAfter.startsWith(normalizedBefore) ||
-    (normalizedAfter.length !== normalizedBefore.length &&
-      !/^\s*## (Build completion|Workflow-Abschluss)\s*\n/.test(
-        normalizedAfter.slice(normalizedBefore.length),
-      ))
-  )
+  if (mismatch !== null)
     fail(
       'RECHECK_REQUIRED',
       'completion must preserve approved plan text and append only its completion report',

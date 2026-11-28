@@ -1,7 +1,7 @@
 ---
 description: "Turns a confirmed selection of current-session local changes into coherent commits on a fresh delivery branch and opens a pull request without changing the source checkout beyond an optional, user-confirmed upstream fast-forward before selection."
 catalogHint: "Delivers confirmed local changes as coherent commits in a clean pull request."
-contextBudget: 824
+contextBudget: 878
 ---
 
 # Effective Flow Deliver
@@ -98,7 +98,8 @@ skill-discovery
 Read the project's `AGENTS.md` before any mutation. Use the repository's configured base, branch
 prefix, setup, validation, language, and forge conventions. Use the shipped, dependency-free
 `scripts/delivery-selection.mjs` helper for `upstream-status`, `fast-forward`, `bind-manifest`,
-`inventory`, `verify-source`, `transfer`, `reconcile`, and `committed-range` operations.
+`inventory`, `verify-source`, `transfer`, `reconcile`, `committed-range`, and `publication-preflight`
+operations.
 
 ## Selection contract
 
@@ -144,10 +145,12 @@ digest/blob/mode or tombstone, and both rename endpoints without printing file c
 
 This manifest confirmation is the sole routine approval. Its only additions are the conditional
 questions of step 1.1, which alone can precede it: the resume and release questions for a retained
-`partial-diff` record and the upstream questions. The committed-range route replaces it with at most
-its provider question or its focused publish question. An affirmative answer authorizes automatic
-derivation, non-blocking display, validation, and sequential execution of coherent commit groups,
-subject to every drift check, invariant, verification step, and abort boundary below.
+`partial-diff` record, the writer observation's provider question, whose unanswered, skipped, or
+non-interactive answer stops the run, and the upstream questions. The committed-range route
+replaces it with at most its provider question or its focused publish question. An
+affirmative answer authorizes automatic derivation, non-blocking display, validation, and
+sequential execution of coherent commit groups, subject to every drift check, invariant,
+verification step, and abort boundary below.
 
 ## Approach
 
@@ -162,9 +165,45 @@ deliver-partial-diff-resume
 when: `worktree inspect` lists a record with purpose `partial-diff` and status `aborted` or `failed`
 ```
 
-Unless a record was resumed, call `upstream-status {root: sourceRoot, fetch: true}` before any
-candidate is reconstructed. A failed `upstream-status` envelope (`ok: false`) ends this check with
-one notice line naming its error code; continue without an update. A failed or stale fetch, or one
+Unless a record was resumed, observe the pull-request writer before any source or delivery mutation.
+Read `tracker.remoteToolOverride`, `delivery.baseBranch`, and `delivery.branchPrefix` through the
+shared configuration contract; step 1.2 reuses the latter two, and no base-branch resolution runs
+here. Set `hostPolicy` first, from explicit running-environment evidence only: the run's own host
+instructions, tool policy, or runtime information. It is `restricted` only when that evidence names
+a different PR-creation path as the allowed one or denies the helper's PR write; an approval prompt
+for a command is not a restriction, and a Git push capability, a checkout path, or a generic PR tool
+is never evidence.
+
+```lazy-include
+deliver-publication-preflight
+when: the host policy is restricted or publication-preflight returns unsupported
+```
+
+Only under an `unrestricted` policy, call the remote helper's `repository-resolve` and then its
+`probe`, each with `{cwd: <RUNTIME_STATE_ROOT>}`, the context in which `{{SKILL:pr}}` publishes, and
+each with `provider` when `tracker.remoteToolOverride` is not `auto`: the provider override is that
+configured value, else the answer below, and it is carried on every helper call of this delivery.
+On `AMBIGUOUS_HOST`, ask once for `github` or `forgejo` and repeat the call with that answer; an
+unanswered, skipped, or non-interactive answer ends the run with one notice naming `AMBIGUOUS_HOST`,
+with nothing changed by this delivery. The writer is `{kind: "provider-helper", probe}`: a successful
+probe gives `{ok: true, pullRequestCreate}` from its `capabilities.pullRequestCreate` (`null` when
+absent); any other error envelope from either call gives `{ok: false, code, pullRequestCreate: null}`
+and its structured remediation is retained.
+
+```lazy-include
+remote-helper-contract
+when: the step 1.1 writer observation calls the remote helper
+```
+
+Call `publication-preflight {hostPolicy, writer, source: {branch}}` in writer scope, `branch` the
+current branch or `null` when detached. Retain the evidence and the provider override for step 3.3,
+`{{SKILL:pr}}`, and the committed-range route's provider question. On `unsupported`, stop with the
+early report before any fast-forward, selection, branch, worktree, index, commit, push, or forge
+mutation.
+
+Then call `upstream-status {root: sourceRoot, fetch: true}` before any candidate is reconstructed.
+A failed `upstream-status` envelope (`ok: false`) ends this check with one notice line naming its
+error code; continue without an update. A failed or stale fetch, or one
 reported as `fetch.skipped`, ends this check with one notice line whatever the state; so do
 `detached`, `no-upstream`, `upstream-gone`, `untracked-upstream`, `up-to-date`, and `ahead`, with no
 question. Only `behind`, `behind-overlap`, and `diverged` proceed to the fragment below, and only
@@ -217,13 +256,17 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name, or `deliver/<slug>` when
    the prefix is empty (the hidden-mode default), as `data.branch` of `named` from `node <skill-root>/scripts/effective-flow-mechanics.mjs delivery-branch-name` with one JSON object on stdin: `cwd` the repository root, `branchPrefix`, `skill: "deliver"`, `text` the confirmed delivery subject, `visibility` the resolver's `data.visibility`, passed verbatim, `excludeNames`. Report `data.originalSlug` and `data.slug` in one line when `data.sanitized`; `prefix-discloses` stops, naming `delivery.branchPrefix` and {{SKILL:setup}}; so do a nonzero exit, an unparsable envelope and `ok: false`, naming the error code — never derive the name by hand.
    Verify the branch and the absolute worktree path are unused in `git worktree list --porcelain`; a branch listed there goes into `excludeNames` for another call.
-3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
+3. Verify the publication path: call `publication-preflight` in pair scope with step 1.1's
+   `hostPolicy`, `writer`, and `source`, `head` the step 3.2 branch, and `base` the resolved local
+   base branch. On `unsupported`, stop with the pair-scope report before any branch, worktree,
+   index, commit, push, or forge mutation; on `supported`, continue with no question.
+4. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
    cleaning, resetting, or otherwise changing the source checkout. Issue a separate
    `effective-flow-created` receipt with purpose `partial-diff`, record the exact creation OID and
    current-run ownership flags, and write its lifecycle record as `active` with branch policy
    `retain` through `worktree record-init`. Receipt or record failure retains both artifacts and
    stops.
-4. Run setup only for the newly owned receipt according to `worktree.setup`, record its terminal
+5. Run setup only for the newly owned receipt according to `worktree.setup`, record its terminal
    setup status, then require its tracked tree and index to remain clean. A tracked setup change is
    not selected content and aborts before transfer.
 
@@ -304,7 +347,8 @@ any not-`ok` item or failed call takes the lifecycle denial fallback to `cleanup
 
 Delegate to `{{SKILL:pr}}` from the verified `RUNTIME_STATE_ROOT` with the exact head branch, base
 branch, final verified head OID, successful committed-handoff evidence, strongest type/effect hint,
-the `Verification evidence:` line built per `verification-evidence`, and this literal line:
+the `Verification evidence:` line built per `verification-evidence`, step 1.1's provider override as
+its explicit provider override when one exists, and this literal line:
 
 `Next steps: suppressed`
 
@@ -335,6 +379,8 @@ boundary; never guess a recovery or call an unrecognized operation.
   followed by staged-only `{{SKILL:commit}}` and commit-only `{{SKILL:pr}}`.
 - Never treat all current dirt as session-owned, force-add ignored content, dereference an untracked
   symlink, overwrite newer base content, rewrite commit history, or force cleanup.
+- An unsupported publication path (step 1.1 or 3.3) stops before any artifact is created. Never
+  switch or push the source branch, bypass host tool policy, or merge to work around it.
 - A failure after artifact creation calls `worktree transition` to `aborted` or `failed` and
   retains the artifacts; a call that is not `ok` is reported with the failed proof.
 

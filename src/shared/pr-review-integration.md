@@ -214,6 +214,14 @@ when: a finding is about to be published onto a pull request and its `Signature`
   survivor lies outside the diff — stays a review submission with an empty comment array; the loaded
   plumbing requires a review body and accepts the comment array as optional, so no separate
   publication path is needed for it.
+- **Published-finding count:** for the resolved pull request, report to the caller how many
+  findings this run published on it: the findings of every write that succeeded or that
+  `pr-write-recovery` counts as posted, the inline review and the outside-diff comment counted
+  separately, while a failed or unconfirmed write adds none. It counts findings only, so it is 0
+  whenever no finding was published, for example after the summary-only empty result,
+  `reviewed-empty`, hidden mode, or an automatic trigger that is `off`, declined or could not be
+  asked. It never counts a withheld finding or one whose normalized signature already appears under
+  this fragment's marker.
 
 ### Idempotency
 

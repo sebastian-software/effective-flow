@@ -226,7 +226,16 @@ This Completion applies to every entry that ends in `DONE`: `plan`, the `plan-re
 delegation and the `plan-review` autopilot file review. Before reporting success, in this order:
 
 1. Write any forced `Revision required` (blocking open points, a skipped judgment) into the
-   artifact, finish formatting, then run the final mechanical plan-lint. `plan` entry only: then
+   artifact. Unless the caller's brief forbids project tools, format only the plan file, and only
+   through a direct call of an already-present formatter executable, changing no other path. A
+   direct call runs the executable the project's instructions name, keeping the options its command
+   carries (such as `--write`) and replacing any broad file argument with the single plan path, and
+   appends the plan path when it carries none: a package script whose command is a single executable
+   resolves to that executable with those options, and a
+   package-manager-generated bin shim (such as `node_modules/.bin/<name>`) counts; a package
+   manager, `pnpm exec`, `npx`, a runner, an install, a download or an executable that accepts no
+   path never does. Otherwise leave the plan unformatted and add `formatter: unavailable` to
+   `Notes:`. Then run the final mechanical plan-lint. `plan` entry only: then
    run `node <skill-root>/scripts/plan-publication.mjs scan` with
    `{cwd: <retained verified EXECUTION_ROOT>, runState: "unattended", planFile: <plan path relative to EXECUTION_ROOT>}`
    as one JSON object on standard input through a quoted here-document (`<<'JSON'`), and read
@@ -282,7 +291,7 @@ DONE
 ```
 
 `<n>` is the actual count of implementation-blocking open points. Notes include skipped legacy
-migration, inline/reduced-scope/skipped judgment and skipped publication when applicable. On any
-abort return `ABORT: <reason>` instead of `DONE`; preserve the one-plan-file write boundary and
-leave cleanup to the caller. No envelope field grants publication consent; WP5 alone owns later
+migration, inline/reduced-scope/skipped judgment, skipped publication and `formatter: unavailable`
+when applicable. On any abort return `ABORT: <reason>` instead of `DONE`; preserve the
+one-plan-file write boundary and leave cleanup to the caller. No envelope field grants publication consent; WP5 alone owns later
 publication through the shared publisher.

@@ -132,7 +132,10 @@ aliases, URLs, or personal, repository, branch, task, PR, or session identifiers
 open, its reservation also holds a reservation-salted digest of the owning session process (host
 name, process id, and start time), a salt that also carries a salted host binding (host name,
 kernel boot id, and process-namespace id) and salted digests of up to two ancestor processes (process
-id and start time), and the reservation time, all removed when the record ends;
+id and start time), and the reservation time, all removed when the record ends; an open merge-gate
+observation keeps its random capability in a helper-owned file below
+`<RUNTIME_STATE_ROOT>/.effective-flow/pilot-observation-handles/` until finalization reduces it to
+its hash;
 after activation, a Fast packet on a portable build has its own child transcript (Claude Code) or
 rollout file (Codex) read locally for model, effort and host version only; on Claude Code the
 helper finds it through `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR` and may list project folder
