@@ -631,15 +631,19 @@ every wait for pending checks or a pending configured reviewer to the host's pul
 never uses `sleep`, `gh --watch` or polling. The run suspends, the session prints one line naming
 what it waits for and ends the turn, and each pull-request event resumes the gate with fresh reads.
 The wait has no time bound, so `mergeGate.checkWaitMinutes` and `mergeGate.botWaitMinutes` do not
-apply there; you can say continue or stop. The line warns when none of the pending checks is
-required, or when a reviewer's has-run check is not required, because such a pass may not wake the
-gate. `/effective-flow merge-gate <PR>` in the same session continues a suspended gate; a new session
+apply there; you can say continue or stop. The line warns when no pending check is required but
+one states no requiredness, or when a reviewer's has-run check has not reported yet or states no
+requiredness, because such a pass may not wake the gate. `/effective-flow merge-gate <PR>` in the same session continues a suspended gate; a new session
 starts a fresh run, whose report names the earlier run's leftover wisdom file for
 `/effective-flow cleanup`. Three consecutive wakes that change nothing end the run with a report
 naming the pending checks or reviewer and the re-entry command, unless the only wait is for a
 reviewer's answer to a stale-verdict re-trigger: then the gate hands that verdict's items to
-`iterate`, as on every other host. A resume under `mergeGate.requireAllChecks: true` where only
-non-required checks remain pending also ends with that report. Where the watch
+`iterate`, as on every other host. Any wait, first or resumed, ends at once with that report
+instead of suspending when every pending check is non-required (`required: false`) under
+`mergeGate.requireAllChecks: true`, or when every pending reviewer is still running only on a
+non-required check: such a pass never wakes the session. The report also names what is already
+actionable – failing checks, or a finished reviewer's open items by count – and re-running
+`/effective-flow merge-gate <PR>` helps once those checks or reviewers have finished. Where the watch
 cannot be loaded or is rejected (Forgejo support is unconfirmed), or the gate runs inside a sub-agent, the run reports and
 stops instead of waiting and never merges. The watch is removed before the final report. Every
 other host keeps the bounded waits unchanged.

@@ -259,7 +259,8 @@ orphan arises when `merge-gate` crashes between `start-gate-observation` and
 It keeps `activate` at `not-ready` with `unmet: ["busy"]` and makes `aggregate` fail
 `INCOMPLETE_EVIDENCE`; it no longer blocks `start` or later observations. It is visible through
 `busyCause` and `incompleteCounts.gateObservations`. Its only way out is the same `begin-review`
-followed by `discard-generation`.
+followed by `discard-generation`, which also removes the generation's capability files (see
+"Evidence and consent").
 
 The readiness sample and aggregation's `eligibleBaselinePackets` count alike: the
 `wouldBeFastEligible` packets of **completed** baseline records. Aggregation reports the metric
@@ -392,14 +393,16 @@ fragment that owns its exact payloads:
 - **`merge-gate`** records the anonymous period observation described under "Evidence and
   consent", also under T3 Code. Its `harnessFamily` follows the same rule as above, and the
   observation carries `installKind`. Under T3 Code the observation survives
-  `SUSPENDED host-pr-watch` re-dispatches through the gate run's wisdom file and is finalized once at
-  the end of the gate run.
+  `SUSPENDED host-pr-watch` re-dispatches through the gate run's wisdom file, whose handle carries
+  only `generationId`, `observationId` and the counters, and is finalized once at the end of the
+  gate run; the capability never leaves the helper's capability file.
 
 ## Evidence and consent
 
 All owned state stays under
-`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, behind the repository's mandatory
-runtime-state safety and migration checks. Minimal workflow records are bounded structured facts;
+`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/` and, for gate-observation capability
+files, `<RUNTIME_STATE_ROOT>/.effective-flow/pilot-observation-handles/`, behind the repository's
+mandatory runtime-state safety and migration checks. Minimal workflow records are bounded structured facts;
 they exclude prompts, diffs, source, paths, command text and output, environment values, aliases,
 URLs, and personal, repository, branch, task, PR, or session identifiers.
 
@@ -423,12 +426,32 @@ activation, or a state that differs from the caller's `generationState`, returns
 `busy`; an open record or observation of another run no longer does. Neither result persists
 anything or suspends the pilot. Only then does the evidence-health check run, where an
 invalid member or orphan temporary still takes the `evidence-gap` path. A reservation
-returns an opaque `observationId`, raw capability, cohort, and start ordinal; only the capability
-hash—not the raw capability—is persisted alongside the opaque observation ID, cohort, and ordinal.
-Finalization authenticates that capability and accepts exactly the identifier,
-capability, closed terminal outcome, three correction counters, `checksReported`, and the typed
-`requiredCheckCount` and `requiredChecksSatisfied` values in addition to the runtime/generation
-binding. `requiredCheckCount` is taken from the final `pr-status-read` check list after its
+returns an opaque `observationId`, cohort, and start ordinal, and no capability. The reservation
+record persists only the capability hash; the helper writes the raw capability to its capability
+file `.effective-flow/pilot-observation-handles/<generationId>/<observationId>.json` (mode `0600`,
+directories `0700`, exclusive no-follow create, fsync and directory sync) before it increments the
+ordinal, and removes the file again when the state or reservation write fails. The handle root must
+be Git-ignored like the pilot namespace, or the reservation fails `UNSAFE_RUNTIME_ROOT` without
+writing; it is a sibling of the namespace, so no generation tree, closed name set, or evidence
+inventory includes it. Finalization accepts exactly the identifier, closed terminal outcome, three
+correction counters, `checksReported`, and the typed `requiredCheckCount` and
+`requiredChecksSatisfied` values in addition to the runtime/generation binding; a `capability` key
+is `INVALID_PAYLOAD`. It reads the capability file at the path derived from the validated
+identifiers, requires its bound identifiers to match, and authenticates its capability against the
+stored hash. A missing file or a mismatching one is a neutral `AUTHENTICATION_FAILED` that keeps the
+reservation open; a symlinked, non-regular, oversized, or malformed file, or a consumed marker
+beside an open reservation, is `UNSAFE_STORAGE`. After the finalized record is durable, the helper
+atomically replaces the file by a consumed marker that holds only the capability hash and syncs
+its directory. `finalized` confirms both the durable record and the handle invalidation.
+`finalized-cleanup-pending` confirms the durable record only: marker replacement or directory sync
+failed. Repeating the request with the same identifiers finishes cleanup without changing the
+record: it replaces a surviving raw file or syncs the directory of a matching marker. If cleanup
+still fails, the status stays pending. Discard and purge also remove the requested generation's
+handles; `abandon-reservation` applies to workflow reservations, not gate observations.
+The capability check therefore detects only
+a capability file inconsistent with its reservation: an unknown identifier fails `NOT_FOUND` when
+the reservation is read, and the identifier pair is a bearer reference inside the private, ignored
+runtime root, so a run holding another run's open `observationId` could finalize that observation. `requiredCheckCount` is taken from the final `pr-status-read` check list after its
 deduplication, so it counts the latest run per check identity and never a superseded run. It is
 exactly-once and response-loss-idempotent. Every post-reservation normal, controlled, or early
 workflow exit calls it once. A pre-Phase-4 stop in report mode records `reported-blocked`
@@ -533,6 +556,16 @@ digests, explicit confirmation, and no live or unknown writer. It atomically tom
 only the bound generation. Retry rescans the tombstone directory, rejects unknown or mismatched
 names, and reports the observed remainder instead of assuming zero. Deletion retains exclusive
 ownership until writers are excluded and the reviewed generation has disappeared.
+
+Purge and discard also remove `pilot-observation-handles/<generationId>/` for the requested
+generation only, by unlinking its `<opaque>.json` files and `.tmp-*` leftovers and then removing
+the empty directory; any other entry is `UNSAFE_STORAGE`. Every dry run reports the file count as
+`observationHandles`. For a present generation the removal runs under the lifecycle lock before the
+generation is tombstoned, so a crash in between leaves the generation present and a retry finishes
+it. For an absent generation, such as leftovers of an older helper, the dry run also returns
+`observationHandlesDigest`, an opaque inventory of that directory; the confirmed run removes the
+directory only when it echoes that value through the optional `observationHandlesDigest` key, and
+a missing or different value is `STALE_REVIEW` with nothing removed.
 
 `discard-generation` is narrower recovery for malformed or unknown owned evidence that prevents
 normal aggregation. It requires disabled configuration, review state, a separate confirmation of

@@ -40,7 +40,7 @@ export const EXPECTATIONS = Object.freeze({
   },
   'ambiguous-associated-plans-fallback': {
     first: 'merge-gate 42',
-    second: ['iterate 42'],
+    second: ['iterate 42 own-review findings'],
   },
   'approval-and-dependency-block-execution': {
     first: `plan ${PLAN}`,
@@ -120,24 +120,25 @@ function normalizedInvocation(invocation, projectRoot, expectedInvocation) {
     : invocation;
 }
 // Reference spellings are equivalent only for the same expected entity in its owning repository.
-// External tool identifiers never pass through the forge parser.
+// External tool identifiers never pass through the forge parser. Only the first argument token is
+// the reference; any trailing text, such as iterate's `own-review findings` selection, must match
+// the expected text exactly.
 function normalizedReferenceInvocation(invocation, expectedInvocation, repository) {
   if (!expectedInvocation) return invocation;
-  const [tool, ...arguments_] = invocation.split(' ');
-  const [expectedTool, ...expectedArguments] = expectedInvocation.split(' ');
+  const [tool, reference, ...trailing] = invocation.split(' ');
+  const [expectedTool, expectedReference, ...expectedTrailing] = expectedInvocation.split(' ');
   if (tool !== expectedTool) return invocation;
+  if (reference === undefined || expectedReference === undefined) return invocation;
+  if (trailing.join(' ') !== expectedTrailing.join(' ')) return invocation;
   const kind = ['merge-gate', 'iterate', 'review'].includes(tool)
     ? 'pull-request'
-    : tool === 'plan-issue' && /^#?\d+$/.test(expectedArguments.join(' '))
+    : tool === 'plan-issue' && expectedTrailing.length === 0 && /^#?\d+$/.test(expectedReference)
       ? 'issue'
       : null;
   if (!kind) return invocation;
   try {
-    const expected = parseReference(expectedArguments.join(' '), {
-      expectedKind: kind,
-      repository,
-    });
-    const actual = parseReference(arguments_.join(' '), { expectedKind: kind, repository });
+    const expected = parseReference(expectedReference, { expectedKind: kind, repository });
+    const actual = parseReference(reference, { expectedKind: kind, repository });
     // A URL needs a supplied owning repository; a retained URL alone cannot establish context.
     if (!repository && actual.repository) return invocation;
     return actual.number === expected.number ? expectedInvocation : invocation;

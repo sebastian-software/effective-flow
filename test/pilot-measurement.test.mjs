@@ -10,6 +10,8 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -123,6 +125,18 @@ function packetReservation(selectedProfile = 'quality') {
 
 function generationRoot(fx, generationId) {
   return join(fx.root, '.effective-flow/model-tiering-pilot/generations', generationId);
+}
+
+function handleDirectory(fx, generationId) {
+  return join(fx.root, '.effective-flow/pilot-observation-handles', generationId);
+}
+
+function handlePath(fx, generationId, observationId) {
+  return join(handleDirectory(fx, generationId), `${observationId}.json`);
+}
+
+function readHandle(fx, generationId, observationId) {
+  return JSON.parse(readFileSync(handlePath(fx, generationId, observationId), 'utf8'));
 }
 
 function opaqueId(namespace, ordinal) {
@@ -486,11 +500,12 @@ test('gate observations retain only anonymous grouping axes and finalize exactly
       fx.deps,
     )
   ).result;
+  assert.equal(Object.hasOwn(reserved, 'capability'), false);
+  const capability = readHandle(fx, generationId, reserved.observationId).capability;
   const finalizeInput = {
     ...fx.common,
     generationId,
     observationId: reserved.observationId,
-    capability: reserved.capability,
     terminalOutcome: 'reported-ready',
     ciRepairCorrections: 1,
     reviewerCorrections: 2,
@@ -519,7 +534,11 @@ test('gate observations retain only anonymous grouping axes and finalize exactly
   assert.equal(observation.harnessFamily, 'codex');
   assert.equal(Object.hasOwn(observation, 'runId'), false);
   assert.equal(Object.hasOwn(observation, 'pullRequest'), false);
-  assert.doesNotMatch(readFileSync(observationPath, 'utf8'), new RegExp(reserved.capability));
+  assert.doesNotMatch(readFileSync(observationPath, 'utf8'), new RegExp(capability));
+  assert.doesNotMatch(
+    readFileSync(handlePath(fx, generationId, reserved.observationId), 'utf8'),
+    new RegExp(capability),
+  );
 });
 
 test('gate observation check evidence rejects unavailable fields without consuming reservations', async (t) => {
@@ -561,7 +580,6 @@ test('gate observation check evidence rejects unavailable fields without consumi
         ...fx.common,
         generationId,
         observationId: reserved.observationId,
-        capability: reserved.capability,
         terminalOutcome: 'reported-ready',
         ciRepairCorrections: 0,
         reviewerCorrections: 0,
@@ -624,7 +642,6 @@ for (const mode of ['merge', 'report'])
       ...fx.common,
       generationId,
       observationId: reserved.observationId,
-      capability: reserved.capability,
       terminalOutcome: 'reported-blocked',
       ciRepairCorrections: 1,
       reviewerCorrections: 0,
@@ -664,7 +681,6 @@ for (const mode of ['merge', 'report'])
 
     const redispatch = await reserve();
     assert.notEqual(redispatch.observationId, first.observationId);
-    assert.notEqual(redispatch.capability, first.capability);
     assert.ok(redispatch.ordinal > first.ordinal);
     assert.equal(
       JSON.parse(readFileSync(observationPath(redispatch.observationId), 'utf8')).kind,
@@ -674,10 +690,13 @@ for (const mode of ['merge', 'report'])
       () =>
         executeOperation(
           'finalize-gate-observation',
-          { ...blockedUser(redispatch), capability: first.capability },
+          {
+            ...blockedUser(redispatch),
+            capability: readHandle(fx, generationId, redispatch.observationId).capability,
+          },
           fx.deps,
         ),
-      { code: 'AUTHENTICATION_FAILED' },
+      { code: 'INVALID_PAYLOAD' },
     );
     assert.equal(
       (await executeOperation('finalize-gate-observation', blockedUser(redispatch), fx.deps)).result
@@ -689,6 +708,683 @@ for (const mode of ['merge', 'report'])
       'reported-blocked',
     );
   });
+
+function gateReservationInput(fx, generationId) {
+  return {
+    ...fx.common,
+    generationId,
+    configState: 'enabled',
+    generationState: 'baseline',
+    mode: 'merge',
+    harnessFamily: 'codex',
+    installKind: 'native',
+  };
+}
+
+function gateFinalizationInput(fx, generationId, observationId) {
+  return {
+    ...fx.common,
+    generationId,
+    observationId,
+    terminalOutcome: 'merged',
+    ciRepairCorrections: 0,
+    reviewerCorrections: 0,
+    conflictCorrections: 0,
+    checksReported: false,
+    requiredCheckCount: 'unavailable',
+    requiredChecksSatisfied: 'unavailable',
+  };
+}
+
+async function reserveGateObservation(fx, generationId, deps = fx.deps) {
+  return (
+    await executeOperation('start-gate-observation', gateReservationInput(fx, generationId), deps)
+  ).result;
+}
+
+function observationRecordPath(fx, generationId, observationId) {
+  return join(generationRoot(fx, generationId), 'gate-observations', `${observationId}.json`);
+}
+
+function nextObservationOrdinal(fx, generationId) {
+  return JSON.parse(readFileSync(join(generationRoot(fx, generationId), 'state.json'), 'utf8'))
+    .nextObservationOrdinal;
+}
+
+// Wraps the fixture runner so that the first Git call matching `trigger` throws once.
+function failingOnce(fx, trigger) {
+  let fired = false;
+  return {
+    ...fx.deps,
+    runner: (call) => {
+      if (!fired && trigger(call)) {
+        fired = true;
+        throw new Error('injected runner failure');
+      }
+      return fx.deps.runner(call);
+    },
+  };
+}
+
+const HANDLE_ROOT_ARG = '.effective-flow/pilot-observation-handles';
+
+// Invariant: the helper keeps the raw capability in a 0600 capability file below 0700 directories
+// outside the pilot namespace, returns none of it, and finalization replaces it by a consumed
+// marker holding only the capability hash, so a repeat finalization is a mutation-free `finalized`.
+test('a gate observation keeps its capability in a helper-owned file that finalization consumes', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  assert.equal(existsSync(join(fx.root, HANDLE_ROOT_ARG)), false);
+  const reserved = await reserveGateObservation(fx, generationId);
+  assert.deepEqual(Object.keys(reserved).sort(), ['cohort', 'observationId', 'ordinal', 'status']);
+  const target = handlePath(fx, generationId, reserved.observationId);
+  assert.equal(statSync(target).mode & 0o777, 0o600);
+  assert.equal(statSync(handleDirectory(fx, generationId)).mode & 0o777, 0o700);
+  assert.equal(statSync(join(fx.root, HANDLE_ROOT_ARG)).mode & 0o777, 0o700);
+  const raw = readHandle(fx, generationId, reserved.observationId);
+  assert.deepEqual(Object.keys(raw).sort(), [
+    'capability',
+    'generationId',
+    'kind',
+    'observationId',
+    'schema',
+  ]);
+  assert.equal(raw.kind, 'gate-observation-handle');
+  const record = observationRecordPath(fx, generationId, reserved.observationId);
+  const reservation = JSON.parse(readFileSync(record, 'utf8'));
+  assert.equal(reservation.capabilityHash, canonicalDigest({ capability: raw.capability }));
+
+  const input = gateFinalizationInput(fx, generationId, reserved.observationId);
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, fx.deps)).result.status,
+    'finalized',
+  );
+  const consumed = readHandle(fx, generationId, reserved.observationId);
+  assert.deepEqual(consumed, {
+    schema: 1,
+    kind: 'gate-observation-handle-consumed',
+    generationId,
+    observationId: reserved.observationId,
+    capabilityHash: reservation.capabilityHash,
+  });
+  assert.doesNotMatch(readFileSync(target, 'utf8'), new RegExp(raw.capability));
+  const finalizedRecord = readFileSync(record, 'utf8');
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, fx.deps)).result.status,
+    'finalized',
+  );
+  assert.equal(readFileSync(record, 'utf8'), finalizedRecord);
+  assert.deepEqual(readHandle(fx, generationId, reserved.observationId), consumed);
+  await assert.rejects(
+    () =>
+      executeOperation(
+        'finalize-gate-observation',
+        { ...input, capability: raw.capability },
+        fx.deps,
+      ),
+    { code: 'INVALID_PAYLOAD' },
+  );
+});
+
+// Invariant: a missing or mismatching capability file is a neutral AUTHENTICATION_FAILED that keeps
+// the reservation open, while a symlinked file or a consumed marker beside an open reservation is
+// unsafe storage that persists an evidence-gap suspension.
+test('finalization classifies missing, mismatching, and unsafe capability files', async (t) => {
+  const otherId = 'Q'.repeat(32);
+  for (const [label, arrange, code, pilotControlOutcome] of [
+    ['missing file', (target) => rmSync(target), 'AUTHENTICATION_FAILED', 'none'],
+    [
+      'wrong capability',
+      (target, raw) =>
+        writeFileSync(target, `${canonicalizeJson({ ...raw, capability: 'W'.repeat(43) })}\n`),
+      'AUTHENTICATION_FAILED',
+      'none',
+    ],
+    [
+      'mismatched observation identifier',
+      (target, raw) =>
+        writeFileSync(target, `${canonicalizeJson({ ...raw, observationId: otherId })}\n`),
+      'AUTHENTICATION_FAILED',
+      'none',
+    ],
+    [
+      'mismatched generation identifier',
+      (target, raw) =>
+        writeFileSync(target, `${canonicalizeJson({ ...raw, generationId: otherId })}\n`),
+      'AUTHENTICATION_FAILED',
+      'none',
+    ],
+    [
+      'symlinked file',
+      (target, raw, fx) => {
+        const elsewhere = join(fx.root, 'elsewhere.json');
+        writeFileSync(elsewhere, `${canonicalizeJson(raw)}\n`);
+        rmSync(target);
+        symlinkSync(elsewhere, target);
+      },
+      'UNSAFE_STORAGE',
+      'evidence-gap',
+    ],
+    [
+      'extra key',
+      (target, raw) => writeFileSync(target, `${canonicalizeJson({ ...raw, extra: true })}\n`),
+      'UNSAFE_STORAGE',
+      'evidence-gap',
+    ],
+    [
+      'consumed marker on an open reservation',
+      (target, raw) =>
+        writeFileSync(
+          target,
+          `${canonicalizeJson({
+            schema: 1,
+            kind: 'gate-observation-handle-consumed',
+            generationId: raw.generationId,
+            observationId: raw.observationId,
+            capabilityHash: canonicalDigest({ capability: raw.capability }),
+          })}\n`,
+        ),
+      'UNSAFE_STORAGE',
+      'evidence-gap',
+    ],
+  ]) {
+    await t.test(label, async (t) => {
+      const fx = fixture(t);
+      const { generationId } = await beginBaseline(fx);
+      const reserved = await reserveGateObservation(fx, generationId);
+      const target = handlePath(fx, generationId, reserved.observationId);
+      arrange(target, readHandle(fx, generationId, reserved.observationId), fx);
+      const record = observationRecordPath(fx, generationId, reserved.observationId);
+      const before = readFileSync(record, 'utf8');
+      await assert.rejects(
+        () =>
+          executeOperation(
+            'finalize-gate-observation',
+            gateFinalizationInput(fx, generationId, reserved.observationId),
+            fx.deps,
+          ),
+        { code, pilotControlOutcome },
+      );
+      assert.equal(readFileSync(record, 'utf8'), before);
+      assert.equal(JSON.parse(before).kind, 'gate-observation-reservation');
+      assert.equal(
+        existsSync(join(generationRoot(fx, generationId), 'suspension.json')),
+        pilotControlOutcome === 'evidence-gap',
+      );
+    });
+  }
+});
+
+// Invariant: a reservation whose capability file cannot be written records nothing: no file, no
+// reservation, and no consumed ordinal; a symlinked component is unsafe storage, an ignore-check
+// failure of the handle root a neutral UNSAFE_RUNTIME_ROOT.
+test('a failed capability-file write reserves nothing and consumes no ordinal', async (t) => {
+  await t.test('symlinked handle root', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    const elsewhere = join(fx.root, 'elsewhere');
+    mkdirSync(elsewhere);
+    symlinkSync(elsewhere, join(fx.root, HANDLE_ROOT_ARG));
+    const ordinal = nextObservationOrdinal(fx, generationId);
+    await assert.rejects(() => reserveGateObservation(fx, generationId), {
+      code: 'UNSAFE_STORAGE',
+      pilotControlOutcome: 'evidence-gap',
+      controlStatePersisted: true,
+    });
+    assert.deepEqual(readdirSync(elsewhere), []);
+    assert.deepEqual(readdirSync(join(generationRoot(fx, generationId), 'gate-observations')), []);
+    assert.equal(nextObservationOrdinal(fx, generationId), ordinal);
+  });
+
+  await t.test('handle root not ignored', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    const deps = {
+      ...fx.deps,
+      runner: (call) =>
+        call.args.includes(HANDLE_ROOT_ARG)
+          ? { status: 1, stdout: '', stderr: '' }
+          : fx.deps.runner(call),
+    };
+    const ordinal = nextObservationOrdinal(fx, generationId);
+    await assert.rejects(
+      () => reserveGateObservation(fx, generationId, deps),
+      (error) => {
+        assert.equal(error.code, 'UNSAFE_RUNTIME_ROOT');
+        assert.deepEqual(error.details, { reason: 'not-ignored' });
+        assert.equal(error.pilotControlOutcome, 'none');
+        return true;
+      },
+    );
+    assert.equal(existsSync(join(fx.root, HANDLE_ROOT_ARG)), false);
+    assert.deepEqual(readdirSync(join(generationRoot(fx, generationId), 'gate-observations')), []);
+    assert.equal(nextObservationOrdinal(fx, generationId), ordinal);
+    assert.equal(existsSync(join(generationRoot(fx, generationId), 'suspension.json')), false);
+  });
+});
+
+test('a reservation retry syncs both handle parents before writing the capability', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const handles = handleDirectory(fx, generationId);
+  const afterMkdir = failingOnce(
+    fx,
+    ({ args }) => args.includes('rev-parse') && existsSync(handles),
+  );
+  await assert.rejects(() => reserveGateObservation(fx, generationId, afterMkdir), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.deepEqual(readdirSync(handles), []);
+
+  let handleGuardSeen = false;
+  let emptyDirectoryGuards = 0;
+  const beforeCapabilityWrite = failingOnce(fx, ({ args }) => {
+    if (args.includes(HANDLE_ROOT_ARG)) handleGuardSeen = true;
+    return (
+      handleGuardSeen &&
+      args.includes('rev-parse') &&
+      args.includes('--show-toplevel') &&
+      readdirSync(handles).length === 0 &&
+      ++emptyDirectoryGuards === 2
+    );
+  });
+  await assert.rejects(() => reserveGateObservation(fx, generationId, beforeCapabilityWrite), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.deepEqual(readdirSync(handles), []);
+  const reserved = await reserveGateObservation(fx, generationId);
+  assert.equal(reserved.ordinal, 1);
+});
+
+// Invariant: a reservation never stays without its record: a failed state or reservation write
+// removes the capability file it just wrote.
+test('a failed state or reservation write rolls the capability file back', async (t) => {
+  for (const [label, directory] of [
+    ['state write', (root) => root],
+    ['reservation write', (root) => join(root, 'gate-observations')],
+  ]) {
+    await t.test(label, async (t) => {
+      const fx = fixture(t);
+      const { generationId } = await beginBaseline(fx);
+      const root = generationRoot(fx, generationId);
+      // The write's temporary exists only between its creation and its publication.
+      const deps = failingOnce(
+        fx,
+        ({ args }) =>
+          args.includes('ls-files') &&
+          readdirSync(directory(root)).some((name) =>
+            name.startsWith('.tmp-start-gate-observation-'),
+          ),
+      );
+      await assert.rejects(() => reserveGateObservation(fx, generationId, deps));
+      const handles = handleDirectory(fx, generationId);
+      assert.deepEqual(existsSync(handles) ? readdirSync(handles) : [], []);
+      assert.deepEqual(
+        readdirSync(join(root, 'gate-observations')).filter((name) => !name.startsWith('.tmp-')),
+        [],
+      );
+    });
+  }
+});
+
+test('a failed consumed-marker write reports pending cleanup and a repeat completes it', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const reserved = await reserveGateObservation(fx, generationId);
+  const record = observationRecordPath(fx, generationId, reserved.observationId);
+  const statePath = join(generationRoot(fx, generationId), 'state.json');
+  const state = readFileSync(statePath, 'utf8');
+  const deps = failingOnce(
+    fx,
+    ({ args }) =>
+      args.includes(HANDLE_ROOT_ARG) &&
+      JSON.parse(readFileSync(record, 'utf8')).kind === 'gate-observation',
+  );
+  const input = gateFinalizationInput(fx, generationId, reserved.observationId);
+  const envelope = await executeOperation('finalize-gate-observation', input, deps);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.result.status, 'finalized-cleanup-pending');
+  assert.equal(existsSync(join(generationRoot(fx, generationId), 'suspension.json')), false);
+  assert.equal(readFileSync(statePath, 'utf8'), state);
+  const finalized = readFileSync(record, 'utf8');
+  assert.equal(JSON.parse(finalized).kind, 'gate-observation');
+  // The raw file remains, as after a crash between the record write and the marker.
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle',
+  );
+
+  assert.equal(
+    (
+      await executeOperation(
+        'finalize-gate-observation',
+        { ...input, terminalOutcome: 'failed' },
+        fx.deps,
+      )
+    ).result.status,
+    'finalized',
+  );
+  assert.equal(readFileSync(record, 'utf8'), finalized);
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle-consumed',
+  );
+});
+
+test('a visible consumed marker does not prove cleanup until its directory sync succeeds', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const { observationId } = await reserveGateObservation(fx, generationId);
+  const input = gateFinalizationInput(fx, generationId, observationId);
+  const afterMarkerRename = failingOnce(
+    fx,
+    ({ args }) =>
+      args.includes('--show-toplevel') &&
+      readHandle(fx, generationId, observationId).kind === 'gate-observation-handle-consumed',
+  );
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, afterMarkerRename)).result.status,
+    'finalized-cleanup-pending',
+  );
+  const record = observationRecordPath(fx, generationId, observationId);
+  const finalized = readFileSync(record, 'utf8');
+  let handleGuardSeen = false;
+  const duringRetrySync = failingOnce(fx, ({ args }) => {
+    if (args.includes(HANDLE_ROOT_ARG)) handleGuardSeen = true;
+    return handleGuardSeen && args.includes('--show-toplevel');
+  });
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, duringRetrySync)).result.status,
+    'finalized-cleanup-pending',
+  );
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, fx.deps)).result.status,
+    'finalized',
+  );
+  assert.equal(readFileSync(record, 'utf8'), finalized);
+});
+
+test('a finalize retry must sync the record directory before consuming the handle', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const reserved = await reserveGateObservation(fx, generationId);
+  const record = observationRecordPath(fx, generationId, reserved.observationId);
+  const input = gateFinalizationInput(fx, generationId, reserved.observationId);
+  const recordPublished = ({ args }) =>
+    args.includes('rev-parse') &&
+    JSON.parse(readFileSync(record, 'utf8')).kind === 'gate-observation';
+
+  await assert.rejects(
+    () => executeOperation('finalize-gate-observation', input, failingOnce(fx, recordPublished)),
+    { code: 'UNSAFE_RUNTIME_ROOT' },
+  );
+  const finalized = readFileSync(record, 'utf8');
+  assert.equal(JSON.parse(finalized).kind, 'gate-observation');
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle',
+  );
+
+  let handleRead = false;
+  const retryDeps = failingOnce(fx, (call) => {
+    if (call.args.includes(HANDLE_ROOT_ARG)) handleRead = true;
+    return handleRead && recordPublished(call);
+  });
+  await assert.rejects(() => executeOperation('finalize-gate-observation', input, retryDeps), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle',
+  );
+  assert.equal(
+    (await executeOperation('finalize-gate-observation', input, fx.deps)).result.status,
+    'finalized',
+  );
+  assert.equal(readFileSync(record, 'utf8'), finalized);
+  assert.equal(
+    readHandle(fx, generationId, reserved.observationId).kind,
+    'gate-observation-handle-consumed',
+  );
+});
+
+function writeLeftoverHandles(fx, generationId, name = `${'H'.repeat(32)}.json`) {
+  const directory = handleDirectory(fx, generationId);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(join(directory, name), 'leftover\n');
+  return directory;
+}
+
+async function reviewedGeneration(fx) {
+  const { generationId } = await beginBaseline(fx);
+  const reserved = await reserveGateObservation(fx, generationId);
+  await executeOperation(
+    'finalize-gate-observation',
+    gateFinalizationInput(fx, generationId, reserved.observationId),
+    fx.deps,
+  );
+  const statePath = join(generationRoot(fx, generationId), 'state.json');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  writeFileSync(statePath, `${canonicalizeJson({ ...state, generationState: 'review' })}\n`);
+  return generationId;
+}
+
+test('discard retry syncs the handle root before removing its generation', async (t) => {
+  const fx = fixture(t);
+  const generationId = await reviewedGeneration(fx);
+  const root = generationRoot(fx, generationId);
+  const handles = handleDirectory(fx, generationId);
+  const dryRun = await executeOperation(
+    'discard-generation',
+    { ...fx.common, generationId, configState: 'disabled', dryRun: true },
+    fx.deps,
+  );
+  const input = {
+    ...fx.common,
+    generationId,
+    configState: 'disabled',
+    dryRun: false,
+    fullInventoryDigest: dryRun.result.fullInventoryDigest,
+    decision: 'stop',
+    confirmation: true,
+  };
+  const afterRmdir = failingOnce(
+    fx,
+    ({ args }) => args.includes('rev-parse') && !existsSync(handles),
+  );
+  await assert.rejects(() => executeOperation('discard-generation', input, afterRmdir), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.equal(existsSync(handles), false);
+  assert.equal(existsSync(root), true);
+
+  let preRenameGuards = 0;
+  let handleGuardSeen = false;
+  const beforeRename = failingOnce(fx, ({ args }) => {
+    if (args.includes(HANDLE_ROOT_ARG)) handleGuardSeen = true;
+    return (
+      handleGuardSeen &&
+      existsSync(root) &&
+      args.includes('rev-parse') &&
+      args.includes('--show-toplevel') &&
+      ++preRenameGuards === 2
+    );
+  });
+  await assert.rejects(() => executeOperation('discard-generation', input, beforeRename), {
+    code: 'UNSAFE_RUNTIME_ROOT',
+  });
+  assert.equal(existsSync(root), true);
+  await executeOperation('discard-generation', input, fx.deps);
+  assert.equal(existsSync(root), false);
+  assert.equal(existsSync(handles), false);
+});
+
+// Invariant: purge and discard remove the requested generation's capability-file directory and
+// never another generation's; an absent generation's leftovers go only when the confirmed run
+// echoes the dry run's `observationHandlesDigest`, and an unexpected entry is unsafe storage.
+test('purge and discard remove only the requested generation capability files', async (t) => {
+  const foreignId = 'F'.repeat(32);
+
+  await t.test('purge of a present generation', async (t) => {
+    const fx = fixture(t);
+    const generationId = await reviewedGeneration(fx);
+    const foreign = writeLeftoverHandles(fx, foreignId);
+    const inventory = await executeOperation('inventory', { ...fx.common, generationId }, fx.deps);
+    const aggregated = await executeOperation(
+      'aggregate',
+      { ...fx.common, generationId, expectedInventoryDigest: inventory.result.inventoryDigest },
+      fx.deps,
+    );
+    const dryRun = await executeOperation(
+      'purge',
+      { ...fx.common, generationId, dryRun: true },
+      fx.deps,
+    );
+    assert.equal(dryRun.result.generationStatus, 'present');
+    assert.equal(dryRun.result.observationHandles, 1);
+    await executeOperation(
+      'purge',
+      {
+        ...fx.common,
+        generationId,
+        dryRun: false,
+        reviewDigest: aggregated.result.reviewDigest,
+        confirmation: true,
+      },
+      fx.deps,
+    );
+    assert.equal(existsSync(handleDirectory(fx, generationId)), false);
+    assert.deepEqual(readdirSync(foreign), [`${'H'.repeat(32)}.json`]);
+  });
+
+  await t.test('discard of a present generation with an unfinished observation', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    const { observationId } = await reserveGateObservation(fx, generationId);
+    const inventory = await executeOperation('inventory', { ...fx.common, generationId }, fx.deps);
+    const review = await executeOperation(
+      'begin-review',
+      {
+        ...fx.common,
+        generationId,
+        configState: 'disabled',
+        expectedInventoryDigest: inventory.result.inventoryDigest,
+        confirmation: true,
+      },
+      fx.deps,
+    );
+    assert.equal(review.result.incompleteCounts.gateObservations, 1);
+    assert.equal(readHandle(fx, generationId, observationId).kind, 'gate-observation-handle');
+    const foreign = writeLeftoverHandles(fx, foreignId);
+    const dryRun = await executeOperation(
+      'discard-generation',
+      { ...fx.common, generationId, configState: 'disabled', dryRun: true },
+      fx.deps,
+    );
+    assert.equal(dryRun.result.observationHandles, 1);
+    await executeOperation(
+      'discard-generation',
+      {
+        ...fx.common,
+        generationId,
+        configState: 'disabled',
+        dryRun: false,
+        fullInventoryDigest: dryRun.result.fullInventoryDigest,
+        decision: 'stop',
+        confirmation: true,
+      },
+      fx.deps,
+    );
+    assert.equal(existsSync(handleDirectory(fx, generationId)), false);
+    assert.equal(existsSync(generationRoot(fx, generationId)), false);
+    assert.deepEqual(readdirSync(foreign), [`${'H'.repeat(32)}.json`]);
+  });
+
+  await t.test('purge of an absent generation is bound to the dry-run digest', async (t) => {
+    const fx = fixture(t);
+    await beginBaseline(fx);
+    const generationId = 'A'.repeat(32);
+    const directory = writeLeftoverHandles(fx, generationId);
+    const foreign = writeLeftoverHandles(fx, foreignId);
+    const dryRun = (
+      await executeOperation('purge', { ...fx.common, generationId, dryRun: true }, fx.deps)
+    ).result;
+    assert.equal(dryRun.generationStatus, 'absent');
+    assert.equal(dryRun.observationHandles, 1);
+    const confirmed = {
+      ...fx.common,
+      generationId,
+      dryRun: false,
+      reviewDigest: `sha256:${'0'.repeat(64)}`,
+      confirmation: true,
+    };
+    for (const echoed of [undefined, `sha256:${'9'.repeat(64)}`]) {
+      await assert.rejects(
+        () =>
+          executeOperation(
+            'purge',
+            echoed === undefined ? confirmed : { ...confirmed, observationHandlesDigest: echoed },
+            fx.deps,
+          ),
+        { code: 'STALE_REVIEW' },
+      );
+      assert.equal(existsSync(directory), true);
+    }
+    await executeOperation(
+      'purge',
+      { ...confirmed, observationHandlesDigest: dryRun.observationHandlesDigest },
+      fx.deps,
+    );
+    assert.equal(existsSync(directory), false);
+    assert.deepEqual(readdirSync(foreign), [`${'H'.repeat(32)}.json`]);
+  });
+
+  await t.test('discard with an absent namespace validates, then removes', async (t) => {
+    const fx = fixture(t);
+    const generationId = 'A'.repeat(32);
+    const directory = writeLeftoverHandles(fx, generationId);
+    const dryRun = (
+      await executeOperation(
+        'discard-generation',
+        { ...fx.common, generationId, configState: 'disabled', dryRun: true },
+        fx.deps,
+      )
+    ).result;
+    assert.equal(existsSync(join(fx.root, '.effective-flow/model-tiering-pilot')), false);
+    assert.equal(dryRun.observationHandles, 1);
+    assert.equal(existsSync(directory), true);
+    const confirmed = {
+      ...fx.common,
+      generationId,
+      configState: 'disabled',
+      dryRun: false,
+      fullInventoryDigest: `sha256:${'0'.repeat(64)}`,
+      decision: 'stop',
+      confirmation: true,
+    };
+    await assert.rejects(() => executeOperation('discard-generation', confirmed, fx.deps), {
+      code: 'STALE_REVIEW',
+    });
+    assert.equal(existsSync(directory), true);
+    await executeOperation(
+      'discard-generation',
+      { ...confirmed, observationHandlesDigest: dryRun.observationHandlesDigest },
+      fx.deps,
+    );
+    assert.equal(existsSync(directory), false);
+  });
+
+  await t.test('an unexpected entry is unsafe storage', async (t) => {
+    const fx = fixture(t);
+    await beginBaseline(fx);
+    const generationId = 'A'.repeat(32);
+    writeLeftoverHandles(fx, generationId, 'notes.txt');
+    await assert.rejects(
+      () => executeOperation('purge', { ...fx.common, generationId, dryRun: true }, fx.deps),
+      { code: 'UNSAFE_STORAGE' },
+    );
+  });
+});
 
 test('inventory binds unknown evidence as raw bytes while admission rejects it', async (t) => {
   const fx = fixture(t);
@@ -1366,7 +2062,6 @@ test('deterministic identifier collisions reject without overwriting accepted ev
         ...fx.common,
         generationId,
         observationId: accepted.observationId,
-        capability: accepted.capability,
         terminalOutcome: 'merged',
         ciRepairCorrections: 0,
         reviewerCorrections: 0,
@@ -2077,7 +2772,6 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
         ...fx.common,
         generationId,
         observationId: reservation.observationId,
-        capability: reservation.capability,
         terminalOutcome,
         ciRepairCorrections: index === 5 ? 1 : 0,
         reviewerCorrections: index === 5 ? 2 : 0,
@@ -2287,7 +2981,6 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
           ...fx.common,
           generationId,
           observationId: reservation.observationId,
-          capability: reservation.capability,
           terminalOutcome: 'reported-ready',
           ciRepairCorrections: 0,
           reviewerCorrections: 0,
@@ -2363,7 +3056,6 @@ test('publication suppresses complementary 5+1 observation groups while retainin
         ...fx.common,
         generationId,
         observationId: reservation.observationId,
-        capability: reservation.capability,
         terminalOutcome: 'reported-ready',
         ciRepairCorrections: 0,
         reviewerCorrections: 0,

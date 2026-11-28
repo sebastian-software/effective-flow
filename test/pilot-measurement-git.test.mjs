@@ -81,6 +81,17 @@ test('real Git ignore and index guards admit only ignored, untracked pilot state
     git(receipt.root, 'check-ignore', '--no-index', '--', '.effective-flow/model-tiering-pilot'),
     '.effective-flow/model-tiering-pilot',
   );
+  // The capability-file root beside the pilot namespace is ignored by the same rule.
+  assert.equal(
+    git(
+      receipt.root,
+      'check-ignore',
+      '--no-index',
+      '--',
+      '.effective-flow/pilot-observation-handles',
+    ),
+    '.effective-flow/pilot-observation-handles',
+  );
   assert.equal(git(receipt.root, 'ls-files', '--', '.effective-flow/'), '');
 
   const created = await executeOperation('begin-baseline', baselineInput(receipt), { runner });
