@@ -50,6 +50,7 @@ import {
 } from './remote-tracker-core.mjs';
 import { assertPublishable } from './remote-tracker-shared-core.mjs';
 import {
+  MAX_PLAN_BYTES,
   planForgeFields,
   publicationMetadataFromText,
   PlanLintError,
@@ -91,7 +92,7 @@ const MUTATING_OPERATIONS = new Set(MUTATING_PLAN_PUBLICATION_OPERATIONS);
 
 export const RUN_STATES = Object.freeze(['interactive', 'unattended']);
 export const VISIBILITIES = Object.freeze(['standard', 'hidden']);
-export const MAX_PLAN_BYTES = 512 * 1024;
+export { MAX_PLAN_BYTES };
 // Hard input limits, checked before any scan pattern runs.
 export const MAX_TITLE_CHARS = 256;
 // GitHub's pull-request body limit. It bounds the body prose and, separately, the final body

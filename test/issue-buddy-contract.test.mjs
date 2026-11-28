@@ -117,6 +117,25 @@ test('Issue Buddy uses the actual helper operation set and exact phase payload s
   );
 });
 
+test('Issue Buddy Phase 6 projects recorded verdicts to the three report fields without fingerprint', () => {
+  const phase = source.split(/^## Phase 6:.*$/m)[1]?.split(/^## /m)[0];
+  assert.ok(phase, 'missing Phase 6 report contract');
+  const reportProse = flat(phase);
+  const fields = reportProse.match(/`verdicts`[^.]*exactly `\{([^}]+)\}`/);
+  assert.ok(fields, 'missing exact verdict entry projection');
+  assert.deepEqual(
+    fields[1].split(',').map((field) => field.trim()),
+    ['issue', 'verdict', 'reason'],
+  );
+  const example = phase.match(/`(\[\{[^`]+\}\])`/);
+  assert.ok(example, 'missing JSON verdicts example');
+  const [entry] = JSON.parse(example[1]);
+  assert.deepEqual(Object.keys(entry).sort(), ['issue', 'reason', 'verdict']);
+  assert.ok(Number.isSafeInteger(entry.issue) && entry.issue > 0);
+  assert.equal(entry.verdict, 'not-ready');
+  assert.ok(entry.reason.length > 0);
+});
+
 test('Issue Buddy binds leftovers, readiness, nested planning and report state', () => {
   ordered(
     'Earlier plans live only in kept planning worktrees',

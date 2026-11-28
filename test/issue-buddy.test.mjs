@@ -733,7 +733,7 @@ test('report schema version is immutable within a pass and v2 keeps a pass-level
   await f.next();
   const c2 = await collected(f);
   assert.equal((await f.record(c2, 'failed')).ok, true);
-  const partial = await f.report(c2, {
+  const partialInput = {
     reportVersion: 2,
     outcome: 'failed',
     repositoryVisibility: 'unknown',
@@ -743,8 +743,19 @@ test('report schema version is immutable within a pass and v2 keeps a pass-level
       { issue: 1, stage: 'judgment', code: 'MODEL_FAILED' },
       { issue: null, stage: 'handoff', code: 'NESTED_SPAWN_UNAVAILABLE' },
     ],
+  };
+  const reportPath = path.join(f.root, '.effective-flow/issue-buddy/reports', `${f.passId}.json`);
+  const refused = await f.report(c2, {
+    ...partialInput,
+    verdicts: [{ ...partialInput.verdicts[0], fingerprint: c2.eligible[0].fingerprint }],
   });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'INVALID_PAYLOAD');
+  await assert.rejects(fs.stat(reportPath), { code: 'ENOENT' });
+  const partial = await f.report(c2, partialInput);
   assert.equal(partial.ok, true, JSON.stringify(partial));
+  assert.deepEqual(partial.data.verdicts, partialInput.verdicts);
+  assert.deepEqual(JSON.parse(await fs.readFile(reportPath, 'utf8')), partial.data);
   assert.equal(partial.data.outcome, 'failed');
   assert.deepEqual(partial.data.failures, [
     { issue: 1, stage: 'judgment', code: 'MODEL_FAILED' },

@@ -15,6 +15,7 @@ import nodeFs, {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -1027,6 +1028,413 @@ test('a dangling planDir is UNSAFE_PATH and a dangling archive sets archiveIgnor
       );
     }
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Plan-reference resolution against the pull-request head (issue #814: a plan that `git mv`ed into
+// the archive exists only on the PR head, never in the local checkout)
+
+const HEAD_SHA = 'c'.repeat(40);
+const ARCHIVE_PLAN = 'docs/plan/archive/2026-11-27-head-only.md';
+const BLOB_OID = 'd'.repeat(40);
+
+// A Git runner over the real `git` binary that honours the per-call `env`, like the shipped
+// process runner (`src/scripts/process-runner.mjs`) does, and records every call.
+function realGitRunner() {
+  const calls = [];
+  const runner = async (call) => {
+    calls.push(call);
+    const real = spawnSync(call.executable, call.args, {
+      env: { ...process.env, ...(call.env ?? {}) },
+      encoding: call.stdoutBuffer ? 'buffer' : 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return { status: real.status, stdout: real.stdout, stderr: real.stderr, error: real.error };
+  };
+  return { runner, calls };
+}
+
+function gitIn(cwd, ...args) {
+  const real = spawnSync(
+    'git',
+    ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args],
+    { encoding: 'utf8' },
+  );
+  assert.equal(real.status, 0, `git ${args.join(' ')}: ${real.stderr}`);
+  return real.stdout.trim();
+}
+
+// A repository whose checkout sits on a commit without the plan while `headSha` (a descendant)
+// holds `files`: the exact shape of an unmerged delivery branch.
+function headOnlyRepo(t, files) {
+  const cwd = tempRoot(t);
+  gitIn(cwd, 'init', '-q');
+  write(cwd, 'README.md', 'base\n');
+  gitIn(cwd, 'add', '-A');
+  gitIn(cwd, 'commit', '-q', '-m', 'base');
+  const base = gitIn(cwd, 'rev-parse', 'HEAD');
+  for (const [relative, content] of Object.entries(files)) {
+    if (content && typeof content === 'object' && content.symlink) {
+      mkdirSync(dirname(join(cwd, relative)), { recursive: true });
+      symlinkSync(content.symlink, join(cwd, relative));
+    } else {
+      write(cwd, relative, content);
+    }
+  }
+  gitIn(cwd, 'add', '-A');
+  gitIn(cwd, 'commit', '-q', '-m', 'head');
+  const headSha = gitIn(cwd, 'rev-parse', 'HEAD');
+  gitIn(cwd, 'checkout', '-q', base);
+  return { cwd, headSha };
+}
+
+function repoSnapshot(cwd) {
+  const index = join(cwd, '.git', 'index');
+  return {
+    index: nodeFs.existsSync(index)
+      ? createHash('sha256').update(readFileSync(index)).digest('hex')
+      : null,
+    head: gitIn(cwd, 'rev-parse', 'HEAD'),
+    refs: gitIn(cwd, 'for-each-ref'),
+    status: gitIn(cwd, '--no-optional-locks', 'status', '--porcelain'),
+    fetchHead: nodeFs.existsSync(join(cwd, '.git', 'FETCH_HEAD')),
+  };
+}
+
+const headResolve = (cwd, reference, headSha, deps, planDir = 'docs/plan') =>
+  data('plan-reference-resolve', { cwd, planDir, reference, headSha }, deps);
+
+test('a plan present only on the PR head resolves from it and leaves the repository untouched', async (t) => {
+  // Invariant: the head fallback is read-only and checkout-neutral (index, HEAD, refs, status and
+  // FETCH_HEAD unchanged) and reports a head resolution as exact, archived, source "head".
+  const { cwd, headSha } = headOnlyRepo(t, { [ARCHIVE_PLAN]: OPEN_PLAN('Head only') });
+  assert.equal(nodeFs.existsSync(join(cwd, ARCHIVE_PLAN)), false, 'the checkout lacks the plan');
+  const before = repoSnapshot(cwd);
+  const { runner } = realGitRunner();
+  const result = await headResolve(cwd, ARCHIVE_PLAN, headSha, { runner });
+  assert.deepEqual(result, {
+    outcome: 'resolved',
+    path: ARCHIVE_PLAN,
+    location: 'archive',
+    status: 'open',
+    statusReason: result.statusReason,
+    exact: true,
+    archiveIgnored: false,
+    source: 'head',
+    headSha,
+  });
+  assert.deepEqual(repoSnapshot(cwd), before);
+});
+
+test('a head resolution reads the blob status, so an archived plan reports implemented', async (t) => {
+  // Invariant: the head blob text is classified like a checkout file; the status never gates it.
+  const { cwd, headSha } = headOnlyRepo(t, {
+    [ARCHIVE_PLAN]: '# Done\n\n**Plan status:** Implemented\n',
+  });
+  const { runner } = realGitRunner();
+  const result = await headResolve(cwd, ARCHIVE_PLAN, headSha, { runner });
+  assert.equal(result.outcome, 'resolved');
+  assert.equal(result.status, 'implemented');
+  assert.equal(result.source, 'head');
+});
+
+test('a head resolution works from a cwd below the repository top level', async (t) => {
+  // Invariant: the literal pathspec is relative to cwd, so a nested cwd stays correct.
+  const { cwd, headSha } = headOnlyRepo(t, { [`pkg/${ARCHIVE_PLAN}`]: OPEN_PLAN('Nested') });
+  const nested = join(cwd, 'pkg');
+  mkdirSync(nested, { recursive: true });
+  const { runner } = realGitRunner();
+  const result = await headResolve(nested, ARCHIVE_PLAN, headSha, { runner });
+  assert.equal(result.outcome, 'resolved');
+  assert.equal(result.path, ARCHIVE_PLAN);
+  assert.equal(result.source, 'head');
+});
+
+test('a head path absent from checkout and head is not-found', async (t) => {
+  // Invariant: a path on neither side stays not-found, so the caller drops the line.
+  const { cwd, headSha } = headOnlyRepo(t, { [ARCHIVE_PLAN]: OPEN_PLAN('Head only') });
+  const { runner } = realGitRunner();
+  const result = await headResolve(cwd, 'docs/plan/archive/2026-11-27-missing.md', headSha, {
+    runner,
+  });
+  assert.equal(result.outcome, 'not-found');
+});
+
+test('a head symlink entry is not-found and never followed', async (t) => {
+  // Invariant: only regular blobs (100644/100755) count; a symlink entry is never followed.
+  const { cwd, headSha } = headOnlyRepo(t, {
+    'docs/plan/archive/real.md': OPEN_PLAN('Real'),
+    'docs/plan/archive/link.md': { symlink: 'real.md' },
+  });
+  const { runner } = realGitRunner();
+  assert.equal(
+    (await headResolve(cwd, 'docs/plan/archive/link.md', headSha, { runner })).outcome,
+    'not-found',
+  );
+  assert.equal(
+    (await headResolve(cwd, 'docs/plan/archive/real.md', headSha, { runner })).outcome,
+    'resolved',
+  );
+});
+
+test('a head blob over 512 KiB is not-found', async (t) => {
+  // Invariant: the plan-file size bound (MAX_PLAN_BYTES) applies to the head blob before it is read.
+  const { cwd, headSha } = headOnlyRepo(t, {
+    'docs/plan/archive/big.md': `${OPEN_PLAN('Big')}${'x'.repeat(512 * 1024 + 1)}`,
+    'docs/plan/archive/edge.md': `${OPEN_PLAN('Edge')}${'x'.repeat(512 * 1024 - OPEN_PLAN('Edge').length)}`,
+  });
+  const { runner } = realGitRunner();
+  assert.equal(
+    (await headResolve(cwd, 'docs/plan/archive/big.md', headSha, { runner })).outcome,
+    'not-found',
+  );
+  assert.equal(
+    (await headResolve(cwd, 'docs/plan/archive/edge.md', headSha, { runner })).outcome,
+    'resolved',
+  );
+});
+
+test('a head path with glob characters resolves exactly and a glob never matches another file', async (t) => {
+  // Invariant: the literal pathspec keeps the lookup exact; `a*.md` is a name, never a pattern.
+  const star = headOnlyRepo(t, { 'docs/plan/archive/a*.md': OPEN_PLAN('Star') });
+  const starResult = await headResolve(star.cwd, 'docs/plan/archive/a*.md', star.headSha, {
+    runner: realGitRunner().runner,
+  });
+  assert.equal(starResult.outcome, 'resolved');
+  assert.equal(starResult.path, 'docs/plan/archive/a*.md');
+  const other = headOnlyRepo(t, { 'docs/plan/archive/ab.md': OPEN_PLAN('Ab') });
+  const negative = await headResolve(other.cwd, 'docs/plan/archive/a*.md', other.headSha, {
+    runner: realGitRunner().runner,
+  });
+  assert.equal(negative.outcome, 'not-found');
+});
+
+// A scripted Git for the head read: `tree` maps a path to `{ mode, type, oid }`, `sizes` and
+// `blobs` answer `cat-file` by object ID; `commits` lists the object IDs that exist.
+function fakeHeadGit({
+  commits = [HEAD_SHA],
+  tree = {},
+  sizes = {},
+  blobs = {},
+  failOn = null,
+} = {}) {
+  const calls = [];
+  const runner = async (call) => {
+    calls.push(call);
+    assert.equal(call.executable, 'git');
+    const args = call.args.slice(2);
+    const command = args.find((arg) => !['-c', 'core.hooksPath=/dev/null'].includes(arg));
+    if (failOn === command) return { status: 2, stdout: '', stderr: 'fatal: boom\n' };
+    if (command === 'rev-parse') {
+      const target = args[args.length - 1].replace(/\^\{commit\}$/, '');
+      return commits.includes(target)
+        ? { status: 0, stdout: `${target}\n`, stderr: '' }
+        : { status: 128, stdout: '', stderr: 'fatal: Needed a single revision\n' };
+    }
+    if (command === 'ls-tree') {
+      const spec = args[args.length - 1].replace(/^:\(literal\)/, '');
+      const entry = tree[spec];
+      return {
+        status: 0,
+        stdout: entry ? `${entry.mode} ${entry.type} ${entry.oid}\t${spec}\0` : '',
+        stderr: '',
+      };
+    }
+    if (command === 'cat-file') {
+      const oid = args[args.length - 1];
+      if (args.includes('-s')) return { status: 0, stdout: `${sizes[oid] ?? 0}\n`, stderr: '' };
+      return { status: 0, stdout: blobs[oid] ?? '', stderr: '' };
+    }
+    throw new Error(`unexpected git call: ${call.args.join(' ')}`);
+  };
+  return { runner, calls };
+}
+
+const BLOB_ENTRY = { mode: '100644', type: 'blob', oid: BLOB_OID };
+
+test('every Git call of the head read runs with GIT_NO_LAZY_FETCH=1', async (t) => {
+  // Invariant: a partial clone never fetches a missing object while the helper only reads.
+  const cwd = tempRoot(t);
+  const fake = fakeHeadGit({
+    tree: { [ARCHIVE_PLAN]: BLOB_ENTRY },
+    sizes: { [BLOB_OID]: 40 },
+    blobs: { [BLOB_OID]: OPEN_PLAN('Head only') },
+  });
+  const result = await headResolve(cwd, ARCHIVE_PLAN, HEAD_SHA, { runner: fake.runner });
+  assert.equal(result.outcome, 'resolved');
+  assert.equal(result.source, 'head');
+  assert.ok(fake.calls.length >= 3, 'commit check, tree entry and blob are all read');
+  for (const call of fake.calls) {
+    assert.equal(call.env?.GIT_NO_LAZY_FETCH, '1', call.args.join(' '));
+  }
+  assert.ok(fake.calls.some((call) => call.args.includes('ls-tree')));
+  assert.ok(
+    fake.calls.some((call) => call.args.some((arg) => arg === `:(literal)${ARCHIVE_PLAN}`)),
+    'the tree entry is read through a literal pathspec',
+  );
+});
+
+test('a missing commit, a missing entry and a non-regular entry are not-found', async (t) => {
+  // Invariant: every absence on the head, trees and gitlinks included, is not-found, never an error.
+  const cwd = tempRoot(t);
+  const cases = [
+    { name: 'missing commit', fake: fakeHeadGit({ commits: [] }) },
+    { name: 'missing entry', fake: fakeHeadGit() },
+    {
+      name: 'symlink',
+      fake: fakeHeadGit({
+        tree: { [ARCHIVE_PLAN]: { mode: '120000', type: 'blob', oid: BLOB_OID } },
+      }),
+    },
+    {
+      name: 'tree',
+      fake: fakeHeadGit({
+        tree: { [ARCHIVE_PLAN]: { mode: '040000', type: 'tree', oid: BLOB_OID } },
+      }),
+    },
+    {
+      name: 'gitlink',
+      fake: fakeHeadGit({
+        tree: { [ARCHIVE_PLAN]: { mode: '160000', type: 'commit', oid: BLOB_OID } },
+      }),
+    },
+    {
+      name: 'oversized blob',
+      fake: fakeHeadGit({
+        tree: { [ARCHIVE_PLAN]: BLOB_ENTRY },
+        sizes: { [BLOB_OID]: 512 * 1024 + 1 },
+        blobs: { [BLOB_OID]: OPEN_PLAN('Big') },
+      }),
+    },
+  ];
+  for (const { name, fake } of cases) {
+    const result = await headResolve(cwd, ARCHIVE_PLAN, HEAD_SHA, { runner: fake.runner });
+    assert.equal(result.outcome, 'not-found', name);
+    assert.ok(
+      !fake.calls.some((call) => call.args.includes('cat-file') && !call.args.includes('-s')),
+      `${name}: the blob is not read`,
+    );
+  }
+});
+
+test('a Git failure on the head read is COMMAND_FAILED', async (t) => {
+  // Invariant: a Git failure outside the allowed exits surfaces through the git() wrapper.
+  const cwd = tempRoot(t);
+  const fake = fakeHeadGit({ tree: { [ARCHIVE_PLAN]: BLOB_ENTRY }, failOn: 'ls-tree' });
+  await failure(
+    'plan-reference-resolve',
+    { cwd, planDir: 'docs/plan', reference: ARCHIVE_PLAN, headSha: HEAD_SHA },
+    'COMMAND_FAILED',
+    { runner: fake.runner },
+  );
+});
+
+test('a path outside the plan directory is outside-plan-dir with no Git call', async (t) => {
+  // Invariant: containment is decided before any head read.
+  const cwd = tempRoot(t);
+  const fake = fakeHeadGit();
+  for (const reference of ['docs/other/x.md', 'src/index.ts', '../x.md', 'docs/plan/sub/x.md']) {
+    const result = await headResolve(cwd, reference, HEAD_SHA, { runner: fake.runner });
+    assert.deepEqual(result, { outcome: 'outside-plan-dir', archiveIgnored: false }, reference);
+  }
+  assert.equal(fake.calls.length, 0);
+});
+
+test('a checkout hit wins over the head and carries no head fields', async (t) => {
+  // Invariant: the checkout is consulted first; its result is exactly today's, headSha or not.
+  const cwd = tempRoot(t);
+  write(cwd, ARCHIVE_PLAN, OPEN_PLAN('Local'));
+  const fake = fakeHeadGit({ tree: { [ARCHIVE_PLAN]: BLOB_ENTRY } });
+  const withHead = await headResolve(cwd, ARCHIVE_PLAN, HEAD_SHA, { runner: fake.runner });
+  const without = await resolve(cwd, ARCHIVE_PLAN);
+  assert.deepEqual(withHead, without);
+  assert.equal('source' in withHead, false);
+  assert.equal('headSha' in withHead, false);
+  assert.equal(fake.calls.length, 0, 'a checkout hit never reads the head');
+});
+
+test("without headSha a missing path is exactly today's not-found and runs no Git", async (t) => {
+  // Invariant: callers that pass no headSha see unchanged results and no process is spawned.
+  const cwd = tempRoot(t);
+  const fake = fakeHeadGit();
+  const result = await data(
+    'plan-reference-resolve',
+    { cwd, planDir: 'docs/plan', reference: ARCHIVE_PLAN },
+    { runner: fake.runner },
+  );
+  assert.deepEqual(result, { outcome: 'not-found', archiveIgnored: false });
+  assert.equal(fake.calls.length, 0);
+});
+
+test('a malformed headSha, or headSha with a non-path reference, is INVALID_INPUT', async (t) => {
+  // Invariant: headSha is a full lower-case object ID and applies to the path form only.
+  const cwd = tempRoot(t);
+  write(cwd, 'docs/plan/2026-01-01-feature.md', OPEN_PLAN('Feature'));
+  const fake = fakeHeadGit();
+  const base = { cwd, planDir: 'docs/plan' };
+  for (const headSha of [
+    'HEAD',
+    'main',
+    'C'.repeat(40),
+    'c'.repeat(39),
+    'c'.repeat(41),
+    'c'.repeat(63),
+    '',
+    7,
+    null,
+    ['c'.repeat(40)],
+  ]) {
+    const envelope = await run(
+      'plan-reference-resolve',
+      { ...base, reference: ARCHIVE_PLAN, headSha },
+      { runner: fake.runner },
+    );
+    assert.equal(envelope.ok, false, JSON.stringify(headSha));
+    assert.equal(envelope.error.code, 'INVALID_INPUT', JSON.stringify(headSha));
+    assert.equal(envelope.error.details.field, 'headSha', JSON.stringify(headSha));
+  }
+  for (const reference of ['2026-01-01-feature.md', '2026-01-01-feature', 'feature', '0007']) {
+    const envelope = await run(
+      'plan-reference-resolve',
+      { ...base, reference, headSha: HEAD_SHA },
+      { runner: fake.runner },
+    );
+    assert.equal(envelope.ok, false, reference);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', reference);
+    assert.equal(envelope.error.details.field, 'headSha', reference);
+  }
+  // A 64-character object ID is well formed.
+  const sha256 = 'e'.repeat(64);
+  const ok = await headResolve(cwd, ARCHIVE_PLAN, sha256, {
+    runner: fakeHeadGit({ commits: [] }).runner,
+  });
+  assert.equal(ok.outcome, 'not-found');
+  assert.equal(fake.calls.length, 0, 'validation runs before any Git call');
+});
+
+test('plan.dir "." with headSha reads a top-level name as name form: INVALID_INPUT, no Git call', async (t) => {
+  // Invariant: the head check covers the path form only; with plan.dir "." a slashless
+  // data.path is name form (accepted fail-closed limitation).
+  const cwd = tempRoot(t);
+  const fake = fakeHeadGit();
+  const envelope = await run(
+    'plan-reference-resolve',
+    { cwd, planDir: '.', reference: '2026-11-27-top.md', headSha: HEAD_SHA },
+    { runner: fake.runner },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_INPUT');
+  assert.equal(envelope.error.details.field, 'headSha');
+  assert.equal(fake.calls.length, 0);
+});
+
+test('MAX_PLAN_BYTES is owned by plan-lint-core and still re-exported by plan-publication-core', async () => {
+  // Invariant: the mechanics core imports the bound from a leaf (import guard), and existing
+  // callers of plan-publication-core keep the same 512 KiB value.
+  const lint = await import('../src/scripts/plan-lint-core.mjs');
+  const publication = await import('../src/scripts/plan-publication-core.mjs');
+  assert.equal(lint.MAX_PLAN_BYTES, 512 * 1024);
+  assert.equal(publication.MAX_PLAN_BYTES, lint.MAX_PLAN_BYTES);
 });
 
 // ---------------------------------------------------------------------------------------------

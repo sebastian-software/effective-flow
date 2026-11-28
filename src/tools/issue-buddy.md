@@ -221,16 +221,13 @@ when: the planning worktree's `worktree path-resolve` returned a `source` other 
 ```
 
 **Planning worktree.** In publishing mode, immediately after collection and before recovery or
-judgment, create the pass's `issue-planning` worktree at `collect.baseOid`, so no second fetch
-runs: `PLANNING_ROOT` is the `worktreePath` of `worktree path-resolve` (purpose `issue-planning`,
-`sessionId` the `passId`), whose parents `worktree path-prepare` creates once
-`worktree-conflict-stop` let the pass continue; guard a `PLANNING_ROOT`
-below `.effective-flow/` per `runtime-state-safety`, then run
-`git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT>
-<collect.baseOid>`. Issue its `effective-flow-created` receipt and write its record with
-`worktree record-init` (workflow `issue-buddy`, purpose `issue-planning`, `sessionId` the
-`passId`, `creationOid` = `collect.baseOid`); a failed step stops the pass. Then require
-`git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
+judgment, create the pass's `issue-planning` worktree at `collect.baseOid`, so no second fetch runs.
+Use `worktree path-resolve` (purpose `issue-planning`, `sessionId`: `passId`): its `worktreePath` is `PLANNING_ROOT`.
+Run `worktree path-prepare` only if `worktree-conflict-stop` permits it. Guard `PLANNING_ROOT` below `.effective-flow/` per `runtime-state-safety`, then run
+`git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT> <collect.baseOid>`.
+Issue the `effective-flow-created` receipt and run `worktree record-init` (workflow `issue-buddy`,
+purpose `issue-planning`, `sessionId`: `passId`, `creationOid`: `collect.baseOid`). Stop on any failed step.
+Require `git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
 `consent-check` when it applies. Every plan file, lint and publication of this pass uses
 `PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 4 or
 Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason
@@ -468,6 +465,9 @@ pass-report` with `{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts,
 pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`,
 plus `baseMoves` when `issue-buddy-base-move` added an entry. After successful collection also pass
 `collect: <exact persisted returned result>`; before it, pass `mode` and `limits`. Use only reconciled successfully recorded verdicts/PR identities.
+Project each `verdicts` entry to exactly `{issue, verdict, reason}`, e.g.
+`[{"issue": 858, "verdict": "not-ready", "reason": "Needs acceptance criteria"}]`.
+Omit `fingerprint`; do not forward the whole `verdict-record` result.
 Initial leftovers are bound by collection; append only validated preserved new-file diagnostics.
 No `ready`, `passFailure` or extra cache field is admitted. Never rewrite a v1 report.
 

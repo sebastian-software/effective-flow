@@ -9,7 +9,7 @@
 // The owning fragments keep the judgment and the outcome handling; this module computes only what
 // they make mechanical. It imports the code that owns a rule instead of copying it, and only from
 // leaf modules whose own imports are `node:` built-ins: `plan-lint-core` (plan-file contract, plan
-// roots, safe reader), `delivery-selection-core` (fetch hardening), `remote-tracker-shared-core`
+// roots, safe reader, size bound), `delivery-selection-core` (fetch hardening), `remote-tracker-shared-core`
 // (disclosure patterns and the visibility enum), and `dated-name-allocation` (the error class,
 // the local date, the slug, the directory containment and the first-free-name search, shared with the runtime-state helper). It spawns nothing: Git runs through the injected runner, which the CLI
 // takes from `process-runner.mjs`. Every operation is a computation or a read, except that
@@ -19,6 +19,7 @@ import nodeFs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import {
+  MAX_PLAN_BYTES,
   PlanLintError,
   UNATTENDED_PLAN_NAME,
   classifyPlanText,
@@ -126,6 +127,8 @@ const NAME_INPUTS = ['text', 'issue', 'workflow', 'planSlug'];
 
 // The plan-numbering slug alphabet: `a–z`, `0–9`, inner hyphens.
 const SLUG = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+// A full object ID, SHA-1 or SHA-256.
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 const EXIT_CODES = Object.freeze({ INVALID_INPUT: 2, UNSAFE_PATH: 3 });
 
@@ -233,8 +236,14 @@ function asText(value) {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
 }
 
-async function git(runner, cwd, args, allowed = [0]) {
-  const result = await requireRunner(runner)({ executable: 'git', args: ['-C', cwd, ...args] });
+// `env`, when given, is spread over the process environment by the runner; omitted, the call is
+// unchanged.
+async function git(runner, cwd, args, allowed = [0], env = undefined) {
+  const result = await requireRunner(runner)({
+    executable: 'git',
+    args: ['-C', cwd, ...args],
+    ...(env === undefined ? {} : { env }),
+  });
   if (result?.error) {
     fail('COMMAND_FAILED', 'git could not be started', { args, code: result.error.code ?? null });
   }
@@ -255,15 +264,16 @@ async function remoteNames(runner, cwd) {
 
 // Resolves a revision to a commit id, or null. Always `--verify` and `--end-of-options`, so a
 // value starting with `-` is a revision that does not resolve, never an option.
-async function resolveCommit(runner, cwd, revision) {
+async function resolveCommit(runner, cwd, revision, env = undefined) {
   const { status, stdout } = await git(
     runner,
     cwd,
     ['rev-parse', '--verify', '--quiet', '--end-of-options', `${revision}^{commit}`],
     [0, 1, 128],
+    env,
   );
   const oid = stdout.trim();
-  return status === 0 && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid) ? oid : null;
+  return status === 0 && OBJECT_ID.test(oid) ? oid : null;
 }
 
 async function originHeadBranch(runner, cwd) {
@@ -852,14 +862,53 @@ function singleEntry(reference, roots, fs) {
   }
 }
 
+// The head read never fetches: a partial clone answers a missing object with a failure instead of
+// a lazy fetch.
+const NO_LAZY_FETCH = Object.freeze({ GIT_NO_LAZY_FETCH: '1' });
+const REGULAR_BLOB_MODES = new Set(['100644', '100755']);
+
+// The text of the regular blob at exactly `relative` (relative to cwd) in commit `headSha`, or
+// null when the commit is not local, the entry is missing, not a regular blob (a symlink, tree or
+// gitlink is never followed) or larger than the plan-file bound. Reads objects only, through a
+// literal pathspec, so no pattern character globs and no checkout, index or ref changes.
+async function headPlanText(runner, cwd, headSha, relative) {
+  if ((await resolveCommit(runner, cwd, headSha, NO_LAZY_FETCH)) !== headSha) return null;
+  const { stdout: listing } = await git(
+    runner,
+    cwd,
+    ['ls-tree', '-z', headSha, '--', `:(literal)${relative}`],
+    [0],
+    NO_LAZY_FETCH,
+  );
+  const entries = listing.split('\0').filter((entry) => entry !== '');
+  if (entries.length !== 1) return null;
+  const entry = entries[0].match(/^(\d{6}) ([a-z]+) ([0-9a-f]{40}|[0-9a-f]{64})\t([\s\S]*)$/);
+  if (!entry || entry[4] !== relative || entry[2] !== 'blob' || !REGULAR_BLOB_MODES.has(entry[1])) {
+    return null;
+  }
+  const oid = entry[3];
+  const { stdout: sizeText } = await git(runner, cwd, ['cat-file', '-s', oid], [0], NO_LAZY_FETCH);
+  const size = Number(sizeText.trim());
+  if (!Number.isSafeInteger(size) || size > MAX_PLAN_BYTES) return null;
+  return (await git(runner, cwd, ['cat-file', 'blob', oid], [0], NO_LAZY_FETCH)).stdout;
+}
+
 async function planReferenceResolve(input, deps) {
-  requireInput(input, ['cwd', 'planDir', 'reference']);
+  requireInput(input, ['cwd', 'planDir', 'reference', 'headSha']);
   const { fs } = deps;
   const cwd = requireCwd(input, fs);
   requireString(input.planDir, 'planDir');
   const reference = requireString(input.reference, 'reference').trim();
   if (reference === '')
     fail('INVALID_INPUT', 'reference must not be blank', { field: 'reference' });
+  const pathForm = path.isAbsolute(reference) || /[/\\]/.test(reference);
+  const headSha = input.headSha === undefined ? null : input.headSha;
+  if (input.headSha !== undefined && (typeof headSha !== 'string' || !OBJECT_ID.test(headSha))) {
+    fail('INVALID_INPUT', 'headSha must be a full lower-case object ID', { field: 'headSha' });
+  }
+  if (headSha !== null && !pathForm) {
+    fail('INVALID_INPUT', 'headSha applies to a path reference only', { field: 'headSha' });
+  }
   const { roots, archiveIgnored } = planRoots(fs, cwd, input.planDir);
 
   const resolved = (file, exact) => {
@@ -885,7 +934,7 @@ async function planReferenceResolve(input, deps) {
   // Path form: relative to cwd or absolute, physically inside the plan directory or its archive.
   // A path that lexically lies elsewhere (outside cwd included) is `outside-plan-dir`, an answer
   // rather than a stop; a symlink or identity failure on a path inside them stays UNSAFE_PATH.
-  if (path.isAbsolute(reference) || /[/\\]/.test(reference)) {
+  if (pathForm) {
     const outside = { outcome: 'outside-plan-dir', archiveIgnored };
     let relative = reference.replace(/\\/g, '/');
     if (path.isAbsolute(reference)) {
@@ -904,12 +953,26 @@ async function planReferenceResolve(input, deps) {
     ) {
       return outside;
     }
+    const top = directory === path.posix.normalize(roots.planDirPosix);
     // An unusable archive answers an archive path like the name form does: not found, ignored.
-    if (directory !== path.posix.normalize(roots.planDirPosix) && archiveIgnored) {
-      return { outcome: 'not-found', archiveIgnored };
-    }
-    const file = singleEntry(relative, roots, fs);
-    return file ? resolved(file, true) : { outcome: 'not-found', archiveIgnored };
+    const file = !top && archiveIgnored ? null : singleEntry(relative, roots, fs);
+    if (file) return resolved(file, true);
+    if (headSha === null) return { outcome: 'not-found', archiveIgnored };
+    // Checkout `not-found` only: the same exact path at the given commit, objects only.
+    const text = await headPlanText(deps.runner, cwd, headSha, relative);
+    if (text === null) return { outcome: 'not-found', archiveIgnored };
+    const classification = classifyPlanText(text);
+    return {
+      outcome: 'resolved',
+      path: relative,
+      location: top ? 'top' : 'archive',
+      status: classification.status,
+      statusReason: classification.statusReason,
+      exact: true,
+      archiveIgnored,
+      source: 'head',
+      headSha,
+    };
   }
 
   const files = [
