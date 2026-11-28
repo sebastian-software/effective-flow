@@ -339,8 +339,8 @@ test('backlog-audit passes hash-bearing results by reference and sends agent-aut
 // so its stated count stays the helper's count.
 test('issue-buddy documents the backlog-audit skips under its existing reasons', () => {
   const buddy = flat(read('tools/issue-buddy.md'));
-  assert.equal(SKIP_REASONS.length, 12);
-  assert.match(buddy, /preserve its twelve skip reasons/);
+  assert.equal(SKIP_REASONS.length, 13);
+  assert.match(buddy, /preserve its thirteen skip reasons/);
   assert.match(
     buddy,
     /\(`effective-flow-goal-epic`, `effective-flow-goal-obsolete`\) skip as `lifecycle-label`, an issue with a backlog-audit split-marker comment as `plan-issue-comment`/,

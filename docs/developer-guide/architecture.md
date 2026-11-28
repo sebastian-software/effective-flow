@@ -538,13 +538,15 @@ For an `autopilot` plan source, `repository-visibility-read` recognizes private 
 both GitHub and Forgejo. On a private Forgejo repository a security blocker becomes a neutral
 appendix on a draft pull request, just as on private GitHub, instead of withholding the push.
 An unavailable or unknown visibility remains treated as public. The Forgejo capability follows
-the probed `tea api` transport; the shared normalizer reads the boolean `private` field.
+the probed `tea api` transport. A public Forgejo candidate (`private`, `internal` and owner
+visibility all public) is confirmed by an anonymous `curl` proof before the helper reports
+`public`; see the [remote tracker guide](../user-guide/remote-tracker.md#issue-buddy-and-repository-visibility).
 
 ## Delivery orchestration boundaries
 
 ## Issue Buddy runtime boundary
 
-Issue Buddy is an unattended workflow edge that judges trusted GitHub issues and delegates plan
+Issue Buddy is an unattended workflow edge that judges trusted GitHub, Forgejo and Gitea issues and delegates plan
 creation to a built-in planning worker. The orchestrator owns the pass, retry budget, report and
 publication authority; it never reads issue, comment, plan, or commit prose itself. Issue-derived
 content is confined to the delegated planning context and publication text is generated from fixed

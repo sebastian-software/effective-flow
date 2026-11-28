@@ -135,6 +135,7 @@ export const AUTOPILOT_OPERATIONS = Object.freeze([
   'blocker-record',
   'fit-record',
   'base-move-record',
+  'comments-dropped-record',
   'delivery-base-check',
   'delivery-base-record',
   'plan-reviewed',
@@ -1175,6 +1176,39 @@ async function baseMoveRecordOperation(input, deps) {
   return { recorded: true, baseMove: record };
 }
 
+// After a confirmed plan pull request on an issue source: the count of the issue's comments Issue
+// Buddy dropped because the forge refused to state their author's permission (the pass report's
+// `unreadable-comments` count). The appendix states it, so a maintainer's comment the plan never
+// saw is visible to the reviewer. A run keeps at most one: an identical repeat returns
+// `recorded: true` without a write, a different count is INVALID_STATE.
+async function commentsDroppedRecordOperation(input, deps) {
+  closed(input, ['cwd', 'runId', 'count'], [], 'input');
+  requireRunId(input.runId);
+  if (!Number.isSafeInteger(input.count) || input.count < 1) {
+    invalid('count must be a positive integer');
+  }
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  if (ledger.source?.kind !== 'issue') invalid('comments-dropped-record requires an issue source');
+  const stored = storedCommentsDropped(ledger);
+  if (stored !== null) {
+    if (stored.count !== input.count) {
+      fail('INVALID_STATE', 'this run already recorded a different dropped-comment count');
+    }
+    return { recorded: true, commentsDropped: stored };
+  }
+  ledger.commentsDropped = { count: input.count, recordedAt: timestamp(deps) };
+  withdrawAppendix(ledger);
+  await writeLedger(ctx, ledger);
+  return { recorded: true, commentsDropped: { count: input.count } };
+}
+
+// The recorded dropped-comment count without its timestamp, or `null` when none was recorded.
+function storedCommentsDropped(ledger) {
+  if (!isObject(ledger.commentsDropped)) return null;
+  return { count: ledger.commentsDropped.count };
+}
+
 // The recorded base move without its timestamp, or `null` when none was recorded.
 function storedBaseMove(ledger) {
   if (!isObject(ledger.baseMove)) return null;
@@ -1707,6 +1741,9 @@ async function runCloseOperation(input, deps) {
     fit: storedFit(ledger),
     baseMove: storedBaseMove(ledger),
     deliveryBase: storedDeliveryBase(ledger),
+    ...(storedCommentsDropped(ledger) === null
+      ? {}
+      : { commentsDropped: storedCommentsDropped(ledger) }),
     ...(planningClaim === null ? {} : { planningClaim }),
   };
 }
@@ -1969,6 +2006,9 @@ const COPY = Object.freeze({
     baseMoveUnresolved: (reason) =>
       `The move is unresolved (\`${reason}\`): reconciling the plan with the new base is left to review.`,
     baseMoveOverlapping: 'Overlapping paths',
+    commentsDropped: '### Dropped comments',
+    commentsDroppedCount: (count) =>
+      `Issue Buddy dropped ${count} ${count === 1 ? 'comment' : 'comments'} on the issue because the forge did not state the author's repository permission to this runner; the plan does not consider ${count === 1 ? 'it' : 'them'}.`,
     deliveryBase: '### Delivery base',
     deliveryBaseRange: (from, to, commits) =>
       `The base moved from the merge base \`${from}\` to \`${to}\` before delivery: ${commits} ${commits === 1 ? 'commit' : 'commits'}.`,
@@ -2017,6 +2057,9 @@ const COPY = Object.freeze({
     baseMoveUnresolved: (reason) =>
       `Die Verschiebung ist ungelöst (\`${reason}\`): den Plan mit der neuen Basis abzugleichen bleibt dem Review überlassen.`,
     baseMoveOverlapping: 'Überschneidende Pfade',
+    commentsDropped: '### Verworfene Kommentare',
+    commentsDroppedCount: (count) =>
+      `Issue Buddy hat ${count} ${count === 1 ? 'Kommentar' : 'Kommentare'} zum Issue verworfen, weil die Forge diesem Lauf die Repository-Berechtigung ${count === 1 ? 'des Autors' : 'der Autoren'} nicht genannt hat; der Plan berücksichtigt ${count === 1 ? 'ihn' : 'sie'} nicht.`,
     deliveryBase: '### Basis bei Auslieferung',
     deliveryBaseRange: (from, to, commits) =>
       `Die Basis hat sich vor der Auslieferung von der Merge-Basis \`${from}\` auf \`${to}\` verschoben: ${commits} ${commits === 1 ? 'Commit' : 'Commits'}.`,
@@ -2105,6 +2148,16 @@ export function renderAppendix(ledger, { planPullRequest } = {}) {
     copy.automaticCount(visible.filter((entry) => entry.classification === 'silent').length),
     '',
   );
+
+  // The dropped-comment count sits before the blocker section too, for the same reason.
+  if (isObject(ledger.commentsDropped)) {
+    lines.push(
+      copy.commentsDropped,
+      '',
+      copy.commentsDroppedCount(ledger.commentsDropped.count),
+      '',
+    );
+  }
 
   // The base move sits before the blocker section, so blocker counting never reads its lines. An
   // unresolved move is the PR's flag: its line replaces the "no overlap" line of a fitting one.
@@ -2715,6 +2768,7 @@ const HANDLERS = Object.freeze({
   'blocker-record': blockerRecordOperation,
   'fit-record': fitRecordOperation,
   'base-move-record': baseMoveRecordOperation,
+  'comments-dropped-record': commentsDroppedRecordOperation,
   'delivery-base-check': deliveryBaseCheckOperation,
   'delivery-base-record': deliveryBaseRecordOperation,
   'plan-reviewed': planReviewedOperation,

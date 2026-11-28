@@ -3284,6 +3284,40 @@ test('base-move-record accepts an identical repeat and rejects a different secon
   assert.equal(ledger(root, runId).baseMove.commitCount, 3);
 });
 
+// Invariant: the dropped-comment count of an issue source is stored once and rendered in the
+// appendix, so a maintainer's comment the plan never saw is visible to the reviewer; the schema is
+// closed and a plan source takes none.
+test('comments-dropped-record stores one count and the appendix states it', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const recorded = await op('comments-dropped-record', { cwd: root, runId, count: 2 });
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  assert.deepEqual(recorded.data, { recorded: true, commentsDropped: { count: 2 } });
+  assert.equal(ledger(root, runId).commentsDropped.count, 2);
+  const repeat = await op('comments-dropped-record', { cwd: root, runId, count: 2 });
+  assert.equal(repeat.data.recorded, true);
+  const different = await op('comments-dropped-record', { cwd: root, runId, count: 3 });
+  assert.equal(different.error.code, 'INVALID_STATE');
+  for (const input of [{ count: 0 }, { count: 1.5 }, { count: '2' }, { count: 2, extra: true }]) {
+    const refused = await op('comments-dropped-record', { cwd: root, runId, ...input });
+    assert.equal(refused.error.code, 'INVALID_INPUT', JSON.stringify(input));
+  }
+  assert.match(
+    renderAppendix(ledger(root, runId)).appendix,
+    /### Dropped comments\n\nIssue Buddy dropped 2 comments on the issue/,
+  );
+});
+
+test('comments-dropped-record takes no plan-source ledger', async (t) => {
+  const root = repository(t);
+  const runId = await init(root, {
+    source: { kind: 'plan', planPath: 'docs/plan/x.md', planSha256: SHA },
+  });
+  const refused = await op('comments-dropped-record', { cwd: root, runId, count: 1 });
+  assert.equal(refused.error.code, 'INVALID_INPUT');
+  assert.equal(Object.hasOwn(ledger(root, runId), 'commentsDropped'), false);
+});
+
 test('base-move-record takes no plan-source ledger', async (t) => {
   const root = repository(t);
   const runId = await init(root, {

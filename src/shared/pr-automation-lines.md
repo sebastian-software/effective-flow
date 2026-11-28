@@ -9,7 +9,7 @@ Effective Flow), stop before any push and name the line. With the three lines, `
 
 - **`Keep draft: requested`** applies only with `Finalize plan draft:`. The plan draft finish runs
   step 9, `pr-update-title` and the hash-guarded `pr-update-body` as usual, but never
-  `pr-mark-ready`; on Forgejo `pr-update-title` runs on its own. The finish report line names the
+  `pr-mark-ready`; on Forgejo `pr-update-title` keeps the draft as `pr` step 8 states. The finish report line names the
   pull request as finished and still a draft by request.
 - **`Appendix:`** carries the digest `pr-appendix` returned for the run that the `Autopilot run:`
   line names. Merge the appendix into a body only through the literal call

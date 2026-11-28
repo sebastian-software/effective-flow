@@ -459,7 +459,7 @@ rejected issue only after your explicit override. An `implement` verdict continu
 
 ## `/effective-flow issue-buddy`
 
-**Purpose:** Reviews a bounded set of trusted GitHub issues and turns eligible issues into
+**Purpose:** Reviews a bounded set of trusted GitHub, Forgejo or Gitea issues and turns eligible issues into
 implementation plans. The default mode is a local dry run: it records readiness and planning
 decisions without creating plan files, branches, commits, or pull requests. Add `--publish` to
 publish draft, plan-only pull requests for ready issues.
@@ -473,7 +473,7 @@ publish draft, plan-only pull requests for ready issues.
 ```
 
 The pass runs from any checkout of the repository – the primary checkout or a linked or harness
-worktree, on any branch, clean or not – and requires the configured remote tracker to be GitHub.
+worktree, on any branch, clean or not – and requires the configured remote tracker to be GitHub, Forgejo or Gitea (a host the tracker cannot classify stops and names `tracker.remoteToolOverride`).
 It plans from the fetched tip of the resolved remote base branch (the configured
 `delivery.baseBranch`, else `origin/HEAD`, else `origin/main`) in a planning worktree of its own,
 so your checkout is never touched.
@@ -491,7 +491,14 @@ mode the pass formats the plan itself with the project's installed formatter bef
 and publishes it as written when the project names no Markdown formatter. A named formatter that
 cannot be called directly stops the pass before planning (`FORMATTER_UNAVAILABLE`); install a
 formatter that your host instructions allow to be called directly.
-Publication is allowed only for a public repository. Private and unknown repositories remain
+An issue counts as trusted when its author has write access (`write`, `maintain`, `admin` or
+`owner`). On Forgejo and Gitea a runner without admin rights may be refused the permission of
+another user: that issue is skipped as `author-permission-unreadable` and never trusted, so run the
+pass as a repository admin. A comment whose author's permission is refused is dropped like an
+untrusted one, and the report states how many comments were dropped (`unreadable-comments`).
+Publication is allowed only for a public repository. On Forgejo and Gitea, `public` needs an
+anonymous check through the optional `curl` ([details](remote-tracker.md#issue-buddy-and-repository-visibility)).
+Private and unknown repositories remain
 dry-run-only; the one exception is a run that you start with
 [`autopilot`](tools-automation.md#trust-model) on a single issue, which is your consent to publish
 that plan pull request. The pass stops when configuration, the repository root, the

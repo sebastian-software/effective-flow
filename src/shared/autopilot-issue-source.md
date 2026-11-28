@@ -1,9 +1,10 @@
 ## Autopilot issue source
 
-An issue source is one GitHub `plain-issue`. Issue Buddy plans it under this run's planning claim,
+An issue source is one forge `plain-issue` on a GitHub or Forgejo (Gitea included) `origin`. Issue
+Buddy plans it under this run's planning claim,
 its trust filter, readiness leaf and always-on deep review. This run's own context never holds issue or comment
 text: Stage B reads it only inside the classification leaf below, which returns the subtype alone.
-Forgejo and external trackers are out of scope for issue sources. Any checkout of the repository
+External trackers are out of scope for issue sources. Any checkout of the repository
 may start the run, the primary checkout or a linked or harness worktree; its branch, cleanliness and
 position do not matter, and nothing of this path writes into it.
 
@@ -18,8 +19,9 @@ Preflight step 7 for an issue source, in this order, each a stop that names its 
 
 1. **Tracker.** The configured `tracker.mode` must be `remote`; missing, `null`, `local` or
    `external` stops.
-2. **GitHub origin.** The literal `remote-tracker.mjs repository-resolve` call with `{cwd}` must
-   return `provider: github`.
+2. **Forge origin.** The literal `remote-tracker.mjs repository-resolve` call with `{cwd}` must
+   return `provider: github` or `provider: forgejo`. `AMBIGUOUS_HOST` stops and names
+   `tracker.remoteToolOverride`; this run never sets it.
 
 Then classify the one reference in one fresh read-only general-purpose **leaf** with the compact
 handoff of the delegation mandate: the reference, the verified roots, `Run state: non-interactive`,
@@ -85,7 +87,10 @@ report, the successful `pass-report` envelope of this same-session pass, never b
   verdict `failed`, and Phase 6 reports the entry's range `<fromBaseOid>..<toBaseOid>`, `reason`,
   `overlappingPaths` and Issue Buddy's way out.
 - **A confirmed pull request for `#<N>`** in `pullRequestsOpened`: continue under "Restore the
-  plan" with its number and head branch. Under `Autopilot run:` the pass grants no recovery, so
+  plan" with its number and head branch. Before that, record a nonzero
+  `counts["unreadable-comments"]` of the report with the literal
+  `autopilot.mjs comments-dropped-record` call `{cwd, runId, count}`, so the appendix names the
+  comments the plan never saw. Under `Autopilot run:` the pass grants no recovery, so
   `pullRequestsRecovered` stays empty; a recovered pull request for `#<N>`, should one appear, is
   the `open-pull-request` stop below, never a continuation.
 - **Verdict `not-ready` or `failed`** for `#<N>`: stop, no pull request.
@@ -93,6 +98,9 @@ report, the successful `pass-report` envelope of this same-session pass, never b
 - **Skip `open-pull-request`:** stop with the reason and no pull request. This run never plans or
   implements an issue that already has an open pull request, a plan pull request from an earlier
   pass or run included; such a plan is implemented by hand from its plan.
+- **Skip `author-permission-unreadable`:** stop, no pull request. The cause names the remedy: the
+  forge refused to state the issue author's permission to this runner, so run as a repository admin
+  or with an admin token.
 - **Skip `untrusted-author`, `lifecycle-label`, `plan-issue-comment`, `plan-branch-exists`,
   `closed-without-merge`, `failed-exhausted`, `unchanged-not-ready`, `already-published`,
   `unchanged-would-publish` or `issue-in-progress`:** stop with the reason, no pull request.

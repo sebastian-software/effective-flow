@@ -581,7 +581,9 @@ export function buildGithubCommandPlan(operation, input, repository) {
         }),
       );
     // The same PATCH `pr-update-body` sends, carrying the title instead, and on stdin for the same
-    // reason: the dry-run preview publishes the argv.
+    // reason: the dry-run preview publishes the argv. `payload.keepDraft` is deliberately ignored:
+    // GitHub's draft state is a real flag that a title edit cannot change, so there is no draft
+    // prefix to keep.
     case 'pr-update-title':
       return mutationPlan(
         'gh',

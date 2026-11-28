@@ -1,7 +1,7 @@
 ---
-description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
+description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub, Forgejo or Gitea issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 630
+contextBudget: 637
 ---
 
 # Effective Flow Issue Buddy
@@ -126,9 +126,10 @@ Perform these checks in this exact order:
 2. **Hidden mode.** Stop on `data.visibility: hidden` before tracker access or runtime writes.
 3. **Tracker.** Require configured `tracker.mode: remote`; missing, `null`, local or external
    stops without a tracker-mode question.
-4. **GitHub origin.** Make the literal `remote-tracker.mjs repository-resolve` call with `{cwd}`; require
-   `provider: github`. This operation resolves the origin locally and returns before any provider
-   probe or forge read. A missing, invalid or unsupported origin stops.
+4. **Forge origin.** Make the literal `remote-tracker.mjs repository-resolve` call with `{cwd}`; require
+   `provider: github` or `provider: forgejo` (Gitea included). This operation resolves the origin
+   locally and returns before any provider probe or forge read. A missing, invalid or unsupported
+   origin stops; `AMBIGUOUS_HOST` names `tracker.remoteToolOverride`.
 5. **Runtime safety.** Load and apply the runtime guard for each imminent private-state target.
 6. **Migration.** Run the guarded runtime-directory migration prerequisite before the pass record.
    This authorized migration is the only possible write before the pass record.
@@ -139,7 +140,8 @@ Perform these checks in this exact order:
 8. **Repository visibility.** Make the literal `remote-tracker.mjs repository-visibility-read` call with `{cwd}`.
    This GET-only operation is the only forge read before collection; require the capability
    `repositoryVisibilityRead`. Read `data.result.visibility` and retain
-   `repositoryVisibility: public|private|unknown`. Publishing
+   `repositoryVisibility: public|private|unknown`. On Forgejo the helper states `public` only after
+   its anonymous proof (`data.result.anonymousProof`) confirms the authenticated read. Publishing
    requires `public`: private repositories are dry-run-only (D2), except under the caller
    contract's autopilot consent; unknown stops publication.
    Dry runs retain private/unknown visibility. A failed read stops the pass.
@@ -204,7 +206,12 @@ every adoption refusal is `CLAIM_ADOPTION_REFUSED` with `details.reason` (`alrea
 is its own stop result, distinct from every skip reason.
 Retain the exact result as `collect`, including `baseOid`, `eligible`, `eligibleCount`, `skipped`,
 `recovery` and `authorizedRecovery`. The helper persists authorization and excludes leftover issues
-before judgment counting/slicing and recovery authorization; preserve its twelve skip reasons.
+before judgment counting/slicing and recovery authorization; preserve its thirteen skip reasons.
+`author-permission-unreadable` is an author whose permission the forge refused (403) to state to
+this runner, as Forgejo does for a non-admin; it is never trusted, and its remedy is a run as a
+repository admin. A comment whose author's permission is refused is dropped like an untrusted one
+and counted in its eligible entry's `unreadableCommentCount`; the report sums these as
+`counts["unreadable-comments"]`.
 Goal epics and obsolete marks (`effective-flow-goal-epic`, `effective-flow-goal-obsolete`) skip as
 `lifecycle-label`, an issue with a backlog-audit split-marker comment as `plan-issue-comment`.
 Triage verdicts `effective-flow-triage-reject` and `effective-flow-triage-needs-work` and a trusted
@@ -484,7 +491,7 @@ issues until `{{SKILL:cleanup}}` prunes them. If runtime safety/bind or journal 
 report/close, name the primary error and retained state; never claim success for either operation
 without its successful envelope.
 
-Report mode, visibility, limits, counts/skips, bounded verdict reasons, recovery, initial/final
+Report mode, visibility, limits, counts/skips (the dropped `unreadable-comments` count included), bounded verdict reasons, recovery, initial/final
 leftovers with operator action, a kept planning worktree, each base move as `issue-buddy-base-move`
 states (a flagged PR, also on a base that moved again, as an unresolved base move left to review),
 confirmed PR URLs and report path. Say when a plan was published as-is because the project names

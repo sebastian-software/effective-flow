@@ -55,7 +55,7 @@ test('Issue Buddy keeps the preflight order, a primary runtime root and its plan
     'Configuration and root.',
     'Hidden mode.',
     'Tracker.',
-    'GitHub origin.',
+    'Forge origin.',
     'Runtime safety.',
     'Migration.',
     'Pass record.',
@@ -90,8 +90,8 @@ test('Issue Buddy uses the actual helper operation set and exact phase payload s
   for (const operation of ISSUE_BUDDY_OPERATIONS) {
     assert.match(source, new RegExp(`\\b${operation}\\b`), `missing helper operation ${operation}`);
   }
-  assert.equal(SKIP_REASONS.length, 12);
-  assert.match(prose, /preserve its twelve skip reasons/);
+  assert.equal(SKIP_REASONS.length, 13);
+  assert.match(prose, /preserve its thirteen skip reasons/);
   assert.match(
     prose,
     /pass-collect` with exactly `\{cwd, passId, mode, baseBranch, planDir, branchPrefix, visibility: "standard", limits, repositoryVisibility, leftoverPlanFiles\}`/,

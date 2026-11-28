@@ -42,6 +42,24 @@ import {
 // `pr-mark-ready` below). `pr-draft-classify` strips the same prefixes to derive a ready title.
 export const WORK_IN_PROGRESS_PREFIX = /^(?:WIP:|\[WIP\])/i;
 
+// The prefix `tea pulls create --draft` writes, and the one `pr-update-title` with `keepDraft`
+// restores.
+export const DRAFT_TITLE_PREFIX = 'WIP: ';
+
+// The title as a draft title: every stacked default prefix and the whitespace after it removed,
+// then exactly one `WIP: ` prepended. A title that is nothing but prefixes is refused, because the
+// edit would leave an empty title behind the prefix.
+function draftTitle(title) {
+  let rest = title.trimStart();
+  for (let match; (match = rest.match(WORK_IN_PROGRESS_PREFIX)) !== null;) {
+    rest = rest.slice(match[0].length).trimStart();
+  }
+  if (rest.trim() === '') {
+    fail('INVALID_PAYLOAD', 'payload.title must not be empty', { field: 'payload.title' });
+  }
+  return `${DRAFT_TITLE_PREFIX}${rest}`;
+}
+
 // Gitea's `ChangedFile.status` (`services/convert` `ToChangedFile`) mapped onto the neutral set
 // `pr-merged-plan-evidence` judges: `added` and `renamed` keep their name, `changed` is `modified`
 // and `deleted` is `removed`; `copied`, `unchanged` and any other value become `unsupported`,
@@ -422,7 +440,19 @@ export function buildForgejoCommandPlan(operation, input, repository) {
     // flag. On Forgejo the title **is** the draft state (see `pr-mark-ready` below), so a new title
     // without a work-in-progress prefix also takes a draft out of draft. A caller finishing a draft
     // therefore sends the final title through `pr-mark-ready` alone, so one edit does both.
-    case 'pr-update-title':
+    //
+    // `payload.keepDraft: true` is the opposite request: retitle and stay a draft. The adapter
+    // strips every default prefix from the requested title and prepends `WIP: `, the prefix
+    // `tea pulls create --draft` writes, so a caller never has to know that the title is the draft
+    // state. Like `pr-mark-ready`, the edit is not the verdict: `executeOperation` reads the pull
+    // request back once and fails unless the forge's own `draft` is `true`.
+    case 'pr-update-title': {
+      if (payload.keepDraft !== undefined && typeof payload.keepDraft !== 'boolean') {
+        fail('INVALID_PAYLOAD', 'payload.keepDraft must be a boolean', {
+          field: 'payload.keepDraft',
+        });
+      }
+      const title = publishedTitle(payload, input);
       return mutationPlan(
         'tea',
         [
@@ -431,11 +461,12 @@ export function buildForgejoCommandPlan(operation, input, repository) {
           String(prNumber(input)),
           ...teaTarget,
           '--title',
-          publishedTitle(payload, input),
+          payload.keepDraft === true ? draftTitle(title) : title,
         ],
         undefined,
         { expectsJson: false },
       );
+    }
     // Forgejo stores no draft flag. A pull request is a draft while its title starts with one of the
     // instance's `[repository.pull-request] WORK_IN_PROGRESS_PREFIXES` (default `WIP:,[WIP]`,
     // compared case-insensitively), and the API's `draft` field is computed from that title. tea
@@ -518,7 +549,10 @@ export function buildForgejoCommandPlan(operation, input, repository) {
     // a client-side setting rather than the account the forge attributes a write to. The two can
     // differ, and a caller that separates its own comments from a person's would then claim a
     // stranger's comment as its own.
-    // Class A: raw repository JSON; visibility uses the shared boolean-private normalizer.
+    // Class A: raw repository JSON (`modules/structs.Repository`). This is part (a) of the
+    // visibility read only: `executeOperation` classifies `private`, `internal` and
+    // `owner.visibility` and, for a public candidate, runs the anonymous proof in
+    // `remote-tracker-core.mjs` before it reports `public`.
     case 'repository-visibility-read':
       return teaApiReadPlan(repository, `repos/${owner}/${repo}`);
     case 'viewer-read':

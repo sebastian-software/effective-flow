@@ -1,7 +1,7 @@
 ---
-description: "Drives one trusted GitHub issue or one local plan unattended to a draft pull request: Issue Buddy plans an issue, the deep plan review always runs, the plan's recommended workflow implements it, every question is resolved by recorded 1–10 option scores, and the draft pull request documents close decisions, blockers and architecture fit. Never asks the user, never marks a pull request ready and never merges."
+description: "Drives one trusted GitHub, Forgejo or Gitea issue or one local plan unattended to a draft pull request: Issue Buddy plans an issue, the deep plan review always runs, the plan's recommended workflow implements it, every question is resolved by recorded 1–10 option scores, and the draft pull request documents close decisions, blockers and architecture fit. Never asks the user, never marks a pull request ready and never merges."
 catalogHint: "Takes one issue or plan unattended to a draft pull request, with decisions recorded."
-contextBudget: 505
+contextBudget: 508
 ---
 
 # Effective Flow Autopilot
@@ -305,8 +305,9 @@ make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOi
    pull request whose appendix a blocker or a failed rerun update left unchanged) or `no-pull-request`. Retain its
    `counts` and `fit`: `{assessed: true, score, reason, sources}`, `{assessed: false}` (no
    sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded, its
-   `baseMove`, the recorded `base-move-record` or `null`, and its `deliveryBase`, the recorded
-   `delivery-base-record` or `null`. On an issue
+   `baseMove`, the recorded `base-move-record` or `null`, its `deliveryBase`, the recorded
+   `delivery-base-record` or `null`, and `commentsDropped`, present only when
+   `comments-dropped-record` stored a count. On an issue
    source it releases the planning claim for every outcome and returns
    `planningClaim: {targetKey, issueKey, released}`, with `reason` `missing`, `not-owner` or
    `release-failed` when `released` is false. A failed release never keeps the run open;
@@ -321,6 +322,7 @@ Report in the chat language, with project paths relative to the project root:
   its holder, an existing open pull request, an issue-buddy stop or pass failure, a public
   security blocker, a blocked appendix or a failed publication step);
 - the counts of silent, documented and tie-resolved decisions, and the remaining budget;
+- on an issue source, the `commentsDropped` count Issue Buddy dropped as unreadable, when recorded;
 - every blocker with its kind and, for a security blocker, only its report path and finding ID;
 - every retained worktree and branch with its path, the run-owned worktree included when it was
   kept, and on an issue source the `planningClaim` release with its reason when not released;

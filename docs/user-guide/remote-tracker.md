@@ -777,12 +777,36 @@ For an `autopilot` plan source, `repository-visibility-read` recognizes private 
 both GitHub and Forgejo. On a private Forgejo repository a security blocker becomes a neutral
 appendix on a draft pull request, just as on private GitHub, instead of withholding the push.
 An unavailable or unknown visibility remains treated as public. The Forgejo capability follows
-the probed `tea api` transport; the shared normalizer reads the boolean `private` field.
+the probed `tea api` transport (see the Forgejo proof below).
 
 `/effective-flow issue-buddy` uses the remote tracker in a controlled, unattended path. Before it
 collects issues, it performs one read-only `repository-visibility-read` operation and records
 `public`, `private`, or `unknown` in the pass report. The operation requires the tracker capability
-`repositoryVisibilityRead`; a failed or incomplete read stops the pass.
+`repositoryVisibilityRead`; a failed or incomplete read stops the pass. On GitHub the result is
+`{visibility}` alone; on Forgejo it additionally carries `anonymousProof`, which names how `public`
+was established or why it was not.
+
+**Forgejo and Gitea visibility.** The operation reads `repos/{owner}/{repo}` through `tea api` and
+maps it as follows:
+
+| Authenticated read                                                                            | Result    |
+| --------------------------------------------------------------------------------------------- | --------- |
+| `private` or `internal` is `true`, or the owner's visibility is `limited` or `private`        | `private` |
+| `private` is `false`, `internal` is `false` or absent, and the owner's visibility is `public` | candidate |
+| any other combination, such as a non-boolean field or a missing owner visibility              | `unknown` |
+
+Only a candidate is proved anonymously, with `curl` and no credential of any kind, over HTTPS,
+without following redirects and within a time limit. The base URL comes from the matching `tea`
+login whose authenticated read just succeeded, never from the Git origin, so custom ports,
+sub-paths and SSH origins work. The helper first requests the login's `/api/v1/version`, so a wrong
+base cannot read as `private`. A 401 or 403 there with a forge error body (a JSON object with a
+string `message`) means the instance requires sign-in even to view and gives `private`
+(`sign-in-required`); any other answer than 200 with a version string gives `unknown`. After a
+successful check it requests the repository: a 200 whose `full_name` matches the authenticated read
+(ignoring case) confirms `public`, and a 401, 403 or 404 gives `private` (`hidden`). A missing
+`curl`, a non-HTTPS login URL, a redirect, any other status, a timeout or a network error gives
+`unknown`, and nothing is published. `curl` is an
+optional runtime dependency; the GitHub path does not use it.
 
 The default `dry-run` mode works with any reported visibility and creates no plan artifact. The
 `--publish` mode requires `public`. A private or unknown repository therefore stays dry-run-only;
@@ -826,10 +850,10 @@ without `--apply`. `pr-mark-ready` has a second caller: `merge-gate` uses it, af
 confirmation, to take a delivered draft out of draft before it merges (see
 [`merge-gate`](./tools-deliver.md)):
 
-| Operation         | Capability               | What it does                                                                                                                                                                                                                                      |
-| ----------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pr-update-title` | `pullRequestTitleUpdate` | Sets a pull request's title, which must not be empty. On GitHub it is the same REST `PATCH` that `pr-update-body` sends, carrying the title; on Forgejo it is `tea pulls edit --title`                                                            |
-| `pr-mark-ready`   | `pullRequestMarkReady`   | Takes a draft out of draft. On GitHub it runs `gh pr ready`, which leaves the title alone. On Forgejo it requires `payload.title`, the final title, and performs one title edit, so the retitle and the ready transition are one step (see below) |
+| Operation         | Capability               | What it does                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-update-title` | `pullRequestTitleUpdate` | Sets a pull request's title, which must not be empty. On GitHub it is the same REST `PATCH` that `pr-update-body` sends, carrying the title; on Forgejo it is `tea pulls edit --title`. With `payload.keepDraft: true` on Forgejo the adapter strips any work-in-progress prefix and writes a `WIP: ` title, then reads the pull request back and fails unless it is still a draft |
+| `pr-mark-ready`   | `pullRequestMarkReady`   | Takes a draft out of draft. On GitHub it runs `gh pr ready`, which leaves the title alone. On Forgejo it requires `payload.title`, the final title, and performs one title edit, so the retitle and the ready transition are one step (see below)                                                                                                                                  |
 
 Forgejo stores no draft flag: a pull request is a draft while its title starts with a
 work-in-progress prefix (`WIP:` or `[WIP]` by default). Marking it ready is therefore one title edit

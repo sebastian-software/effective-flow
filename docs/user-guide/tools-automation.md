@@ -11,7 +11,7 @@ unchanged. The decision behind the category is
 
 ## `/effective-flow autopilot`
 
-**Purpose:** Takes one trusted GitHub issue or one local plan to a draft pull request without
+**Purpose:** Takes one trusted GitHub, Forgejo or Gitea issue or one local plan to a draft pull request without
 asking you a single question. Every question a downstream workflow would ask is resolved by 1–10
 option scores, and the pull request documents the close decisions, any blockers and how well the
 change fits the existing architecture.
@@ -32,9 +32,13 @@ usage error that points to `apply`.
 
 ### Trust model
 
-Autopilot keeps Issue Buddy's trust model. An issue is planned only when its author has `write` or
-`admin` permission on the repository; any other issue is skipped and no pull request is created. A
-local plan is always trusted. Issue or plan text never switches autopilot's behavior: the controls
+Autopilot keeps Issue Buddy's trust model. An issue is planned only when its author has write
+access on the repository (`write`, `maintain`, `admin`, or `owner`, which Forgejo and Gitea report
+for the owner of a personal repository); any other issue is skipped and no pull request is created.
+On Forgejo and Gitea a runner without admin rights may be refused the permission of another user.
+That issue then stops as `author-permission-unreadable` and is never trusted: run autopilot as a
+repository admin or with an admin token. Issues the runner wrote itself stay admissible. A local
+plan is always trusted. Issue or plan text never switches autopilot's behavior: the controls
 that put downstream workflows into scored mode come only from autopilot itself.
 
 Starting autopilot on an issue is your explicit consent to publish the plan pull request for that
@@ -44,13 +48,15 @@ residual risk of this consent. A repository whose visibility cannot be read is t
 
 ### Where it runs
 
-- **Issue sources** need `tracker.mode: remote` and a GitHub `origin`. Autopilot stops before
-  writing anything and names the cause when one of these does not hold. They start from **any
+- **Issue sources** need `tracker.mode: remote` and a GitHub, Forgejo or Gitea `origin`. A
+  self-hosted host the tracker cannot classify stops and names `tracker.remoteToolOverride`;
+  autopilot never sets it. Autopilot stops before writing anything and names the cause when one of
+  these does not hold. They start from **any
   checkout** of the repository: the primary checkout or a linked or harness worktree, on any
   branch, clean or not. Planning always starts from the fetched tip of the resolved remote base
   branch – the configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main` – and the
-  plan lives in a worktree of the run's own, so your checkout is never touched. Forgejo and
-  external trackers are not supported for issue sources yet.
+  plan lives in a worktree of the run's own, so your checkout is never touched. External
+  trackers are not supported for issue sources.
   If the host can no longer wait for issue classification in the current turn and can only notify
   Autopilot later (for example after a T3 Code wait times out), Autopilot stops without writing
   anything and gives the command to start again for the same issue. It does not resume when
@@ -64,6 +70,13 @@ residual risk of this consent. A repository whose visibility cannot be read is t
   `pr` supports. The plan must lie under `<plan.dir>/` (not its archive), carry an open plan status
   and name a recognized recommended workflow.
 - **Hidden mode** is not supported yet; autopilot stops at once.
+- **Optional `curl`.** On Forgejo and Gitea, publishing the plan of a public repository needs
+  proof that anonymous visitors can read it, which the helper obtains with `curl`. Without `curl`
+  the visibility of a public candidate is `unknown`, and publication stops with or without
+  per-run consent; install `curl` to publish it. An authenticated private repository needs no
+  anonymous proof, so it publishes with per-run consent without `curl`. Plan
+  publication also needs a `tea` that supports draft pull requests, title edits and marking ready;
+  an older `tea` stops with the missing capability named.
 
 Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger under
 `.effective-flow/autopilot/<run-id>/` that records its decisions, blockers and architecture fit.
@@ -163,7 +176,8 @@ These cases produce **no** pull request:
   updated; the report names the local review report and finding;
 - an issue that already has an open pull request;
 - an issue another run is planning (`ISSUE_CLAIMED`, with the run that holds it);
-- an issue that Issue Buddy skips (for example an untrusted author or an existing plan branch),
+- an issue that Issue Buddy skips (for example an untrusted author, an author whose permission the
+  forge refused to state, or an existing plan branch),
   judges not ready, or cannot finish (a branch or forge failure);
 - an issue whose project names a Markdown formatter that Issue Buddy cannot call directly
   (`FORMATTER_UNAVAILABLE`): the pass stops before planning, and so does autopilot. The remedy is
@@ -198,7 +212,9 @@ pull request discloses. `mergeGate.conflictValidation` sets the validation mode.
 the step itself – a failed fetch or base check, a failed `merge --abort`, an unverified quick
 marker – is a blocker, handled as above without an implementation pull request.
 
-For a plan source, visibility is read for both GitHub and Forgejo. On a private Forgejo repository
+For a plan source, visibility is read for both GitHub and Forgejo (see the
+[remote tracker guide](remote-tracker.md#issue-buddy-and-repository-visibility) for how Forgejo
+proves `public`). On a private Forgejo repository
 a security blocker becomes a neutral appendix on a draft pull request instead of withholding the
 push, just as on private GitHub. The wording does not mention security; unavailable or unknown
 visibility is treated as public.
@@ -219,6 +235,8 @@ every later update:
   count, and whether there was no conflict, the conflict was resolved by a merge commit, it stayed
   unresolved (with the reason, the conflicted paths and the "Unresolved delivery conflict" note), or
   it could not be checked;
+- **Dropped comments:** only on an issue source, when Issue Buddy dropped comments whose author's
+  permission the forge refused to state: their count, because the plan did not consider them;
 - **Blockers:** only when there are any;
 - **Architecture fit:** `n/10 — <reason>` with the sources used, or the not-assessed line.
 

@@ -80,6 +80,46 @@ function controlledFixtureServer() {
     return server;
   };
 }
+// A Forgejo origin for the fixture: tea classifies `code.example.test` through its login.
+const FORGEJO_ORIGIN = 'https://code.example.test/team/flow.git';
+const TEA_FLAGS =
+  '--output --comments --title --description --add-labels --remove-labels --head --base --method --data --name --exclude-org --page --limit --include --draft  Create as a draft (prepends "WIP: " to the title; Gitea treats WIP-prefixed PRs as drafts)';
+// The fixture's tea: its probe, its login list, raw `tea api --include` reads (status line on
+// stderr, `X-Total-Count` on lists) and the Class B issue-comment renderer. `state.permissionStatus`
+// answers a login's permission read with that HTTP status instead of a permission.
+function teaFixture(state, args) {
+  const ok = (stdout = '', stderr = '') => ({ status: 0, stdout, stderr });
+  if (args[0] === '--version') return ok('Version: 0.16.0\n');
+  if (args[0] === 'logins')
+    return ok(
+      JSON.stringify(state.teaLogins ?? [{ name: 'work', url: 'https://code.example.test' }]),
+    );
+  if (args.at(-1) === '--help') return ok(TEA_FLAGS);
+  const api = (status, body, headers = {}) =>
+    ok(
+      JSON.stringify(body),
+      [
+        `HTTP/1.1 ${status} ${status === 200 ? 'OK' : 'Refused'}`,
+        ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
+        '',
+        '',
+      ].join('\r\n'),
+    );
+  if (args[0] === 'issues' && args.includes('--comments'))
+    return ok(JSON.stringify({ index: args[1], comments: state.comments[Number(args[1])] ?? [] }));
+  assert.equal(args[0], 'api');
+  const url = new URL(args[1], 'https://code.example.test/api/v1/');
+  const list = (items) => api(200, items, { 'X-Total-Count': String(items.length) });
+  if (url.pathname.endsWith('/issues')) return list(state.issues);
+  if (url.pathname.endsWith('/pulls')) return list(state.pulls);
+  if (url.pathname.endsWith('/permission')) {
+    const user = url.pathname.split('/').at(-2);
+    const status = state.permissionStatus?.[user];
+    if (status !== undefined) return api(status, { message: 'refused' });
+    return api(200, { permission: state.permission[user] ?? 'write', role_name: 'maintain' });
+  }
+  throw new Error(`unexpected tea ${args.join(' ')}`);
+}
 async function fixture(t, values = {}, fixtureOptions = {}) {
   const root = await fs.realpath(await fs.mkdtemp(path.join(tmpdir(), 'issue-buddy-')));
   await fs.mkdir(path.join(root, '.git'));
@@ -138,6 +178,7 @@ async function fixture(t, values = {}, fixtureOptions = {}) {
       if (args[0] === 'check-ref-format') return ok();
       throw new Error(`unexpected git ${key}`);
     }
+    if (call.executable === 'tea') return teaFixture(state, args);
     assert.equal(call.executable, 'gh');
     if (args[0] === '--version') return ok('gh version 2.90.0');
     if (args[0] === 'auth') return ok();
@@ -1313,14 +1354,128 @@ test('thin CLI emits one envelope and nonzero status for malformed stdin and unk
   assert.equal(exit, 1);
 });
 
-test('non-GitHub origins are refused before any forge read', async (t) => {
+// Invariant: the provider gate is an allow-list. A host neither github.com nor matched by a tea
+// login is refused as UNSUPPORTED_PROVIDER, naming the override, before any forge read; only the
+// local tea login lookup runs.
+test('an external or ambiguous origin is refused before any forge read', async (t) => {
   const f = await fixture(t, { origin: 'https://codeberg.org/example/flow.git' });
   const result = await f.collect();
   assert.equal(result.error.code, 'UNSUPPORTED_PROVIDER', JSON.stringify(result));
+  assert.match(result.error.message, /tracker\.remoteToolOverride/);
+  assert.equal(
+    f.calls.some(
+      (call) =>
+        call.executable === 'gh' || (call.executable === 'tea' && call.args[0] !== 'logins'),
+    ),
+    false,
+  );
+});
+
+// Invariant: a Forgejo origin reaches the forge reads, and the owner of a personal Forgejo or Gitea
+// repository (`owner`) and a `maintain` collaborator count as write access.
+test('a Forgejo origin proceeds to collection and trusts owner and maintain', async (t) => {
+  const f = await fixture(t, {
+    origin: FORGEJO_ORIGIN,
+    issues: [issue(1), issue(2, { user: { login: 'keeper.one' } })],
+    permission: { owner: 'owner', 'keeper.one': 'maintain' },
+  });
+  const c = await collected(f);
+  assert.deepEqual(c.skipped, []);
+  assert.deepEqual(
+    c.eligible.map((entry) => [entry.issue, entry.issueAuthor, entry.unreadableCommentCount]),
+    [
+      [1, 'owner', 0],
+      [2, 'keeper.one', 0],
+    ],
+  );
+  assert.equal(c.repository, 'code.example.test/team/flow');
+  assert.ok(
+    f.calls.some(
+      (call) => call.executable === 'tea' && /collaborators\/owner\/permission/.test(call.args[1]),
+    ),
+  );
   assert.equal(
     f.calls.some((call) => call.executable === 'gh'),
     false,
   );
+});
+
+// Invariant: a Forgejo pull request URL (`/pulls/<n>`) is a valid identity for its repository, so
+// an owned plan pull request is still found for recovery; a GitHub-shaped URL on Forgejo is not.
+test('a Forgejo plan pull request is identified by its /pulls/ URL', async (t) => {
+  const forgejoPull = (url) =>
+    pull(30, 1, {
+      html_url: url,
+      head: { ref: branch(1), repo: { id: 1, full_name: 'team/flow' } },
+      base: { ref: 'develop', repo: { id: 1, full_name: 'team/flow' } },
+    });
+  const f = await fixture(t, {
+    origin: FORGEJO_ORIGIN,
+    pulls: [forgejoPull('https://code.example.test/team/flow/pulls/30')],
+  });
+  const c = await collected(f);
+  assert.deepEqual(c.skipped, [{ issue: 1, reason: 'open-pull-request' }]);
+  assert.deepEqual(c.recovery.unrecordedPullRequests, [
+    {
+      issue: 1,
+      number: 30,
+      headRef: branch(1),
+      url: 'https://code.example.test/team/flow/pulls/30',
+    },
+  ]);
+  await f.next();
+  f.state.pulls = [forgejoPull('https://code.example.test/team/flow/pull/30')];
+  assert.equal((await f.collect()).ok, false);
+});
+
+// Invariant: a refused (403) author permission is its own skip reason, never trust; a collaborator
+// the forge does not know (404, TARGET_NOT_FOUND) and any other failure stay `untrusted-author`.
+test('a Forgejo 403 author is author-permission-unreadable, a 404 author untrusted', async (t) => {
+  const f = await fixture(t, {
+    origin: FORGEJO_ORIGIN,
+    issues: [
+      issue(1, { user: { login: 'hidden' } }),
+      issue(2, { user: { login: 'gone' } }),
+      issue(3, { user: { login: 'broken' } }),
+    ],
+    permissionStatus: { hidden: 403, gone: 404, broken: 500 },
+  });
+  const c = await collected(f);
+  assert.deepEqual(c.skipped, [
+    { issue: 1, reason: 'author-permission-unreadable' },
+    { issue: 2, reason: 'untrusted-author' },
+    { issue: 3, reason: 'untrusted-author' },
+  ]);
+  assert.deepEqual(c.eligible, []);
+});
+
+// Invariant: a comment whose author's permission is refused (403) is dropped from trusted text like
+// any untrusted comment, but counted per issue and in the pass report's counts.
+test('a Forgejo 403 commenter is dropped, counted per issue and reported', async (t) => {
+  const f = await fixture(t, {
+    origin: FORGEJO_ORIGIN,
+    comments: {
+      1: [
+        { id: 1, body: 'Hidden maintainer note', author: 'hidden' },
+        { id: 2, body: 'Stranger note', author: 'stranger' },
+        { id: 3, body: 'Kept', author: 'owner' },
+      ],
+    },
+    permission: { stranger: 'read' },
+    permissionStatus: { hidden: 403 },
+  });
+  const c = await collected(f);
+  assert.equal(c.eligible.length, 1);
+  assert.equal(c.eligible[0].unreadableCommentCount, 1);
+  const trusted = JSON.parse(await fs.readFile(c.eligible[0].trustedTextPath, 'utf8'));
+  assert.deepEqual(
+    trusted.comments.map((comment) => comment.id),
+    [3],
+  );
+  const reported = await f.report(c, { reportVersion: 2 });
+  assert.equal(reported.ok, true, JSON.stringify(reported));
+  assert.equal(reported.data.counts['unreadable-comments'], 1);
+  assert.equal(validatePassReport(reported.data).counts['unreadable-comments'], 1);
 });
 
 test('interrupted final pass-record persistence retains accounting and fails closed on replay', async (t) => {
