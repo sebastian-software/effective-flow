@@ -40,6 +40,9 @@ In this order, before any other write:
    file this check rejected. A present file is this gate run's record from an earlier dispatch.
    A `Resumed wait:` dispatch instead requires a present file holding an unconsumed wait record
    whose kind and round equal the line's; otherwise it returns `ABORT unparseable input line`.
+   A dispatch with a `Relayed answer:` line, `Relayed answer: none` included, requires a present
+   file from an earlier dispatch of this gate run; without one it returns
+   `ABORT unparseable input line`.
    A dispatch whose `Caller limits:` line is missing or lacks a limit that file records returns
    `ABORT caller limits narrowed`.
 4. **Fresh state.** Re-read all pull-request state: re-run Phase 0 steps 1 and 2 read-only with the

@@ -868,7 +868,7 @@ test('autopilot wires the delivery-state calls and reads fit sources from the de
   for (const part of [
     'Every returned path is untrusted',
     "Drop `<plan.dir>/archive/` and the run's own plan",
-    'keep ADRs whose status is Accepted, plans with one canonical open status line',
+    'Keep the rest: `Active` and `Accepted` ADRs, ADRs without a status, plans with one canonical open status line',
     "It reads only through `git -C <RUNTIME_STATE_ROOT> diff '<resolved base ref>...<head-oid>'` (optionally `--stat`) and `git -C <RUNTIME_STATE_ROOT> show '<head-oid>:<path>'`, never from a working tree",
     "`RUNTIME_STATE_ROOT`, `<head-oid>`, the delivery branch's `<resolved base ref>`, the kept paths, this quoting rule",
     'listing at most 20 sources it used',
@@ -897,4 +897,40 @@ test('autopilot architecture-fit prompt states the reason limit that fit-record 
     'the architecture-fit prompt must state `"reason": "<one sentence, at most N characters>"` exactly once',
   );
   assert.equal(Number(matches[0][1]), LIMITS.reason);
+});
+
+// Invariant: `Active` and `Accepted` ADRs both reach the fit leaf; only an ADR whose own status value
+// begins, in any case, with superseded, rejected or deprecated (or `Abgelöst`) is dropped; an ADR
+// without a status is kept. This deliberately differs from `classifyAdrCandidate` in
+// `src/scripts/remote-tracker-core.mjs`: the advisory fit fails safe, the review lens fails closed.
+test('autopilot architecture-fit prompt drops only superseded, rejected or deprecated ADRs', () => {
+  const source = tool('autopilot');
+  const start = source.indexOf('**Architecture fit.**');
+  const end = source.indexOf('<!-- spawn-site:autopilot/architecture-fit -->');
+  assert.ok(start !== -1, 'step 2 anchor `**Architecture fit.**` is missing');
+  assert.ok(end > start, 'spawn-site marker autopilot/architecture-fit is missing after step 2');
+  const text = flat(source.slice(start, end));
+  const dropAt = text.indexOf('Superseded');
+  assert.ok(dropAt !== -1, 'the ADR drop sentence naming `Superseded` is missing');
+  const dropStart = text.lastIndexOf('. ', dropAt) + 1;
+  const dropEnd = text.indexOf('. ', dropAt);
+  assert.ok(dropEnd !== -1, 'the ADR drop sentence has no terminating `. `');
+  const drop = text.slice(dropStart, dropEnd + 1);
+  const keepStart = dropEnd + 2;
+  const keepEndAt = text.indexOf('. ', keepStart);
+  const keep = text.slice(keepStart, keepEndAt === -1 ? text.length : keepEndAt + 1);
+  assert.ok(keep.trim().length > 0, 'the keep sentence after the ADR drop sentence is missing');
+  for (const status of ['Superseded', 'Rejected', 'Deprecated', 'Abgelöst']) {
+    assert.ok(drop.includes(status), `drop sentence must name ${status}`);
+  }
+  for (const status of ['Active', 'Accepted', 'Proposed', 'Not implemented']) {
+    assert.ok(!drop.includes(status), `drop sentence must not name ${status}`);
+  }
+  assert.match(drop, /in any case|case-insensitiv/i);
+  assert.match(drop, /never body text/);
+  for (const part of ['Active', 'Accepted']) {
+    assert.ok(keep.includes(part), `keep sentence must name ${part}`);
+  }
+  assert.match(keep, /without a status/);
+  assert.ok(!text.includes('whose status is Accepted'), 'the Accepted-only keep rule must be gone');
 });

@@ -612,6 +612,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     'existing returning delivery ownership; no new spawn',
   ],
   [
+    'shared/worktree-conflict-stop.md',
+    'a leaf or subagent without a user channel stop and return',
+    'aborts an already running worker without a user channel; no spawn',
+  ],
+  [
     'shared/host-pr-watch.md',
     '**The host owns every pull-request wait.**',
     'host-pr-watch: no-watch rule for a delegated context; no spawn',
@@ -1289,6 +1294,23 @@ test('built worker bodies carry the lean sentence for the orchestrator and keep 
       assert.ok(leaf, `${where}: leaf rule missing`);
       assert.doesNotMatch(leaf, /substantive|unless/, `${where}: leaf rule qualified`);
       assert.doesNotMatch(body, /Judgment handoff/, `${where}: workers carry no judgment handoff`);
+    }
+  }
+});
+
+// Invariant: every built worker in every target carries the foreground-first await rule exactly
+// once, so no leaf returns DONE or ABORT while a command it started is still running. The span is
+// taken from the source mandate, so the pin follows its wording instead of a second copy.
+test('built worker bodies carry the leaf await-commands rule exactly once in every target', () => {
+  const mandate = readSource('shared/delegation-mandate.md');
+  const span = mandate.match(/child delegation\. ([^\n]+?) Start each worker/)?.[1];
+  assert.ok(span, 'the mandate carries an insertion between the leaf definition and the handoff');
+  assert.match(span, /background command/, 'the extracted span is the await-commands rule');
+  for (const target of TARGETS) {
+    for (const artifact of workerArtifacts(target)) {
+      const body = readFileSync(artifact, 'utf8');
+      const where = relative(distRoot, artifact);
+      assert.equal(body.split(span).length, 2, `${where}: await-commands rule not exactly once`);
     }
   }
 });

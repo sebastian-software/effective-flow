@@ -11,8 +11,10 @@ below to a **fresh** agent — one that has not read this file.
 
 Everything between the markers, and nothing else, is what the agent receives. `prepare` prints
 exactly this text, so copy it from there rather than from here if the two ever look different.
-No wisdom file is seeded: Entry step 3 accepts an absent file on a dispatch with a `Relayed answer:`
-line, and the answer is consumed by its digest alone.
+The slot holds the wisdom file the first dispatch left when it returned
+`BLOCKED-USER ready-for-review` in round 1, with this run's presence marker: Entry step 3 accepts a
+`Relayed answer:` line only together with that file. The record holds the posed question with its
+state digest and no consumed answer, so this answer is the instance's first.
 
 <!-- prompt:start -->
 
