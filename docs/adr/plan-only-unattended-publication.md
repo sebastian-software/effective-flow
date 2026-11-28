@@ -4,7 +4,7 @@
 
 ## Context
 
-Issue Buddy needs a bounded unattended path from trusted GitHub issues to implementation plans.
+Issue Buddy needs a bounded unattended path from trusted GitHub and Forgejo (Gitea included) issues to implementation plans.
 The path must remain reviewable and recoverable while the first release lacks a credential-isolated
 bot identity and verified branch rules. It must also preserve the existing interactive plan
 publication contract and report readers.
@@ -45,6 +45,24 @@ stops). A base move with a stopping reason (a rewritten base, or a plan of the s
 first or further range that is there or may be) and branch tip or plan blob drift stop the pass
 without spending an issue retry. Preserved plan files are reported with the operator action; the
 pass never deletes an ambiguous or earlier file.
+
+On Forgejo, `public` needs two parts. The authenticated repository read must be a public candidate
+(`private` and `internal` false, owner visibility `public`), and an anonymous `curl` request through
+the helper's runner must then read the same repository, after a version request has shown that the
+login URL points at a forge. A 401 or 403 with a forge error body (a JSON object with a string
+`message`) on that version request is a sign-in-required instance and `private`; any other failed
+check is `unknown`. A refusal of the repository after a successful check is `private`; a missing
+`curl`, a non-HTTPS login URL, a redirect or a network failure is `unknown`, so publication stops.
+The visibility
+result carries the outcome as `anonymousProof`. `curl` is an optional runtime dependency.
+
+Issue Buddy trusts an author with write access (`write`, `maintain`, `admin` or `owner`). When the
+forge refuses (HTTP 403) to state an issue author's permission to the runner, the issue is skipped
+as `author-permission-unreadable` and never trusted. Comments whose author's permission is refused
+are dropped, counted in the pass report as `unreadable-comments`, and an autopilot run states the
+count in its draft pull request appendix. Unattended plan publication also requires the forge to
+support draft creation, title updates and marking ready; a Forgejo pull request keeps its draft
+state through `pr-update-title` with `keepDraft`, and a missing `draft` field is never inferred.
 
 Reports keep version 1 as the default schema. Version 2 is explicit and adds repository visibility
 and normalized leftover metadata. New readers accept both versions; v1 behavior remains unchanged.

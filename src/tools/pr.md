@@ -293,7 +293,9 @@ when: a new PR or plan draft finish needs a body too long or quote-heavy for a l
      the derived body plus the unchanged marker line as its own line; then `pr-mark-ready`, skipped
      when it is no longer a draft. On Forgejo, only while it is a draft, the body update runs first and
      `pr-mark-ready` with `payload.title` replaces `pr-update-title` as the final, combined edit; otherwise
-     `pr-update-title` runs on its own. Ready is always the last mutation, so any failure leaves a draft:
+     `pr-update-title` runs on its own. Under `Keep draft: requested` there is no ready edit: on
+     Forgejo `pr-update-title` carries `payload.keepDraft: true`, so the adapter keeps the `WIP: `
+     prefix and fails unless the read-back still states `draft: true`. Ready is always the last mutation, so any failure leaves a draft:
      stop at the first failure, and the report names the step. The finish completes before the caller's PR review publication.
    - **No exact match:** Continue with title/description derivation and PR creation; with `Finalize plan draft:` supplied,
      stop before `pr-create` instead and report that number. An open PR for the same head but a different base, as well as a closed or merged PR, is not a match.

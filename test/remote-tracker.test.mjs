@@ -13617,6 +13617,61 @@ test('pr-list reports the head repository on both providers', async () => {
   );
 });
 
+// Invariant: an owner-qualified `head` narrows a Forgejo listing to that owner's head repository,
+// as it does on GitHub, so Issue Buddy's plan-branch history is not empty on every Forgejo issue.
+test('Forgejo pr-list narrows an owner-qualified head to that owner', async () => {
+  const forked = forgejoPlanPull({
+    number: 8,
+    head: {
+      label: 'effective-flow/build/plan',
+      ref: 'effective-flow/build/plan',
+      repo: { full_name: 'fork/flow', name: 'flow', owner: { login: 'fork' } },
+    },
+  });
+  const list = async (head) =>
+    executeOperation(
+      'pr-list',
+      { repository: forgejoRepository, state: 'all', head },
+      {
+        runner: fakeRunner([
+          { status: 0, stdout: JSON.stringify([forgejoPlanPull(), forked]), stderr: TEA_OK },
+          { status: 0, stdout: '[]', stderr: TEA_OK },
+        ]),
+        skipProbe: true,
+      },
+    );
+  const owned = await list('Team:effective-flow/build/plan');
+  assert.equal(owned.ok, true, JSON.stringify(owned));
+  assert.deepEqual(
+    owned.data.result.map((item) => item.number),
+    [7],
+  );
+  const bare = await list('effective-flow/build/plan');
+  assert.deepEqual(
+    bare.data.result.map((item) => item.number),
+    [7, 8],
+  );
+});
+
+// Invariant: a Forgejo pull request whose JSON states no `draft` is never a draft, whatever its
+// title says, so plan publication's read-back gives DRAFT_UNCONFIRMED instead of inferring one.
+test('a Forgejo pull request without a draft field is never inferred a draft from its title', async () => {
+  const { draft: _draft, ...withoutDraft } = forgejoPlanPull({ title: 'WIP: docs: plan x' });
+  const listed = await executeOperation(
+    'pr-list',
+    { repository: forgejoRepository },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: JSON.stringify([withoutDraft]), stderr: TEA_OK },
+        { status: 0, stdout: '[]', stderr: TEA_OK },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(listed.ok, true, JSON.stringify(listed));
+  assert.notEqual(listed.data.result[0].draft, true);
+});
+
 test('the planPath filter keeps only exact marker matches and never returns a body', async () => {
   const other = 'docs/plan/2026-09-01-other.md';
   const pulls = [
@@ -14423,6 +14478,96 @@ test('Forgejo pr-mark-ready fails, naming the step, when the read-back is not re
   assert.equal(missingCli.error.code, 'CLI_MISSING');
   assert.equal(missingCli.error.details.step, 'title-edit');
   assert.equal(missingCli.error.details.titleEdited, false);
+});
+
+// Invariant: on Forgejo the title is the draft state, so a retitle under `keepDraft` writes exactly
+// one `WIP: ` prefix and succeeds only when the forge's own read-back states `draft: true`.
+test('Forgejo pr-update-title keepDraft writes a WIP title and confirms the draft', async () => {
+  const input = (title, extra = {}) => ({
+    repository: forgejoRepository,
+    number: 7,
+    payload: { title, keepDraft: true, ...extra },
+  });
+  for (const [title, written] of [
+    ['docs: plan x', 'WIP: docs: plan x'],
+    ['WIP: docs: plan x', 'WIP: docs: plan x'],
+    ['  wip:[WIP] docs: plan x', 'WIP: docs: plan x'],
+  ]) {
+    const dryRun = await executeOperation('pr-update-title', input(title), { skipProbe: true });
+    assert.equal(dryRun.dryRun, true);
+    assert.equal(dryRun.data.command.args.at(-1), written, title);
+  }
+  for (const payload of [
+    { title: 'WIP:', keepDraft: true },
+    { title: 'docs: plan x', keepDraft: 'yes' },
+  ]) {
+    const refused = await executeOperation(
+      'pr-update-title',
+      { repository: forgejoRepository, number: 7, payload },
+      { skipProbe: true, apply: true, runner: fakeRunner([]) },
+    );
+    assert.equal(refused.error.code, 'INVALID_PAYLOAD', JSON.stringify(payload));
+  }
+
+  const apply = (readBack) => {
+    const runner = fakeRunner([{ status: 0, stdout: 'edited', stderr: '' }, readBack]);
+    return executeOperation('pr-update-title', input('docs: plan x'), {
+      runner,
+      skipProbe: true,
+      apply: true,
+    }).then((envelope) => ({ envelope, runner }));
+  };
+  const kept = await apply({
+    status: 0,
+    stdout: JSON.stringify(forgejoPlanPull({ title: 'WIP: docs: plan x', draft: true })),
+    stderr: TEA_OK,
+  });
+  assert.equal(kept.envelope.ok, true, JSON.stringify(kept.envelope));
+  assert.equal(kept.envelope.data.result.draft, true);
+  assert.deepEqual(kept.runner.calls[1].args.slice(0, 3), [
+    'api',
+    'repos/team/flow/pulls/7',
+    '--include',
+  ]);
+  assert.deepEqual(
+    kept.envelope.data.steps.map((step) => step.step),
+    ['title-edit', 'draft-read-back'],
+  );
+
+  // A read-back that is no longer a draft fails the operation after the edit.
+  const ready = await apply({
+    status: 0,
+    stdout: JSON.stringify(forgejoPlanPull({ title: 'WIP: docs: plan x', draft: false })),
+    stderr: TEA_OK,
+  });
+  assert.equal(ready.envelope.ok, false);
+  assert.equal(ready.envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(ready.envelope.error.retryable, false);
+  assert.deepEqual(ready.envelope.error.details, {
+    number: 7,
+    step: 'draft-read-back',
+    titleEdited: true,
+    draft: false,
+  });
+
+  // A read-back without a boolean `draft` is never inferred from the title.
+  const { draft: _draft, ...withoutDraft } = forgejoPlanPull({ title: 'WIP: docs: plan x' });
+  const silent = await apply({ status: 0, stdout: JSON.stringify(withoutDraft), stderr: TEA_OK });
+  assert.equal(silent.envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(silent.envelope.error.details.step, 'draft-read-back');
+
+  // Without `keepDraft` the edit stays a single command, exactly as before.
+  const plain = await executeOperation(
+    'pr-update-title',
+    { repository: forgejoRepository, number: 7, payload: { title: 'docs: plan x' } },
+    {
+      runner: fakeRunner([{ status: 0, stdout: 'edited', stderr: '' }]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(plain.ok, true);
+  assert.equal(plain.data.command.args.at(-1), 'docs: plan x');
 });
 
 test('Forgejo pr-mark-ready reports its title redacted', async () => {
@@ -17540,10 +17685,21 @@ test('the review-thread request bound stops the read before one more request is 
   assert.equal(runner.calls.length, 2);
 });
 
-test('Forgejo repository visibility shares the normalizer and fails on non-2xx', async () => {
+// Invariant: Forgejo `public` needs both a public candidate from the authenticated read and the
+// anonymous proof; every contradictory or missing field reads as `unknown`, never `public`.
+test('Forgejo repository visibility classifies the authenticated read and fails on non-2xx', async () => {
+  const owner = (visibility) => ({ login: 'team', visibility });
   for (const [body, visibility] of [
     [{ private: true }, 'private'],
-    [{ private: false }, 'public'],
+    [{ private: true, owner: owner('public') }, 'private'],
+    [{ private: false, internal: true, owner: owner('public') }, 'private'],
+    [{ private: false, owner: owner('limited') }, 'private'],
+    [{ private: false, owner: owner('private') }, 'private'],
+    [{ private: false }, 'unknown'],
+    [{ private: false, owner: owner('secret') }, 'unknown'],
+    [{ private: 'false', owner: owner('public') }, 'unknown'],
+    [{ private: false, internal: 'no', owner: owner('public') }, 'unknown'],
+    [{ private: false, owner: 'team' }, 'unknown'],
     [{}, 'unknown'],
   ]) {
     const runner = fakeRunner([teaApiResult(200, body)]);
@@ -17551,12 +17707,21 @@ test('Forgejo repository visibility shares the normalizer and fails on non-2xx',
       'repository-visibility-read',
       {
         repository: forgejoRepository,
-        probe: { capabilities: { repositoryVisibilityRead: true } },
+        probe: {
+          capabilities: { repositoryVisibilityRead: true },
+          loginUrl: 'https://code.example.test',
+        },
       },
       { runner, skipProbe: true },
     );
     assert.equal(envelope.ok, true, JSON.stringify(envelope));
-    assert.equal(envelope.data.result.visibility, visibility);
+    assert.deepEqual(
+      envelope.data.result,
+      { visibility, anonymousProof: 'not-run' },
+      JSON.stringify(body),
+    );
+    // No anonymous request runs for anything but a public candidate.
+    assert.equal(runner.calls.length, 1);
     assert.deepEqual(runner.calls[0].args, [
       'api',
       'repos/team/flow',
@@ -17573,6 +17738,255 @@ test('Forgejo repository visibility shares the normalizer and fails on non-2xx',
     { runner: fakeRunner([teaApiResult(403, { message: 'forbidden' })]), skipProbe: true },
   );
   assert.equal(envelope.error.code, 'COMMAND_FAILED');
+});
+
+// The runner result of one anonymous `curl` request: the body, then the status on its own line,
+// exactly as `--write-out '\n%{http_code}'` prints it.
+function curlResult(status, body) {
+  return {
+    status: 0,
+    stdout: `${body === undefined ? '' : JSON.stringify(body)}\n${status}`,
+    stderr: '',
+  };
+}
+
+const PUBLIC_CANDIDATE = {
+  private: false,
+  internal: false,
+  full_name: 'team/flow',
+  owner: { login: 'team', visibility: 'public' },
+};
+const FORGE_VERSION = { version: '15.0.3+gitea-1.22.0' };
+
+// `loginUrl: null` leaves the probe without a login URL.
+async function forgejoVisibility(results, { loginUrl = 'https://code.example.test', input } = {}) {
+  const runner = fakeRunner([teaApiResult(200, PUBLIC_CANDIDATE), ...results]);
+  const envelope = await executeOperation(
+    'repository-visibility-read',
+    {
+      repository: forgejoRepository,
+      ...input,
+      probe: {
+        capabilities: { repositoryVisibilityRead: true },
+        ...(loginUrl === null ? {} : { loginUrl }),
+      },
+    },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  return { result: envelope.data.result, calls: runner.calls, envelope };
+}
+
+// Invariant: the anonymous proof carries no credential of any kind, refuses every scheme but
+// HTTPS, follows no redirect, is bounded, and addresses the tea login's base rather than the origin.
+test('Forgejo public visibility needs the credential-free anonymous proof to confirm it', async () => {
+  const confirmed = await forgejoVisibility([
+    curlResult(200, FORGE_VERSION),
+    curlResult(200, { full_name: 'Team/Flow' }),
+  ]);
+  assert.deepEqual(confirmed.result, { visibility: 'public', anonymousProof: 'confirmed' });
+  assert.equal(confirmed.calls.length, 3);
+  const [, versionCall, repoCall] = confirmed.calls;
+  for (const call of [versionCall, repoCall]) {
+    assert.equal(call.executable, 'curl');
+    assert.equal(call.args[0], '-q', '-q must be the first argument to skip every .curlrc');
+    assert.equal(call.stdin, undefined);
+    assert.equal(call.env, undefined);
+    for (const flag of [
+      '-H',
+      '--header',
+      '-u',
+      '--user',
+      '-b',
+      '--cookie',
+      '-c',
+      '--cookie-jar',
+      '-n',
+      '--netrc',
+      '--netrc-optional',
+      '--netrc-file',
+      '-K',
+      '--config',
+      '-L',
+      '--location',
+      '--oauth2-bearer',
+      '-E',
+      '--cert',
+    ])
+      assert.equal(call.args.includes(flag), false, `curl argv carries ${flag}`);
+    assert.deepEqual(
+      call.args.slice(call.args.indexOf('--proto'), call.args.indexOf('--proto') + 2),
+      ['--proto', '=https'],
+    );
+    assert.equal(call.args[call.args.indexOf('--max-redirs') + 1], '0');
+    assert.ok(Number(call.args[call.args.indexOf('--max-time') + 1]) > 0);
+    assert.ok(call.timeoutMs > 0);
+  }
+  assert.equal(versionCall.args.at(-1), 'https://code.example.test/api/v1/version');
+  assert.equal(repoCall.args.at(-1), 'https://code.example.test/api/v1/repos/team/flow');
+  assert.deepEqual(
+    confirmed.envelope.data.steps.map((step) => step.step),
+    ['authenticated-read', 'forge-check', 'anonymous-read'],
+  );
+
+  // A refusal after a passing forge check is hidden from anonymous visitors.
+  for (const status of [401, 403, 404]) {
+    const hidden = await forgejoVisibility([
+      curlResult(200, FORGE_VERSION),
+      curlResult(status, { message: 'not found' }),
+    ]);
+    assert.deepEqual(
+      hidden.result,
+      { visibility: 'private', anonymousProof: 'hidden' },
+      `${status}`,
+    );
+  }
+
+  // Against a base that is not the forge the repository read never runs, so a 404 there cannot
+  // become `private`.
+  for (const [version, anonymousProof] of [
+    [curlResult(404, { message: 'not found' }), 'forge-check-failed'],
+    [curlResult(200, '<html>'), 'forge-check-failed'],
+    [curlResult(301), 'redirect'],
+  ]) {
+    const unproven = await forgejoVisibility([version]);
+    assert.deepEqual(unproven.result, { visibility: 'unknown', anonymousProof });
+    assert.equal(unproven.calls.length, 2);
+  }
+
+  for (const [read, anonymousProof] of [
+    [curlResult(302), 'redirect'],
+    [curlResult(500, { message: 'boom' }), 'unexpected-status'],
+    [curlResult(200, { full_name: 'team/other' }), 'name-mismatch'],
+    [curlResult(200), 'name-mismatch'],
+    [{ status: 28, signal: null, stdout: '', stderr: 'curl: (28) Operation timed out' }, 'timeout'],
+    [{ status: null, signal: 'SIGTERM', stdout: '', stderr: '' }, 'timeout'],
+    [{ status: 7, stdout: '', stderr: 'curl: (7) Failed to connect' }, 'request-failed'],
+    [{ status: 0, stdout: 'no status line', stderr: '' }, 'request-failed'],
+  ]) {
+    const unproven = await forgejoVisibility([curlResult(200, FORGE_VERSION), read]);
+    assert.deepEqual(unproven.result, { visibility: 'unknown', anonymousProof });
+  }
+
+  const missing = await forgejoVisibility([{ status: null, error: { code: 'ENOENT' } }]);
+  assert.deepEqual(missing.result, { visibility: 'unknown', anonymousProof: 'curl-missing' });
+
+  // The base comes only from the tea login URL, which must be plain HTTPS.
+  for (const [loginUrl, anonymousProof] of [
+    [null, 'login-url-missing'],
+    ['http://code.example.test', 'login-url-not-https'],
+    ['https://user:secret@code.example.test', 'login-url-invalid'],
+    ['not a url', 'login-url-invalid'],
+  ]) {
+    const refused = await forgejoVisibility([], { loginUrl });
+    assert.deepEqual(refused.result, { visibility: 'unknown', anonymousProof });
+    assert.equal(refused.calls.length, 1);
+  }
+});
+
+test('the anonymous proof keeps the login URL port and subpath, whatever the origin scheme', async () => {
+  const proof = [curlResult(200, FORGE_VERSION), curlResult(200, { full_name: 'team/flow' })];
+  const subpath = await forgejoVisibility(proof, {
+    loginUrl: 'https://code.example.test:3000/forge/',
+  });
+  assert.equal(subpath.result.visibility, 'public');
+  assert.equal(subpath.calls[1].args.at(-1), 'https://code.example.test:3000/forge/api/v1/version');
+  assert.equal(
+    subpath.calls[2].args.at(-1),
+    'https://code.example.test:3000/forge/api/v1/repos/team/flow',
+  );
+
+  const ssh = await forgejoVisibility(proof, {
+    loginUrl: 'https://code.example.test/',
+    input: {
+      repository: undefined,
+      remote: 'ssh://git@code.example.test:2222/team/flow.git',
+      teaLogins: [{ name: 'work', url: 'https://code.example.test/' }],
+    },
+  });
+  assert.equal(ssh.result.visibility, 'public');
+  assert.equal(ssh.calls[1].args.at(-1), 'https://code.example.test/api/v1/version');
+});
+
+test('the Forgejo probe hands the matched login URL to the visibility proof', async () => {
+  const runner = fakeRunner([
+    ...teaProbeResults(),
+    teaApiResult(200, PUBLIC_CANDIDATE),
+    curlResult(200, FORGE_VERSION),
+    curlResult(200, { full_name: 'team/flow' }),
+  ]);
+  const envelope = await executeOperation(
+    'repository-visibility-read',
+    { repository: forgejoRepository },
+    { runner },
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.deepEqual(envelope.data.result, { visibility: 'public', anonymousProof: 'confirmed' });
+  assert.equal(runner.calls.at(-1).args.at(-1), 'https://code.example.test/api/v1/repos/team/flow');
+});
+
+// Invariant: the forge check is part of the proof, so a failed, timed-out or missing `curl` at that
+// first request leaves the visibility `unknown` and never reaches the repository read.
+test('a failing forge check request leaves Forgejo visibility unknown', async () => {
+  for (const [version, anonymousProof] of [
+    [{ status: 28, signal: null, stdout: '', stderr: 'curl: (28) Operation timed out' }, 'timeout'],
+    [{ status: null, signal: 'SIGKILL', stdout: '', stderr: '' }, 'timeout'],
+    [{ status: 7, stdout: '', stderr: 'curl: (7) Failed to connect' }, 'request-failed'],
+    [{ status: null, error: { code: 'ENOENT' } }, 'curl-missing'],
+    [curlResult(500, { message: 'boom' }), 'forge-check-failed'],
+  ]) {
+    const unproven = await forgejoVisibility([version]);
+    assert.deepEqual(unproven.result, { visibility: 'unknown', anonymousProof }, anonymousProof);
+    assert.equal(unproven.calls.length, 2, 'the repository read never runs');
+  }
+});
+
+// Invariant: an instance that requires sign-in even to view answers the anonymous version check
+// with a forge-shaped 401 or 403, which makes the repository non-public; any other refusal of that
+// check proves nothing and stays `unknown`, and the repository read never runs.
+test('a forge-shaped sign-in refusal of the version check makes Forgejo visibility private', async () => {
+  for (const status of [401, 403]) {
+    const signIn = await forgejoVisibility([
+      curlResult(status, { message: 'Only signed in user is allowed to call APIs.', url: '' }),
+    ]);
+    assert.deepEqual(
+      signIn.result,
+      { visibility: 'private', anonymousProof: 'sign-in-required' },
+      `${status}`,
+    );
+    assert.equal(signIn.calls.length, 2, 'the repository read never runs');
+  }
+  for (const version of [
+    { status: 0, stdout: '<html>Sign in</html>\n401', stderr: '' },
+    curlResult(401, { error: 'unauthorized' }),
+    curlResult(401, { message: 42 }),
+    curlResult(401, ['message']),
+    curlResult(401),
+  ]) {
+    const unproven = await forgejoVisibility([version]);
+    assert.deepEqual(
+      unproven.result,
+      { visibility: 'unknown', anonymousProof: 'forge-check-failed' },
+      version.stdout,
+    );
+    assert.equal(unproven.calls.length, 2);
+  }
+});
+
+// Invariant: `keepDraft` is a Forgejo-only convention (the title is the draft state); on GitHub the
+// retitle stays a plain title PATCH and carries no WIP prefix.
+test('GitHub pr-update-title with keepDraft writes the title unchanged', async () => {
+  const dryRun = await executeOperation(
+    'pr-update-title',
+    {
+      repository: githubRepository,
+      number: 7,
+      payload: { title: 'docs: plan x', keepDraft: true },
+    },
+    { skipProbe: true },
+  );
+  assert.equal(dryRun.ok, true, JSON.stringify(dryRun));
+  assert.equal(dryRun.data.command.stdin, `${JSON.stringify({ title: 'docs: plan x' })}\n`);
 });
 
 test('Forgejo visibility capability follows the raw API transport rather than the provider name', async () => {

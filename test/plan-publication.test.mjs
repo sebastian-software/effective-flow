@@ -1464,10 +1464,11 @@ function isGitWrite(call) {
   return call.args[0] === 'hash-object' && call.args.includes('-w');
 }
 
-// Binding decision D3: the unattended path is GitHub only. The tracker classifies only github.com
-// on its own and answers AMBIGUOUS_HOST for any other host, which the core reports as
-// UNSUPPORTED_PROVIDER before any Git write or forge command, for both mutating operations.
-function providerRunner(cwd, url, { gh } = {}) {
+// Binding decision D3: the unattended path runs on GitHub and Forgejo origins only, an allow-list.
+// The tracker classifies github.com and any host a configured tea login matches; it answers
+// AMBIGUOUS_HOST for any other host, which the core reports as UNSUPPORTED_PROVIDER before any Git
+// write or forge command, for both mutating operations. The tea login lookup is a local read.
+function providerRunner(cwd, url, { gh, tea } = {}) {
   return recordingRunner(({ executable, args }) => {
     if (executable === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') {
       return { status: 0, stdout: `${cwd}\n`, stderr: '' };
@@ -1476,8 +1477,14 @@ function providerRunner(cwd, url, { gh } = {}) {
       return { status: 0, stdout: `${url}\n`, stderr: '' };
     }
     if (executable === 'gh' && gh) return gh(args);
+    if (executable === 'tea' && tea) return tea(args);
     return { status: 1, stdout: '', stderr: 'unexpected call' };
   });
+}
+
+// Whether a call reads the locally configured tea logins, which contacts no forge.
+function isTeaLoginLookup(call) {
+  return call.executable === 'tea' && call.args[0] === 'logins';
 }
 
 for (const [operation, makeInput] of MUTATING) {
@@ -1502,14 +1509,71 @@ for (const [operation, makeInput] of MUTATING) {
         assert.equal(envelope.error.details.host, host);
         assert.equal(runner.calls.filter(isGitWrite).length, 0, 'zero Git writes');
         assert.equal(
-          runner.calls.filter((call) => call.executable !== 'git').length,
+          runner.calls.filter((call) => call.executable !== 'git' && !isTeaLoginLookup(call))
+            .length,
           0,
-          'no forge command (the provider is learned from the remote URL alone)',
+          'no forge command (the provider is learned from the remote URL and local tea logins)',
         );
         assert.ok(
           !runner.calls.some((call) => call.executable === 'git' && call.args[0] === 'fetch'),
         );
       }
+    });
+  }
+}
+
+// A fake tea for a Forgejo origin whose login matches `code.example.test`. Every help probe answers
+// with the flags it asks for; `help` overrides the output of one `<subcommand> <verb>` pair, which
+// is how an installation without one of the three draft capabilities is simulated.
+const TEA_FLAGS =
+  '--output --comments --title --description --add-labels --remove-labels --head --base --method --data --name --exclude-org --page --limit --include --draft  Create as a draft (prepends "WIP: " to the title; Gitea treats WIP-prefixed PRs as drafts)';
+function fakeTea(help = {}) {
+  const ok = (stdout) => ({ status: 0, stdout, stderr: '' });
+  return (args) => {
+    if (args[0] === '--version') return ok('Version: 0.16.0\n');
+    if (args[0] === 'logins')
+      return ok(JSON.stringify([{ name: 'work', url: 'https://code.example.test' }]));
+    if (args.at(-1) === '--help') return ok(help[args.slice(0, -1).join(' ')] ?? TEA_FLAGS);
+    return { status: 1, stdout: '', stderr: 'unexpected tea call' };
+  };
+}
+
+const FORGEJO_URL = 'https://code.example.test/o/r.git';
+
+// Invariant: a Forgejo origin passes the provider rule, and its probe must state all three draft
+// capabilities before any write; a missing one stops as UNSUPPORTED_CAPABILITY naming it.
+for (const [operation, makeInput] of MUTATING) {
+  test(`${operation}: a Forgejo origin with every draft capability passes the provider rule`, async (t) => {
+    const cwd = tempDirectory(t);
+    write(cwd, 'docs/plan/2026-10-17-issue-12-demo.md', '# Plan\n');
+    const runner = providerRunner(cwd, FORGEJO_URL, { tea: fakeTea() });
+    const envelope = await executeOperation(operation, makeInput({ cwd }), { apply: true, runner });
+    assert.equal(envelope.ok, false, 'the fake stops the run after the provider rule');
+    assert.ok(
+      !['UNSUPPORTED_PROVIDER', 'UNSUPPORTED_CAPABILITY'].includes(envelope.error.code),
+      `${envelope.error.code}: ${envelope.error.message}`,
+    );
+    assert.ok(
+      runner.calls.some((call) => call.executable === 'tea' && call.args[0] === '--version'),
+    );
+  });
+
+  for (const [capability, help] of [
+    ['pullRequestDraftCreate', { 'pulls create': '--head --base' }],
+    ['pullRequestTitleUpdate', { 'pulls edit': '--description' }],
+    ['pullRequestMarkReady', { 'pulls create': '--head --base --draft  Create as a draft' }],
+  ]) {
+    test(`${operation}: a Forgejo probe without ${capability} stops before any write`, async (t) => {
+      const cwd = tempDirectory(t);
+      write(cwd, 'docs/plan/2026-10-17-issue-12-demo.md', '# Plan\n');
+      const runner = providerRunner(cwd, FORGEJO_URL, { tea: fakeTea(help) });
+      const envelope = await executeOperation(operation, makeInput({ cwd }), {
+        apply: true,
+        runner,
+      });
+      assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY', envelope.error.message);
+      assert.equal(envelope.error.details.capability, capability);
+      assert.equal(runner.calls.filter(isGitWrite).length, 0, 'zero Git writes');
     });
   }
 }

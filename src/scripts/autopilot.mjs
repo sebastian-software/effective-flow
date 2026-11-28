@@ -2,7 +2,8 @@
 
 // Thin JSON CLI over autopilot-core.mjs:
 //   node autopilot.mjs <run-init|decision-classify|decision-extract|decision-record|blocker-record|
-//                       fit-record|base-move-record|delivery-base-check|delivery-base-record|
+//                       fit-record|base-move-record|comments-dropped-record|
+//                       delivery-base-check|delivery-base-record|
 //                       plan-reviewed|delivery-record|delivery-confirm|consent-check|run-check|
 //                       pr-appendix|appendix-merge|plan-copy-restore|run-close|ledger-list|
 //                       ledger-prune>

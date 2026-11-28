@@ -24917,6 +24917,18 @@ test('pr finishes a plan draft only on its number or as recovery, with evidence,
   );
   assert.match(finish, /otherwise `pr-update-title` runs on its own/);
 
+  // Invariant: under `Keep draft: requested` the Forgejo title edit must not take the plan pull
+  // request out of draft, so it carries `keepDraft` and the adapter confirms the draft read-back;
+  // `pr-automation-lines` keeps only a pointer to this step.
+  assert.match(
+    finish,
+    /Under `Keep draft: requested` there is no ready edit: on Forgejo `pr-update-title` carries `payload\.keepDraft: true`/,
+  );
+  assert.match(
+    prose(source('src/shared/pr-automation-lines.md')),
+    /on Forgejo `pr-update-title` keeps the draft as `pr` step 8 states/,
+  );
+
   // Invariant: ready is the last mutation on both providers. The combined Forgejo edit removes the
   // WIP prefix, so it must follow the body update; a body failure after it would leave a ready pull
   // request carrying the plan-only body.
@@ -29506,7 +29518,7 @@ test('next-steps rows: incomplete criteria iterate first and an autopilot draft 
 
 // Invariant: autopilot never continues on an existing open pull request: the "Existing plan pull
 // request" continuation is gone, `open-pull-request` maps to a stop that closes the run with
-// `no-pull-request`, and only Tracker and GitHub origin remain as source preconditions, so any
+// `no-pull-request`, and only Tracker and Forge origin remain as source preconditions, so any
 // checkout of the repository may start an issue source.
 test('autopilot issue source stops on an existing open pull request and accepts any checkout', () => {
   const issueSource = source('src/shared/autopilot-issue-source.md');
@@ -29522,7 +29534,7 @@ test('autopilot issue source stops on an existing open pull request and accepts 
       'Skip `open-pull-request`: stop with the reason and no pull request.',
       'Every stop here is a confirmed no-PR exception: `run-close` with `outcome: "no-pull-request"`.',
       '1. Tracker.',
-      '2. GitHub origin.',
+      '2. Forge origin.',
       '`ISSUE_CLAIMED` from `run-init` stops and names the holder',
       'Either creates no run, no ledger and no pull request, so no `run-close` follows.',
       'The claim token stays inside the helper',
@@ -29531,6 +29543,35 @@ test('autopilot issue source stops on an existing open pull request and accepts 
   );
   const mapping = section(issueSource, '### Plan through Issue Buddy');
   ordered(mapping, 'Skip `open-pull-request`', 'Every stop here is a confirmed no-PR exception');
+  // Invariant: issue sources accept GitHub and Forgejo (Gitea included) origins and still exclude
+  // external trackers; a refused author permission stops with its remedy, and a nonzero dropped-
+  // comment count is recorded before the plan is restored.
+  includesAll(
+    text,
+    [
+      'An issue source is one forge `plain-issue` on a GitHub or Forgejo (Gitea included) `origin`.',
+      'External trackers are out of scope for issue sources.',
+      'must return `provider: github` or `provider: forgejo`.',
+      'Skip `author-permission-unreadable`: stop, no pull request. The cause names the remedy:',
+      'run as a repository admin or with an admin token.',
+      'record a nonzero `counts["unreadable-comments"]` of the report with the literal `autopilot.mjs comments-dropped-record` call `{cwd, runId, count}`',
+    ],
+    'the autopilot issue source forges',
+  );
+  assert.doesNotMatch(text, /Forgejo and external trackers are out of scope/);
+  ordered(
+    mapping,
+    'Skip `author-permission-unreadable`',
+    'Every stop here is a confirmed no-PR exception',
+  );
+  assert.match(
+    prose(source('src/tools/autopilot.md')),
+    /Drives one trusted GitHub, Forgejo or Gitea issue or one local plan/,
+  );
+  assert.match(
+    prose(source('src/tools/issue-buddy.md')),
+    /judges trusted GitHub, Forgejo or Gitea issues[\s\S]*require `provider: github` or `provider: forgejo` \(Gitea included\)/,
+  );
   // The restored plan lives in the run-owned delivery worktree, never in the invoking checkout.
   includesAll(
     text,

@@ -1,6 +1,6 @@
 # Autopilot and Issue Buddy accept Forgejo and Gitea issue sources
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -390,3 +390,99 @@ Every finding from both rounds is incorporated. No open point remains.
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-28
+**Workflow:** `effective-flow build` (via `effective-flow apply`), continued on the plan pull request
+
+### Requirement
+
+Delivered as planned: a trusted Forgejo or Gitea `plain-issue` takes the same unattended path as a
+GitHub one in autopilot and Issue Buddy. The safety boundaries are unchanged, and external trackers
+stay out of scope.
+
+### Architecture decisions
+
+All eight decisions are implemented as written. The review sharpened decision 3b: on the anonymous
+version check, a forge-shaped HTTP 401 or 403 means the instance requires sign-in, so the result is
+`private` (`anonymousProof: sign-in-required`). Every other non-200 answer stays `unknown`.
+
+The implementation added these items beyond the plan:
+
+- **`autopilot.mjs comments-dropped-record`:** a new ledger operation that records the
+  dropped-comment count and renders it in the appendix as "Dropped comments". `decision-record`
+  could not carry an unscored fact.
+- **Draft capabilities:** plan publication requires all three draft capabilities on every
+  provider. GitHub's probe always reports them, so behaviour there is unchanged.
+- **`classifyOrigin`:** resolves a Forgejo origin through the tea login, also when the caller
+  passes a remote URL. Before this fix, every Forgejo origin stopped as `AMBIGUOUS_HOST`.
+- **Issue Buddy on Forgejo:** it now accepts Forgejo `/pulls/<n>` URLs and Forgejo login shapes.
+- **`pr-list` head filter:** owner-qualified heads (`owner:branch`) now match on both providers.
+- **`curl` timeouts:** curl exit status 28, and a signal, are reported as `timeout`.
+
+### Affected files
+
+- **Runtime:** `src/scripts/remote-tracker-core.mjs`, `remote-tracker-forgejo-core.mjs`,
+  `remote-tracker-github-core.mjs` (comment only), `issue-buddy-core.mjs`,
+  `plan-publication-core.mjs`, `autopilot-core.mjs`, `autopilot.mjs`.
+- **Prose:** `src/shared/autopilot-issue-source.md`, `src/shared/pr-automation-lines.md`,
+  `src/tools/autopilot.md`, `src/tools/issue-buddy.md`, `src/tools/pr.md`.
+- **Tests:** `test/remote-tracker.test.mjs`, `plan-publication.test.mjs`, `issue-buddy.test.mjs`,
+  `issue-buddy-contract.test.mjs`, `backlog-audit-contract.test.mjs`,
+  `workflow-contracts.test.mjs`, `autopilot-core.test.mjs`.
+- **Documentation:** `docs/adr/plan-only-unattended-publication.md`,
+  `docs/user-guide/tools-automation.md`, `remote-tracker.md`, `tools-understand.md`,
+  `docs/developer-guide/architecture.md`, and `README.md.src` with its generated `README.md`.
+
+### Implementation details
+
+- **`contextBudget`:** `issue-buddy` 590 → 600 and `autopilot` 502 → 508. `pr` is unchanged at 527.
+- **Lifecycle record:** the delivery worktree sits under `/home/t3/project-exports/`, as the host
+  policy for project-runner worktrees requires. The lifecycle helper refuses paths outside
+  `worktree.baseDir` (`NOT_ELIGIBLE: path`), so the worktree has no lifecycle record and was
+  removed by hand.
+
+### Test results
+
+- **Phase 5 full run** (CI order, on the tree before the review corrections):
+  - `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` passed.
+  - `pnpm test`: 6,970 of 7,073 tests passed, with 14 failed, 4 cancelled and 85 skipped.
+- **Attribution of the 14 failures:**
+  - 11 are load-induced timeouts from a host running at full capacity. Rerun serially, they passed:
+    `issue-buddy-pass`, `protected-validation-operator`, `merge-gate-eval-round`,
+    `host-driver-runner`, `remote-tracker-polling-cli`, and part of `host-driver`.
+  - 3 are pre-existing. They fail identically on the base tree `8460dae3`:
+    `merge-gate-eval-round-lifecycle` › "one immutable round provisions, seals, retries, and
+    publishes isolated slots" (timeout), and two `host-driver` Python cases in
+    `test_remaining_stage_composed`.
+- **Final validation after the review corrections** (targeted):
+  - `pnpm agent:check` passed on 1,703 files, and `node build.mjs` passed.
+  - The 1,695 tests of the changed test files plus `issue-buddy-pass` and
+    `remote-tracker-polling-cli` all passed.
+  - `pnpm test:distribution` passed.
+- **Eval freshness debt** (`pnpm eval <suite> verify`):
+  - `merge-gate`, `iterate` and `next-steps` report stale or absent evidence, with no integrity
+    blocker.
+  - `build-context` reports unrecorded evidence.
+  - `focus` reports recorded negatives that need triage.
+  - None of this blocks the change. The debt stays open for manual re-recording.
+- **Follow-up acceptance (open):** the three post-merge Gitea runs from the validation plan.
+
+### Review result
+
+The routed Node.js reviewer found no Critical issue. It reported 2 Important findings and 4 Notes,
+and all six were fixed in one incorporation pass. No residual findings remain, and no review report
+was offloaded.
+
+## Review findings
+
+**Date:** 2026-11-28
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     6 |
+| Open / Not implemented |     0 |

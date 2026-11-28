@@ -30,6 +30,7 @@ import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { executeOperation as trackerOperation } from './remote-tracker-core.mjs';
 import { ledgerRepository } from './remote-tracker-ledger-core.mjs';
+import { isWritePermission } from './remote-tracker-shared-core.mjs';
 import {
   BASE_MOVE_REASONS,
   BASE_MOVE_VERDICTS,
@@ -77,7 +78,15 @@ export const SKIP_REASONS = Object.freeze([
   // Another run (Issue Buddy pass, autopilot run or `plan-issue`) holds the issue's planning claim.
   // Distinct from the lifecycle label `effective-flow-issue-in-progress` (`lifecycle-label`).
   'issue-in-progress',
+  // The forge refused (HTTP 403) to state the issue author's permission to this runner, as Forgejo
+  // and Gitea do for a non-admin reading another user. Never trusted, but told apart from a proven
+  // non-writer so the operator can see the remedy: run as a repository admin.
+  'author-permission-unreadable',
 ]);
+// The pass-report count of trusted-issue comments dropped because their author's permission could
+// not be read (HTTP 403); summed over the eligible issues, each of which states its own
+// `unreadableCommentCount`. A count key beside the skip reasons and verdicts, kebab-case like them.
+export const UNREADABLE_COMMENTS_COUNT = 'unreadable-comments';
 // The orphan proof `pass-prune` accepts besides `confirmStale` (re-verified by the helper).
 export const PASS_PRUNE_PROOFS = Object.freeze(['process-dead']);
 export const PASS_PRUNE_RESULTS = Object.freeze([
@@ -196,10 +205,12 @@ function timestamp(value) {
     invalid('invalid UTC calendar timestamp');
   return value;
 }
+// A forge login: GitHub's shape (alphanumerics and single hyphens) and Forgejo's, which also admits
+// single `.` and `_` separators, up to 40 characters.
 function login(value) {
   return typeof value === 'string' &&
-    /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i.test(value) &&
-    !value.includes('--')
+    /^[a-z0-9](?:[a-z0-9._-]{0,38}[a-z0-9])?$/i.test(value) &&
+    !/[._-]{2}/.test(value)
     ? value.toLowerCase()
     : null;
 }
@@ -1457,8 +1468,9 @@ function transition(
 }
 async function remote(context, operation, input = {}, repository) {
   assertUnlocked(context);
-  // Resolve the explicit origin through the tracker without its optional Forgejo-login probe.
-  // An unknown/non-GitHub provider is refused before any provider executable is consulted.
+  // Resolve the explicit origin through the tracker, which classifies github.com and any host a
+  // configured tea login matches (a local read). Any other host is AMBIGUOUS_HOST and is refused as
+  // UNSUPPORTED_PROVIDER before any forge read.
   const resolvedInput =
     operation === 'repository-resolve'
       ? { remote: await git(context, ['remote', 'get-url', 'origin']), ...input }
@@ -1468,14 +1480,21 @@ async function remote(context, operation, input = {}, repository) {
     { cwd: context.root, ...resolvedInput, ...(repository ? { repository } : {}) },
     { runner: context.runner },
   );
-  if (!envelope.ok)
-    fail(
-      operation === 'repository-resolve' && envelope.error.code === 'AMBIGUOUS_HOST'
-        ? 'UNSUPPORTED_PROVIDER'
-        : 'FORGE_READ_FAILED',
-      'forge read failed',
-      { trackerCode: envelope.error.code },
-    );
+  if (!envelope.ok) {
+    if (operation === 'repository-resolve' && envelope.error.code === 'AMBIGUOUS_HOST')
+      fail(
+        'UNSUPPORTED_PROVIDER',
+        'the origin host is neither github.com nor a host a tea login matches; configure a tea login for it or set tracker.remoteToolOverride',
+        { trackerCode: envelope.error.code },
+      );
+    // The tracker's HTTP status travels as `trackerStatus`, so a caller can tell a refused
+    // permission read (403) from a missing collaborator or a failed read.
+    const status = envelope.error.details?.status;
+    fail('FORGE_READ_FAILED', 'forge read failed', {
+      trackerCode: envelope.error.code,
+      ...(Number.isSafeInteger(status) ? { trackerStatus: status } : {}),
+    });
+  }
   return operation === 'repository-resolve' ? envelope.data : envelope.data.result;
 }
 function array(value) {
@@ -1511,11 +1530,17 @@ function prIdentity(pr, issue, headRef, repository) {
   validatePrUrl(pr.url, repository, pr.number);
   return { issue, number: pr.number, headRef, url: pr.url };
 }
+// GitHub addresses a pull request as `/pull/<n>`, Forgejo and Gitea as `/pulls/<n>`. A persisted
+// report states its repository key without a provider, so it admits either.
 function validatePrUrl(value, repository, number) {
   const expected =
     typeof repository === 'string'
       ? repository.split('/')
       : [repository.host, repository.owner, repository.repository];
+  const segments =
+    typeof repository === 'string' || repository.provider === undefined
+      ? ['pull', 'pulls']
+      : [repository.provider === 'forgejo' ? 'pulls' : 'pull'];
   let url;
   try {
     url = new URL(value);
@@ -1529,7 +1554,11 @@ function validatePrUrl(value, repository, number) {
     url.search ||
     url.hash ||
     url.host.toLowerCase() !== expected[0].toLowerCase() ||
-    url.pathname.toLowerCase() !== `/${expected[1]}/${expected[2]}/pull/${number}`.toLowerCase()
+    !segments.some(
+      (segment) =>
+        url.pathname.toLowerCase() ===
+        `/${expected[1]}/${expected[2]}/${segment}/${number}`.toLowerCase(),
+    )
   )
     invalid('pull request URL belongs to another repository');
 }
@@ -1630,12 +1659,16 @@ async function currentReads(context, input, repository) {
   const branches = await planBranches(context, input);
   const issues = array(await remote(context, 'issue-list', { state: 'open' }, repository));
   const pulls = await openPulls(context, repository);
+  // Write permission per login, read once per login, in three states: `writer`, `non-writer`
+  // (including a collaborator the forge does not know, TARGET_NOT_FOUND) and `unreadable` (the
+  // forge refused with HTTP 403 to state it). Only `writer` is trusted; any other failure is a
+  // `non-writer`, so an unknown permission never grants trust.
   const permissions = new Map();
-  async function trusted(author) {
+  async function trust(author) {
     const name = login(author?.login);
-    if (!name) return false;
+    if (!name) return 'non-writer';
     if (!permissions.has(name)) {
-      let allowed = false;
+      let state = 'non-writer';
       try {
         const permission = await remote(
           context,
@@ -1643,11 +1676,11 @@ async function currentReads(context, input, repository) {
           { login: name },
           repository,
         );
-        allowed = ['write', 'admin'].includes(permission.permission);
-      } catch {
-        /* Unknown permission never grants trust. */
+        if (isWritePermission(permission?.permission)) state = 'writer';
+      } catch (error) {
+        if (error?.details?.trackerStatus === 403) state = 'unreadable';
       }
-      permissions.set(name, allowed);
+      permissions.set(name, state);
     }
     return permissions.get(name);
   }
@@ -1661,17 +1694,26 @@ async function currentReads(context, input, repository) {
     // A single-issue selector (`--issue <N>`) restricts trust reads, candidates and therefore
     // recovery authority to that issue; the complete listing is still validated above.
     if (input.issue !== undefined && issue.number !== input.issue) continue;
-    if (!(await trusted(issue.author))) {
-      candidates.push({ issue: issue.number, skip: 'untrusted-author' });
+    const authorTrust = await trust(issue.author);
+    if (authorTrust !== 'writer') {
+      candidates.push({
+        issue: issue.number,
+        skip: authorTrust === 'unreadable' ? 'author-permission-unreadable' : 'untrusted-author',
+      });
       continue;
     }
     validOrdering(issue);
     const comments = [];
     let securityNotice = false;
+    // Comments whose author's permission the forge refused to state are dropped like every
+    // untrusted comment, but counted, so the pass report can say that trusted text may be missing.
+    let unreadableCommentCount = 0;
     for (const comment of array(
       await remote(context, 'issue-comments-read', { number: issue.number }, repository),
     )) {
-      if (!(await trusted(comment.author))) continue;
+      const commentTrust = await trust(comment.author);
+      if (commentTrust === 'unreadable') unreadableCommentCount += 1;
+      if (commentTrust !== 'writer') continue;
       const entry = {
         id: positive(comment.id),
         author: requiredLogin(comment.author.login),
@@ -1700,6 +1742,7 @@ async function currentReads(context, input, repository) {
       issueAuthor: requiredLogin(issue.author.login),
       headRef,
       text: value,
+      unreadableCommentCount,
       updatedAt: issue.updatedAt,
       priority: issue.labels.some((label) => NEEDS_PLANNING.includes(label)),
       history: [],
@@ -2131,6 +2174,7 @@ async function finalizeCollection(context, input, state, reads, claimed, dropped
       issueAuthor: candidate.issueAuthor,
       headRef: candidate.headRef,
       trustedTextPath,
+      unreadableCommentCount: candidate.unreadableCommentCount,
     });
   }
   const skipped = reads.candidates
@@ -2221,8 +2265,8 @@ async function collect(context, input) {
   try {
     // Step 1 (unlocked): fetch, forge and trust reads, selection inputs, recovery candidates.
     const repository = await remote(context, 'repository-resolve');
-    if (repository.provider !== 'github')
-      fail('UNSUPPORTED_PROVIDER', 'Issue Buddy supports GitHub only');
+    if (!['github', 'forgejo'].includes(repository.provider))
+      fail('UNSUPPORTED_PROVIDER', 'Issue Buddy supports GitHub and Forgejo only');
     state.repository = repository;
     state.repositoryKey = ledgerRepository(repository);
     const reads = await currentReads(context, input, repository);
@@ -2522,7 +2566,11 @@ export function validatePassReport(report) {
   if (!object(report.counts)) invalid('invalid report counts');
   for (const [key, count] of Object.entries(report.counts)) {
     match(key, NAME);
-    if (![...SKIP_REASONS, ...VERDICTS].includes(key) || !Number.isSafeInteger(count) || count < 0)
+    if (
+      ![...SKIP_REASONS, ...VERDICTS, UNREADABLE_COMMENTS_COUNT].includes(key) ||
+      !Number.isSafeInteger(count) ||
+      count < 0
+    )
       invalid('invalid count');
   }
   for (const field of [
@@ -2769,6 +2817,11 @@ async function report(context, input, pass, resolved) {
   for (const skip of collected?.skipped ?? []) counts[skip.reason] = (counts[skip.reason] ?? 0) + 1;
   for (const verdict of input.verdicts)
     counts[verdict.verdict] = (counts[verdict.verdict] ?? 0) + 1;
+  const unreadable = (collected?.eligible ?? []).reduce(
+    (sum, entry) => sum + (entry.unreadableCommentCount ?? 0),
+    0,
+  );
+  if (unreadable > 0) counts[UNREADABLE_COMMENTS_COUNT] = unreadable;
   if (input.counts !== undefined && !same(input.counts, counts)) invalid('report counts mismatch');
   let metadata = {};
   if (version === 2) {

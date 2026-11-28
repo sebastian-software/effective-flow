@@ -1333,7 +1333,11 @@ function repositoryFromInput(input) {
 }
 
 async function resolveRepositoryInput(input, runner) {
-  if (input.repository || input.remote) return repositoryFromInput(input);
+  if (input.repository) return repositoryFromInput(input);
+  // An explicit origin URL classifies exactly as one read from `cwd`: an ambiguous host falls back
+  // to the configured tea logins below, so a caller that already holds the URL (Issue Buddy, plan
+  // publication) resolves a Forgejo origin too.
+  if (input.remote) return classifyOrigin(requireString(input.remote, 'remote'), input, runner);
   const inside = await runner({
     executable: 'git',
     args: ['rev-parse', '--is-inside-work-tree'],
@@ -1356,8 +1360,14 @@ async function resolveRepositoryInput(input, runner) {
   if (origin?.status !== 0 || origin?.stdout.trim() === '') {
     fail('NO_ORIGIN', 'Git repository has no origin remote', { cwd: input.cwd });
   }
+  return classifyOrigin(origin.stdout.trim(), input, runner);
+}
+
+// Only `AMBIGUOUS_HOST` without an explicit provider consults `tea logins list`, a local read of
+// the configured logins that contacts no forge. A failed or missing tea keeps the original error.
+async function classifyOrigin(remote, input, runner) {
   try {
-    return parseRemote(origin.stdout.trim(), input);
+    return parseRemote(remote, input);
   } catch (error) {
     if (
       error.code !== 'AMBIGUOUS_HOST' ||
@@ -1365,13 +1375,18 @@ async function resolveRepositoryInput(input, runner) {
     ) {
       throw error;
     }
-    const logins = await runner({
-      executable: 'tea',
-      args: ['logins', 'list', '--output', 'json'],
-    });
+    let logins;
+    try {
+      logins = await runner({
+        executable: 'tea',
+        args: ['logins', 'list', '--output', 'json'],
+      });
+    } catch {
+      throw error;
+    }
     if (logins?.status !== 0) throw error;
     const parsed = parseJsonOutput(logins, 'tea logins');
-    return parseRemote(origin.stdout.trim(), {
+    return parseRemote(remote, {
       ...input,
       teaLogins: Array.isArray(parsed) ? parsed : (parsed?.logins ?? []),
     });
@@ -2757,6 +2772,9 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     executable,
     version,
     login: login.name,
+    // The matched login's own URL, the only base the anonymous visibility proof addresses (see
+    // `proveForgejoPublic`). Absent when the login states none, which leaves that proof `unknown`.
+    ...(typeof login.url === 'string' ? { loginUrl: login.url } : {}),
     // `null` when the description was not requested, `unknown` when it could not be read.
     flavor: readsSwagger ? (swagger === undefined ? 'unknown' : teaForgeFlavor(swagger)) : null,
     authenticated: true,
@@ -4172,8 +4190,9 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         .map((item) => normalizePullRequestRecord(item, repository))
         .filter((pullRequest) => {
           if (!input.head) return true;
-          if (repository.provider !== 'github' || !input.head.includes(':'))
-            return pullRequest.head === input.head;
+          // `owner:branch` narrows to that owner's head repository on both providers; a Git
+          // branch name cannot contain `:`, so the split is unambiguous.
+          if (!input.head.includes(':')) return pullRequest.head === input.head;
           const [owner, ...parts] = input.head.split(':');
           return (
             pullRequest.head === parts.join(':') &&
@@ -4692,6 +4711,189 @@ async function staleWriteGuard(operation, input, repository, runner, conditional
 // falling back to a branch name: a branch resolves to whatever it points at now, which is a
 // different commit from the one this read is about.
 const FULL_OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+
+// Forgejo `repository-visibility-read` in two parts, both of which must hold before a repository is
+// `public` (plan-only unattended publication must never publish where anonymous visitors cannot
+// read, nor call a hidden repository public).
+//
+// Part (a) is the authenticated raw read (`modules/structs.Repository`). `private` when the forge
+// says so through any of its three fields; a public **candidate** only for `private: false`,
+// `internal` false or absent, and an owner whose visibility is `public`; `unknown` for every other
+// combination, so a missing or malformed field is never read as public.
+export function forgejoAuthenticatedVisibility(repository) {
+  requireObject(repository, 'provider repository');
+  const ownerVisibility =
+    repository.owner !== null && typeof repository.owner === 'object'
+      ? repository.owner.visibility
+      : undefined;
+  if (
+    repository.private === true ||
+    repository.internal === true ||
+    ownerVisibility === 'limited' ||
+    ownerVisibility === 'private'
+  )
+    return 'private';
+  if (
+    repository.private === false &&
+    (repository.internal === undefined || repository.internal === false) &&
+    ownerVisibility === 'public'
+  )
+    return 'public';
+  return 'unknown';
+}
+
+// The bound of one anonymous `curl` request, in seconds, and the runner's own bound above it.
+export const ANONYMOUS_PROOF_MAX_TIME_SECONDS = 15;
+const ANONYMOUS_PROOF_TIMEOUT_MS = (ANONYMOUS_PROOF_MAX_TIME_SECONDS + 5) * 1000;
+
+// One credential-free HTTPS GET. `-q` must stay the first argument: it is the only spelling that
+// stops curl from reading a `.curlrc`, which could otherwise add a header, a cookie jar, `--netrc`
+// or `--location`. No header, cookie, netrc or user option is passed; `--proto =https` refuses any
+// other scheme, `--max-redirs 0` with no `--location` follows nothing, and `--max-time` bounds the
+// request. Proxy variables and the system CA apply exactly as they do to `tea`. `--write-out`
+// appends the final status code on a line of its own after the body.
+export function anonymousCurlPlan(url) {
+  return {
+    executable: 'curl',
+    args: [
+      '-q',
+      '--silent',
+      '--show-error',
+      '--proto',
+      '=https',
+      '--max-redirs',
+      '0',
+      '--max-time',
+      String(ANONYMOUS_PROOF_MAX_TIME_SECONDS),
+      '--write-out',
+      '\\n%{http_code}',
+      '--url',
+      url,
+    ],
+    timeoutMs: ANONYMOUS_PROOF_TIMEOUT_MS,
+  };
+}
+
+// The anonymous base: the matched tea login's URL, never the Git origin, so a custom port, a
+// subpath and an SSH origin all resolve to the instance tea itself talks to. Only plain `https:`
+// without userinfo, query or fragment qualifies.
+function anonymousProofBase(loginUrl) {
+  if (typeof loginUrl !== 'string' || loginUrl.trim() === '')
+    return { reason: 'login-url-missing' };
+  let url;
+  try {
+    url = new URL(loginUrl.trim());
+  } catch {
+    return { reason: 'login-url-invalid' };
+  }
+  if (url.protocol !== 'https:') return { reason: 'login-url-not-https' };
+  if (url.username || url.password || url.search || url.hash)
+    return { reason: 'login-url-invalid' };
+  return { base: `${url.origin}${url.pathname.replace(/\/+$/, '')}` };
+}
+
+// The error body Forgejo and Gitea answer with: a JSON object carrying a string `message`.
+function forgeShapedError(body) {
+  return (
+    body !== null &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    typeof body.message === 'string'
+  );
+}
+
+// The status and body of one anonymous request, or the reason it produced none.
+async function anonymousGet(runner, url) {
+  const plan = anonymousCurlPlan(url);
+  const result = await runner(plan);
+  const command = redact(plan);
+  if (result?.error?.code === 'ENOENT') return { command, reason: 'curl-missing' };
+  // curl's own `--max-time` ends the request first and exits 28; the runner's bound above it ends
+  // the process by signal, which leaves a null status.
+  if (
+    result?.timedOut === true ||
+    result?.status === 28 ||
+    (result?.status === null && typeof result?.signal === 'string')
+  )
+    return { command, reason: 'timeout' };
+  if (!result || result.status !== 0) return { command, reason: 'request-failed' };
+  const stdout = typeof result.stdout === 'string' ? result.stdout : '';
+  const split = stdout.lastIndexOf('\n');
+  const code = stdout.slice(split + 1).trim();
+  if (split < 0 || !/^\d{3}$/.test(code)) return { command, reason: 'request-failed' };
+  const status = Number(code);
+  let body;
+  try {
+    body = JSON.parse(stdout.slice(0, split));
+  } catch {
+    body = undefined;
+  }
+  return { command, status, body };
+}
+
+// Part (b), run only for a public candidate, against the tea login URL whose authenticated read
+// just succeeded. The forge check `GET <base>/api/v1/version` comes first, since against a wrong
+// base every repository URL is a 404 and would read as `private`. A 401 or 403 with forge-shaped
+// JSON (an object with a string `message`) is an instance that requires sign-in even to view, so
+// the repository is `private` (`sign-in-required`). Any other answer than 200 with a version string
+// is `unknown`. Then `GET <base>/api/v1/repos/{owner}/{repo}`: 200 with the authenticated
+// `full_name` (case-insensitive) confirms `public`; 401, 403 or 404 is `private` (`hidden`); a
+// redirect, any other status, a timeout, a network failure or a missing `curl` is `unknown`.
+// `anonymousProof` names the outcome.
+async function proveForgejoPublic(runner, loginUrl, repository, fullName) {
+  const steps = [];
+  const outcome = (visibility, anonymousProof) => ({
+    result: { visibility, anonymousProof },
+    steps,
+  });
+  const { base, reason } = anonymousProofBase(loginUrl);
+  if (base === undefined) return outcome('unknown', reason);
+  const version = await anonymousGet(runner, `${base}/api/v1/version`);
+  steps.push({ step: 'forge-check', command: version.command });
+  if (version.reason) return outcome('unknown', version.reason);
+  if (version.status >= 300 && version.status < 400) return outcome('unknown', 'redirect');
+  if ([401, 403].includes(version.status) && forgeShapedError(version.body))
+    return outcome('private', 'sign-in-required');
+  if (version.status !== 200 || typeof version.body?.version !== 'string')
+    return outcome('unknown', 'forge-check-failed');
+  const path = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repository)}`;
+  const read = await anonymousGet(runner, `${base}/api/v1/repos/${path}`);
+  steps.push({ step: 'anonymous-read', command: read.command });
+  if (read.reason) return outcome('unknown', read.reason);
+  if ([401, 403, 404].includes(read.status)) return outcome('private', 'hidden');
+  if (read.status >= 300 && read.status < 400) return outcome('unknown', 'redirect');
+  if (read.status !== 200) return outcome('unknown', 'unexpected-status');
+  const anonymousName = read.body?.full_name;
+  if (
+    typeof anonymousName !== 'string' ||
+    asciiLowerCase(anonymousName) !== asciiLowerCase(fullName)
+  )
+    return outcome('unknown', 'name-mismatch');
+  return outcome('public', 'confirmed');
+}
+
+async function readForgejoVisibility(plan, repository, runner, loginUrl) {
+  const authenticated = teaApiSuccess(
+    await runChecked(runner, plan, 'repository-visibility-read'),
+    'repository-visibility-read',
+  ).body;
+  const candidate = forgejoAuthenticatedVisibility(authenticated);
+  const authenticatedStep = { step: 'authenticated-read', command: redact(plan) };
+  if (candidate !== 'public') {
+    return {
+      result: { visibility: candidate, anonymousProof: 'not-run' },
+      steps: [authenticatedStep],
+    };
+  }
+  if (typeof authenticated.full_name !== 'string' || authenticated.full_name.trim() === '') {
+    return {
+      result: { visibility: 'unknown', anonymousProof: 'name-mismatch' },
+      steps: [authenticatedStep],
+    };
+  }
+  const proven = await proveForgejoPublic(runner, loginUrl, repository, authenticated.full_name);
+  return { result: proven.result, steps: [authenticatedStep, ...proven.steps] };
+}
 
 // The Forgejo status read is three `tea api` calls where GitHub's is one GraphQL query. It has to
 // be: the pull-request object supplies the merge state, the draft flag, `mergeable` and the head
@@ -7772,6 +7974,24 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: false,
       };
     }
+    // Forgejo visibility is the authenticated read plus, for a public candidate, the anonymous
+    // proof (`readForgejoVisibility`). `data.command` keeps naming the authenticated read, which is
+    // the preview; `steps` lists every request in order.
+    if (operation === 'repository-visibility-read' && activeRepository.provider === 'forgejo') {
+      const read = await readForgejoVisibility(plan, activeRepository, runner, probe.loginUrl);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: read.result,
+          command: preview,
+          steps: read.steps,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
     // Both providers read the status through the same reader, so `mergeHeadGuard` and this branch
     // can never diverge. What differs is only how many commands that took: GitHub's one GraphQL
     // query is reported as `data.command`, Forgejo's three `tea api` calls as `data.commands`,
@@ -7905,6 +8125,84 @@ export async function executeOperation(operation, input = {}, options = {}) {
           steps: [
             { step: 'merge', command: preview },
             { step: 'head-read-back', command: redact(readBackPlan) },
+          ],
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // Forgejo's `pr-update-title` under `keepDraft` writes a `WIP: ` title (see the adapter), and a
+    // title is not proof that the pull request stayed a draft: an operator may have removed the
+    // default from `WORK_IN_PROGRESS_PREFIXES`. So the edit is followed by exactly one `pr-read`,
+    // the way `pr-mark-ready` below confirms its edit, and only the raw object's boolean
+    // `draft: true` confirms it. A read that states no boolean, or `draft: false`, fails the
+    // operation non-retryably with `titleEdited: true`, so a caller reports the pull request as no
+    // longer proven a draft instead of retrying blind.
+    if (
+      operation === 'pr-update-title' &&
+      activeRepository.provider === 'forgejo' &&
+      (input.payload ?? input).keepDraft === true
+    ) {
+      let edited;
+      try {
+        edited = parseCommandOutput(await runChecked(runner, plan, operation), plan, operation);
+      } catch (error) {
+        if (!(error instanceof RemoteTrackerError)) throw error;
+        throw new RemoteTrackerError(
+          error.code,
+          error.message,
+          { ...error.details, step: 'title-edit', titleEdited: false },
+          error.retryable,
+        );
+      }
+      const readBackPlan = buildCommandPlan('pr-read', input, activeRepository);
+      let draft;
+      try {
+        draft = teaApiSuccess(
+          await runChecked(runner, readBackPlan, 'pr-update-title read-back'),
+          'pr-update-title read-back',
+        ).body?.draft;
+      } catch (error) {
+        fail(
+          'COMMAND_FAILED',
+          'pr-update-title edited the title but could not confirm the draft state',
+          {
+            number: prNumber(input),
+            step: 'draft-read-back',
+            titleEdited: true,
+            cause: {
+              code: error?.code ?? 'COMMAND_FAILED',
+              message: error?.message ?? 'unexpected failure',
+            },
+          },
+          false,
+        );
+      }
+      if (draft !== true) {
+        fail(
+          typeof draft === 'boolean' ? 'COMMAND_FAILED' : 'INVALID_PAYLOAD',
+          typeof draft === 'boolean'
+            ? 'pr-update-title edited the title but the pull request is no longer a draft'
+            : 'pr-update-title read-back states no draft flag',
+          {
+            number: prNumber(input),
+            step: 'draft-read-back',
+            titleEdited: true,
+            ...(typeof draft === 'boolean' ? { draft } : {}),
+          },
+          false,
+        );
+      }
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: { ...normalizeRemoteData(operation, edited.raw, activeRepository, input), draft },
+          command: preview,
+          steps: [
+            { step: 'title-edit', command: preview },
+            { step: 'draft-read-back', command: redact(readBackPlan) },
           ],
           conditionalWriteAvailable: false,
         },

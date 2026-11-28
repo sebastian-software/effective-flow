@@ -2120,28 +2120,40 @@ function trackerFailure(envelope, operation) {
   });
 }
 
-async function requireGithubDraftCapability(context) {
+// The capabilities unattended plan publication needs on every supported forge: the draft create,
+// and the title edit and ready marking the later `pr` plan draft finish and the merge gate's ready
+// step rely on. On Forgejo the last two hold only on a tea that states the WIP draft convention, so
+// an installation that lacks one stops here, before any write, instead of at runtime.
+const DRAFT_PUBLICATION_CAPABILITIES = Object.freeze([
+  'pullRequestDraftCreate',
+  'pullRequestTitleUpdate',
+  'pullRequestMarkReady',
+]);
+
+// D3: unattended publication runs on GitHub and Forgejo (Gitea included) origins only, an
+// allow-list rather than a removed check. An external tracker, a missing provider and a host the
+// tracker cannot classify stop as UNSUPPORTED_PROVIDER before any forge read.
+async function requireDraftPublicationCapability(context) {
   const resolved = await tracker(context, 'repository-resolve', {});
-  // The tracker classifies only github.com by itself; any other host is ambiguous to it. For the
-  // GitHub-only unattended path (D3) such a remote is simply not GitHub.
   if (!resolved.ok && resolved.error?.code === 'AMBIGUOUS_HOST') {
-    fail('UNSUPPORTED_PROVIDER', 'unattended plan publication supports GitHub only', {
-      provider: null,
-      host: resolved.error.details?.host ?? null,
-    });
+    fail(
+      'UNSUPPORTED_PROVIDER',
+      'unattended plan publication supports GitHub and Forgejo only; the origin host is neither github.com nor a host a tea login matches (configure a tea login or set tracker.remoteToolOverride)',
+      { provider: null, host: resolved.error.details?.host ?? null },
+    );
   }
   if (!resolved.ok) trackerFailure(resolved, 'repository-resolve');
-  if (resolved.provider !== 'github') {
-    fail('UNSUPPORTED_PROVIDER', 'unattended plan publication supports GitHub only', {
-      provider: resolved.provider,
+  if (!['github', 'forgejo'].includes(resolved.provider)) {
+    fail('UNSUPPORTED_PROVIDER', 'unattended plan publication supports GitHub and Forgejo only', {
+      provider: resolved.provider ?? null,
     });
   }
   const probe = await tracker(context, 'probe', {});
   if (!probe.ok) trackerFailure(probe, 'probe');
-  if (probe.data?.capabilities?.pullRequestDraftCreate !== true) {
-    fail('UNSUPPORTED_CAPABILITY', 'the forge cannot create a draft pull request', {
-      capability: 'pullRequestDraftCreate',
-    });
+  for (const capability of DRAFT_PUBLICATION_CAPABILITIES) {
+    if (probe.data?.capabilities?.[capability] !== true) {
+      fail('UNSUPPORTED_CAPABILITY', `the forge does not support ${capability}`, { capability });
+    }
   }
   return resolved.data?.slug ?? null;
 }
@@ -2348,7 +2360,7 @@ function requireBodyProse(prose) {
 async function prepareRemote(context, git, remote) {
   const url = await remoteUrl(git, remote);
   const forge = { ...context, remoteUrl: url };
-  const repository = await requireGithubDraftCapability(forge);
+  const repository = await requireDraftPublicationCapability(forge);
   return { forge, repository };
 }
 
