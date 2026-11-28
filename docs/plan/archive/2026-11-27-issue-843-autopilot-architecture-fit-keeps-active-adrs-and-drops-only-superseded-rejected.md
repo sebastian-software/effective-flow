@@ -1,6 +1,6 @@
 # Autopilot architecture fit keeps Active ADRs and drops only superseded, rejected or deprecated ones
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #843
@@ -90,12 +90,12 @@ test. It adds no capability and changes no other part of the architecture-fit st
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/tools/autopilot.md` | Pre-delivery step 2, lines 256-258: split the filter sentence into a read sentence, an ADR drop sentence (the ADR's own status value, never body text, prefix match in any case, `Abgelöst` as the German superseded form) and a keep sentence. Remove "keep ADRs whose status is Accepted", and name `Active`, `Accepted` and no-status ADRs as kept. Adjust the `contextBudget:` frontmatter line only if `node build.mjs` reports the budget exceeded. |
-| `docs/user-guide/tools-automation.md` | Line 89: replace "your accepted ADRs in `docs/adr/`" with "your ADRs in `docs/adr/` except superseded, rejected or deprecated ones". |
-| `docs/developer-guide/subagent-progress-coverage.md` | Line 108: update the `src/tools/autopilot.md:273` pointer of `autopilot/architecture-fit` to the new line of the spawn-site marker, if the marker moves. No test catches a stale number here. |
-| `test/scored-decisions-contract.test.mjs` | Line ~871: replace the pinned old clause in the test "autopilot wires the delivery-state calls and reads fit sources from the delivery head" with the new wording. Add one test beside the reason-limit test (line ~886) that slices step 2 and pins the ADR-filter invariant, with an `// Invariant:` comment. |
+| File                                                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/tools/autopilot.md`                             | Pre-delivery step 2, lines 256-258: split the filter sentence into a read sentence, an ADR drop sentence (the ADR's own status value, never body text, prefix match in any case, `Abgelöst` as the German superseded form) and a keep sentence. Remove "keep ADRs whose status is Accepted", and name `Active`, `Accepted` and no-status ADRs as kept. Adjust the `contextBudget:` frontmatter line only if `node build.mjs` reports the budget exceeded. |
+| `docs/user-guide/tools-automation.md`                | Line 89: replace "your accepted ADRs in `docs/adr/`" with "your ADRs in `docs/adr/` except superseded, rejected or deprecated ones".                                                                                                                                                                                                                                                                                                                      |
+| `docs/developer-guide/subagent-progress-coverage.md` | Line 108: update the `src/tools/autopilot.md:273` pointer of `autopilot/architecture-fit` to the new line of the spawn-site marker, if the marker moves. No test catches a stale number here.                                                                                                                                                                                                                                                             |
+| `test/scored-decisions-contract.test.mjs`            | Line ~871: replace the pinned old clause in the test "autopilot wires the delivery-state calls and reads fit sources from the delivery head" with the new wording. Add one test beside the reason-limit test (line ~886) that slices step 2 and pins the ADR-filter invariant, with an `// Invariant:` comment.                                                                                                                                           |
 
 ## Implementation details
 
@@ -119,10 +119,11 @@ test. It adds no capability and changes no other part of the architecture-fit st
    Add nothing else to the prose: no file-head boundary, no emphasis or quote rule, no named
    list-item or front matter form, and no list of this repository's ADR files or spellings. Leave
    the plan filter, the quoting rule, the `notAssessed` path and the leaf handoff unchanged.
+
 2. **Update the existing pin.** In the test at `test/scored-decisions-contract.test.mjs:813-880`,
    keep the part string `"Drop `<plan.dir>/archive/` and the run's own plan"`, which the read
    sentence still contains. Replace `'keep ADRs whose status is Accepted, plans with one canonical
-   open status line'` with a substring of the new keep sentence that includes its plan clause.
+open status line'` with a substring of the new keep sentence that includes its plan clause.
 3. **Add the invariant test.** Add one `test(...)` after the reason-limit test (line ~886). It
    slices `tool('autopilot')` from `**Architecture fit.**` to
    `<!-- spawn-site:autopilot/architecture-fit -->`, the same way that test does, and flattens it
@@ -147,6 +148,7 @@ test. It adds no capability and changes no other part of the architecture-fit st
    It asserts with `assert.ok(<part>.includes(...), <message>)` / `assert.match`, following the
    file's existing pattern. If a sentence boundary cannot be found, it fails with a message that
    names the missing anchor.
+
 4. **Build and budget.** Run `node build.mjs`. If the `Always-loaded core (lines/budget)` report
    shows `tools/autopilot.md` over budget, set the `contextBudget:` line to the reported built
    count plus up to ten lines of headroom, per `AGENTS.md`. Otherwise leave it unchanged.
@@ -211,23 +213,23 @@ Not relevant.
 ## Acceptance criteria
 
 - [ ] `src/tools/autopilot.md` pre-delivery step 2 no longer contains "whose status is Accepted".
-  It drops an ADR only when its status value begins with `Superseded`, `Rejected`, `Deprecated` or
-  `Abgelöst`, matched case-insensitively. That rule stands in its own ADR drop sentence after the
-  read, and the status value is the ADR's own: the first line under its Status heading or its
-  `Status:` value, never body text. The keep sentence names `Active`, `Accepted` and ADRs without
-  a status. The prose adds no file-head, emphasis or named-form rule.
+      It drops an ADR only when its status value begins with `Superseded`, `Rejected`, `Deprecated` or
+      `Abgelöst`, matched case-insensitively. That rule stands in its own ADR drop sentence after the
+      read, and the status value is the ADR's own: the first line under its Status heading or its
+      `Status:` value, never body text. The keep sentence names `Active`, `Accepted` and ADRs without
+      a status. The prose adds no file-head, emphasis or named-form rule.
 - [ ] `test/scored-decisions-contract.test.mjs` contains a new test whose `// Invariant:` comment
-  states that `Active` and `Accepted` ADRs both reach the fit leaf. Its assertions on the ADR
-  drop sentence and the keep sentence cover every point of Approach step 3. It fails against the
-  current source and passes against the changed source.
+      states that `Active` and `Accepted` ADRs both reach the fit leaf. Its assertions on the ADR
+      drop sentence and the keep sentence cover every point of Approach step 3. It fails against the
+      current source and passes against the changed source.
 - [ ] The existing test "autopilot wires the delivery-state calls and reads fit sources from the
-  delivery head" pins the new clause instead of the old one and passes.
+      delivery head" pins the new clause instead of the old one and passes.
 - [ ] `docs/user-guide/tools-automation.md` says the fit is scored against "your ADRs in
-  `docs/adr/` except superseded, rejected or deprecated ones". The `autopilot/architecture-fit` row
-  in `docs/developer-guide/subagent-progress-coverage.md` names the marker's actual line in
-  `src/tools/autopilot.md`.
+      `docs/adr/` except superseded, rejected or deprecated ones". The `autopilot/architecture-fit` row
+      in `docs/developer-guide/subagent-progress-coverage.md` names the marker's actual line in
+      `src/tools/autopilot.md`.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` all pass, run
-  in this order.
+      in this order.
 
 ## Validation plan
 
@@ -367,15 +369,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 0 |
-| Testability | 0 | 1 | 0 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 0 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    0 |
+| Testability     |        0 |         1 |    0 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         0 |    1 |
 
 ### Findings
 
@@ -404,15 +406,15 @@ Result at that time: Approved
 
 #### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 2 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 3 |
-| Testability | 0 | 1 | 0 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 1 | 3 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    2 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    3 |
+| Testability     |        0 |         1 |    0 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         1 |    3 |
 
 #### Findings
 

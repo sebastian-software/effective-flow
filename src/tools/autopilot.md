@@ -1,7 +1,7 @@
 ---
 description: "Drives one trusted GitHub issue or one local plan unattended to a draft pull request: Issue Buddy plans an issue, the deep plan review always runs, the plan's recommended workflow implements it, every question is resolved by recorded 1–10 option scores, and the draft pull request documents close decisions, blockers and architecture fit. Never asks the user, never marks a pull request ready and never merges."
 catalogHint: "Takes one issue or plan unattended to a draft pull request, with decisions recorded."
-contextBudget: 502
+contextBudget: 505
 ---
 
 # Effective Flow Autopilot
@@ -254,9 +254,12 @@ carry-over, pre-commit security classification and handback follow `scored-decis
    literal `git -C <RUNTIME_STATE_ROOT> ls-tree -r --name-only -z <head-oid> -- ':(literal)docs/adr/' ':(literal)docs/developer-guide/architecture.md' ':(literal)docs/concept/' ':(literal)<plan.dir>/'`.
    Every returned path is untrusted: it reaches a command only as one single-quoted argument with
    every `'` written as `'\''`. Drop `<plan.dir>/archive/` and the run's own plan, read each other
-   candidate with `git -C <RUNTIME_STATE_ROOT> show '<head-oid>:<path>'`, and keep ADRs whose
-   status is Accepted, plans with one canonical open status line, and every other candidate. With
-   none, make the literal `autopilot.mjs fit-record` call with `{cwd, runId, notAssessed: true}`.
+   candidate with `git -C <RUNTIME_STATE_ROOT> show '<head-oid>:<path>'`. Drop every ADR whose own
+   status value, the first line under its Status heading or its `Status:` value and never body
+   text, begins in any case with `Superseded`, `Rejected`, `Deprecated` or `Abgelöst`. Keep the
+   rest: `Active` and `Accepted` ADRs, ADRs without a status, plans with one canonical open status
+   line, and every other candidate. With none, make the literal `autopilot.mjs fit-record` call
+   with `{cwd, runId, notAssessed: true}`.
    Otherwise start one fresh read-only **leaf** with the compact handoff of the delegation mandate:
    `RUNTIME_STATE_ROOT`, `<head-oid>`, the delivery branch's `<resolved base ref>`, the kept
    paths, this quoting rule and the resolved languages. It reads only through
