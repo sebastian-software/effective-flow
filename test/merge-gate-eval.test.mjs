@@ -37,6 +37,7 @@ import { suiteConfigPath } from '../evals/_scaffold/suite-loader.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
 import iterateSuite from '../evals/iterate/suite.config.mjs';
 import {
+  DRAFT_READY_REDISPATCH_RUNS,
   FORGEJO_WIP_CONFLICT_PRESENCE_TOKEN,
   FORGEJO_WIP_CONFLICT_SESSION_ID,
   FORGEJO_WIP_CONFLICT_WISDOM_FILE,
@@ -46,7 +47,9 @@ import {
   QUICK_COMMIT_SCENARIO,
   QUICK_COMMIT_SESSION_ID,
   QUICK_COMMIT_WISDOM_FILE,
+  READY_FOR_REVIEW_QUESTION,
   provisionedRemoteRefs,
+  readyForReviewDigest,
   recordedDetection,
   relayedDigest,
 } from '../evals/merge-gate/_scaffold/run-state-seed.mjs';
@@ -71,6 +74,7 @@ import {
 } from '../evals/merge-gate/_scaffold/evaluate.mjs';
 import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
+import { appendixDigest, extractAppendixBlocks } from '../src/scripts/autopilot-appendix-core.mjs';
 
 // The one generation of accepted instrument difference is declared by the suite rather than by the
 // shared identity module, so the waiver's two values are read from there and asserted here under
@@ -3451,6 +3455,120 @@ test(`${FORGEJO_WIP_CONFLICT}: the prompt is the re-dispatch that reads the seed
     ),
   );
 });
+
+// Invariant: Entry step 3 accepts a `Relayed answer:` line only together with a wisdom file an
+// earlier dispatch of the same gate run left, so each draft-ready re-dispatch's slot holds what its
+// first dispatch left on returning `BLOCKED-USER ready-for-review` in round 1: the posed question
+// with its state digest, no consumed answer of that id, and this run's presence marker. The prompt's
+// `digest=` value is the digest the run recomputes from the fixture's fresh `pr-draft-classify`
+// result, so the relayed answer is consumed rather than discarded.
+for (const [scenario, run] of Object.entries(DRAFT_READY_REDISPATCH_RUNS)) {
+  test(`${scenario}: the provisioned slot holds the earlier dispatch's ready-for-review record and its presence marker`, () => {
+    const fixture = fixtureFor(scenario);
+    const attempt = mkdtempSync(resolve(tmpdir(), 'effective-flow-draft-ready-redispatch-'));
+    const stateHelper = resolve(
+      SUITE_ROOT,
+      '..',
+      '..',
+      'src',
+      'scripts',
+      'effective-flow-state.mjs',
+    );
+    const helper = (operation, input) =>
+      JSON.parse(
+        execFileSync(process.execPath, [stateHelper, ...operation.split(' ')], {
+          input: JSON.stringify(input),
+          encoding: 'utf8',
+        }),
+      );
+    try {
+      const projectRoot = join(attempt, 'project');
+      mkdirSync(projectRoot);
+      writeProject(
+        suite,
+        projectRoot,
+        scenario,
+        fixture,
+        suite.scenarioSetup(scenario).projectSetupRows,
+      );
+      const { headSha } = fixture;
+      const classified = fixture.operations['pr-draft-classify'].envelope.data.result;
+      const git = (...args) =>
+        execFileSync('git', args, { cwd: projectRoot, encoding: 'utf8' }).trim();
+      assert.equal(git('status', '--porcelain', '--untracked-files=all'), '');
+      // The Keep-draft run stops at Entry and never fetches, so only the mark-ready slots get an
+      // `origin`.
+      assert.equal(
+        existsSync(join(attempt, 'remote.git')),
+        scenario !== 'draft-ready-keep-draft-stops',
+        scenario,
+      );
+
+      const wisdom = readFileSync(join(projectRoot, run.wisdomFile), 'utf8');
+      assert.ok(wisdom.includes(`head SHA at Phase 0 ${headSha}`));
+      assert.ok(wisdom.includes('caller limits, dispatch 1: none'));
+      assert.ok(wisdom.includes(`viewer-read login: ${fixture.viewerLogin}`));
+      assert.ok(wisdom.includes('nested-spawn probe passed'));
+      assert.ok(
+        wisdom.includes(
+          `presence marker registered for session ${run.sessionId}, token ${run.token}`,
+        ),
+      );
+      assert.match(wisdom, /^## Round 1$/m);
+      assert.ok(wisdom.includes(`VERIFIED_HEAD_SHA ${headSha}; REVIEW_HEAD_SHA ${headSha}`));
+      assert.ok(
+        wisdom.includes(
+          `class ${classified.class}, blockers 0, appendixTrust ${classified.appendixTrust}`,
+        ),
+      );
+      assert.ok(
+        wisdom.includes(
+          `question ${READY_FOR_REVIEW_QUESTION} posed (round 1, state digest ${readyForReviewDigest(fixture)}); returned BLOCKED-USER ${READY_FOR_REVIEW_QUESTION}`,
+        ),
+      );
+      // No answer of the question was consumed yet: the re-dispatch's answer is the first.
+      assert.doesNotMatch(wisdom, /consumed/i);
+      assert.doesNotMatch(wisdom, /Relayed answer/);
+      assert.doesNotMatch(wisdom, /pr-mark-ready|ready step/);
+
+      const listed = helper('presence list', { cwd: projectRoot });
+      assert.deepEqual(
+        listed.result.markers.map(({ sessionId, state, prNumber, head }) => ({
+          sessionId,
+          state,
+          prNumber,
+          head,
+        })),
+        [{ sessionId: run.sessionId, state: 'valid', prNumber: 42, head: headSha }],
+      );
+      const refreshed = helper('presence refresh', {
+        cwd: projectRoot,
+        sessionId: run.sessionId,
+        token: run.token,
+        head: headSha,
+      });
+      assert.equal(refreshed.ok, true, JSON.stringify(refreshed));
+    } finally {
+      rmSync(attempt, { recursive: true, force: true });
+    }
+  });
+
+  test(`${scenario}: the prompt names the seeded wisdom file and the ready-for-review digest of the fixture`, () => {
+    const fixture = fixtureFor(scenario);
+    const prompt = readFileSync(join(SUITE_ROOT, 'scenarios', `${scenario}.md`), 'utf8');
+    assert.ok(prompt.includes(`<runtime state root>/${run.wisdomFile}`));
+    assert.ok(prompt.includes('This is a re-dispatch of the gate run'));
+    assert.doesNotMatch(prompt, /No wisdom file is seeded/);
+    const [, digest] = /Relayed answer: ready-for-review; round=1; digest=([0-9a-f]{64});/.exec(
+      prompt,
+    );
+    assert.equal(digest, readyForReviewDigest(fixture));
+    // The classification's appendix digest is the one the shipped helper computes from the body.
+    const classified = fixture.operations['pr-draft-classify'].envelope.data.result;
+    const body = fixture.operations['pr-read'].envelope.data.result.body;
+    assert.equal(classified.appendixDigest, appendixDigest(extractAppendixBlocks(body)));
+  });
+}
 
 // The presence slot holds exactly one marker, another run's, valid under the shipped helper and
 // listed for a run that skips its own; its head is absent, so the notice names the pull request alone.

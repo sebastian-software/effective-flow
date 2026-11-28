@@ -11,7 +11,10 @@ below to a **fresh** agent — one that has not read this file.
 
 Everything between the markers, and nothing else, is what the agent receives. `prepare` prints
 exactly this text, so copy it from there rather than from here if the two ever look different.
-The slot has no `origin` of its own: a run that stops at Entry never fetches.
+The slot holds the wisdom file the first dispatch left when it returned
+`BLOCKED-USER ready-for-review` in round 1, with this run's presence marker: Entry step 3 accepts a
+`Relayed answer:` line only together with that file. The slot has no `origin` of its own: a run that
+stops at Entry never fetches.
 
 <!-- prompt:start -->
 
