@@ -309,7 +309,10 @@ contract and revises that portable restriction; see
   is not qualified in the generation snapshot.
 - **Harness family** comes only from the parameter shape of the spawn tool the orchestrator holds
   (`model` and `effort` is `claude`, `reasoning_effort` is `codex`). T3 Code is a client surface,
-  not a harness, and a delegation to another provider is never a Fast spawn.
+  not a harness, and a delegation to another provider is never a Fast spawn. T3 `delegate_task` is
+  resolved by the separate transport path of
+  [T3 `delegate_task` as a delegation transport](./t3-delegate-task-transport.md), not by a harness
+  classification.
 - **Narrow environment exception.** The `claude-subagent-transcript` adapter of `model-selection
 verify` reads `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR`, builds exactly
   `<projects>/<project>/<session>/subagents/agent-<id>.jsonl` and rejects traversal and symlinks.

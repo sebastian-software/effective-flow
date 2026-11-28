@@ -28264,8 +28264,9 @@ test('host-pr-watch pointers keep decision-scoped loading, with capture for issu
 // Invariant: a run on any other host stops reading at the dispatch table, so the fragment opens with
 // a host table whose T3 Code row precedes an "any other host: read no further" row. The T3 row also
 // routes a delegated `merge-gate` run that received `Host: t3-code`, and the prose between the table
-// and the T3 heading makes that input line its only host identity; without both, a delegated gate
-// run on T3 would read no further and wait through its non-T3 path.
+// and the T3 heading makes that input line its only host identity, one of the plural exceptions
+// beside the transport-started orchestrator; without both, a delegated gate run on T3 would read no
+// further and wait through its non-T3 path.
 test('host-pr-watch opens with a host-dispatch table routing T3 Code and ending other hosts at read no further', () => {
   const text = hostPrWatchSource();
   const rows = text.split('\n').filter((line) => /^\|/.test(line));
@@ -28286,7 +28287,11 @@ test('host-pr-watch opens with a host-dispatch table routing T3 Code and ending 
   const tableEnd = text.indexOf(rows[otherRow]) + rows[otherRow].length;
   assert.match(
     prose(text.slice(tableEnd, text.search(/^#{1,6}[^\n]*T3 Code[^\n]*$/m))),
-    near('delegated `merge-gate` run', 'host identity is the `Host: t3-code` input line alone', 80),
+    near(
+      'The exceptions are a delegated `merge-gate` run',
+      '`Host: t3-code`; that input line alone is their host identity',
+      160,
+    ),
     'before the T3 Code heading, the delegated `merge-gate` run takes its host identity from the `Host: t3-code` input line alone',
   );
   const tableStart = text.indexOf(rows[0]);
@@ -28298,6 +28303,68 @@ test('host-pr-watch opens with a host-dispatch table routing T3 Code and ending 
   assert.ok(
     text.indexOf(rows[otherRow]) < text.search(/^#{1,6}[^\n]*T3 Code[^\n]*$/m),
     'the dispatch table precedes the T3 Code section heading',
+  );
+});
+
+// Invariant (T3 delegation transport): the widened exception stays one rule with two named
+// holders. The dispatch row and the exception sentence name both the delegated `merge-gate` run and
+// the orchestrator started through the T3 delegation transport, each with `Host: t3-code` as its
+// host identity; without the transport orchestrator named in both places it would read no further
+// than the table (or be taken for a host by tool visibility alone). Within the exception paragraph
+// the transport orchestrator sits beside "never" + `watch_pull_request` and beside "links nothing"
+// + "caller", so the paragraph grants it the wait path and never the watch or the link.
+test('host-pr-watch names the delegated merge-gate run and the transport orchestrator as its host-identity exceptions, which never watch or link', () => {
+  const text = hostPrWatchSource();
+  const row = text.split('\n').find((line) => /^\|/.test(line) && /T3 Code/.test(line));
+  assert.ok(row, 'the dispatch table needs its T3 Code row');
+  assert.match(
+    row,
+    /T3 Code[^|]*delegated `merge-gate` run[^|]*orchestrator started through the T3 delegation transport[^|]*`Host: t3-code`/,
+    'the T3 Code row routes both the delegated merge-gate run and the transport orchestrator that received `Host: t3-code`',
+  );
+  const start = text.indexOf('Host identity comes only');
+  const end = text.search(/^#{1,6}[^\n]*T3 Code[^\n]*$/m);
+  assert.ok(start !== -1 && end > start, 'the exception paragraph sits before the T3 Code heading');
+  const raw = text.slice(start, end).trimEnd();
+  assert.doesNotMatch(raw, /\n\s*\n/, 'the exception rule is one paragraph');
+  const paragraph = prose(raw);
+  assert.match(
+    paragraph,
+    /The exceptions are a delegated `merge-gate` run or an orchestrator started through the T3 delegation transport, each having received `Host: t3-code`; that input line alone is their host identity/,
+    'both holders take their host identity from the `Host: t3-code` input line alone',
+  );
+  assert.match(
+    paragraph,
+    /exception grants exactly the T3 wait path[^.]*`SUSPENDED host-pr-watch` return or report-and-stop/,
+    'the exception grants exactly the T3 wait path and the delegated run endings',
+  );
+  assert.match(
+    paragraph,
+    near('For the transport orchestrator', 'never calls `watch_pull_request`', 450),
+    'the transport orchestrator sits beside "never calls `watch_pull_request`"',
+  );
+  for (const tool of [
+    'watch_pull_request',
+    'unwatch_pull_request',
+    'link_pull_request',
+    'link_issue',
+  ]) {
+    assert.ok(paragraph.includes(`\`${tool}\``), `the paragraph forbids \`${tool}\` by name`);
+  }
+  assert.match(
+    paragraph,
+    near('For the transport orchestrator', 'links nothing', 450),
+    'the transport orchestrator sits beside "links nothing"',
+  );
+  assert.match(
+    paragraph,
+    near('links nothing', 'its caller links', 30),
+    '"links nothing" is paired with "its caller links"',
+  );
+  assert.match(
+    paragraph,
+    /counts as a delegated sub-agent here/,
+    'whatever its environment reports, the transport orchestrator counts as a delegated sub-agent',
   );
 });
 
@@ -31184,5 +31251,215 @@ test('every fragment lists the same workflows that may resolve a conflict on a h
       'no other workflow resolves a conflict',
     ),
     'the old exclusivity phrase is gone',
+  );
+});
+
+// --- T3 delegation transport fragment (`src/shared/t3-delegation-transport.md`) ---
+
+const T3_TRANSPORT_PATH = 'src/shared/t3-delegation-transport.md';
+const T3_TRANSPORT_FRAGMENT = 't3-delegation-transport';
+
+function t3TransportSource() {
+  return source(T3_TRANSPORT_PATH);
+}
+
+// Invariant: the transport dispatches every leaf asynchronously in the shared checkout, because a
+// blocking dispatch would hold the orchestrator's turn open on a task nothing can wake it from, and
+// a `worktree` isolation would run the child in a checkout the orchestrator's HEAD, index and
+// tracked-state snapshots never observe. Each `isolation: worktree` occurrence must sit in its own
+// prohibition.
+test('the T3 transport requires mode async and isolation shared and forbids isolation worktree', () => {
+  const text = prose(t3TransportSource());
+  assert.match(text, /Dispatch with `mode: async`/, 'every dispatch is `mode: async`');
+  assert.match(
+    text,
+    /Always `isolation: shared`, never `isolation: worktree`/,
+    'isolation is always shared, never worktree',
+  );
+  const worktree = [...text.matchAll(/`isolation: worktree`/g)];
+  assert.ok(worktree.length > 0, 'the fragment must name the forbidden worktree isolation');
+  for (const { index } of worktree) {
+    assert.match(
+      text.slice(0, index),
+      /\b(?:never|no|not|without)\b[^.;:]{0,40}$/i,
+      'each `isolation: worktree` occurrence sits inside a prohibition',
+    );
+  }
+  assert.doesNotMatch(
+    text,
+    /`mode: (?!async)\w+`|`isolation: (?!shared|worktree)\w+`/,
+    'no other mode or isolation value is ever offered',
+  );
+  assert.match(
+    text,
+    /acts only through it \(`git -C <root>`, absolute paths\)/,
+    'the child acts only through the named absolute execution root',
+  );
+});
+
+// Invariant: the child's authority is bounded by prose alone on T3, so the brief carries an
+// explicit ban that names, unqualified as `host-pr-watch` names its tools, every forge tool, every
+// thread- or task-creating or thread-messaging tool, `request_secret`, `gh` and `git push`; a ban
+// that omits `set_issue_state` or `t3_thread_send` leaves a child able to change tracker state or
+// message the user's threads, which no parent-side check covers.
+test('the T3 transport brief bans every forge, thread and secret tool by its unqualified name', () => {
+  const text = prose(t3TransportSource());
+  // Whitespace-collapsed only: `prose` would strip the `*` of `pull_request_*` and `*_issue`.
+  const ban = flat(
+    boundedSlice(t3TransportSource(), 'The child never calls', 'Always `isolation: shared`'),
+  );
+  assert.match(ban, /^The child never calls a T3 forge tool/, 'the ban is on the child');
+  for (const tool of [
+    'pull_request_*',
+    '*_issue',
+    'set_issue_state',
+    'link_*',
+    'unlink_*',
+    'watch_pull_request',
+    'unwatch_pull_request',
+    'ci_rerun',
+    'write_pull_request_guides',
+    'delegate_task',
+    'create_threads',
+    't3_thread_launch',
+    't3_thread_transfer',
+    't3_thread_send',
+    't3_thread_send_attachments',
+    'schedule_task',
+    'run_scheduled_task_now',
+    'request_secret',
+    'gh',
+    'git push',
+  ]) {
+    assert.ok(ban.includes(`\`${tool}\``), `the ban must name \`${tool}\``);
+  }
+  assert.doesNotMatch(text, /mcp__/, 'tools are named unqualified, as host-pr-watch names them');
+  assert.match(
+    prose(boundedSlice(t3TransportSource(), '## Handoff', 'The child never calls')),
+    /the `Host: t3-code` line, and this ban/,
+    'the brief carries the Host line and the ban',
+  );
+});
+
+// Invariant: after a wake the orchestrator reads the woken task once and never reads a running
+// task, sleeps or opens a thread, because T3 offers no time-bounded wait; and it never answers a
+// child's question or approval request, which it recognizes by notification or `t3_pending_request`
+// and ends with `task_cancel`, since answering would let an unbriefed leaf steer the run and
+// `hasPendingQuestion` is no reliable signal.
+test('the T3 transport reads only a woken task, never polls and never answers a child question', () => {
+  const raw = t3TransportSource();
+  const completion = prose(boundedSlice(raw, '## Completion', '## Questions and cancellation'));
+  assert.match(completion, /read only the woken task, once, with `task_status`/);
+  assert.match(
+    completion,
+    /Never call `task_status` on a running task, never sleep, and never open a new top-level thread/,
+    'a running task is never read and nothing sleeps or opens a thread',
+  );
+  assert.match(
+    completion,
+    near('that is no re-`wait` loop', 'end the turn again while any remains pending', 120),
+    'several pending tasks end the turn again instead of re-waiting',
+  );
+  assert.match(completion, /the wait has no time bound on T3 Code/, 'the unbounded wait is stated');
+  const questions = prose(boundedSlice(raw, '## Questions and cancellation', '## Evidence'));
+  assert.match(
+    questions,
+    /recognized by its notification or a `t3_pending_request` for that task, never by `task_status\.hasPendingQuestion`/,
+    'a question is recognized by notification or t3_pending_request',
+  );
+  assert.match(
+    questions,
+    /The orchestrator never answers it and calls `task_cancel` on the task/,
+    'the orchestrator never answers a child question and cancels the task',
+  );
+  assert.match(
+    questions,
+    /never an inline redo/,
+    'a cancelled write-capable task is never redone inline',
+  );
+  assert.match(
+    questions,
+    near('A final summary that is a question', 'without `task_cancel`', 200),
+    'a completed question-summary task is counted the same without task_cancel',
+  );
+  assert.match(
+    questions,
+    /Ambiguous completion of a write-capable task is never replayed/,
+    'a write-capable ambiguous completion is never replayed',
+  );
+});
+
+// Invariant: the transport is dormant and provider-neutral. It applies only where a spawn site or
+// preflight names it and carries worker leaves only; it names no model, alias or catalog ID (the
+// build-generated contract holds every ID) and links no `docs/` file, because a shipped fragment
+// cannot rely on repository-only paths; and a tool's explicit ban on thread-creating dispatch wins.
+test('the T3 transport stays dormant, names no model or docs file and yields to a tool ban', () => {
+  const raw = t3TransportSource();
+  const text = prose(raw);
+  assert.match(
+    text,
+    /It applies only where a spawn site or preflight names the T3 delegation transport/,
+  );
+  assert.match(text, /it carries worker leaves only/);
+  assert.match(
+    text,
+    /Handing off a whole workflow through it is outside this contract/,
+    'whole-workflow handoff is not defined here',
+  );
+  assert.doesNotMatch(raw, /docs\//, 'the fragment links no docs/ file');
+  assert.doesNotMatch(raw, /\]\([^)]*\.md[^)]*\)/, 'the fragment links no Markdown file');
+  assert.doesNotMatch(
+    raw,
+    /\b(?:claude-[a-z0-9-]+|gpt-[a-z0-9.-]+|haiku|sonnet|opus|fable)\b/i,
+    'the fragment names no model, alias or catalog ID',
+  );
+  const precedenceAt = raw.indexOf('## Precedence');
+  assert.notEqual(precedenceAt, -1, 'the fragment carries its Precedence section');
+  assert.match(
+    prose(raw.slice(precedenceAt)),
+    /A tool's explicit ban on thread-creating dispatch, such as the one in `\{\{SKILL:focus\}\}`, wins over this contract/,
+    'a tool ban on thread-creating dispatch wins over the transport',
+  );
+  assert.match(
+    text,
+    near('Fast is never selected', 'task_status', 400),
+    'Fast is never selected and the evidence check reads task_status once',
+  );
+});
+
+// Invariant: `model-selection` reaches the transport only through one lazy pointer whose `when:`
+// clause requires both the named transport and the absence of a native spawn tool, so a run with a
+// native mechanism never loads it; the sentence that classified `delegate_task` as "neither" is
+// gone, and the Fast exclusion stays. `focus` bans thread-creating dispatch outright, so no
+// `include` or `lazy-include` fence in `src/tools/focus.md` may name the fragment.
+test('model-selection points to the T3 transport lazily and focus never includes it', () => {
+  const selection = source('src/shared/model-selection.md');
+  const pointers = [...selection.matchAll(LAZY_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === T3_TRANSPORT_FRAGMENT,
+  );
+  assert.equal(pointers.length, 1, 'model-selection carries exactly one transport pointer');
+  assert.equal(
+    pointers[0][2].trim(),
+    'the spawn site or preflight names the T3 delegation transport and no native spawn tool is available or permitted',
+    'the pointer loads only when the site names the transport and no native tool is available or permitted',
+  );
+  assert.doesNotMatch(prose(selection), /is neither and never a Fast spawn|, is neither\b/);
+  assert.match(
+    prose(selection),
+    /`delegate_task` is no spawn tool and never a Fast spawn/,
+    'the Fast exclusion stays',
+  );
+  const hosts = includeHostsOf(T3_TRANSPORT_FRAGMENT);
+  assert.deepEqual(hosts.eager, [], 'no source includes the transport eagerly');
+  assert.ok(hosts.lazy.includes('shared/model-selection.md'), 'model-selection is a lazy host');
+  assert.equal(
+    hosts.lazy.includes('tools/focus.md') || hosts.eager.includes('tools/focus.md'),
+    false,
+    'focus names no include fence for the transport',
+  );
+  assert.doesNotMatch(
+    source('src/tools/focus.md'),
+    /t3-delegation-transport/,
+    'focus never names the transport at all',
   );
 });

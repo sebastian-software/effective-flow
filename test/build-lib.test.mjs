@@ -27,6 +27,7 @@ import {
   collectSpawnSiteMarkers,
   parseSpawnSiteTable,
   validatePanelModelAllowlist,
+  validateT3ModelPins,
   reconcileSpawnSites,
   renderSpawnSiteLine,
   findRenderedSpawnSiteLines,
@@ -145,6 +146,8 @@ import {
   AGENT_PROFILE_MAPPINGS,
   FAST_PROFILE_AGENTS,
   MODEL_TIER_MAPPINGS,
+  PANEL_MODEL_ALLOWLIST,
+  T3_MODEL_PINS,
 } from './support/native-profile-config.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
@@ -7606,6 +7609,88 @@ test('validatePanelModelAllowlist requires both harnesses and rejects the primar
   assert.throws(
     () => validatePanelModelAllowlist({ claude: ['Bad Name'], codex: [] }, MODEL_TIER_MAPPINGS),
     /invalid model name/,
+  );
+});
+
+// Invariant: T3_MODEL_PINS is the single source of the T3 catalog ID of every Claude alias, so the
+// build derives the alias set (every tier's Claude model plus every Claude panel model) and
+// rejects a pin missing for an alias, a pin no alias uses and a value that is no bounded catalog
+// ID; a half-pinned alias would otherwise surface only as a transport selection that never resolves.
+test('validateT3ModelPins accepts exactly one catalog ID per derived Claude alias', () => {
+  assert.equal(
+    validateT3ModelPins(T3_MODEL_PINS, MODEL_TIER_MAPPINGS, PANEL_MODEL_ALLOWLIST),
+    T3_MODEL_PINS,
+  );
+  const aliases = new Set([
+    ...Object.values(MODEL_TIER_MAPPINGS).map(({ claude }) => claude.model),
+    ...PANEL_MODEL_ALLOWLIST.claude,
+  ]);
+  assert.deepEqual(new Set(Object.keys(T3_MODEL_PINS)), aliases);
+  assert.ok(aliases.size >= 4, 'the panel alias is pinned beside the three tier aliases');
+});
+
+test('validateT3ModelPins rejects a missing pin, an unused pin and an invalid catalog ID', () => {
+  const pins = (mutate) => mutate({ ...T3_MODEL_PINS });
+  const check = (candidate) =>
+    validateT3ModelPins(candidate, MODEL_TIER_MAPPINGS, PANEL_MODEL_ALLOWLIST, {
+      context: 'probe',
+    });
+  assert.throws(
+    () => check(pins(({ sonnet: _sonnet, ...rest }) => rest)),
+    /T3 model pins miss the Claude alias "sonnet" \(in probe\)/,
+  );
+  // The panel alias comes from the allowlist, not from a tier.
+  assert.throws(
+    () => check(pins(({ fable: _fable, ...rest }) => rest)),
+    /T3 model pins miss the Claude alias "fable"/,
+  );
+  // An alias that only the allowlist names is required, and one nothing names is unused.
+  assert.throws(
+    () => validateT3ModelPins(T3_MODEL_PINS, MODEL_TIER_MAPPINGS, { claude: [], codex: [] }),
+    /T3 model pin "fable" names no Claude tier or panel alias/,
+  );
+  assert.throws(
+    () => check({ ...T3_MODEL_PINS, gpt: 'gpt-catalog-1' }),
+    /T3 model pin "gpt" names no Claude tier or panel alias \(in probe\)/,
+  );
+  for (const value of ['', 'two words', '-leading-dash', 'a'.repeat(129), 5, null]) {
+    assert.throws(
+      () => check({ ...T3_MODEL_PINS, opus: value }),
+      /T3 model pin "opus" holds an invalid catalog ID/,
+      JSON.stringify(value),
+    );
+  }
+  assert.throws(() => check(null), /T3 model pins/);
+  assert.throws(() => check([]), /T3 model pins/);
+});
+
+// Invariant: a T3 catalog ID is a provider model name like the alias it pins, so rendered prose
+// that names one is a finding wherever the build scans for provider names (the portable alias guard
+// and each native target's foreign-name guard take the pins into their name lists); the pins live
+// only in the portable contract JSON, never in prose.
+test('findProviderModelNames flags a pinned T3 catalog ID in prose once the pins join the name list', () => {
+  const pinNames = Object.values(T3_MODEL_PINS);
+  const prose = 'Use claude-sonnet-5-5 for the worker.\nThen claude-fable-5-2.';
+  assert.deepEqual(findProviderModelNames(prose, { modelNames: ['sonnet', 'fable'] }), []);
+  assert.deepEqual(findProviderModelNames(prose, { modelNames: ['sonnet', ...pinNames] }), [
+    { line: 1, name: 'claude-sonnet-5-5' },
+    { line: 2, name: 'claude-fable-5-2' },
+  ]);
+  assert.deepEqual(
+    findProviderModelNames(prose, {
+      modelNames: pinNames,
+      allowGenerated: true,
+      mappings: MODEL_TIER_MAPPINGS,
+    }),
+    [
+      { line: 1, name: 'claude-sonnet-5-5' },
+      { line: 2, name: 'claude-fable-5-2' },
+    ],
+  );
+  // Only a whole catalog ID counts: a longer ID that merely starts with a pin is another name.
+  assert.deepEqual(
+    findProviderModelNames('claude-sonnet-5-5-preview', { modelNames: pinNames }),
+    [],
   );
 });
 

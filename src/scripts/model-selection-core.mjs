@@ -1,6 +1,7 @@
 // Read-only model selection and verification. The build owns the contract beside this module;
 // verification recomputes its selection and reads only the explicitly supplied rollout file or
-// the one Claude Code subagent transcript of the named child.
+// the one Claude Code subagent transcript of the named child. A `transport: "t3-delegate"`
+// selection resolves a T3 Code `delegate_task` target from a bounded capabilities projection.
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, opendir } from 'node:fs/promises';
@@ -30,6 +31,37 @@ const SELECT_KEYS = [
   'panelModel',
 ];
 const HARNESSES = Object.freeze(['codex', 'claude']);
+export const T3_TRANSPORT = 't3-delegate';
+const TRANSPORT_SELECT_KEYS = [
+  'transport',
+  'site',
+  'role',
+  'fallback',
+  'tier',
+  'reason',
+  'retry',
+  'panelModel',
+  'capabilities',
+];
+export const TRANSPORT_UNAVAILABLE_REASONS = Object.freeze([
+  'no-inherited-instance',
+  'unknown-driver',
+  'no-t3-pins',
+  'model-not-advertised',
+  'effort-not-offered',
+]);
+// The T3 driver kinds the transport accepts, mapped to the harness whose tier values they take.
+const T3_DRIVER_HARNESS = Object.freeze({ codex: 'codex', claudeAgent: 'claude' });
+// The T3 option that carries each harness's effort.
+const T3_EFFORT_OPTION = Object.freeze({ claude: 'effort', codex: 'reasoningEffort' });
+// Bounds of the capabilities projection. Its serialized size stays well below MAX_STDIN_BYTES, so
+// a later `verify` that echoes the whole selection, projection included, still fits on stdin.
+export const MAX_CAPABILITIES_BYTES = 32 * 1024;
+const MAX_T3_PROVIDERS = 32;
+const MAX_T3_MODELS = 256;
+const MAX_T3_OPTIONS = 16;
+const MAX_T3_OPTION_VALUES = 32;
+const MAX_T3_ID_LENGTH = 128;
 const CONTRACT_PATH = fileURLToPath(new URL('./model-selection-contract.json', import.meta.url));
 const QUALIFICATION_PATH = fileURLToPath(
   new URL(`./${FAST_HARNESS_QUALIFICATION_FILE}`, import.meta.url),
@@ -88,6 +120,11 @@ function text(value, maximum = 200) {
 
 function runtimeToken(value) {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(value);
+}
+
+// A host catalog model ID, such as a T3 pin value: one bounded token without spaces.
+function catalogId(value) {
+  return text(value, MAX_T3_ID_LENGTH) && /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]*$/.test(value);
 }
 
 function hostId(value) {
@@ -216,6 +253,23 @@ function validateContract(contract) {
     )
       invalid();
   }
+  // Only the portable build pins the T3 catalog ID of every Claude tier and panel alias; a
+  // missing or extra pin fails here, so it never reaches a transport selection.
+  if ((contract.target === 'portable') !== Object.hasOwn(contract, 't3Pins')) invalid();
+  if (contract.t3Pins !== undefined) {
+    const aliases = new Set([
+      ...TIERS.map((tier) => contract.mappings[tier].claude.model),
+      ...contract.panelModels.claude,
+    ]);
+    const pins = contract.t3Pins;
+    if (
+      !object(pins) ||
+      Object.keys(pins).length !== aliases.size ||
+      Object.keys(pins).some((alias) => !aliases.has(alias)) ||
+      Object.values(pins).some((value) => !catalogId(value))
+    )
+      invalid();
+  }
   // Only the portable build renders a per-spawn Fast tier, and only at its listed Quality sites.
   if ((contract.target === 'portable') !== Object.hasOwn(contract, 'fast')) invalid();
   if (contract.fast !== undefined) {
@@ -336,10 +390,7 @@ async function loadContract(deps) {
   }
 }
 
-function select(input, contract) {
-  keys(input, SELECT_KEYS);
-  if (!HARNESSES.includes(input.harness))
-    fail('INVALID_INPUT', 'harness must identify codex or claude');
+function selectFields(input) {
   for (const key of ['site', 'role', 'tier', 'reason', 'panelModel']) {
     if (Object.hasOwn(input, key) && !text(input[key], key === 'reason' ? 2000 : 200)) {
       fail('INVALID_INPUT', `${key} must be a bounded non-empty string`);
@@ -349,13 +400,28 @@ function select(input, contract) {
     if (Object.hasOwn(input, key) && typeof input[key] !== 'boolean')
       fail('INVALID_INPUT', `${key} must be boolean`);
   }
+}
+
+// The panel model must be on the harness's build-generated panel allowlist and differ from the
+// primary deep model; the only tier rule that depends on the harness.
+function panelPolicy(input, contract, harness) {
+  if (input.panelModel === contract.mappings.deep[harness].model)
+    fail('TIER_POLICY', 'A panel model must differ from the primary deep model');
+  if (!contract.panelModels[harness].includes(input.panelModel))
+    fail('TIER_POLICY', 'The panel model is not on the harness panel allowlist');
+}
+
+// The site, role or fallback default and the requested move under the owning `model-tiers`
+// rules. Native and transport selection share it unchanged; a transport selection passes no
+// harness, since it derives one only after this validation, and applies `panelPolicy` then.
+function resolveTier(input, contract, harness) {
   if (input.fallback && (input.site || input.role || !input.reason)) {
     fail(
       'INVALID_INPUT',
       'Fallback requires a reason and must not specify a spawn site or worker role',
     );
   }
-  if (input.native && contract.target !== input.harness) {
+  if (input.native && contract.target !== harness) {
     fail('INVALID_INPUT', 'Native role selection requires the matching native target');
   }
   if (input.role && !Object.hasOwn(contract.roles, input.role))
@@ -378,8 +444,7 @@ function select(input, contract) {
   } else {
     fail('INVALID_INPUT', 'A spawn site, worker role, or reasoned explicit fallback is required');
   }
-  // A panel site always names its model, and only a panel site may name one. The model must be on
-  // the harness's build-generated panel allowlist and differ from the primary deep model.
+  // A panel site always names its model, and only a panel site may name one.
   if (panelSite !== Object.hasOwn(input, 'panelModel')) {
     fail(
       'INVALID_INPUT',
@@ -391,10 +456,7 @@ function select(input, contract) {
   if (panelSite) {
     if (input.native || input.fallback || Object.hasOwn(input, 'tier'))
       fail('INVALID_INPUT', 'A panel selection takes no native role, fallback, or tier move');
-    if (input.panelModel === contract.mappings.deep[input.harness].model)
-      fail('TIER_POLICY', 'A panel model must differ from the primary deep model');
-    if (!contract.panelModels[input.harness].includes(input.panelModel))
-      fail('TIER_POLICY', 'The panel model is not on the harness panel allowlist');
+    if (harness) panelPolicy(input, contract, harness);
   }
   const tier = input.tier ?? defaultTier;
   if (!TIERS.includes(tier)) fail('INVALID_INPUT', 'Unknown model tier');
@@ -408,6 +470,20 @@ function select(input, contract) {
   ) {
     fail('TIER_POLICY', 'The requested tier move is not allowed by the tier policy');
   }
+  return { defaultTier, tier, role, panelSite };
+}
+
+function contractDigest(contract) {
+  return createHash('sha256').update(canonical(contract)).digest('hex');
+}
+
+function select(input, contract) {
+  if (object(input) && Object.hasOwn(input, 'transport')) return selectTransport(input, contract);
+  keys(input, SELECT_KEYS);
+  if (!HARNESSES.includes(input.harness))
+    fail('INVALID_INPUT', 'harness must identify codex or claude');
+  selectFields(input);
+  const { defaultTier, tier, role, panelSite } = resolveTier(input, contract, input.harness);
   const mapping = contract.mappings[tier][input.harness];
   const expected = {
     model: panelSite ? input.panelModel : mapping.model,
@@ -434,11 +510,139 @@ function select(input, contract) {
   );
   return {
     request,
-    contractDigest: createHash('sha256').update(canonical(contract)).digest('hex'),
+    contractDigest: contractDigest(contract),
     defaultTier,
     tier,
     expected,
     spawn: { role: spawnRole, parameters },
+  };
+}
+
+function transportUnavailable(reason, message, extra = {}) {
+  fail('TRANSPORT_UNAVAILABLE', message, { reason, ...extra });
+}
+
+// The bounded projection of one `orchestrator_capabilities` result: the inherited provider
+// instance, each listed provider's instance and driver kind, and each listed model's catalog ID,
+// provider instance and offered option values. A raw envelope or any other field is rejected.
+function validateCapabilities(capabilities) {
+  const invalid = (message) => fail('INVALID_INPUT', `capabilities: ${message}`);
+  if (!object(capabilities)) invalid('must be an object');
+  let size;
+  try {
+    size = Buffer.byteLength(JSON.stringify(capabilities), 'utf8');
+  } catch {
+    invalid('must be serializable');
+  }
+  if (size > MAX_CAPABILITIES_BYTES) invalid('exceeds the projection size bound');
+  keys(capabilities, ['inheritedProviderInstanceId', 'providers', 'models']);
+  const inherited = capabilities.inheritedProviderInstanceId;
+  if (inherited !== null && !text(inherited, MAX_T3_ID_LENGTH))
+    invalid('inheritedProviderInstanceId must be a bounded string or null');
+  const { providers, models } = capabilities;
+  if (!Array.isArray(providers) || providers.length > MAX_T3_PROVIDERS)
+    invalid(`providers must be an array of at most ${MAX_T3_PROVIDERS} entries`);
+  const instances = new Set();
+  for (const provider of providers) {
+    keys(provider, ['providerInstanceId', 'driverKind']);
+    if (
+      !text(provider.providerInstanceId, MAX_T3_ID_LENGTH) ||
+      !text(provider.driverKind, MAX_T3_ID_LENGTH)
+    )
+      invalid('each provider needs a bounded providerInstanceId and driverKind');
+    if (instances.has(provider.providerInstanceId)) invalid('a provider instance repeats');
+    instances.add(provider.providerInstanceId);
+  }
+  if (!Array.isArray(models) || models.length > MAX_T3_MODELS)
+    invalid(`models must be an array of at most ${MAX_T3_MODELS} entries`);
+  const offers = new Set();
+  for (const model of models) {
+    keys(model, ['id', 'providerInstanceId', 'options']);
+    if (!text(model.id, MAX_T3_ID_LENGTH) || !text(model.providerInstanceId, MAX_T3_ID_LENGTH))
+      invalid('each model needs a bounded id and providerInstanceId');
+    const offer = JSON.stringify([model.providerInstanceId, model.id]);
+    if (offers.has(offer)) invalid('a model repeats on one provider instance');
+    offers.add(offer);
+    if (!Array.isArray(model.options) || model.options.length > MAX_T3_OPTIONS)
+      invalid(`each model's options must be an array of at most ${MAX_T3_OPTIONS} entries`);
+    const optionIds = new Set();
+    for (const option of model.options) {
+      keys(option, ['id', 'values']);
+      if (!text(option.id, MAX_T3_ID_LENGTH)) invalid('each option needs a bounded id');
+      if (optionIds.has(option.id)) invalid('an option repeats on one model');
+      optionIds.add(option.id);
+      if (
+        !Array.isArray(option.values) ||
+        option.values.length > MAX_T3_OPTION_VALUES ||
+        option.values.some((value) => typeof value !== 'boolean' && !text(value, MAX_T3_ID_LENGTH))
+      )
+        invalid(
+          `each option's values must be at most ${MAX_T3_OPTION_VALUES} bounded strings or booleans`,
+        );
+    }
+  }
+}
+
+// The T3 delegation transport resolves the spawn site's existing tier for the harness of the
+// inherited provider instance's driver and targets that same instance. Claude aliases resolve
+// through the portable contract's `t3Pins`; Codex model IDs pass through unchanged. It never
+// selects Fast: `fastMode` is set to false wherever the model offers it.
+function selectTransport(input, contract) {
+  if (Object.hasOwn(input, 'harness') || Object.hasOwn(input, 'native'))
+    fail('INVALID_INPUT', 'A transport selection derives its harness and takes no native role');
+  keys(input, TRANSPORT_SELECT_KEYS);
+  if (input.transport !== T3_TRANSPORT)
+    fail('INVALID_INPUT', `transport must be ${JSON.stringify(T3_TRANSPORT)}`);
+  selectFields(input);
+  validateCapabilities(input.capabilities);
+  // Harness-independent validation precedes every availability reason, so invalid input is never
+  // reported as a missing delegation mechanism.
+  const { defaultTier, tier, panelSite } = resolveTier(input, contract, null);
+  if (!contract.t3Pins) transportUnavailable('no-t3-pins', 'This build carries no T3 model pins');
+  const { capabilities } = input;
+  const instance = capabilities.inheritedProviderInstanceId;
+  const provider = capabilities.providers.find((entry) => entry.providerInstanceId === instance);
+  if (!provider)
+    transportUnavailable(
+      'no-inherited-instance',
+      'The capabilities name no listed inherited provider instance',
+    );
+  if (!Object.hasOwn(T3_DRIVER_HARNESS, provider.driverKind))
+    transportUnavailable('unknown-driver', 'The inherited provider runs an unknown driver');
+  const harness = T3_DRIVER_HARNESS[provider.driverKind];
+  if (panelSite) panelPolicy(input, contract, harness);
+  const mapping = contract.mappings[tier][harness];
+  const alias = panelSite ? input.panelModel : mapping.model;
+  const model = harness === 'claude' ? contract.t3Pins[alias] : alias;
+  const effort = mapping[EFFORT_KEY[harness]];
+  const offer = capabilities.models.find(
+    (entry) => entry.id === model && entry.providerInstanceId === instance,
+  );
+  if (!offer)
+    transportUnavailable(
+      'model-not-advertised',
+      'The inherited provider instance does not advertise the selected model',
+      { model },
+    );
+  const effortOption = offer.options.find((option) => option.id === T3_EFFORT_OPTION[harness]);
+  if (!effortOption?.values.includes(effort))
+    transportUnavailable('effort-not-offered', 'The selected model does not offer the effort');
+  const options = { [T3_EFFORT_OPTION[harness]]: effort };
+  if (offer.options.some((option) => option.id === 'fastMode')) options.fastMode = false;
+  const request = Object.fromEntries(
+    TRANSPORT_SELECT_KEYS.filter((key) => Object.hasOwn(input, key)).map((key) => [
+      key,
+      input[key],
+    ]),
+  );
+  return {
+    request,
+    contractDigest: contractDigest(contract),
+    defaultTier,
+    tier,
+    expected: { model, effort },
+    transport: T3_TRANSPORT,
+    spawn: { target: { providerInstanceId: instance, model, options } },
   };
 }
 
@@ -462,7 +666,7 @@ function fastLookup(input, contract) {
   return {
     request: { harness: input.harness, site: input.site },
     profile: 'fast',
-    contractDigest: createHash('sha256').update(canonical(contract)).digest('hex'),
+    contractDigest: contractDigest(contract),
     expected: { model: mapping.model, effort },
     spawn: { parameters: { model: mapping.model, [EFFORT_KEY[input.harness]]: effort } },
   };
@@ -769,11 +973,14 @@ async function readRolloutFile(filename) {
   }
 }
 
-// A Fast verification is well-formed without evidence or handles and then reports `unverified`;
-// handles that are present must still be distinct and bounded.
+// A Fast or transport verification is well-formed without evidence or handles and then reports
+// `unverified`; handles that are present must still be distinct and bounded.
 function verifyInput(input) {
   keys(input, ['selection', 'parentId', 'childId', 'evidence']);
-  const fast = object(input.selection) && input.selection.profile === 'fast';
+  // A Fast or T3 transport selection is well-formed without handles.
+  const handlesOptional =
+    object(input.selection) &&
+    (input.selection.profile === 'fast' || input.selection.transport === T3_TRANSPORT);
   if (input.evidence) {
     if (!object(input.evidence) || !text(input.evidence.kind))
       fail('INVALID_INPUT', 'evidence must name a supported adapter kind');
@@ -791,7 +998,8 @@ function verifyInput(input) {
     }
     keys(input.evidence, ['kind', 'path']);
   }
-  if (fast && !Object.hasOwn(input, 'parentId') && !Object.hasOwn(input, 'childId')) return;
+  if (handlesOptional && !Object.hasOwn(input, 'parentId') && !Object.hasOwn(input, 'childId'))
+    return;
   if (!hostId(input.parentId) || !hostId(input.childId) || input.parentId === input.childId) {
     fail('INVALID_INPUT', 'Distinct bounded parentId and childId values are required');
   }
@@ -811,6 +1019,10 @@ async function verify(input, contract, deps = {}) {
   if (!isDeepStrictEqual(input.selection, selection))
     fail('INVALID_SELECTION', 'The supplied selection does not match the current contract');
   if (fast) return verifyFast(input, selection, contract, deps);
+  // No exact-child evidence adapter reads a T3 delegation; the orchestrator compares its one
+  // `task_status` read with `spawn.target` instead.
+  if (selection.transport === T3_TRANSPORT)
+    unverified('No runtime adapter reads a T3 delegation; compare task_status with spawn.target');
   if (!input.evidence) unverified('No supported runtime evidence was supplied');
   if (selection.request.harness !== 'codex' || input.evidence.kind !== 'codex-rollout') {
     unverified('No supported runtime adapter is available for this evidence and harness');
@@ -852,9 +1064,9 @@ export function errorEnvelope(operation, error) {
 }
 
 export function exitCodeFor(envelope) {
-  return envelope.ok
-    ? 0
-    : ['INVALID_INPUT', 'INVALID_SELECTION', 'TIER_POLICY'].includes(envelope.error.code)
-      ? 2
-      : 1;
+  if (envelope.ok) return 0;
+  if (envelope.error.code === 'TRANSPORT_UNAVAILABLE') return 3;
+  return ['INVALID_INPUT', 'INVALID_SELECTION', 'TIER_POLICY'].includes(envelope.error.code)
+    ? 2
+    : 1;
 }

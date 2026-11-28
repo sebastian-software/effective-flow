@@ -10,8 +10,13 @@ the host's model catalog, the parent model, a worker name, or a remembered table
 
 The `harness` comes only from the parameter shape of the spawn tool this orchestrator holds: Claude
 Code's Agent tool (`model`, `effort`) is `claude`, a Codex spawn (`reasoning_effort`) is `codex`.
-Host prose, provider names and the client surface, T3 Code included, are no signal. A delegation to
-another provider, such as T3 `delegate_task`, is neither and never a Fast spawn.
+Host prose, provider names and the client surface, T3 Code included, are no signal. T3
+`delegate_task` is no spawn tool and never a Fast spawn; its separate transport path:
+
+```lazy-include
+t3-delegation-transport
+when: the spawn site or preflight names the T3 delegation transport and no native spawn tool is available or permitted
+```
 
 1. Call `select` immediately before every Quality spawn, including analysis and delegated
    workflows. Supply `harness: codex|claude`, the generated **Model selection site**, and `role`

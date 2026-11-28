@@ -28,6 +28,7 @@ import {
   validateAgentProfileMappings,
   validateModelTierMappings,
   validatePanelModelAllowlist,
+  validateT3ModelPins,
   resolveAgentTier,
   collectSpawnSiteMarkers,
   parseSpawnSiteTable,
@@ -285,6 +286,15 @@ const MODEL_TIER_MAPPINGS = Object.freeze({
 const PANEL_MODEL_ALLOWLIST = Object.freeze({
   claude: Object.freeze(['fable']),
   codex: Object.freeze(['gpt-6-astra']),
+});
+// The T3 Code catalog ID of every Claude alias in MODEL_TIER_MAPPINGS and PANEL_MODEL_ALLOWLIST,
+// for the T3 delegation transport (src/shared/t3-delegation-transport.md). Only the portable
+// contract carries them, as `t3Pins`; Codex model IDs are T3 catalog IDs already.
+const T3_MODEL_PINS = Object.freeze({
+  haiku: 'claude-haiku-5-5',
+  sonnet: 'claude-sonnet-5-5',
+  opus: 'claude-opus-5-5',
+  fable: 'claude-fable-5-2',
 });
 const ROUTE_PROFILE_CLASSIFICATION_ENTRIES = Object.freeze([
   Object.freeze(['excluded-generated-vendored', 'non-implementation']),
@@ -1210,6 +1220,9 @@ try {
   validatePanelModelAllowlist(PANEL_MODEL_ALLOWLIST, MODEL_TIER_MAPPINGS, {
     context: 'PANEL_MODEL_ALLOWLIST (build.mjs)',
   });
+  validateT3ModelPins(T3_MODEL_PINS, MODEL_TIER_MAPPINGS, PANEL_MODEL_ALLOWLIST, {
+    context: 'T3_MODEL_PINS (build.mjs)',
+  });
   // The pilot protocol script is copied byte for byte and cannot import this file, so its
   // Quality-mapping identity is checked here: a drift would let one generation span a Quality change.
   const qualityMappingIdentity = `sha256:${createHash('sha256')
@@ -2097,12 +2110,14 @@ try {
             clauses: clauses.map(({ role, tier }) => ({ role: role ?? null, tier })),
           })),
           // Only the portable build renders the per-spawn Fast tier; native builds use sidecars.
+          // Only the portable build can delegate through T3 Code, so only it carries the pins.
           ...(harness === 'portable'
             ? {
                 fast: {
                   mappings: AGENT_PROFILE_MAPPINGS.fast,
                   sites: [...fastSpawnSites].sort(),
                 },
+                t3Pins: T3_MODEL_PINS,
               }
             : {}),
         },
@@ -2427,12 +2442,14 @@ try {
     ...Object.values(MODEL_TIER_MAPPINGS),
     ...Object.values(AGENT_PROFILE_MAPPINGS),
   ];
-  // Panel models are provider names too: no rendered prose may name one, since the panel line
-  // defers the model to `model-selection`.
+  // Panel models and T3 catalog pins are provider names too: no rendered prose may name one,
+  // since the panel line defers the model to `model-selection` and the pins live only in the
+  // portable contract.
   const claudeModelNames = [
     ...new Set([
       ...tierProfiles.map(({ claude }) => claude.model),
       ...PANEL_MODEL_ALLOWLIST.claude,
+      ...Object.values(T3_MODEL_PINS),
     ]),
   ];
   const codexModelNames = [

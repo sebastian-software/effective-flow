@@ -479,6 +479,36 @@ export function validatePanelModelAllowlist(allowlist, mappings, { context } = {
   return allowlist;
 }
 
+// The T3 Code catalog ID of each Claude alias (`T3_MODEL_PINS` in build.mjs). The alias set is
+// derived, every tier's Claude model and every Claude panel model, so a missing pin and a pin no
+// alias uses both fail; each value is one bounded catalog-ID token.
+export const T3_CATALOG_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
+
+export function validateT3ModelPins(pins, mappings, allowlist, { context } = {}) {
+  const aliases = [
+    ...new Set([...MODEL_TIERS.map((tier) => mappings[tier].claude.model), ...allowlist.claude]),
+  ];
+  assertPlainObject(pins, 'T3 model pins', context);
+  for (const alias of aliases) {
+    if (!Object.hasOwn(pins, alias)) {
+      throw new Error(`T3 model pins miss the Claude alias "${alias}"${contextSuffix(context)}`);
+    }
+  }
+  for (const [alias, value] of Object.entries(pins)) {
+    if (!aliases.includes(alias)) {
+      throw new Error(
+        `T3 model pin "${alias}" names no Claude tier or panel alias${contextSuffix(context)}`,
+      );
+    }
+    if (typeof value !== 'string' || !T3_CATALOG_ID_RE.test(value)) {
+      throw new Error(
+        `T3 model pin "${alias}" holds an invalid catalog ID${contextSuffix(context)}`,
+      );
+    }
+  }
+  return pins;
+}
+
 // Resolve an agent source's default tier from its frontmatter. The tier is the single source of
 // the native sidecar's model and effort, so a missing, unknown or duplicate `tier:` and any legacy
 // per-harness model/effort field fail.

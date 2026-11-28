@@ -87,3 +87,11 @@ export const PANEL_MODEL_ALLOWLIST = (() => {
   };
   return Object.freeze({ claude: list('claude'), codex: list('codex') });
 })();
+
+// The T3 Code catalog pin of every Claude alias, as build.mjs writes it into the portable contract.
+export const T3_MODEL_PINS = (() => {
+  const text = declaration('T3_MODEL_PINS');
+  const pins = [...text.matchAll(/(\w+): '([^']+)'/g)];
+  assert.ok(pins.length > 0, 'build.mjs must declare the T3 model pins');
+  return Object.freeze(Object.fromEntries(pins.map(([, alias, id]) => [alias, id])));
+})();

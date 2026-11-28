@@ -6,7 +6,11 @@ import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { main as runCli } from '../src/scripts/model-selection.mjs';
-import { executeOperation } from '../src/scripts/model-selection-core.mjs';
+import {
+  MAX_CAPABILITIES_BYTES,
+  MAX_STDIN_BYTES,
+  executeOperation,
+} from '../src/scripts/model-selection-core.mjs';
 
 const CONTRACT = Object.freeze({
   schemaVersion: 1,
@@ -965,4 +969,945 @@ test('percent evidence fields remain structurally UNVERIFIED ahead of an earlier
       });
     }
   }
+});
+
+// --- T3 delegation transport (`transport: "t3-delegate"`) ---
+//
+// Invariant: a transport selection resolves the spawn site's existing tier for the harness of the
+// inherited provider instance's driver and targets that same instance. Claude aliases resolve
+// through the portable contract's `t3Pins`, Codex model IDs pass through, and the helper selects
+// only what the bounded capabilities projection advertises, never Fast. Every refusal to resolve a
+// target is `TRANSPORT_UNAVAILABLE` with one named reason and CLI exit 3, so the orchestrator takes
+// the no-mechanism path instead of treating it as a selection error.
+
+const T3_PINS = Object.freeze({
+  haiku: 'claude-haiku-5-5',
+  sonnet: 'claude-sonnet-5-5',
+  opus: 'claude-opus-5-5',
+  fable: 'claude-fable-5-2',
+});
+const T3_CONTRACT = Object.freeze({
+  ...CONTRACT,
+  target: 'portable',
+  panelModels: { claude: ['fable'], codex: ['gpt-6-astra'] },
+  fast: {
+    mappings: {
+      claude: { model: 'sonnet', effort: 'medium' },
+      codex: { model: 'gpt-5.6-luna', reasoning_effort: 'medium' },
+    },
+    sites: ['apply-issues/nodejs-implementer'],
+  },
+  t3Pins: T3_PINS,
+});
+const T3_OPTIONS = { contract: T3_CONTRACT };
+
+const CLAUDE_INSTANCE = 'claudeAgent';
+const CODEX_INSTANCE = 'codex';
+const PROVIDERS = [
+  { providerInstanceId: CLAUDE_INSTANCE, driverKind: 'claudeAgent' },
+  { providerInstanceId: CODEX_INSTANCE, driverKind: 'codex' },
+];
+const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CODEX_EFFORTS = ['low', 'medium', 'high'];
+
+const optionOf = (id, values) => ({ id, values });
+const offerOf = (id, providerInstanceId, options) => ({ id, providerInstanceId, options });
+const claudeOffer = (id, options = [optionOf('effort', CLAUDE_EFFORTS)]) =>
+  offerOf(id, CLAUDE_INSTANCE, options);
+const codexOffer = (id, options = [optionOf('reasoningEffort', CODEX_EFFORTS)]) =>
+  offerOf(id, CODEX_INSTANCE, options);
+const CLAUDE_OFFERS = Object.values(T3_PINS).map((id) => claudeOffer(id));
+const projectionOf = (models, overrides = {}) => ({
+  inheritedProviderInstanceId: CLAUDE_INSTANCE,
+  providers: PROVIDERS,
+  models,
+  ...overrides,
+});
+const claudeProjection = (models = CLAUDE_OFFERS, overrides) => projectionOf(models, overrides);
+const codexProjection = (models = [codexOffer('gpt-6.1-sol'), codexOffer('gpt-5.6-luna')]) =>
+  projectionOf(models, { inheritedProviderInstanceId: CODEX_INSTANCE });
+const transportRequest = (extra = {}, capabilities = claudeProjection()) => ({
+  transport: 't3-delegate',
+  capabilities,
+  ...extra,
+});
+
+async function transportSelect(input, options = T3_OPTIONS) {
+  const envelope = await executeOperation('select', input, options);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  return envelope.data;
+}
+
+async function assertUnavailable(input, reason, extra = {}, options = T3_OPTIONS) {
+  const envelope = await executeOperation('select', input, options);
+  assert.equal(envelope.ok, false, 'the selection must not resolve');
+  assert.equal(envelope.error.code, 'TRANSPORT_UNAVAILABLE');
+  assert.deepEqual(envelope.data, { reason, ...extra });
+  return envelope;
+}
+
+test('a transport selection targets the inherited instance with the pinned catalog ID and the tier effort', async () => {
+  const input = transportRequest({
+    site: 'apply-issues/nodejs-implementer',
+    role: 'nodejs-implementer',
+  });
+  const selection = await transportSelect(input);
+
+  assert.equal(selection.transport, 't3-delegate');
+  assert.equal(selection.defaultTier, 'deep');
+  assert.equal(selection.tier, 'deep');
+  assert.deepEqual(selection.spawn, {
+    target: {
+      providerInstanceId: CLAUDE_INSTANCE,
+      model: 'claude-opus-5-5',
+      options: { effort: 'high' },
+    },
+  });
+  // The pinned catalog ID is the expected model, so a compliance check compares like with like.
+  assert.deepEqual(selection.expected, { model: 'claude-opus-5-5', effort: 'high' });
+  assert.equal(selection.expected.model, selection.spawn.target.model);
+  assert.match(selection.contractDigest, /^[a-f0-9]{64}$/);
+  assert.deepEqual(
+    Object.keys(selection).sort(),
+    ['contractDigest', 'defaultTier', 'expected', 'request', 'spawn', 'tier', 'transport'],
+    'a transport selection carries no native role or parameters',
+  );
+});
+
+test('a transport selection resolves each tier through its own pin', async () => {
+  for (const [site, role, tier, model, effort] of [
+    ['apply-issues/issue-analysis', undefined, 'standard', 'claude-sonnet-5-5', 'medium'],
+    ['apply-issues/nodejs-implementer', 'nodejs-implementer', 'deep', 'claude-opus-5-5', 'high'],
+  ]) {
+    const selection = await transportSelect(transportRequest({ site, ...(role ? { role } : {}) }));
+    assert.equal(selection.tier, tier);
+    assert.equal(selection.spawn.target.model, model);
+    assert.deepEqual(selection.spawn.target.options, { effort });
+  }
+  const moved = await transportSelect(
+    transportRequest({
+      site: 'apply-issues/code-documenter',
+      role: 'code-documenter',
+      tier: 'mechanical',
+      reason: 'Documentation-only edit',
+    }),
+  );
+  assert.equal(moved.defaultTier, 'standard');
+  assert.equal(moved.tier, 'mechanical');
+  assert.deepEqual(moved.spawn.target, {
+    providerInstanceId: CLAUDE_INSTANCE,
+    model: 'claude-haiku-5-5',
+    options: { effort: 'low' },
+  });
+});
+
+test('a Codex driver passes its model through unchanged and gets reasoningEffort, not effort', async () => {
+  const selection = await transportSelect(
+    transportRequest(
+      { site: 'apply-issues/nodejs-implementer', role: 'nodejs-implementer' },
+      codexProjection(),
+    ),
+  );
+  assert.deepEqual(selection.spawn.target, {
+    providerInstanceId: CODEX_INSTANCE,
+    model: 'gpt-6.1-sol',
+    options: { reasoningEffort: 'high' },
+  });
+  assert.deepEqual(selection.expected, { model: 'gpt-6.1-sol', effort: 'high' });
+  assert.equal(Object.hasOwn(selection.spawn.target.options, 'effort'), false);
+
+  // A renamed instance keeps its own ID: the target is the inherited instance, whatever it is called.
+  const renamed = await transportSelect(
+    transportRequest(
+      { site: 'apply-issues/issue-analysis' },
+      projectionOf(
+        [offerOf('gpt-5.6-luna', 'codex_personal', [optionOf('reasoningEffort', ['medium'])])],
+        {
+          inheritedProviderInstanceId: 'codex_personal',
+          providers: [{ providerInstanceId: 'codex_personal', driverKind: 'codex' }],
+        },
+      ),
+    ),
+  );
+  assert.equal(renamed.spawn.target.providerInstanceId, 'codex_personal');
+  assert.equal(renamed.spawn.target.model, 'gpt-5.6-luna');
+});
+
+test('the request echoes the complete transport input and no derived harness', async () => {
+  const input = transportRequest({
+    site: 'apply-issues/issue-analysis',
+    tier: 'deep',
+    reason: 'A structural question the standard tier cannot settle',
+    retry: true,
+  });
+  const selection = await transportSelect(input);
+  assert.deepEqual(selection.request, input);
+  assert.equal(Object.hasOwn(selection.request, 'harness'), false);
+  assert.equal(selection.defaultTier, 'standard');
+  assert.equal(selection.tier, 'deep');
+  assert.equal(selection.spawn.target.model, 'claude-opus-5-5');
+
+  const fallback = transportRequest({
+    fallback: true,
+    reason: 'Unmarked commit workflow handoff',
+  });
+  assert.deepEqual((await transportSelect(fallback)).request, fallback);
+});
+
+test('a role-only transport selection takes the role default and applies the tier rules unchanged', async () => {
+  const selection = await transportSelect(transportRequest({ role: 'nodejs-implementer' }));
+  assert.equal(selection.defaultTier, 'deep');
+  assert.equal(selection.spawn.target.model, 'claude-opus-5-5');
+
+  const documenter = await transportSelect(transportRequest({ role: 'code-documenter' }));
+  assert.equal(documenter.defaultTier, 'standard');
+  assert.equal(documenter.spawn.target.model, 'claude-sonnet-5-5');
+
+  const unknown = await executeOperation(
+    'select',
+    transportRequest({ role: 'ghost-role' }),
+    T3_OPTIONS,
+  );
+  assert.equal(unknown.error.code, 'INVALID_INPUT');
+  // The same policy as a plain select: a deep role never moves down, and a move needs a reason.
+  for (const extra of [
+    { role: 'nodejs-implementer', tier: 'standard', reason: 'Cheaper please' },
+    { role: 'code-documenter', tier: 'mechanical' },
+    { role: 'code-documenter', tier: 'mechanical', reason: 'Tiny edit', retry: true },
+  ]) {
+    const refused = await executeOperation('select', transportRequest(extra), T3_OPTIONS);
+    assert.equal(refused.error.code, 'TIER_POLICY', JSON.stringify(extra));
+  }
+});
+
+test('a transport fallback needs its reason and no site or role, as in a plain select', async () => {
+  const selection = await transportSelect(
+    transportRequest({ fallback: true, reason: 'Unmarked commit workflow handoff' }),
+  );
+  assert.equal(selection.defaultTier, 'standard');
+  assert.equal(selection.spawn.target.model, 'claude-sonnet-5-5');
+  for (const extra of [
+    { fallback: true },
+    { fallback: true, reason: 'x', site: 'apply-issues/issue-analysis' },
+    { fallback: true, reason: 'x', role: 'code-documenter' },
+    {},
+  ]) {
+    const refused = await executeOperation('select', transportRequest(extra), T3_OPTIONS);
+    assert.equal(refused.error.code, 'INVALID_INPUT', JSON.stringify(extra));
+  }
+});
+
+test('a panel transport selection resolves panelModel through its pin or passes a Codex model through', async () => {
+  const panel = await transportSelect(
+    transportRequest({ site: 'backlog-audit/panel', panelModel: 'fable' }),
+  );
+  assert.equal(panel.tier, 'deep');
+  assert.deepEqual(panel.spawn.target, {
+    providerInstanceId: CLAUDE_INSTANCE,
+    model: 'claude-fable-5-2',
+    options: { effort: 'high' },
+  });
+  assert.deepEqual(panel.expected, { model: 'claude-fable-5-2', effort: 'high' });
+
+  const codexPanel = await transportSelect(
+    transportRequest(
+      { site: 'backlog-audit/panel', panelModel: 'gpt-6-astra' },
+      codexProjection([codexOffer('gpt-6.1-sol'), codexOffer('gpt-6-astra')]),
+    ),
+  );
+  assert.equal(codexPanel.spawn.target.model, 'gpt-6-astra');
+
+  // The panel member resolves on the same instance, else it is unavailable under its pinned ID.
+  await assertUnavailable(
+    transportRequest(
+      { site: 'backlog-audit/panel', panelModel: 'fable' },
+      claudeProjection(CLAUDE_OFFERS.filter((offer) => offer.id !== 'claude-fable-5-2')),
+    ),
+    'model-not-advertised',
+    { model: 'claude-fable-5-2' },
+  );
+  for (const [extra, code] of [
+    [{ site: 'backlog-audit/panel', panelModel: 'sonnet' }, 'TIER_POLICY'],
+    [{ site: 'backlog-audit/panel', panelModel: 'opus' }, 'TIER_POLICY'],
+    [{ site: 'backlog-audit/panel' }, 'INVALID_INPUT'],
+    [{ site: 'apply-issues/issue-analysis', panelModel: 'fable' }, 'INVALID_INPUT'],
+    [
+      { site: 'backlog-audit/panel', panelModel: 'fable', tier: 'mechanical', reason: 'x' },
+      'INVALID_INPUT',
+    ],
+  ]) {
+    const refused = await executeOperation('select', transportRequest(extra), T3_OPTIONS);
+    assert.equal(refused.error.code, code, JSON.stringify(extra));
+  }
+});
+
+test('fastMode false is set exactly where the model offers it, and Fast is never selected', async () => {
+  const withFast = await transportSelect(
+    transportRequest(
+      { site: 'apply-issues/nodejs-implementer', role: 'nodejs-implementer' },
+      claudeProjection([
+        claudeOffer('claude-opus-5-5', [
+          optionOf('effort', CLAUDE_EFFORTS),
+          optionOf('fastMode', [false, true]),
+        ]),
+      ]),
+    ),
+  );
+  assert.deepEqual(withFast.spawn.target.options, { effort: 'high', fastMode: false });
+
+  const withoutFast = await transportSelect(
+    transportRequest({ site: 'apply-issues/nodejs-implementer', role: 'nodejs-implementer' }),
+  );
+  assert.deepEqual(withoutFast.spawn.target.options, { effort: 'high' });
+  assert.equal(Object.hasOwn(withoutFast.spawn.target.options, 'fastMode'), false);
+
+  const codexFast = await transportSelect(
+    transportRequest(
+      { site: 'apply-issues/nodejs-implementer', role: 'nodejs-implementer' },
+      codexProjection([
+        codexOffer('gpt-6.1-sol', [
+          optionOf('reasoningEffort', CODEX_EFFORTS),
+          optionOf('fastMode', [true]),
+        ]),
+      ]),
+    ),
+  );
+  assert.deepEqual(codexFast.spawn.target.options, { reasoningEffort: 'high', fastMode: false });
+});
+
+test('a model the inherited instance does not advertise is unavailable, with the pinned ID named', async () => {
+  const input = transportRequest({ site: 'apply-issues/issue-analysis' });
+  // Short list without the pinned Claude model.
+  const withoutSonnet = claudeProjection(
+    CLAUDE_OFFERS.filter((offer) => offer.id !== 'claude-sonnet-5-5'),
+  );
+  await assertUnavailable({ ...input, capabilities: withoutSonnet }, 'model-not-advertised', {
+    model: 'claude-sonnet-5-5',
+  });
+  // The bare alias is no catalog ID: only the pin matches.
+  await assertUnavailable(
+    { ...input, capabilities: claudeProjection([claudeOffer('sonnet')]) },
+    'model-not-advertised',
+    { model: 'claude-sonnet-5-5' },
+  );
+  // Another instance advertising the model offers the inherited instance nothing.
+  await assertUnavailable(
+    {
+      ...input,
+      capabilities: claudeProjection([
+        offerOf('claude-sonnet-5-5', CODEX_INSTANCE, [optionOf('effort', CLAUDE_EFFORTS)]),
+      ]),
+    },
+    'model-not-advertised',
+    { model: 'claude-sonnet-5-5' },
+  );
+  // A Codex model is looked up under its own ID.
+  await assertUnavailable(
+    transportRequest(
+      { site: 'apply-issues/issue-analysis' },
+      codexProjection([codexOffer('gpt-6.1-sol')]),
+    ),
+    'model-not-advertised',
+    { model: 'gpt-5.6-luna' },
+  );
+});
+
+test('a repeated select with the search-result projection finds a pin the short list lacked', async () => {
+  const input = transportRequest(
+    { site: 'apply-issues/issue-analysis' },
+    claudeProjection(CLAUDE_OFFERS.filter((offer) => offer.id !== 'claude-sonnet-5-5')),
+  );
+  const first = await assertUnavailable(input, 'model-not-advertised', {
+    model: 'claude-sonnet-5-5',
+  });
+  // The repeat carries the identical input except `capabilities`, and never `retry: true`.
+  const searched = {
+    ...input,
+    capabilities: claudeProjection([claudeOffer(first.data.model)]),
+  };
+  assert.equal(Object.hasOwn(searched, 'retry'), false);
+  const found = await transportSelect(searched);
+  assert.equal(found.spawn.target.model, 'claude-sonnet-5-5');
+  assert.deepEqual(found.spawn.target.options, { effort: 'medium' });
+  assert.deepEqual(found.request, searched);
+  assert.equal(found.tier, 'standard');
+
+  // A search that finds nothing is a second miss with the same reason, and it is final.
+  await assertUnavailable(
+    { ...input, capabilities: claudeProjection([]) },
+    'model-not-advertised',
+    { model: 'claude-sonnet-5-5' },
+  );
+});
+
+test('a model that does not offer the tier effort is unavailable', async () => {
+  const input = { site: 'apply-issues/nodejs-implementer', role: 'nodejs-implementer' };
+  // Deep needs `high`; the model offers only lower efforts.
+  await assertUnavailable(
+    transportRequest(
+      input,
+      claudeProjection([claudeOffer('claude-opus-5-5', [optionOf('effort', ['low', 'medium'])])]),
+    ),
+    'effort-not-offered',
+  );
+  // No effort option at all, or only the other harness's effort option, is the same refusal.
+  for (const options of [[], [optionOf('reasoningEffort', ['high'])]]) {
+    await assertUnavailable(
+      transportRequest(input, claudeProjection([claudeOffer('claude-opus-5-5', options)])),
+      'effort-not-offered',
+    );
+  }
+  await assertUnavailable(
+    transportRequest(
+      input,
+      codexProjection([codexOffer('gpt-6.1-sol', [optionOf('effort', ['high'])])]),
+    ),
+    'effort-not-offered',
+  );
+});
+
+test('an offer on another provider instance only is rejected, never adopted', async () => {
+  // The inherited Claude instance lists nothing; the Codex instance offers the pinned model.
+  await assertUnavailable(
+    transportRequest(
+      { site: 'apply-issues/issue-analysis' },
+      claudeProjection([
+        offerOf('claude-sonnet-5-5', CODEX_INSTANCE, [optionOf('effort', CLAUDE_EFFORTS)]),
+        codexOffer('gpt-5.6-luna'),
+      ]),
+    ),
+    'model-not-advertised',
+    { model: 'claude-sonnet-5-5' },
+  );
+});
+
+test('an unknown driver or a missing inherited instance is unavailable', async () => {
+  const input = { site: 'apply-issues/issue-analysis' };
+  await assertUnavailable(
+    transportRequest(
+      input,
+      claudeProjection(CLAUDE_OFFERS, {
+        providers: [{ providerInstanceId: CLAUDE_INSTANCE, driverKind: 'opencode' }],
+      }),
+    ),
+    'unknown-driver',
+  );
+  // The T3 driver kinds are exact: the harness name is no driver kind.
+  await assertUnavailable(
+    transportRequest(
+      input,
+      claudeProjection(CLAUDE_OFFERS, {
+        providers: [{ providerInstanceId: CLAUDE_INSTANCE, driverKind: 'claude' }],
+      }),
+    ),
+    'unknown-driver',
+  );
+  await assertUnavailable(
+    transportRequest(input, claudeProjection(CLAUDE_OFFERS, { inheritedProviderInstanceId: null })),
+    'no-inherited-instance',
+  );
+  await assertUnavailable(
+    transportRequest(
+      input,
+      claudeProjection(CLAUDE_OFFERS, { inheritedProviderInstanceId: 'unlisted-instance' }),
+    ),
+    'no-inherited-instance',
+  );
+  await assertUnavailable(
+    transportRequest(input, claudeProjection(CLAUDE_OFFERS, { providers: [] })),
+    'no-inherited-instance',
+  );
+});
+
+test("a contract without t3Pins is unavailable before the projection's offers are evaluated", async () => {
+  // Native targets carry no pins, whatever a well-formed projection says.
+  for (const contract of [CONTRACT, Object.freeze({ ...CONTRACT, target: 'claude' })]) {
+    await assertUnavailable(
+      transportRequest({ site: 'apply-issues/issue-analysis' }, codexProjection()),
+      'no-t3-pins',
+      {},
+      { contract },
+    );
+    await assertUnavailable(
+      transportRequest(
+        { site: 'apply-issues/issue-analysis' },
+        claudeProjection(CLAUDE_OFFERS, { inheritedProviderInstanceId: null }),
+      ),
+      'no-t3-pins',
+      {},
+      { contract },
+    );
+    // The projection is validated first: a malformed one is invalid input, never unavailable.
+    const malformed = await executeOperation(
+      'select',
+      transportRequest(
+        { site: 'apply-issues/issue-analysis' },
+        { ...codexProjection(), raw: { envelope: true } },
+      ),
+      { contract },
+    );
+    assert.equal(malformed.ok, false);
+    assert.equal(malformed.error.code, 'INVALID_INPUT');
+  }
+});
+
+test('invalid input and a tier-policy refusal precede every TRANSPORT_UNAVAILABLE reason with exit code 2', async () => {
+  const unknownDriver = claudeProjection(CLAUDE_OFFERS, {
+    providers: [{ providerInstanceId: CLAUDE_INSTANCE, driverKind: 'opencode' }],
+  });
+  const noInstance = claudeProjection(CLAUDE_OFFERS, { inheritedProviderInstanceId: null });
+  const noOffer = claudeProjection([]);
+  const noEffort = claudeProjection(Object.values(T3_PINS).map((id) => claudeOffer(id, [])));
+  const invalid = [
+    [{ site: 'ghost/site' }, 'INVALID_INPUT'],
+    [{ role: 'ghost-role' }, 'INVALID_INPUT'],
+    [{ site: 'apply-issues/issue-analysis', fallback: true, reason: 'x' }, 'INVALID_INPUT'],
+    [{ fallback: true }, 'INVALID_INPUT'],
+    [{ site: 'apply-issues/issue-analysis', tier: 'ultra', reason: 'x' }, 'INVALID_INPUT'],
+    [{ site: 'backlog-audit/panel' }, 'INVALID_INPUT'],
+    [{ role: 'nodejs-implementer', tier: 'standard', reason: 'Cheaper please' }, 'TIER_POLICY'],
+    [{ role: 'code-documenter', tier: 'mechanical' }, 'TIER_POLICY'],
+  ];
+  // A panel model the allowlist refuses is a TIER_POLICY refusal once the harness is derived.
+  const panelRefused = [
+    [{ site: 'backlog-audit/panel', panelModel: 'sonnet' }, 'TIER_POLICY'],
+    [{ site: 'backlog-audit/panel', panelModel: 'opus' }, 'TIER_POLICY'],
+  ];
+  for (const [label, projection, options, unavailable, refused] of [
+    ['native contract', codexProjection(), CONTRACT_OPTIONS, ['no-t3-pins'], invalid],
+    ['portable contract, unknown driver', unknownDriver, T3_OPTIONS, ['unknown-driver'], invalid],
+    [
+      'portable contract, no inherited instance',
+      noInstance,
+      T3_OPTIONS,
+      ['no-inherited-instance'],
+      invalid,
+    ],
+    [
+      'portable contract, no matching offer',
+      noOffer,
+      T3_OPTIONS,
+      ['model-not-advertised', { model: 'claude-sonnet-5-5' }],
+      [...invalid, ...panelRefused],
+    ],
+    [
+      'portable contract, no effort offered',
+      noEffort,
+      T3_OPTIONS,
+      ['effort-not-offered'],
+      [...invalid, ...panelRefused],
+    ],
+  ]) {
+    // Valid input on this projection would be unavailable with the row's reason.
+    const [reason, reasonData = {}] = unavailable;
+    await assertUnavailable(
+      transportRequest({ site: 'apply-issues/issue-analysis' }, projection),
+      reason,
+      reasonData,
+      options,
+    );
+    for (const [extra, code] of refused) {
+      const name = `${label}: ${JSON.stringify(extra)}`;
+      const result = await cli(
+        ['select'],
+        JSON.stringify(transportRequest(extra, projection)),
+        options,
+      );
+      assert.equal(result.envelope.error.code, code, name);
+      assert.equal(result.exitCode, 2, name);
+    }
+  }
+  // Valid input on a native contract stays no-t3-pins; the panel allowlist depends on the derived
+  // harness, so it is checked only after availability.
+  for (const extra of [
+    { site: 'apply-issues/issue-analysis' },
+    { site: 'backlog-audit/panel', panelModel: 'sonnet' },
+  ]) {
+    await assertUnavailable(
+      transportRequest(extra, codexProjection()),
+      'no-t3-pins',
+      {},
+      CONTRACT_OPTIONS,
+    );
+  }
+});
+
+test('the contract validator requires t3Pins exactly on a portable contract with exactly the derived aliases', async () => {
+  const input = transportRequest({ site: 'apply-issues/issue-analysis' });
+  const { t3Pins: _pins, ...withoutPins } = T3_CONTRACT;
+  const aliasSet = Object.keys(T3_PINS);
+  const cases = {
+    'a native Codex contract with t3Pins': { ...CONTRACT, t3Pins: T3_PINS },
+    'a native Claude contract with t3Pins': { ...CONTRACT, target: 'claude', t3Pins: T3_PINS },
+    'a portable contract without t3Pins': withoutPins,
+    'an extra pin': { ...T3_CONTRACT, t3Pins: { ...T3_PINS, gpt: 'gpt-catalog-1' } },
+    'a missing tier pin': {
+      ...T3_CONTRACT,
+      t3Pins: Object.fromEntries(Object.entries(T3_PINS).filter(([alias]) => alias !== 'sonnet')),
+    },
+    'a missing panel pin': {
+      ...T3_CONTRACT,
+      t3Pins: Object.fromEntries(Object.entries(T3_PINS).filter(([alias]) => alias !== 'fable')),
+    },
+    'a pin value with a space': { ...T3_CONTRACT, t3Pins: { ...T3_PINS, opus: 'claude opus' } },
+    'an empty pin value': { ...T3_CONTRACT, t3Pins: { ...T3_PINS, opus: '' } },
+    'a non-string pin value': { ...T3_CONTRACT, t3Pins: { ...T3_PINS, opus: 5 } },
+    'an oversized pin value': { ...T3_CONTRACT, t3Pins: { ...T3_PINS, opus: 'a'.repeat(129) } },
+    'a pin object that is an array': { ...T3_CONTRACT, t3Pins: aliasSet },
+  };
+  for (const [name, contract] of Object.entries(cases)) {
+    for (const [operation, request] of [
+      ['select', input],
+      ['select', { harness: 'claude', site: 'apply-issues/issue-analysis' }],
+    ]) {
+      const envelope = await executeOperation(operation, request, { contract });
+      assert.equal(envelope.ok, false, name);
+      assert.equal(envelope.error.code, 'INVALID_CONTRACT', name);
+    }
+  }
+});
+
+test('a transport selection refuses harness, native, unknown fields and a wrong transport name', async () => {
+  const base = { site: 'apply-issues/issue-analysis' };
+  for (const [name, input] of Object.entries({
+    harness: transportRequest({ ...base, harness: 'claude' }),
+    native: transportRequest({ ...base, native: true }),
+    'harness and native': transportRequest({ ...base, harness: 'claude', native: false }),
+    'unknown field': transportRequest({ ...base, extra: true }),
+    'unknown transport': { ...transportRequest(base), transport: 't3-other' },
+    'non-string transport': { ...transportRequest(base), transport: true },
+    'missing capabilities': { transport: 't3-delegate', ...base },
+    'null capabilities': transportRequest(base, null),
+    'array capabilities': transportRequest(base, []),
+    'mistyped retry': transportRequest({ ...base, retry: 'yes' }),
+    'mistyped site': transportRequest({ site: 5 }),
+  })) {
+    const envelope = await executeOperation('select', input, T3_OPTIONS);
+    assert.equal(envelope.ok, false, name);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', name);
+  }
+});
+
+test('the capabilities projection rejects raw envelopes, wrong types and every unbounded field', async () => {
+  const base = { site: 'apply-issues/issue-analysis' };
+  const repeated = (count, make) => Array.from({ length: count }, (_, index) => make(index));
+  const ok = (overrides) => claudeProjection(CLAUDE_OFFERS, overrides);
+  const model = (overrides) => ({ ...claudeOffer('claude-sonnet-5-5'), ...overrides });
+  for (const [name, capabilities] of Object.entries({
+    'an extra top-level field (raw envelope)': { ...ok(), providerDetails: {} },
+    'an inherited instance that is not a string': ok({ inheritedProviderInstanceId: 5 }),
+    'an over-long inherited instance': ok({ inheritedProviderInstanceId: 'x'.repeat(129) }),
+    'providers not an array': ok({ providers: { providerInstanceId: CLAUDE_INSTANCE } }),
+    'models not an array': ok({ models: 'claude-sonnet-5-5' }),
+    'too many providers': ok({
+      providers: repeated(33, (index) => ({
+        providerInstanceId: `p${index}`,
+        driverKind: 'codex',
+      })),
+    }),
+    'a repeated provider instance': ok({ providers: [PROVIDERS[0], PROVIDERS[0]] }),
+    'a provider with an extra field': ok({ providers: [{ ...PROVIDERS[0], enabled: true }] }),
+    'a provider without a driver kind': ok({
+      providers: [{ providerInstanceId: CLAUDE_INSTANCE }],
+    }),
+    'too many models': ok({
+      models: repeated(257, (index) => claudeOffer(`model-${index}`)),
+    }),
+    'a repeated model on one instance': ok({ models: [model(), model()] }),
+    'a model with an extra field': ok({ models: [model({ displayName: 'Sonnet' })] }),
+    'a model id that is not a string': ok({ models: [model({ id: 7 })] }),
+    'an over-long model id': ok({ models: [model({ id: 'm'.repeat(129) })] }),
+    'a control character in a model id': ok({ models: [model({ id: 'claude\nsonnet' })] }),
+    'options not an array': ok({ models: [model({ options: {} })] }),
+    'too many options': ok({
+      models: [model({ options: repeated(17, (index) => optionOf(`option-${index}`, ['a'])) })],
+    }),
+    'a repeated option': ok({
+      models: [model({ options: [optionOf('effort', ['low']), optionOf('effort', ['high'])] })],
+    }),
+    'an option with an extra field': ok({
+      models: [model({ options: [{ id: 'effort', values: ['low'], label: 'Effort' }] })],
+    }),
+    'option values not an array': ok({
+      models: [model({ options: [{ id: 'effort', values: 'low' }] })],
+    }),
+    'a numeric option value': ok({ models: [model({ options: [optionOf('effort', [3])] })] }),
+    'an object option value': ok({ models: [model({ options: [optionOf('effort', [{}])] })] }),
+    'a null option value': ok({ models: [model({ options: [optionOf('effort', [null])] })] }),
+    'too many option values': ok({
+      models: [
+        model({
+          options: [
+            optionOf(
+              'effort',
+              repeated(33, (index) => `v${index}`),
+            ),
+          ],
+        }),
+      ],
+    }),
+  })) {
+    const envelope = await executeOperation(
+      'select',
+      { transport: 't3-delegate', ...base, capabilities },
+      T3_OPTIONS,
+    );
+    assert.equal(envelope.ok, false, name);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', name);
+  }
+});
+
+// A projection of padded models whose serialized size is as close to the bound as one more model
+// allows; `over` is the same list with that one more model.
+function projectionAtBound() {
+  const pad = (index) =>
+    claudeOffer(`padding-${String(index).padStart(4, '0')}-${'x'.repeat(100)}`);
+  const models = [...CLAUDE_OFFERS];
+  const size = (list) => Buffer.byteLength(JSON.stringify(claudeProjection(list)), 'utf8');
+  for (let index = 0; ; index += 1) {
+    const next = [...models, pad(index)];
+    if (size(next) > MAX_CAPABILITIES_BYTES) return { models, over: next, size: size(models) };
+    models.push(pad(index));
+  }
+}
+
+test('the projection size bound is exact and a bound-sized selection still verifies within stdin', async () => {
+  const { models, over, size } = projectionAtBound();
+  assert.ok(models.length < 256, 'the size bound, not the model-count bound, ends the list');
+  assert.ok(size <= MAX_CAPABILITIES_BYTES && size > MAX_CAPABILITIES_BYTES - 256);
+
+  const input = transportRequest({ site: 'apply-issues/issue-analysis' }, claudeProjection(models));
+  const selected = await cli(['select'], JSON.stringify(input), T3_OPTIONS);
+  assert.equal(selected.exitCode, 0, selected.stderr);
+  assert.equal(selected.envelope.ok, true);
+  assert.deepEqual(selected.envelope.data.request, input);
+
+  // Echoing the whole selection, projection included, leaves room inside the stdin bound.
+  const verifyPayload = JSON.stringify({ selection: selected.envelope.data });
+  assert.ok(Buffer.byteLength(verifyPayload) > MAX_CAPABILITIES_BYTES);
+  assert.ok(Buffer.byteLength(verifyPayload) < MAX_STDIN_BYTES);
+  const verified = await cli(['verify'], verifyPayload, T3_OPTIONS);
+  assert.equal(verified.envelope.error.code, 'UNVERIFIED');
+  assert.deepEqual(verified.envelope.data, { status: 'unverified' });
+  assert.equal(verified.exitCode, 1);
+
+  const refused = await cli(
+    ['select'],
+    JSON.stringify(
+      transportRequest({ site: 'apply-issues/issue-analysis' }, claudeProjection(over)),
+    ),
+    T3_OPTIONS,
+  );
+  assert.equal(refused.envelope.error.code, 'INVALID_INPUT');
+  assert.match(refused.envelope.error.message, /size bound/);
+  assert.equal(refused.exitCode, 2);
+});
+
+test('verify on a transport selection returns UNVERIFIED without handles, with handles and with rollout evidence', async (t) => {
+  const request = { site: 'apply-issues/nodejs-implementer', role: 'nodejs-implementer' };
+  const selection = await transportSelect(transportRequest(request, codexProjection()));
+  const unverified = async (input) => {
+    const envelope = await executeOperation('verify', input, T3_OPTIONS);
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'UNVERIFIED');
+    assert.deepEqual(envelope.data, { status: 'unverified' });
+  };
+
+  await unverified({ selection });
+  await unverified({ selection, ...SIMPLE_IDS });
+  await unverified({ selection, ...ENCODED_IDS });
+
+  // A rollout that matches the expected model and effort proves nothing for a transport selection,
+  // which no runtime adapter reads, while the same rollout verifies a plain Codex selection.
+  const evidence = await syntheticRollout(t, [
+    rolloutIdentity(SIMPLE_IDS),
+    rolloutTurn({ model: 'gpt-6.1-sol', effort: 'high' }),
+  ]);
+  await unverified({ selection, ...SIMPLE_IDS, evidence });
+  await unverified({ selection, evidence });
+  const plain = await executeOperation('select', { harness: 'codex', ...request }, T3_OPTIONS);
+  const control = await executeOperation(
+    'verify',
+    { selection: plain.data, ...SIMPLE_IDS, evidence },
+    T3_OPTIONS,
+  );
+  assert.equal(control.ok, true);
+  assert.equal(control.data.status, 'verified');
+});
+
+test('verify on a transport selection still checks handles, selection integrity and the contract pins', async () => {
+  const selection = await transportSelect(
+    transportRequest({ site: 'apply-issues/issue-analysis' }),
+  );
+  // Handles that are present stay bounded and distinct.
+  for (const input of [
+    { selection, parentId: 'same', childId: 'same' },
+    { selection, parentId: 'only-parent' },
+    { selection, parentId: 'bad parent', childId: 'child' },
+  ]) {
+    const envelope = await executeOperation('verify', input, T3_OPTIONS);
+    assert.equal(envelope.error.code, 'INVALID_INPUT', JSON.stringify(input));
+  }
+  // Evidence of an unsupported shape is rejected before the transport shortcut.
+  const badEvidence = await executeOperation(
+    'verify',
+    { selection, evidence: { kind: 'codex-rollout', path: '/tmp/x', extra: true } },
+    T3_OPTIONS,
+  );
+  assert.equal(badEvidence.error.code, 'INVALID_INPUT');
+  // A tampered target is not the recomputed selection.
+  const tampered = structuredClone(selection);
+  tampered.spawn.target.model = 'claude-opus-5-5';
+  const tamperedEnvelope = await executeOperation('verify', { selection: tampered }, T3_OPTIONS);
+  assert.equal(tamperedEnvelope.error.code, 'INVALID_SELECTION');
+  // A selection recorded under other pins no longer matches: the digest covers the pins.
+  const repinned = {
+    contract: { ...T3_CONTRACT, t3Pins: { ...T3_PINS, sonnet: 'claude-sonnet-5-6' } },
+  };
+  const stale = await executeOperation('verify', { selection }, repinned);
+  assert.equal(stale.error.code, 'INVALID_SELECTION');
+  // A transport selection never verifies on a native contract.
+  const native = await executeOperation('verify', { selection }, CLAUDE_CONTRACT_OPTIONS);
+  assert.equal(native.error.code, 'INVALID_SELECTION');
+});
+
+test('fast with a transport key is rejected as invalid input with exit code 2', async () => {
+  const input = {
+    harness: 'claude',
+    site: 'apply-issues/nodejs-implementer',
+    transport: 't3-delegate',
+  };
+  const envelope = await executeOperation('fast', input, T3_OPTIONS);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_INPUT');
+  const result = await cli(['fast'], JSON.stringify(input), T3_OPTIONS);
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.envelope.error.code, 'INVALID_INPUT');
+  assert.match(result.stderr, /^INVALID_INPUT:/);
+  // A transport-only request has no harness and so never reaches a Fast lookup either.
+  const transportOnly = await executeOperation(
+    'fast',
+    transportRequest({ site: 'apply-issues/nodejs-implementer' }),
+    T3_OPTIONS,
+  );
+  assert.equal(transportOnly.error.code, 'INVALID_INPUT');
+});
+
+test('the CLI reports TRANSPORT_UNAVAILABLE with its reason, the model and exit code 3', async () => {
+  for (const [name, input, options, reason, extra] of [
+    [
+      'model not advertised',
+      transportRequest({ site: 'apply-issues/issue-analysis' }, claudeProjection([])),
+      T3_OPTIONS,
+      'model-not-advertised',
+      { model: 'claude-sonnet-5-5' },
+    ],
+    [
+      'effort not offered',
+      transportRequest(
+        { site: 'apply-issues/issue-analysis' },
+        claudeProjection([claudeOffer('claude-sonnet-5-5', [])]),
+      ),
+      T3_OPTIONS,
+      'effort-not-offered',
+      {},
+    ],
+    [
+      'unknown driver',
+      transportRequest(
+        { site: 'apply-issues/issue-analysis' },
+        claudeProjection(CLAUDE_OFFERS, {
+          providers: [{ providerInstanceId: CLAUDE_INSTANCE, driverKind: 'opencode' }],
+        }),
+      ),
+      T3_OPTIONS,
+      'unknown-driver',
+      {},
+    ],
+    [
+      'no inherited instance',
+      transportRequest(
+        { site: 'apply-issues/issue-analysis' },
+        claudeProjection(CLAUDE_OFFERS, { inheritedProviderInstanceId: null }),
+      ),
+      T3_OPTIONS,
+      'no-inherited-instance',
+      {},
+    ],
+    [
+      'no t3 pins on a native build',
+      transportRequest({ site: 'apply-issues/issue-analysis' }, codexProjection()),
+      CONTRACT_OPTIONS,
+      'no-t3-pins',
+      {},
+    ],
+  ]) {
+    const result = await cli(['select'], JSON.stringify(input), options);
+    assert.equal(result.exitCode, 3, name);
+    assert.equal(result.envelope.ok, false, name);
+    assert.equal(result.envelope.error.code, 'TRANSPORT_UNAVAILABLE', name);
+    assert.deepEqual(result.envelope.data, { reason, ...extra }, name);
+    assert.ok(result.envelope.error.message.length > 0, name);
+    assert.equal(result.stdout, `${JSON.stringify(result.envelope)}\n`, name);
+    assert.equal(result.stderr, `TRANSPORT_UNAVAILABLE: ${result.envelope.error.message}\n`, name);
+  }
+  // Exit code 3 belongs to TRANSPORT_UNAVAILABLE alone: other refusals keep theirs.
+  const invalid = await cli(
+    ['select'],
+    JSON.stringify(transportRequest({ site: 'apply-issues/issue-analysis', harness: 'claude' })),
+    T3_OPTIONS,
+  );
+  assert.equal(invalid.exitCode, 2);
+  const brokenContract = await cli(
+    ['select'],
+    JSON.stringify(transportRequest({ site: 'apply-issues/issue-analysis' })),
+    { contract: { ...T3_CONTRACT, t3Pins: {} } },
+  );
+  assert.equal(brokenContract.exitCode, 1);
+  assert.equal(brokenContract.envelope.error.code, 'INVALID_CONTRACT');
+  const success = await cli(
+    ['select'],
+    JSON.stringify(transportRequest({ site: 'apply-issues/issue-analysis' })),
+    T3_OPTIONS,
+  );
+  assert.equal(success.exitCode, 0);
+  assert.equal(success.stderr, '');
+  assert.equal(success.stdout.split('\n').filter(Boolean).length, 1);
+});
+
+test('plain select output is unchanged by the transport path, except the portable contract digest', async () => {
+  // The digest of a native contract has no t3Pins term, so it stays what the base commit computed.
+  const NATIVE_DIGEST = '0e816d093c3cc1f6a1899b41c07627d3189ee2b9096727bd5f925188681c3432';
+  const native = await executeOperation(
+    'select',
+    { harness: 'codex', site: 'apply-issues/issue-analysis' },
+    CONTRACT_OPTIONS,
+  );
+  assert.equal(native.data.contractDigest, NATIVE_DIGEST);
+  assert.deepEqual(native.data, {
+    request: { harness: 'codex', site: 'apply-issues/issue-analysis' },
+    contractDigest: NATIVE_DIGEST,
+    defaultTier: 'standard',
+    tier: 'standard',
+    expected: { model: 'gpt-5.6-luna', effort: 'medium' },
+    spawn: { role: null, parameters: { model: 'gpt-5.6-luna', reasoning_effort: 'medium' } },
+  });
+  const portable = await executeOperation(
+    'select',
+    { harness: 'claude', role: 'nodejs-implementer' },
+    T3_OPTIONS,
+  );
+  assert.deepEqual(
+    { ...portable.data, contractDigest: undefined },
+    {
+      request: { harness: 'claude', role: 'nodejs-implementer' },
+      contractDigest: undefined,
+      defaultTier: 'deep',
+      tier: 'deep',
+      expected: { model: 'opus', effort: 'high' },
+      spawn: { role: 'nodejs-implementer', parameters: { model: 'opus', effort: 'high' } },
+    },
+    'a harness select on the portable contract names the alias and no transport target',
+  );
+  assert.notEqual(portable.data.contractDigest, NATIVE_DIGEST);
 });
