@@ -1,7 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub, Forgejo or Gitea issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 600
+contextBudget: 637
 ---
 
 # Effective Flow Issue Buddy
@@ -236,6 +236,19 @@ then run `git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' 
 Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason
 `plan-preserved`, keep it and report its path and issue. The claim is released either way.
 Run no raw fetch or plan-branch read; WP3/WP4 own bounded Git reads.
+
+**Formatter preflight.** In publishing mode, after `consent-check` and before recovery or
+judgment, resolve once from the project's instructions (`AGENTS.md` and its includes, package
+scripts, formatter configuration) read in `PLANNING_ROOT`, plus host instructions, whether they
+name a Markdown formatter, and retain the result; reading them runs no project tool there. Without
+running it on any file, check that a named formatter allows a direct call as
+`<skill-root>/shared/unattended-planning.md` "Completion" step 1 defines it, already installed in
+`RUNTIME_STATE_ROOT` and allowed by host instructions to run with working directory
+`PLANNING_ROOT`; only that executable comes from `RUNTIME_STATE_ROOT`. This parent never installs.
+A named formatter that cannot run directly, an installed executable other than the one the
+`PLANNING_ROOT` tree names, or ambiguous instructions stop the pass with
+`{issue: null, stage: "format", code: "FORMATTER_UNAVAILABLE"}`.
+
 Dry-run reports recovery without completing it. Publishing processes only `authorizedRecovery`,
 in its returned order and up to remaining `limits.plans`:
 
@@ -296,7 +309,10 @@ identities/types, including ignored/nonregular entries, without bringing content
 Start a foreground built-in general-purpose workflow orchestrator, not a named leaf. Supply the
 verified receipt/roots with `PLANNING_ROOT` as its execution root, concrete languages, authority
 restricted to one new untracked top-level plan in `PLANNING_ROOT`,
-no staging/Git/forge publication/runtime writes and no user questions as its separate brief.
+no staging/Git/forge publication/runtime writes, no project build, install, test, formatter or
+generated-output command in `PLANNING_ROOT` (using, besides the plan write, only file reads,
+read-only Git and the skill's own helper scripts), restated as the authority limits of every child
+handoff it starts, outside any control-line payload, and no user questions as its separate brief.
 It owns planning/review craft through `{{SKILL:plan}}` and its discovered domain skills.
 <!-- spawn-site:issue-buddy/plan-run -->
 
@@ -340,12 +356,14 @@ zero new plans; a mutation or ambiguous identity stays a pass stop. With exactly
 plan, run `publication-metadata` as below and `plan-publication.mjs scan` with
 `{cwd, runState: "unattended", planFile: <relative plan path>}`, reading only its finding ids;
 classify from these two helper results through the ordered mapping, never from the abort text
-(item 4 only for a helper-proven content fault such as a non-empty `data.blocking` or invalid
-metadata, otherwise item 5), preserve the plan as Phase 5 preserves an unpublished one, and skip
-Phase 5. Without a new plan, item 5 applies and nothing is preserved.
+(a non-empty `data.blocking` from that `scan` is item 4; a `publication-metadata` refusal is
+item 5, because an interrupted planner can leave metadata unwritten and the refusal names no
+failed check; anything else is item 5), preserve the plan as Phase 5 preserves an unpublished one,
+and skip Phase 5. Without a new plan, item 5 applies and nothing is preserved.
 
 Verify no HEAD/index/tracked/unrelated-path mutation or overwrite in `PLANNING_ROOT` and exactly one
-new regular untracked canonical plan directly under its `plan.dir`, associated with this issue.
+new regular untracked canonical plan directly under its `plan.dir`, associated with this issue;
+any other new ignored or untracked path is an unrelated mutation.
 Besides that abort path's one `scan`, call only
 `plan-lint.mjs publication-metadata` with `{cwd, planDir, files: [<relative plan path>],
 expectedLanguage: <resolved language.workflow de|en>}`. Require a constant-safe successful envelope
@@ -358,7 +376,22 @@ Its blob binds the complete verified bytes for `expectedBlobOid`; a model hash, 
 structural read or second path read is no substitute. `revision-required` and positive open-point
 counts remain publishable. An invalid plan may be an issue failure only under the ordered mapping
 below; unrelated mutation or ambiguous identity is a pass stop. Record creation identity
-independently; a prior snapshot or equal contents does not prove ownership.
+independently as file type, device, inode and a link count of 1, never modification time or size;
+a prior snapshot or equal contents does not prove ownership.
+
+**Format.** With no Markdown formatter named (Phase 2), retain the first projection; the plan is
+published as-is. Otherwise, after the first successful `publication-metadata` call, run the
+preflighted formatter on the plan path only, working directory `PLANNING_ROOT`, keeping its stdout
+and stderr out of context and evaluating only its exit status; this is no overwrite in the sense
+above. Then re-verify HEAD, index and tracked state and that the plan is still the only new path in
+`PLANNING_ROOT`: a nonzero exit, any HEAD/index/tracked change or any other new path stops with
+`FORMAT_FAILED`. Call
+`publication-metadata` again with the same input; it must succeed with the same `planFile`,
+`reviewResult` and `openPointCount`, else stop with `FORMAT_METADATA_CHANGED`, and its projection
+is retained. Only then check identity: a non-regular file or a link count other than 1 stops with
+`FORMAT_FAILED`, and a changed inode is re-recorded as the creation identity from the formatted
+file. Each stop is the null failure `{issue: null, stage: "format", code}` under item 5, preserving
+the plan and its planning worktree. `<metadata blobOid>` is the retained projection's `blobOid`.
 
 ## Phase 5: Publish
 
@@ -388,7 +421,8 @@ from confirmed success, with the Phase-2 verdict-record shape; append its confir
 When no slot remains, set `cutOff: publish-limit` and proceed to Phase 6.
 
 Only after confirmed publication may this pass remove its exact newly created plan, with proven
-creation ownership, unchanged current blob equal to WP4's `blobOid`, and protection against
+creation ownership by the retained creation identity, unchanged current blob equal to WP4's
+`blobOid` (the formatted blob when Phase 4 formatted), and protection against
 replacement through the check/removal interval. A hash check followed by ordinary pathname unlink
 is insufficient. If the filesystem/harness cannot prove ownership and protected removal, preserve
 and report it. Changed, ambiguous, earlier, failed or push/create-uncertain artifacts are always
@@ -457,7 +491,10 @@ without its successful envelope.
 Report mode, visibility, limits, counts/skips (the dropped `unreadable-comments` count included), bounded verdict reasons, recovery, initial/final
 leftovers with operator action, a kept planning worktree, each base move as `issue-buddy-base-move`
 states (a flagged PR, also on a base that moved again, as an unresolved base move left to review),
-confirmed PR URLs and report path.
+confirmed PR URLs and report path. Say when a plan was published as-is because the project names
+no Markdown formatter. A `format` stop's details name only the formatter executable, the
+repository-relative plan path and the exit status, never an absolute host path; its persisted
+failure stays `{issue: null, stage, code}`.
 Print `Pass result: completed|failed` from the stored report's `outcome`. An unavailable report is
 stated as unavailable. No session title or rename is emitted. On a completed dry run with
 `would-publish`, recommend `{{SKILL:issue-buddy}} --publish` only for a public repository.

@@ -66,6 +66,12 @@ const ENVIRONMENT_SIGNATURE_CLASSES =
   'version control unavailable; any other failed preflight check, such as loopback, sandbox or\n' +
   'temporary space, is a failing check, reported `FAILED` and never skipped.\n';
 
+// The rendered worker-git-history fragment that every write-capable worker except the
+// merge-conflict resolver includes eagerly (issue #825); the `worker-git-history` body delta
+// inserts it.
+const WORKER_GIT_HISTORY =
+  '**Git history.** Never rewrite or move back the Git history of the checkout, branches and remote you were handed: no `rebase` of any kind, including `pull --rebase` or a `pull` under `pull.rebase`; no `commit --amend`; no squash; no `reset --hard` at all and no `reset` of any other mode to an earlier commit; no command that points an existing branch at another commit, such as `branch -f`, `checkout -B` or `update-ref`; and no force-push in any form, `--force-with-lease` included. Report a rejected push, or a branch that is behind or conflicts with its base, to the orchestrator instead of updating it. Git commands inside a temporary or fixture repository you create yourself are not covered.\n';
+
 // The only deltas a native worker sidecar may show against the base build; any other byte
 // difference fails the proof. A delta is permitted, never required: a worker that builds
 // byte-identically always passes. A configuration delta changes exactly one key line; body deltas
@@ -541,6 +547,27 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
             "Skill and prompt sources that a build ships as product behaviour (such as an agent skill's `src/**/*.md`) are product source, not documentation: route them through the product route of their build, `node-backend-cli` for a Node.js-built skill. User and developer guides stay `documentation`.\n" +
             '\n' +
             'Explicit task scope and the closest repository instructions take precedence over filename heuristics.',
+        }),
+      ]),
+    }),
+    // Every write-capable worker carries the history-rewrite ban in its own contract (issue #825):
+    // the eager `worker-git-history` include renders between the delegation mandate's closing
+    // `model-tiers` pointer and `## Recommended skills`. Declared after
+    // `delegation-mandate-model-tiers`, whose pointer it anchors on.
+    Object.freeze({
+      id: 'worker-git-history',
+      edits: Object.freeze([
+        Object.freeze({
+          from:
+            '**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.\n' +
+            '\n' +
+            '## Recommended skills',
+          to:
+            '**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.\n' +
+            '\n' +
+            WORKER_GIT_HISTORY +
+            '\n' +
+            '## Recommended skills',
         }),
       ]),
     }),

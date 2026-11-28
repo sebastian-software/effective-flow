@@ -339,7 +339,7 @@ pr-thread-bound-writer
 when: before any call to a host PR-create operation that takes no explicit head (a thread-bound writer, such as T3 Code's `pull_request_create`)
 ```
 
-10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. In hidden mode pass `visibility: hidden` with it, so the helper refuses a title, body, or head branch that names Effective Flow. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — and as its `head` the exact head branch of the committed handoff, or on a direct invocation the checked-out branch of step 1, never one derived from the main checkout; set the execution root as its `cwd`, and invoke the helper's PR-create mutation. In hidden mode pass `visibility: hidden` with it, so the helper refuses a title, body, or head branch that names Effective Flow. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
     - **Never re-run PR creation after `mutationMayHaveSucceeded`:** if the structured error carries
       `mutationMayHaveSucceeded: true`, the pull request may already exist and repeating the
       mutation would create a duplicate for the same head. Resolve it by repeating the step 8

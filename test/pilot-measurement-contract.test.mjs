@@ -30,7 +30,9 @@ test('the workflow contract keeps observation local, anonymous, and unable to ch
     'It never selects an execution profile',
     'links an observation to a pull request or workflow record',
     "changes the merge gate's result",
-    'Never place the raw capability or observation identifier',
+    "the helper keeps the observation's capability in its own capability file and never returns it",
+    'are non-secret references',
+    'Keep them out of chat, delegation messages, and pull-request artifacts',
     'observer-only execution never invokes this operation',
     'never turn an observation failure into a merge blocker',
   ]) {
@@ -46,6 +48,20 @@ test('the workflow contract keeps observation local, anonymous, and unable to ch
   );
 });
 
+// Invariant: the helper keeps the observation capability, so the finalize payload the workflow
+// sends carries none and the core reads it back from the capability file (issue #813).
+test('finalization sends no capability and the core authenticates from its capability file', () => {
+  const finalization = fragment.slice(fragment.indexOf('### Phase 6 observation finalization'));
+  const payload = finalization.slice(
+    finalization.indexOf('```json'),
+    finalization.indexOf('```', finalization.indexOf('```json') + 7),
+  );
+  assert.match(payload, /"observationId"/);
+  assert.doesNotMatch(payload, /capability/);
+  assert.match(core, /authenticate\(handle\.capability, reservation\.capabilityHash\)/);
+  assert.doesNotMatch(core, /authenticate\(input\.capability/);
+});
+
 // Invariant: reservation precedes gate work and every ending finalizes once before wisdom deletion.
 test('reservation, correction counters, and exactly-once finalization are placed at observable boundaries', () => {
   ordered(
@@ -55,9 +71,10 @@ test('reservation, correction counters, and exactly-once finalization are placed
     '### Phase 1:',
   );
   ordered(
-    mergeGate,
+    mergeGate.replace(/\s+/g, ' '),
     '### Phase 6: Summary',
-    'Phase 6 observation finalization',
+    'finalize a reserved or restored pilot observation only if it has not already been finalized',
+    "per `pilot-measurement`'s Phase 6",
     'Delete the wisdom file',
   );
   assert.match(fragment, /Run this section only after Phase 0 has resolved a non-observer/);
@@ -68,6 +85,20 @@ test('reservation, correction counters, and exactly-once finalization are placed
   );
   assert.match(fragment, /unexpected workflow failure[\s\S]*terminal outcome `failed`/);
   assert.match(fragment, /finalization failure leaves the current merge\/report result unchanged/);
+});
+
+test('the gate retries only explicit pending handle cleanup without changing the outcome', () => {
+  const finalization = fragment
+    .slice(fragment.indexOf('### Phase 6 observation finalization'))
+    .replace(/\s+/g, ' ');
+  ordered(
+    finalization,
+    '`finalized-cleanup-pending` confirms the record is durable but not the handle invalidation',
+    'In this case only, repeat the identical request once',
+    'If the retry does not confirm cleanup, say so without identifiers',
+    'This does not change the merge/report result or imply a pilot suspension',
+    'Do not retry an ambiguous mutation',
+  );
 });
 
 // Invariant: only an actually dispatched correction increments a counter.
@@ -130,6 +161,9 @@ test('the CLI is thin and maps every failure to one non-echoing envelope and std
   );
 });
 
+// Invariant: deletion removes only the requested generation directory plus that generation's
+// capability-file directory `pilot-observation-handles/<opaque generationId>/`, the latter by
+// `unlink` and `rmdir` alone, never by a recursive `rm`.
 test('mutations route through the Git/runtime guard and deletion remains generation-scoped', () => {
   assert.match(core, /gitCall\(deps\.runner, root, \['ls-files', '--', '\.effective-flow\/'\]\)/);
   assert.match(core, /\['check-ignore', '--no-index', '-q', '--', target\]/);
@@ -138,6 +172,22 @@ test('mutations route through the Git/runtime guard and deletion remains generat
   assert.match(core, /path\.dirname\(target\) !== parent/);
   assert.match(core, /path\.basename\(target\)\.startsWith\(`\$\{input\.generationId\}-`\)/);
   assert.doesNotMatch(core, /rm\([^\n]*(?:runtimeDirectory|\.effective-flow)/);
+  assert.match(
+    core,
+    /return path\.join\(observationHandleRoot\(context\), opaque\(generationId\)\);/,
+  );
+  assert.match(
+    core,
+    /'check-ignore', '--no-index', '-q', '--', `\.effective-flow\/\$\{HANDLE_ROOT\}`/,
+  );
+  const removal = core.slice(
+    core.indexOf('async function removeObservationHandles('),
+    core.indexOf('\n}\n', core.indexOf('async function removeObservationHandles(')),
+  );
+  assert.match(removal, /observationHandleDirectory\(context, generationId\)/);
+  assert.match(removal, /await unlink\(path\.join\(directory, name\)\)/);
+  assert.match(removal, /await rmdir\(directory\)/);
+  assert.doesNotMatch(removal, /\brm\(|recursive/);
 });
 
 test('closed schemas reject unknown keys and final records omit raw timing continuity material', () => {

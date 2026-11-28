@@ -1,6 +1,6 @@
 ---
 description: "Internal sub-file of apply-review: issue-tracker integration, the external-target contract, and the complete tracker flow. Loaded by tools/apply-review.md whenever the resolved tracker target is not local."
-contextBudget: 400
+contextBudget: 401
 ---
 
 # Effective Flow Apply Review – Remote mode
@@ -217,8 +217,9 @@ incomplete until merge reconciliation. `wontfix` findings keep their existing de
 ### Phase 7/8 remote
 
 Final validation and summary as in local mode; the summary additionally names the resolved tracker
-target, direct finding references, created PRs, any optional legacy container mechanism/epic, and
-findings retained for post-merge reconciliation. On T3 Code, each pull-request link that failed, or
+target, direct finding references, created PRs with each one's count of findings its PR review
+publication published, any optional legacy container mechanism/epic, and findings retained for
+post-merge reconciliation. On T3 Code, each pull-request link that failed, or
 was not made because the target PR is not open or not of this repository, is one line of the
 summary, never a run failure.
 

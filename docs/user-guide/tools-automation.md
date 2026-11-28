@@ -57,6 +57,10 @@ residual risk of this consent. A repository whose visibility cannot be read is t
   branch – the configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main` – and the
   plan lives in a worktree of the run's own, so your checkout is never touched. External
   trackers are not supported for issue sources.
+  If the host can no longer wait for issue classification in the current turn and can only notify
+  Autopilot later (for example after a T3 Code wait times out), Autopilot stops without writing
+  anything and gives the command to start again for the same issue. It does not resume when
+  classification finishes later. Where the host can still wait in the same turn, it does.
 - **One run per issue, many issues in parallel.** An issue-sourced run claims its issue when it
   starts and holds the claim until it ends, with or without a pull request. A second autopilot run,
   an Issue Buddy pass or `plan-issue` on the same issue stops (or, in an Issue Buddy batch, skips
@@ -79,7 +83,9 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
 ### What it does
 
 1. **Plan.** For an issue, Issue Buddy plans it, runs the deep plan review and publishes a
-   plan-only draft pull request. Autopilot then checks out the plan branch in a worktree of its own,
+   plan-only draft pull request. Issue Buddy formats the plan with the project's installed
+   formatter before it publishes, and publishes it as written when the project names no Markdown
+   formatter. Autopilot then checks out the plan branch in a worktree of its own,
    runs the configured `worktree.setup` there, and works with the plan exactly as published. For a plan file, the deep plan review always runs on the file itself. When
    the issue's plan is already on the base branch, autopilot continues with that one open plan as
    a plan source; no matching plan, several matches, or a match only in the plan archive stop the
@@ -171,6 +177,9 @@ These cases produce **no** pull request:
 - an issue that Issue Buddy skips (for example an untrusted author, an author whose permission the
   forge refused to state, or an existing plan branch),
   judges not ready, or cannot finish (a branch or forge failure);
+- an issue whose project names a Markdown formatter that Issue Buddy cannot call directly
+  (`FORMATTER_UNAVAILABLE`): the pass stops before planning, and so does autopilot. The remedy is
+  an installed formatter that the host instructions allow to be called directly;
 - a preflight failure;
 - a record whose content check blocks it (for example a secret in a reason): the record is never
   published, and the blocker is reported locally;

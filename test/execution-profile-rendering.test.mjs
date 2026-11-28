@@ -509,7 +509,8 @@ test('the pilot fragments render their own build target and measure portable run
 // merge-conflict resolver, and the unsupported-environment pointers and forbidden substitutes in the
 // code validator, test writer and merge-conflict resolver, and build's targeted scope, the shared
 // environment-signature classes and the failure-attribution pointer in the code validator and the
-// merge-conflict resolver, and the project-routing skill-source paragraph in every worker embedding it;
+// merge-conflict resolver, and the project-routing skill-source paragraph in every worker embedding it,
+// and the worker-git-history ban in every write-capable worker except the merge-conflict resolver;
 // any other configuration change or body change fails; the one declared added worker has no
 // base sidecar and any other base-worker membership change fails.
 // The pinned stdout names each delta and exactly the workers showing it.
@@ -549,8 +550,71 @@ test('the executable baseline proof preserves every Quality native configuration
       'Expected delta code-validator-build-validation-budget: effective-flow-code-validator\n' +
       'Expected delta merge-conflict-resolver-environment-signature-classes: effective-flow-merge-conflict-resolver\n' +
       'Expected delta project-routing-skill-sources: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-test-writer\n' +
+      'Expected delta worker-git-history: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-marketing-writer, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta code-span-placeholder-pairs: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
   );
+});
+
+// Invariant: every write-capable worker carries the history-rewrite ban in its own built contract
+// on all three targets, Fast and tier variants included, because orchestrator-side fragments do not
+// reach a leaf worker (issue #825). The merge-conflict resolver keeps its own, stricter ban and does
+// not embed the fragment. Variants come from the built native inventories, so a new one is covered.
+test('the worker-git-history ban renders exactly once in every write-capable worker contract', () => {
+  const GIT_HISTORY_WORKERS = [
+    'code-documenter',
+    'code-validator',
+    'docs-writer',
+    'e2e-tester',
+    'generic-implementer',
+    'generic-product-implementer',
+    'marketing-writer',
+    'nodejs-implementer',
+    'rust-implementer',
+    'test-writer',
+    'ui-implementer',
+  ].map((name) => `effective-flow-${name}`);
+  const paragraph = readFileSync(join(ROOT_DIR, 'src/shared/worker-git-history.md'), 'utf8').trim();
+  assert.match(paragraph, /^\*\*Git history\.\*\* /);
+  const count = (text) => text.split(paragraph).length - 1;
+  const codexBody = (path) => {
+    const content = readFileSync(path, 'utf8');
+    const match = /developer_instructions = '''([\s\S]*?)'''/.exec(content);
+    assert.ok(match, `${path} must carry a developer_instructions body`);
+    return match[1];
+  };
+  const inventory = (harness) =>
+    parseNativeAgentInventory(
+      readFileSync(join(distRoot, harness, 'effective-flow/native-agent-inventory.json'), 'utf8'),
+    );
+  const variantsOf = (base, { fastWorkers, tierWorkers }) =>
+    [...fastWorkers, ...tierWorkers].filter(
+      (name) => name === `${base}-fast` || new RegExp(`^${base}-tier-[a-z]+$`).test(name),
+    );
+  const claudeInventory = inventory('claude');
+  const codexInventory = inventory('codex');
+  const contracts = (base) => [
+    ...[base, ...variantsOf(base, claudeInventory)].map((name) => {
+      const path = join(distRoot, 'claude/agents', `${name}.md`);
+      return [path, readFileSync(path, 'utf8')];
+    }),
+    ...[base, ...variantsOf(base, codexInventory)].map((name) => {
+      const path = join(distRoot, 'codex/agents', `${name}.toml`);
+      return [path, codexBody(path)];
+    }),
+    [
+      join(distRoot, 'portable/effective-flow/workers', `${base}.md`),
+      readFileSync(join(distRoot, 'portable/effective-flow/workers', `${base}.md`), 'utf8'),
+    ],
+  ];
+
+  for (const base of GIT_HISTORY_WORKERS) {
+    for (const [path, text] of contracts(base)) {
+      assert.equal(count(text), 1, `${path} must carry the worker-git-history paragraph once`);
+    }
+  }
+  for (const [path, text] of contracts('effective-flow-merge-conflict-resolver')) {
+    assert.equal(count(text), 0, `${path} must not embed the worker-git-history paragraph`);
+  }
 });
 
 // The worker contract and review tool carry the mandate but no goal-completion include.

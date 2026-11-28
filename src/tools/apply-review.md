@@ -1,6 +1,6 @@
 ---
 description: "Reads a review report file, evaluates developer notes, hands rejected findings as decision candidates to the central effective-product skill (ADR only for a permanent decision) and delegates implementable findings in parallel to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} or {{SKILL:docs}}."
-contextBudget: 1071
+contextBudget: 1072
 ---
 
 # Effective Flow Apply Review
@@ -469,7 +469,7 @@ Example (across actions) with five findings over multiple actions:
    - the literal line `Next steps: suppressed` on its own line. Each delegated skill is
      user-invocable and would otherwise close a per-finding recommendation into the chat, although
      it returns its result here and this run is an intermediate result of `{{SKILL:apply}}`.
-   - the completion protocol
+   - the completion protocol, returning each per-finding workflow's outcome as `worktree-integration` retains it
    - for eligible longer work, the compact progress context from `shared/subagent-progress.md`;
      apply-review retains the single overview. Each overlap component is a returning orchestrator:
      give every per-finding workflow its own child association and await its terminal result;
@@ -650,7 +650,8 @@ options:
 ```
 
 3. Return the primary association, checkpoint/decision, that summary and the run's end state — whether a pull request was opened and which source
-   remains unprocessed — to `{{SKILL:apply}}`, which closes the run with its own next-step block.
+   remains unprocessed, with each published-finding count returned under `worktree-integration` —
+   to `{{SKILL:apply}}`, which closes the run with its own next-step block.
    Name no follow-up invocation of your own here.
 
 ## Rules

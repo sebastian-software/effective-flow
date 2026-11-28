@@ -502,8 +502,9 @@ when: the completion action created or reused a pull request and the automatic P
 ```
 
 Retain the verified source plan/issue association, any established archive move, complete planning
-basis already read and actual completion outcome (branch retained, PR opened, or merged) across
-cleanup and returning delegations as ordinary context, without a new envelope field. The final
+basis already read and actual completion outcome (branch retained, PR opened, or merged), with each
+pull request's published-finding count from "PR review publication", across cleanup and returning
+delegations as ordinary context, without a new envelope field. The final
 emitter uses these in the shared `next-steps` selection even after automatic merge; never rebuild a
 source path from a removed execution worktree. Suppressed delegations still emit no block.
 

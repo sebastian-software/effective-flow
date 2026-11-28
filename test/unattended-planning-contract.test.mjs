@@ -260,6 +260,10 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
+        'asked. It never counts a withheld finding or one whose normalized signature already appears under',
+      ],
+      [
+        'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
         'Governed by the configuration key `delivery.prReview` with the values `ask` (default), `always`, and',
       ],
       [
@@ -885,14 +889,18 @@ test('all four artifact results normalize only the response and operational fail
     !completion.slice(forcedFirst, rerun).includes('. '),
     'consolidation precedence spans more than one sentence',
   );
-  // Invariant: Completion writes the forced result, runs the final mechanical plan-lint, checks
-  // publication metadata, then normalizes, in that order.
+  // Invariant: Completion writes the forced result, applies the direct-call formatter rule, runs
+  // the final mechanical plan-lint, checks publication metadata, then normalizes, in that order.
   const forced = completion.indexOf('Write any forced `Revision required`');
-  const finalLint = completion.indexOf('then run the final mechanical plan-lint', forced);
+  const format = completion.indexOf(
+    "Unless the caller's brief forbids project tools, format only the plan file",
+    forced,
+  );
+  const finalLint = completion.indexOf('Then run the final mechanical plan-lint', format);
   const lint = completion.indexOf('`node <skill-root>/scripts/plan-lint.mjs publication-metadata`');
   const normalize = completion.indexOf("Normalize `Review result` from step 2's `reviewResult`");
   assert.ok(
-    forced !== -1 && forced < finalLint && finalLint < lint && lint < normalize,
+    forced !== -1 && forced < format && format < finalLint && finalLint < lint && lint < normalize,
     'Completion steps out of order',
   );
   const planning = contractSection(unattended, '### Entry: `plan`', '### Entry: `plan-review`');
@@ -1079,6 +1087,28 @@ test('the autopilot file review resolves its execution root from the checkout th
   );
 });
 
+// Invariant (issue #800): every unattended `DONE` entry formats its plan only through a direct
+// call of an already-present formatter executable, unless the caller's brief forbids project tools,
+// and otherwise leaves the plan unformatted and reports `formatter: unavailable` in `Notes:`. This
+// step owns the one definition of a direct call (Issue Buddy's preflight points here), and `plan`
+// Phase 7 step 2 hands unattended runs to it and keeps no second, looser copy.
+test('unattended Completion formats only through a direct call and reports an unavailable formatter', () => {
+  const completion = contractSection(shared('unattended-planning'), '### Completion');
+  assert.doesNotMatch(completion, /finish formatting/);
+  for (const literal of [
+    "Unless the caller's brief forbids project tools, format only the plan file, and only through a direct call of an already-present formatter executable, changing no other path.",
+    "A direct call runs the executable the project's instructions name, keeping the options its command carries (such as `--write`) and replacing any broad file argument with the single plan path, and appends the plan path when it carries none: a package script whose command is a single executable resolves to that executable with those options, and a package-manager-generated bin shim (such as `node_modules/.bin/<name>`) counts; a package manager, `pnpm exec`, `npx`, a runner, an install, a download or an executable that accepts no path never does.",
+    'Otherwise leave the plan unformatted and add `formatter: unavailable` to `Notes:`.',
+    'skipped publication and `formatter: unavailable` when applicable',
+  ])
+    includesLiteral(completion, literal);
+  const phase7 = contractSection(source('tools', 'plan.md'), '### Phase 7: Completion', '\n## ');
+  includesLiteral(
+    phase7,
+    '2. Format only the new plan file if a formatter for Markdown is clearly configured (an unattended run formats per `unattended-planning` "Completion" step 1 instead);',
+  );
+});
+
 // Invariant (issue #799): only the `plan` entry scans its own plan with unattended strictness after
 // the final lint and before the step 2 metadata call that binds the blob, corrects in exactly one
 // round, and fails closed with finding ids only, so plan content the later publish would refuse
@@ -1097,7 +1127,7 @@ test('the plan entry self-scans its plan in Completion step 1 with one bounded c
   ])
     includesLiteral(completion, literal);
   // The scan sits inside step 1, after the final lint and before the step 2 metadata call.
-  const finalLint = completion.indexOf('then run the final mechanical plan-lint');
+  const finalLint = completion.indexOf('Then run the final mechanical plan-lint');
   const scan = completion.indexOf('`node <skill-root>/scripts/plan-publication.mjs scan`');
   const stepTwo = completion.indexOf(
     '2. Run `node <skill-root>/scripts/plan-lint.mjs publication-metadata`',

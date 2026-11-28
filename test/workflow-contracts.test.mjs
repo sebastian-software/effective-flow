@@ -3186,12 +3186,7 @@ test('no source outside the retired-key contract pairs a retired key with fallba
 // Each fragment is pinned by the *trigger token* of its decision point, never by the whole
 // sentence, so rewording the clause stays free while dropping the decision point fails.
 test('every merge-gate lazy pointer names the decision point that loads it', () => {
-  const triggers = new Map(
-    [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)].map((match) => [
-      match[1].trim(),
-      (match[2] ?? '').trim(),
-    ]),
-  );
+  const pointers = [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)];
 
   const pinned = [
     // Deferred by the context-slimming work:
@@ -3303,6 +3298,12 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
         'Phase 0 having resolved a non-observer merge or report mode immediately before Phase 1',
     },
     {
+      fragment: 'pilot-measurement',
+      trigger: /observer-only Phase 5\.5.*suspended observation handle/,
+      decision:
+        'an observer-only wake with a suspended observation handle before issue observation',
+    },
+    {
       // A delegated gate run learns its host only from the `Host: t3-code` input line, so a clause
       // naming only the T3 Code environment would leave every delegated run on T3 without the
       // fragment and waiting through its non-T3 path. Both halves are required.
@@ -3327,21 +3328,21 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
   ];
 
   for (const { fragment, trigger, decision } of pinned) {
-    const when = triggers.get(fragment);
+    const triggers = pointers
+      .filter((match) => match[1].trim() === fragment)
+      .map((match) => (match[2] ?? '').trim());
     assert.ok(
-      when !== undefined,
+      triggers.length > 0,
       `src/tools/merge-gate.md must keep its lazy-include pointer for ${fragment}`,
     );
-    assert.notEqual(
-      when,
-      '',
+    assert.ok(
+      triggers.every(Boolean),
       `the ${fragment} pointer in src/tools/merge-gate.md must carry a non-empty when: clause - ` +
         `without it the fragment ships with no documented moment to load it`,
     );
-    assert.match(
-      when,
-      trigger,
-      `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
+    assert.ok(
+      triggers.some((when) => trigger.test(when)),
+      `the ${fragment} pointer must name its decision point (${decision}); got: ${triggers.join('; ')}`,
     );
   }
 });
@@ -3439,7 +3440,10 @@ test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 
     ),
     'condition 1 must stay the merge authorization and be excluded only from the projection',
   );
-  assert.match(finalization, /`merged` only when a fresh Phase-5 read verifies the merge/);
+  assert.match(
+    finalization,
+    /`merged` only when a fresh Phase-5 read or the observer-only wake verifies the merge/,
+  );
   assert.match(
     finalization,
     /`failed` for a reserved merge-mode run that did not reach a verified merge/,
@@ -3453,9 +3457,9 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
   const fragment = source('src/shared/pilot-measurement.md');
   const phase6 = section(gate, '### Phase 6: Summary', '\n## ');
   ordered(
-    phase6,
-    'Before step 1',
-    '`## Phase 6 observation finalization`',
+    prose(phase6),
+    'Before step 1, finalize a reserved or restored pilot observation only if it has not already been finalized',
+    "per `pilot-measurement`'s Phase 6",
     '1. Delete the wisdom file',
   );
   assert.equal(
@@ -5406,7 +5410,7 @@ test('the delegated merge-gate run validates Associated plan at Entry and reject
   // delegated run's Entry, which applies the same check by reference as a backstop.
   assert.match(
     caller,
-    /Before every dispatch, re-dispatches included, or an inline run, resolve it through `plan-reference-resolve` with `cwd` the root `plan\.dir` resolves against \(the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode\) and `planDir` the configured `plan\.dir`; it passes only on `resolved` with `data\.exact` true inside `<plan\.dir>\/` or `<plan\.dir>\/archive\/`\. Drop a line that fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it/,
+    /Before every dispatch, re-dispatches included, or an inline run, resolve it through `node <skill-root>\/scripts\/effective-flow-mechanics\.mjs plan-reference-resolve <<< '\{"cwd":"<root>","planDir":"<plan\.dir>","reference":"<repo-relative path>"\}'`, spelled per the call rule of Phase 0 step 2, with `<root>` the root `plan\.dir` resolves against \(the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode\) and `<plan\.dir>` the configured `plan\.dir`; it passes only on `resolved` with `data\.exact` true inside `<plan\.dir>\/` or `<plan\.dir>\/archive\/`\. Drop a line that fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it/,
   );
   // The criteria sit in the eager core, ahead of the lazy delegated-run pointer.
   ordered(
@@ -20433,8 +20437,9 @@ test('deliver is exposed with its shipped helper and continues automatically aft
     'the manifest confirmation must be the sole approval and authorize the automatic continuation',
   );
   // The rule names its exceptions exhaustively: only the conditional questions of step 1.1, the
-  // resume and release questions for a retained partial-diff record and the upstream questions,
-  // may precede the manifest answer, so no further routine question can be added unnoticed.
+  // resume and release questions for a retained partial-diff record, the writer observation's
+  // provider question with its no-answer stop, and the upstream questions, may precede the
+  // manifest answer, so no further routine question can be added unnoticed.
   const additions = boundedSlice(
     prose(deliver),
     'sole routine approval. Its only additions',
@@ -20444,6 +20449,7 @@ test('deliver is exposed with its shipped helper and continues automatically aft
     'conditional questions of step 1.1',
     'can precede it',
     'the resume and release questions for a retained `partial-diff` record',
+    "the writer observation's provider question, whose unanswered, skipped, or non-interactive answer stops the run",
     'the upstream questions.',
     // The committed-range route's replacement of the manifest confirmation is named here too.
     'The committed-range route replaces it with at most its provider question or its focused publish question.',
@@ -20643,6 +20649,9 @@ test('deliver lazily loads a resume entry that maps the steps of a resumed deliv
     'Then call `worktree inspect`',
     '```lazy-include\ndeliver-partial-diff-resume\n',
     'Unless a record was resumed',
+    // The publication-writer observation sits between the resume entry and the upstream check.
+    'observe the pull-request writer',
+    'Call `publication-preflight {hostPolicy, writer, source: {branch}}`',
     'call `upstream-status {root: sourceRoot, fetch: true}`',
   );
   const triggers = new Map(
@@ -20865,21 +20874,233 @@ test('a ledger release proves one locked snapshot and keeps every discarded file
   );
 });
 
-// Invariant: the committed-range route is named in deliver's helper operation list, yet it is never
-// spliced into the `upstream-status`, `fast-forward`, `bind-manifest` adjacency that the step 1.1
-// pin and the source-upstream-sync flow depend on.
+// Invariant: the committed-range and publication-preflight operations are named in deliver's
+// helper operation list, yet neither is spliced into the `upstream-status`, `fast-forward`,
+// `bind-manifest` adjacency that the step 1.1 pin and the source-upstream-sync flow depend on.
 test('deliver names committed-range in its operation list outside the pinned helper adjacency', () => {
   const deliver = source('src/tools/deliver.md');
   assert.match(
     prose(deliver),
-    /`reconcile`, and `committed-range` operations/,
-    'the helper operation list must name committed-range',
+    /`reconcile`, `committed-range`, and `publication-preflight` operations/,
+    'the helper operation list must name committed-range and publication-preflight',
+  );
+  const adjacency = boundedSlice(deliver, '`upstream-status`, `fast-forward`', '`bind-manifest`');
+  for (const operation of ['committed-range', 'publication-preflight']) {
+    assert.ok(
+      !adjacency.includes(operation),
+      `${operation} must not sit between upstream-status and bind-manifest`,
+    );
+  }
+});
+
+// Invariant (issue #768): deliver observes the pull-request writer in step 1.1 before any source
+// or delivery mutation. The host policy is set first from running-environment evidence; the helper
+// calls and their provider question run only under an unrestricted policy, from the context `pr`
+// publishes in; and an unsupported writer stops before the upstream check, so no fast-forward,
+// selection, branch, worktree, index, commit, push or forge mutation is attempted.
+test('deliver step 1.1 observes the publication writer before upstream-status', () => {
+  const deliver = source('src/tools/deliver.md');
+  const step1 = prose(
+    boundedSlice(
+      deliver,
+      '### 1. Establish immutable source evidence',
+      '\n2. Resolve `language.git`',
+    ),
+  );
+  ordered(
+    step1,
+    'Unless a record was resumed, observe the pull-request writer before any source or delivery mutation',
+    'Read `tracker.remoteToolOverride`, `delivery.baseBranch`, and `delivery.branchPrefix`',
+    'Set `hostPolicy` first, from explicit running-environment evidence only',
+    "Only under an `unrestricted` policy, call the remote helper's `repository-resolve` and then its `probe`, each with `{cwd: <RUNTIME_STATE_ROOT>}`",
+    'On `AMBIGUOUS_HOST`, ask once for `github` or `forgejo`',
+    'Call `publication-preflight {hostPolicy, writer, source: {branch}}` in writer scope',
+    'On `unsupported`, stop with the early report before any fast-forward, selection, branch, worktree, index, commit, push, or forge mutation',
+    'Then call `upstream-status {root: sourceRoot, fetch: true}`',
+  );
+  for (const token of [
+    'no base-branch resolution runs here',
+    "It is `restricted` only when that evidence names a different PR-creation path as the allowed one or denies the helper's PR write",
+    'an approval prompt for a command is not a restriction',
+    'a Git push capability, a checkout path, or a generic PR tool is never evidence',
+    'an unanswered, skipped, or non-interactive answer ends the run with one notice naming `AMBIGUOUS_HOST`, with nothing changed by this delivery',
+    'any other error envelope from either call gives `{ok: false, code, pullRequestCreate: null}`',
+    'each with `provider` when `tracker.remoteToolOverride` is not `auto`: the provider override is that configured value, else the answer below, and it is carried on every helper call of this delivery',
+    "Retain the evidence and the provider override for step 3.3, `{{SKILL:pr}}`, and the committed-range route's provider question",
+  ]) {
+    assert.ok(step1.includes(token), `step 1.1 writer observation: ${token}`);
+  }
+});
+
+// Invariant (issue #768): the head/base classification runs at step 3.3, after the base refresh
+// (3.1) and the branch name (3.2) and before the step that creates the branch and worktree; an
+// unsupported pair stops before any branch, worktree, index, commit, push or forge mutation, and a
+// supported one continues with no new question. The abort boundaries forbid working around it.
+test('deliver step 3.3 classifies the head/base pair before creating the branch', () => {
+  const deliver = source('src/tools/deliver.md');
+  const step3 = prose(
+    boundedSlice(
+      deliver,
+      '### 3. Create the isolated delivery branch',
+      '### 4. Transfer and validate the confirmed selection',
+    ),
+  );
+  ordered(
+    step3,
+    '1. Revalidate the source receipt and runtime root. Refresh the configured remote base',
+    '2. Derive a collision-safe',
+    '3. Verify the publication path: call `publication-preflight` in pair scope',
+    '`head` the step 3.2 branch, and `base` the resolved local base branch',
+    'On `unsupported`, stop with the pair-scope report before any branch, worktree, index, commit, push, or forge mutation',
+    'on `supported`, continue with no question',
+    '4. Create a fresh branch/worktree from the refreshed base',
+    '5. Run setup only for the newly owned receipt',
+  );
+  const boundaries = prose(section(deliver, '## Abort boundaries', '\n## '));
+  assert.ok(
+    boundaries.includes(
+      'An unsupported publication path (step 1.1 or 3.3) stops before any artifact is created. Never switch or push the source branch, bypass host tool policy, or merge to work around it.',
+    ),
+    'the abort boundaries forbid working around an unsupported publication path',
+  );
+  assert.match(
+    prose(section(deliver, '### 6. Publish only the verified commits', '\n### ')),
+    /step 1\.1's provider override as its explicit provider override when one exists/,
+    'the early provider override reaches pr, so the run asks no more often than before',
+  );
+});
+
+// Invariant (issue #768): the stop text is paid only when a stop is possible. deliver carries the
+// remote-helper-contract and deliver-publication-preflight pointers at step 1.1 and never inlines
+// the host-tool description, the stop report or the alternatives in its always-loaded core. The
+// fragment's reports name head, base, writer and reasons, the early one the configured base and a
+// conditional head, and list only supported alternatives.
+test('deliver lazily loads the publication-path stop and the helper call contract', () => {
+  const deliver = source('src/tools/deliver.md');
+  const fragment = prose(source('src/shared/deliver-publication-preflight.md'));
+  const triggers = new Map(
+    [...deliver.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.equal(
+    triggers.get('deliver-publication-preflight'),
+    'the host policy is restricted or publication-preflight returns unsupported',
+  );
+  assert.equal(
+    triggers.get('remote-helper-contract'),
+    'the step 1.1 writer observation calls the remote helper',
+  );
+  const step1 = boundedSlice(
+    deliver,
+    '### 1. Establish immutable source evidence',
+    '\n2. Resolve `language.git`',
+  );
+  ordered(
+    step1,
+    'Set `hostPolicy` first',
+    '```lazy-include\ndeliver-publication-preflight\n',
+    '```lazy-include\nremote-helper-contract\n',
+    'call `upstream-status {root: sourceRoot, fetch: true}`',
+  );
+  assert.doesNotMatch(deliver, /^```include\ndeliver-publication-preflight\n/m);
+  for (const inlined of [
+    '### Host-tool writer',
+    '### Stop report',
+    'host-tool-bound-to-other-branch',
+    'is not a delivered pull request',
+    '<subject slug>',
+  ]) {
+    assert.ok(!deliver.includes(inlined), `the deliver core must not inline: ${inlined}`);
+  }
+  for (const token of [
+    '`{kind: "host-tool", name, explicitHead, boundBranch}`, read from that tool\'s own schema and description',
+    'Without such a tool the writer is `{kind: "provider-helper", probe: null}`',
+    'Under a restricted policy no helper call runs and no provider question is asked',
+    'every reason in the returned order with the capability it lacks',
+    "give the helper's structured remediation",
+    'the configured `delivery.baseBranch` value verbatim, a display value and not a resolved base',
+    'a fresh `<prefix>/deliver/<subject slug>` branch (`deliver/<subject slug>` with an empty prefix) for a selected change, or the current branch `<name>` when commits that already exist are published',
+    'nothing was changed by this delivery',
+    "names every retained record this run's Release question already released",
+    'names the intended head and the base from the result',
+    'no delivery branch, worktree, commit, push or pull request was created',
+    'List only the supported alternatives',
+    "run `{{SKILL:deliver}}` again from a context whose host policy permits the provider helper's PR write",
+    'create and publish the branch outside this workflow',
+    'a compare URL or a manual handoff is not a delivered pull request',
+    'Never switch, push or publish the source branch',
+    'never use a different transport',
+  ]) {
+    assert.ok(fragment.includes(token), `publication-path stop: ${token}`);
+  }
+});
+
+// Invariant (issue #768): a resumed delivery runs the writer observation and the pair
+// classification after step 1.2 and before step 4.3, against the record's branch and ledger base,
+// and every stop there rolls the adopted record back to `aborted`, never leaving it `active`, so
+// the record stays resumable. Step 3 stays skipped except that classification.
+test('the resume entry classifies the publication path before step 4.3 with an aborted rollback', () => {
+  const resume = prose(source('src/shared/deliver-partial-diff-resume.md'));
+  assert.ok(
+    boundedSlice(resume, 'Skipped:', 'Runs, in this order:').includes(
+      'steps 1.4, 2, 3, 4.1 and 4.2 (of step 3 only the step 3.3 classification runs, below)',
+    ),
+    'step 3 is skipped on resume except the step 3.3 classification',
+  );
+  const runs = boundedSlice(resume, 'Runs, in this order:', 'From the ledger:');
+  ordered(
+    runs,
+    'Step 1.2, with hidden mode',
+    "Step 1.1's writer observation, carrying the provider override on every helper call, then the step 3.3 classification with `head` the record's branch, `base` `resume.base.branch`, and `source` that fresh observation",
+    'Every stop of either, an `unsupported` result, an unanswered provider question, or a helper or `publication-preflight` error envelope, is a controlled stop before step 4.3',
+    'move the adopted record back to `aborted` with one `worktree transition`, never leaving it `active`',
+    'A fresh delivery execution-location receipt',
+    'Step 4.3.',
+  );
+});
+
+// Invariant (issue #768): the early step 1.1 provider answer is the committed-range route's single
+// provider question, so the route never asks a second one, and it is passed to condition 3's
+// repository-resolve, probe and pr-list so none can return AMBIGUOUS_HOST again.
+test('committed-range counts the step 1.1 provider answer as its provider question', () => {
+  const fragment = source('src/shared/deliver-committed-range.md');
+  assert.ok(
+    prose(
+      boundedSlice(fragment, '3. **No existing PR.**', '4. **No uncertain attempt.**'),
+    ).includes(
+      "all three carry step 1.1's provider override, the configured `tracker.remoteToolOverride` when not `auto`, else its provider answer, as their explicit `provider` when there is one",
+    ),
+    'condition 3 passes the provider override to resolve, probe and pr-list',
   );
   assert.ok(
-    !boundedSlice(deliver, '`upstream-status`, `fast-forward`', '`bind-manifest`').includes(
-      'committed-range',
+    prose(boundedSlice(fragment, '### Outcomes', '### Handoff')).includes(
+      "An answer to `deliver`'s step 1.1 provider question counts as this question, which is then not asked again",
     ),
-    'committed-range must not sit between upstream-status and bind-manifest',
+    "the early answer is the route's single provider question",
+  );
+});
+
+// Invariant (issue #768): pr opens the pull request with the exact handed-off head branch, never
+// a branch derived from the main checkout, and its head-OID and probe gates still run before the
+// push: step 3 keeps the handed-off OID, step 6 probes without side effects, step 7 requires the
+// exact head to still resolve to that OID.
+test('pr creates the pull request from the handed-off head behind its pre-push gates', () => {
+  const pr = prose(source('src/tools/pr.md'));
+  assert.ok(
+    boundedSlice(pr, '10. Create the PR:', '11. Reverify the published head:').includes(
+      'as its `head` the exact head branch of the committed handoff, or on a direct invocation the checked-out branch of step 1, never one derived from the main checkout',
+    ),
+    'step 10 names the payload head',
+  );
+  ordered(
+    pr,
+    '3. Verify the prepared head: Preserve the resolved head OID as the immutable handoff boundary',
+    '6. Check tool availability: Invoke the helper probe once',
+    'report the structured remediation and abort without side effects',
+    '7. Push the branch: Immediately before the push, require the exact head branch still resolves to the OID preserved in step 3',
+    '10. Create the PR:',
   );
 });
 
@@ -23830,7 +24051,12 @@ test('delivery branch names come from the helper, with no restated strip or suff
     ),
   );
   const deliver = prose(
-    boundedSlice(source('src/tools/deliver.md'), '2. Derive a collision-safe', '3. Create a fresh'),
+    // Step 3.2 ends where the step 3.3 publication-path classification begins.
+    boundedSlice(
+      source('src/tools/deliver.md'),
+      '2. Derive a collision-safe',
+      '3. Verify the publication path',
+    ),
   );
   const publication = prose(
     boundedSlice(
@@ -28064,6 +28290,151 @@ test('every sleep, --watch, pr-checks-wait, Monitor or ScheduleWakeup occurrence
   }
 });
 
+// Invariant: the T3 section states that a non-required job never wakes the session and that a run
+// which must wait for one, where no tool rule governs the wait, hands back to the user instead of
+// polling, and it leaves wake classification to the merge-gate and iterate rules. The paragraph
+// sits between the wait rule and **The tools.**, so it reads as a qualification of the wait rule.
+// A comment a job posts may wake the session, but no rule relies on that wake.
+test('host-pr-watch T3 section hands a wait on a non-required job back to the user', () => {
+  const raw = hostPrWatchT3Section();
+  const heading = raw.indexOf('**Checks that are not required.**');
+  assert.notEqual(heading, -1, 'the T3 section must carry the non-required-checks paragraph');
+  const waitRule = raw.indexOf('**The host owns every pull-request wait.**');
+  assert.notEqual(waitRule, -1, 'the T3 section must carry the wait rule');
+  assert.ok(waitRule < heading, 'the paragraph follows the wait rule');
+  const tools = raw.indexOf('**The tools.**');
+  assert.ok(heading < tools, 'the paragraph precedes **The tools.**');
+  const paragraph = prose(raw.slice(heading, tools));
+  assert.match(paragraph, /non-required check that passes never wakes the session/);
+  assert.match(
+    paragraph,
+    /Where no tool rule below governs the wait, a run that must wait for such a check hands back to the user/,
+  );
+  assert.match(paragraph, /classified by the `merge-gate` and `iterate` wake rules below/);
+  assert.match(paragraph, /may wake the session like any new comment, but no rule relies on it/);
+});
+
+// Invariant (#848): on T3 no merge-gate suspension waits on a pending set whose only completion
+// signal never wakes the session. One "No-wake stop" paragraph between "Bot order" and "Suspend"
+// applies before every suspension, first or resumed, and for kind `checks` after `## Early entry`;
+// the stop is stated once ("Bounds" keeps no `required: false` copy); the caller's Watch warning
+// covers only the cases that can still stall.
+test('host-pr-watch T3 merge-gate path stops instead of suspending when no pending signal can wake the session', () => {
+  const raw = hostPrWatchT3Section();
+  const stopAt = raw.indexOf('**No-wake stop.**');
+  assert.notEqual(stopAt, -1, 'the T3 section must carry the "No-wake stop" paragraph');
+  assert.ok(raw.indexOf('**Bot order**') < stopAt, 'the "No-wake stop" follows "Bot order"');
+  assert.ok(stopAt < raw.indexOf('**Suspend.**'), 'the "No-wake stop" precedes "Suspend"');
+  const stop = prose(boundedSlice(raw, '**No-wake stop.**', '**Suspend.**'));
+  assert.match(stop, /Before any suspension, first or resumed/, 'applies to every suspension');
+  assert.match(
+    stop,
+    near('for kind `checks` after `## Early entry`', '`merge-gate-configured-reviewer`', 80),
+    'for kind checks it runs after Early entry of the configured-reviewer route',
+  );
+  assert.match(stop, /"Report-and-stop, run side" instead of suspending/, 'takes the stop path');
+  assert.match(
+    stop,
+    near(
+      '`mergeGate.requireAllChecks: true`',
+      'every check of a kind `checks` pending set reports `required: false`',
+      120,
+    ),
+    'case (a): requireAllChecks with every pending check non-required',
+  );
+  assert.match(
+    stop,
+    /every pending bot is running by its configured `\.check`/,
+    'case (b): every pending bot is running by its configured check',
+  );
+  assert.match(
+    stop,
+    near('every pending bot is running', 'at least one matching entry being `PENDING`', 160),
+    'case (b) needs a matching PENDING entry',
+  );
+  assert.match(
+    stop,
+    near(
+      'every matching `PENDING` entry reports `required: false`',
+      'no re-trigger answer is outstanding',
+      80,
+    ),
+    'case (b) needs every matching PENDING entry non-required and no re-trigger outstanding',
+  );
+  assert.match(
+    stop,
+    near('quoted as data', 'what the same read already makes actionable', 80),
+    'the report quotes what is already actionable as data',
+  );
+  assert.match(
+    stop,
+    /for kind `checks` each check failing as Phase 2 step 4 defines it/,
+    'the report names failing checks for kind checks',
+  );
+  assert.match(
+    stop,
+    /for kind `bot` each has run bot with items step 5 would hand over/,
+    'the report names has-run bots with items for kind bot',
+  );
+  assert.match(
+    stop,
+    near('by login with their count', 'never their text', 200),
+    'bot items are named by login with their count, never their text',
+  );
+  assert.match(
+    stop,
+    /re-entry helps once the no-wake checks or bots have completed/,
+    'the report says when re-entry helps',
+  );
+
+  const pending = boundedSlice(raw, '**Pending read**', '**Bot order**');
+  assert.match(
+    prose(pending),
+    near('A non-empty set suspends', 'subject to the "No-wake stop"', 160),
+    'the pending read routes a non-empty set through the "No-wake stop"',
+  );
+
+  const bounds = boundedSlice(raw, '**Bounds.**', '**Report-and-stop, run side.**');
+  assert.doesNotMatch(
+    prose(bounds),
+    /required: false/,
+    '"Bounds" keeps no copy of the non-required rule',
+  );
+
+  const inline = prose(boundedSlice(raw, '**Inline run.**', '### iterate: top-level wait'));
+  assert.match(inline, /the "No-wake stop"/, 'the inline run names the "No-wake stop"');
+  assert.doesNotMatch(inline, /optional-check rules/, 'the inline run drops the old rule name');
+
+  const accept = prose(boundedSlice(raw, '**Accept**', '**Watch.**'));
+  assert.match(
+    accept,
+    /the "No-wake stop" ends the run before one/,
+    'the caller accepts that the "No-wake stop" ends the run before a suspension',
+  );
+
+  const watch = prose(boundedSlice(raw, '**Watch.**', '**Wakes and requests.**'));
+  assert.doesNotMatch(
+    watch,
+    /where none of the pending checks is required/,
+    'the Watch warning drops the unconditional check clause',
+  );
+  assert.doesNotMatch(
+    watch,
+    /has-run signal is a configured `\.check` that is not required/,
+    'the Watch warning drops the unconditional bot clause',
+  );
+  assert.match(
+    watch,
+    near('no pending check is required', 'at least one is of unstated requiredness', 80),
+    'the Watch warning covers checks of unstated requiredness',
+  );
+  assert.match(
+    watch,
+    near('configured `\\.check` has not reported yet', 'reports no requiredness', 80),
+    'the Watch warning covers a bot check that has not reported or states no requiredness',
+  );
+});
+
 // Invariant: the fragment names the host tools unqualified, as the host's deferred-tool mechanism
 // loads them, never with an `mcp__` prefix.
 test('host-pr-watch names watch, link and unwatch tools unqualified without an mcp__ prefix', () => {
@@ -28293,13 +28664,20 @@ test('merge-gate delegated-run entry accepts Host and Resumed wait with one Rela
 // Invariant: a T3-path gate run records exactly one observation across its suspensions: a suspend
 // writes the handle to the wisdom file and finalizes nothing, a resume restores it and reserves
 // nothing, the final ending finalizes it once, and a caller-side ending that deletes a wisdom file
-// still holding a handle finalizes it first.
+// still holding a handle finalizes it first. The handle holds only the identifiers and counters,
+// never a capability, which the helper keeps in its own capability file.
 test('pilot-measurement keeps one observation across host-pr-watch T3 suspensions', () => {
   const text = prose(source('src/shared/pilot-measurement.md'));
   assert.match(
     text,
-    /On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an (?:\*\*)?observation handle(?:\*\*)? to the wisdom file/,
+    /On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an (?:\*\*)?observation handle(?:\*\*)? to the wisdom file, holding only `generationId`, `observationId`, and the three counters\./,
   );
+  const suspended = section(
+    source('src/shared/pilot-measurement.md'),
+    '### Suspended observation',
+    '\n### ',
+  );
+  assert.doesNotMatch(suspended, /capability/i, 'the observation handle holds no capability');
   assert.match(
     text,
     /A `Resumed wait:` re-dispatch or wake restores the observation from that handle, keeps counting, and reserves nothing, so the gate run holds exactly one observation, which its final ending finalizes once and then removes the handle\./,
@@ -28321,6 +28699,22 @@ test('pilot-measurement keeps one observation across host-pr-watch T3 suspension
     prose(source('src/shared/merge-gate-delegated-run.md')),
     /a `SUSPENDED host-pr-watch` return writes its handle per "Suspended observation" instead/,
   );
+});
+
+test('an observer-only wake finalizes the suspended observation before issue observation', () => {
+  const phase = section(
+    source('src/shared/merge-gate-delegated-run.md'),
+    '### Phase 5.5: Observe linked issues after merge',
+    '### Phase 6:',
+  );
+  ordered(phase, 'pilot-measurement', 'Observer-only wake', 'merge-gate-issue-observation');
+  const wake = prose(
+    section(source('src/shared/pilot-measurement.md'), '### Observer-only wake', '\n### '),
+  );
+  assert.match(wake, /observer-only[^.]*observation handle[^.]*wisdom file/);
+  assert.match(wake, /restore[^.]*finalize[^.]*exactly once/i);
+  assert.match(wake, /`merged`[^.]*unavailable check evidence/);
+  assert.match(wake, /never reserve/i);
 });
 
 // Invariant: on T3 the unchanged-resume cap does not strand a stale-verdict re-trigger. A bot wait
@@ -28368,6 +28762,244 @@ test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-res
     bounds,
     near('Any other pending bot or check at the cap', 'keeps report-and-stop', 20),
     'every other pending bot or check at the cap keeps report-and-stop',
+  );
+});
+
+// The "### iterate: top-level wait" section: its slice runs from its heading to the next heading of
+// level 1-3, or to the end of the file only when none follows, and the heading must exist so a
+// missing heading fails instead of cutting from the wrong place.
+function hostPrWatchIterateWait() {
+  const text = hostPrWatchSource();
+  const heading = '### iterate: top-level wait';
+  const start = text.indexOf(heading);
+  assert.notEqual(start, -1, `${HOST_PR_WATCH_PATH} must carry the heading ${heading}`);
+  const next = text.slice(start + heading.length).search(/\n#{1,3} /);
+  return prose(next === -1 ? text.slice(start) : text.slice(start, start + heading.length + next));
+}
+
+// Invariant (#849): a top-level iterate run suspends in a watch only while a still-running reviewer
+// can actually wake it - a pending required check of its configured `mergeGate.bots.<login>.check`;
+// every other running-reviewer state hands back instead of asking, the gate lives only in this
+// fragment, and the hand-back replaces the T3 question.
+test('host-pr-watch iterate wait gates the watch on a pending required check and hands back instead of asking otherwise', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'wake-capable\\W+only when a pending check entry matching its configured `mergeGate\\.bots\\.<login>\\.check`',
+      'reports `required: true`',
+      80,
+    ),
+    'wake-capable only with a pending matching entry of the configured check reporting required: true',
+  );
+  assert.match(wait, /not wake-capable when no entry matches its check/i, 'no matching entry');
+  assert.match(wait, near('not wake-capable', 'reports `required: false`', 200), 'required: false');
+  assert.match(
+    wait,
+    near('not wake-capable', 'states no requiredness \\(Forgejo, or a missing field\\)', 200),
+    'unstated requiredness (Forgejo or missing field)',
+  );
+  assert.match(
+    wait,
+    near('not wake-capable', 'only through a trigger comment', 200),
+    'a trigger-comment-only running state',
+  );
+  assert.match(
+    wait,
+    near(
+      '`merge-gate` caller\'s warning under "Watch\\."',
+      'unstated requiredness counts as not wake-capable here',
+      80,
+    ),
+    'the deliberate divergence from the merge-gate caller warning',
+  );
+  assert.match(
+    wait,
+    near(
+      'none is wake-capable, the run hands back instead of asking',
+      'replaces step 4\'s T3 question and the Rules\' "ask once per Phase 1\\.5"',
+      120,
+    ),
+    "the hand-back replaces step 4's T3 question and the Rules' ask-once",
+  );
+  const iterate = prose(source('src/tools/iterate.md'));
+  assert.doesNotMatch(iterate, /wake-capable/i, 'iterate.md carries no copy of the gate');
+  assert.doesNotMatch(iterate, /neutral wake/i, 'iterate.md carries no copy of the neutral wake');
+});
+
+// Invariant (#849): the wake gate is not a one-time check - it decides every re-suspend, and a
+// still-running reviewer re-suspends only when one still running is wake-capable.
+test('host-pr-watch iterate wait runs the gate again before every re-suspend', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'a reviewer still running: the gate decides each re-suspend',
+      'Re-suspend when one still running is wake-capable',
+      20,
+    ),
+    'the gate decides each re-suspend of a still-running reviewer',
+  );
+  assert.match(
+    wait,
+    near('Re-suspend when one still running is wake-capable', 'otherwise hand back', 120),
+    'a still-running reviewer re-suspends only when one still running is wake-capable, otherwise hand back',
+  );
+});
+
+// Invariant (#849): the hand-back is a watchless suspension that tells the user exactly what is
+// running and on what evidence, promises no wake, offers continue, proceed or stop, and reuses the
+// existing Proceed, step 7 and report contracts instead of restating "Checks that are not required.".
+test('host-pr-watch iterate wait defines the hand-back as a watchless suspension with continue, proceed or stop', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(wait, /A hand-back is a suspension without a watch/i, 'no watch');
+  assert.match(
+    wait,
+    near("Unwatch first while this run's watch is on", 'print one visible line', 80),
+    'unwatch first, then one visible line',
+  );
+  assert.match(
+    wait,
+    near(
+      'naming each running reviewer with its evidence',
+      '\\(the check name and its stated requiredness, or the trigger comment\\)',
+      80,
+    ),
+    'each running reviewer with its evidence',
+  );
+  assert.match(
+    wait,
+    /no event is guaranteed to wake the session/i,
+    'no event is guaranteed to wake the session',
+  );
+  assert.match(wait, /offering continue, proceed or stop/i, 'continue, proceed or stop');
+  assert.match(
+    wait,
+    /A request to continue is classified like a wake/i,
+    'continue is classified like a wake',
+  );
+  assert.match(
+    wait,
+    near("continues as Phase 1\\.5's `Proceed` does", 'step 7 records the branch as proceeded', 80),
+    "proceed is Phase 1.5's Proceed and step 7 records it",
+  );
+  assert.match(wait, /stop ends the run with step 5's report/i, "stop ends with step 5's report");
+  assert.match(
+    wait,
+    /Estimates and polling follow "Checks that are not required\."/i,
+    'refers to the existing paragraph instead of restating it',
+  );
+});
+
+// Invariant (#849): an answered `Wait` calls `watch_pull_request`; a hand-back ends when a re-read
+// finds a wake-capable running reviewer - asking the T3 question only if this run never asked it,
+// otherwise one more watch call - and a watch starts with exactly one call while re-suspends with the
+// watch on call nothing, so the old "never call the watch again" rule is gone.
+test('host-pr-watch iterate wait leaves the hand-back through the question or one more watch call', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    /When the T3 question is answered `Wait`, call `watch_pull_request`/i,
+    'an answered Wait calls watch_pull_request',
+  );
+  assert.match(
+    wait,
+    near(
+      'When a re-read finds a wake-capable running reviewer, the hand-back ends',
+      'ask the T3 question if this run has never asked it',
+      80,
+    ),
+    'the hand-back ends on a wake-capable running reviewer; the question is asked if never asked',
+  );
+  assert.match(
+    wait,
+    /otherwise call `watch_pull_request` once more and suspend as on `Wait`/i,
+    'otherwise one more watch call and suspend as on Wait',
+  );
+  assert.match(
+    wait,
+    near(
+      'A watch starts with exactly one `watch_pull_request` call, on `Wait` or on leaving a hand-back',
+      're-suspends while it stays on call nothing',
+      20,
+    ),
+    'a watch starts with exactly one call; re-suspends while it stays on call nothing',
+  );
+  assert.doesNotMatch(
+    wait,
+    /re-suspend without asking again or calling the watch again/i,
+    'the old never-ask-again, never-watch-again rule is gone',
+  );
+});
+
+// Invariant (#849): a neutral wake - same head, nothing new from people or failures, and a required
+// check newly passed - neither adds to nor resets the unchanged count; non-required checks and
+// merge-state changes other than a new conflict never affect it, each read's check states from
+// Phase 1's read on are recorded before every suspension as the next baseline, together with the
+// unchanged-wake count, and the bound on neutral wakes is stated.
+test('host-pr-watch iterate wait defines the neutral wake and its bound', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near(
+      'An unchanged wake is neutral when its re-read also shows an unchanged head, no new comment, review or thread, no newly failed required check and no new conflict',
+      'at least one required check newly passed: passed now, and not passed or absent in the previous read',
+      80,
+    ),
+    'the neutral-wake conditions',
+  );
+  assert.match(
+    wait,
+    near(
+      'Non-required checks, failures included, and other merge-state changes do not affect this',
+      'A neutral wake neither adds to nor resets the count',
+      40,
+    ),
+    'non-required checks and other merge-state changes do not affect it; neutral neither adds nor resets',
+  );
+  assert.match(
+    wait,
+    near(
+      "Record each read's check states, starting with Phase 1's read, and the unchanged-wake count in the wisdom file with what Phase 1\\.5 step 7 records",
+      "before every suspension, the check states as the next comparison's baseline",
+      20,
+    ),
+    "check states from Phase 1's read on and the unchanged-wake count, recorded with step 7's record before every suspension, the check states as the baseline",
+  );
+  assert.match(
+    wait,
+    near(
+      'Neutral wakes are bounded: a required check newly passes a bounded number of times per head',
+      'a re-run read only after it passes again reads as passed in both reads, so its wake counts',
+      80,
+    ),
+    'the bound on neutral wakes: per head, and a re-run counts once it passes again',
+  );
+});
+
+// Invariant (#849): the cap of three consecutive counted unchanged wakes is retained - it ends the
+// run with step 5's report - every non-neutral unchanged wake, such as an unrelated comment, counts
+// toward the cap, and a wake that changed a reviewer's state or evidence resets the count.
+test('host-pr-watch iterate wait keeps the cap of three counted unchanged wakes and its reset', () => {
+  const wait = hostPrWatchIterateWait();
+  assert.match(
+    wait,
+    near('after three consecutive counted unchanged wakes', "end the run with step 5's report", 40),
+    "three consecutive counted unchanged wakes end the run with step 5's report",
+  );
+  assert.match(
+    wait,
+    near(
+      'A neutral wake neither adds to nor resets the count',
+      'every other unchanged wake counts',
+      40,
+    ),
+    'every non-neutral unchanged wake counts toward the cap',
+  );
+  assert.match(
+    wait,
+    /A wake that changed a reviewer's state or evidence resets the count/i,
+    'a changed wake resets the count',
   );
 });
 
@@ -29495,10 +30127,10 @@ test('next-steps rows: incomplete criteria iterate first and an autopilot draft 
   assert.notEqual(incomplete, -1, 'missing incomplete-criterion row');
   assert.notEqual(generic, -1, 'missing generic pull-request row');
   assert.ok(incomplete < generic, 'the specific row precedes the generic fallback');
-  assert.equal(edges[incomplete].then, '{{SKILL:iterate}} <PR>');
+  assert.equal(edges[incomplete].then, '{{SKILL:iterate}} <PR> own-review findings');
   assert.equal(edges[incomplete].or, '{{SKILL:merge-gate}} <PR>');
   assert.equal(edges[generic].then, '{{SKILL:merge-gate}} <PR>');
-  assert.equal(edges[generic].or, '{{SKILL:iterate}} <PR>');
+  assert.equal(edges[generic].or, '{{SKILL:iterate}} <PR> own-review findings');
   const autopilot = edges.find(
     (edge) => edge.tool === 'autopilot' && edge.condition === 'draft PR opened, no blocker',
   );
@@ -29512,6 +30144,171 @@ test('next-steps rows: incomplete criteria iterate first and an autopilot draft 
     0,
     'tool-flow.md mirrors the next-steps rows',
   );
+});
+
+// Reads the iterate sections and the fragment both own-review tests below check.
+function ownReviewSources() {
+  const iterate = source('src/tools/iterate.md');
+  return {
+    iterate,
+    phase0: prose(boundedSlice(iterate, '### Phase 0:', '### Phase 1:')),
+    phase2: prose(boundedSlice(iterate, '### Phase 2: Classification', '### Phase 2.5:')),
+    surfaces: prose(source('src/shared/iterate-own-review-surfaces.md')),
+  };
+}
+
+// Invariant: the `iterate` invocation next-steps recommends after an own published review is the
+// exact selection phrase iterate accepts. A bare `iterate <PR>` excludes every own-review thread, so
+// a recommendation and a parser that drift apart send the user into a run that classifies none of
+// the findings it was recommended for.
+test('the iterate invocation next-steps recommends after an own published review is the exact selection phrase iterate accepts', () => {
+  const OWN_REVIEW_SELECTION = 'own-review findings';
+  const extended = `{{SKILL:iterate}} <PR> ${OWN_REVIEW_SELECTION}`;
+  const published = ', own review findings published';
+  const edges = parseNextStepsTable(source(NEXT_STEPS_PATH), { context: NEXT_STEPS_PATH });
+  // Every iterate cell carries the phrase, except the fixed failing-checks repair.
+  for (const edge of edges) {
+    for (const cell of [edge.then, edge.or].filter((value) =>
+      value.startsWith('{{SKILL:iterate}}'),
+    ))
+      assert.ok(
+        cell === extended || cell === '{{SKILL:iterate}} <PR> fix the failing checks',
+        `${edge.tool} | ${edge.condition}: ${cell}`,
+      );
+  }
+  // Every publication-conditioned row recommends iterate first and directly precedes its generic row.
+  const specific = edges.flatMap((edge, index) => {
+    if (!edge.condition.endsWith(published)) return [];
+    assert.equal(edge.then, extended, edge.condition);
+    assert.equal(edge.or, '{{SKILL:merge-gate}} <PR>', edge.condition);
+    const generic = edges[index + 1];
+    assert.equal(generic?.tool, edge.tool, `${edge.tool} | ${edge.condition}`);
+    assert.equal(generic.condition, edge.condition.slice(0, -published.length));
+    return [`${edge.tool} | ${edge.condition}`];
+  });
+  assert.deepEqual(specific, [
+    'apply | findings applied, PR opened, own review findings published',
+    'apply | issues processed, PR opened, own review findings published',
+    'build | PR opened, own review findings published',
+    'fix | PR opened, own review findings published',
+    'refactor | PR opened, own review findings published',
+    'docs | PR opened, own review findings published',
+    'maintain | PR opened, own review findings published',
+    'iterate | PR mode, own review findings published',
+  ]);
+  const nextSteps = prose(source(NEXT_STEPS_PATH));
+  assert.match(
+    nextSteps,
+    /every bare `\{\{SKILL:iterate\}\} <PR>` option becomes `\{\{SKILL:iterate\}\} <PR> own-review findings`/,
+  );
+  assert.match(nextSteps, /precedes and wins over it/);
+  assert.match(nextSteps, /An unreported or unknown count selects the generic row/);
+  // The count reaches the emitter only through the retention rule that owns it.
+  assert.match(
+    prose(source('src/shared/worktree-integration.md')),
+    /published-finding count from "PR review publication", across cleanup and returning delegations/,
+  );
+  // The producer owns the count; without it the own-review rows never fire.
+  // The count follows each write's actual outcome, so a failed or unconfirmed write adds nothing.
+  const prReviewIntegration = prose(source('src/shared/pr-review-integration.md'));
+  assert.match(
+    prReviewIntegration,
+    /for the resolved pull request, report to the caller how many findings this run published on it/,
+  );
+  assert.match(prReviewIntegration, /a failed or unconfirmed write adds none/);
+  assert.match(prReviewIntegration, /0 whenever no finding was published/);
+  assert.match(
+    prReviewIntegration,
+    /never counts a withheld finding or one whose normalized signature already appears/,
+  );
+
+  const { phase0, phase2 } = ownReviewSources();
+  assert.ok(phase0.includes(`exactly \`${OWN_REVIEW_SELECTION}\`, set the own-review switch`));
+  assert.ok(
+    phase2.includes(
+      `\`${OWN_REVIEW_SELECTION}\` form \`next-steps\` recommends, is that explicit naming`,
+    ),
+  );
+  assert.match(phase2, /A bare invocation keeps excluding every marked thread/);
+
+  assert.match(
+    prose(source('src/tools/review.md')),
+    /leads to the invocation of the `next-steps` incomplete-criterion row/,
+  );
+});
+
+// Invariant: the own-review switch widens only what iterate selects, never what it may do. It is
+// recognized exactly, stays inert in Local mode, keeps resolved and already-answered threads out,
+// and its top-level findings are handled-state tracked per authenticated login and answered by no
+// reply and no resolve, so a switched run cannot act on, or re-handle, a finding on another account's say-so.
+test('the iterate own-review switch selects findings without widening authority or handled state', () => {
+  const { iterate, phase0, phase2, surfaces } = ownReviewSources();
+  assert.match(
+    phase0,
+    /Only a direct invocation, carrying neither a body delimiter nor any control line/,
+  );
+  assert.match(
+    phase0,
+    /which keeps it gated: the Phase 2\.5 approval precedes every item it admits/,
+  );
+  assert.match(phase0, /Recognition is exact:.* or any other run's text is ordinary free text/);
+  assert.match(phase0, /In Local mode the switch has no effect/);
+  assert.match(phase0, /Record it, or its absence, in the wisdom file/);
+  assert.match(
+    phase2,
+    /a `resolved` thread or one with an `<!-- effective-flow-iterate -->` reply stays excluded/,
+  );
+  // The fragment's only pointer sits at its decision point, Phase 0 step 13, before Phase 1 reads.
+  const pointer = 'iterate-own-review-surfaces\nwhen:';
+  const step13 = iterate.indexOf('13. **Own-review selection switch.**');
+  const load = iterate.indexOf(pointer);
+  assert.ok(
+    step13 !== -1 && step13 < load && load < iterate.indexOf('### Phase 1: Gather context'),
+    'lazy include sits after Phase 0 step 13 and before Phase 1',
+  );
+  assert.equal(iterate.lastIndexOf(pointer), load, 'the fragment has exactly one pointer');
+
+  assert.match(surfaces, /through `pr-comments-read`, at the same instant as the threads/);
+  assert.match(surfaces, /opens with `<!-- effective-flow-pr-review -->` as its leading line/);
+  assert.match(surfaces, /copied marker inside a blockquote and never counts/);
+  assert.match(surfaces, /the fragment adds no top-level comments/);
+  assert.match(surfaces, /report that this run sees no top-level own findings/);
+  assert.match(surfaces, /Establish the authenticated login through `viewer-read`/);
+  assert.match(surfaces, /a summary by any other account is ignored/);
+  assert.match(surfaces, /Without an established login no finding counts as handled/);
+  // signature-parse rejects several differing Signature fields in one body, so each line goes alone.
+  assert.match(
+    surfaces,
+    /Pass each `Signature` line alone to the remote helper's `signature-parse` operation, which fails on several differing values in one body/,
+  );
+  assert.match(surfaces, /or the legacy `Signatur` field the parser also accepts/);
+  assert.match(surfaces, /A line that fails to parse is never handled and never listed/);
+  assert.match(surfaces, /one free-text item with its own outcome/);
+  assert.match(surfaces, /grants it no authority/);
+  assert.match(surfaces, /gets no reply and is never resolved/);
+  // Terminal outcomes are named once by their outcome-table rows; anything else is read again.
+  assert.match(
+    surfaces,
+    /Terminal are exactly these "Returned outcome record" rows: implemented as a commit, `skipped` as a false positive \(`unsupported`\), and non-admitted work closed by the gate, plus a non-credible `needs_evidence` item closed in Phase 2/,
+  );
+  assert.match(surfaces, /admitted work and deferred questions included, is not terminal/);
+  // A value is listed only when every item sharing it is terminal, so a forged copy of a genuine
+  // finding's Signature cannot mark it handled, and the summary never republishes attacker text.
+  assert.match(
+    surfaces,
+    /each normalized value whose every item in this run reached a terminal outcome/,
+  );
+  // Every terminal value is listed, backticks included, in one labelled block that is the only
+  // place a later run reads handled values from; other code spans in the summary never count.
+  assert.match(surfaces, /one fixed block: the line `Handled own-review Signatures:`/);
+  assert.match(
+    surfaces,
+    /backtick fence is one longer than the value's longest backtick run, with one space padding each side/,
+  );
+  assert.match(surfaces, /never republishes raw `Signature` text/);
+  assert.match(surfaces, /reads values from that block only, never from another code span/);
+  assert.doesNotMatch(surfaces, /omits a value containing a backtick/);
+  assert.match(surfaces, /Under `Summary comment: suppressed` the switch is never set/);
 });
 
 // --- Parallel issue planning with per-issue claims ---
@@ -29590,6 +30387,31 @@ test('autopilot issue source stops on an existing open pull request and accepts 
   assert.match(
     autopilot,
     /On an issue source it releases the planning claim for every outcome and returns `planningClaim: \{targetKey, issueKey, released\}`/,
+  );
+});
+
+// Invariant: a wake-only classification stops preflight without changing same-turn waits.
+test('autopilot issue classification stops only when the host can no longer await it in the same turn', () => {
+  const paragraph = prose(
+    boundedSlice(
+      source('src/shared/autopilot-issue-source.md'),
+      'Then classify the one reference',
+      '<!-- spawn-site:autopilot-issue-source/issue-classification -->',
+    ),
+  );
+  includesAll(
+    paragraph,
+    [
+      'Only `plain-issue` continues as an issue source',
+      'another subtype is the usage error of preflight step 7',
+      'A declined or failed spawn or any other output stops preflight.',
+      'Keep using the host’s supported same-turn await while available; that is not polling.',
+      'If that await ends without a terminal result and only an asynchronous wake remains (e.g. T3 `waitTimedOut: true`), stop preflight in this turn before `run-init`',
+      'report the cause, that no run or pull request was created, and the re-entry `{{SKILL:autopilot}} <issue>` for the same issue',
+      'Never promise a wake or continuation, poll, or retry in the background.',
+      'A late completion of the stopped attempt never authorizes `run-init` or Issue Buddy; only a fresh invocation starts a new preflight.',
+    ],
+    'the classification paragraph',
   );
 });
 
@@ -29675,7 +30497,9 @@ test('no source contract names develop as a default base', () => {
 // it inventories through `pass-list`, prunes a record only through `pass-prune` with a
 // helper-verified `process-dead` proof (offered only for `liveness: dead`) or confirmed staleness,
 // removes unlisted trusted text only through `trusted-prune`, and reaches a kept issue-planning
-// worktree only after the operator has moved or discarded its preserved plan.
+// worktree only after the operator has moved or discarded its preserved plan, or under the
+// helper's `preserved-plan-superseded` proof; an unarchived plan (`archive-missing`) still sends
+// the operator to move or discard it.
 test('cleanup prunes pass records and trusted text only through the issue-buddy helper', () => {
   const cleanup = source('src/tools/cleanup.md');
   const text = prose(cleanup);
@@ -29692,7 +30516,8 @@ test('cleanup prunes pass records and trusted text only through the issue-buddy 
       'a pass record only through `pass-prune` (never `pass-close`) and trusted text only through `trusted-prune`',
       'Cleanup never judges orphanhood itself',
       '`ledger-absent-in-grace`',
-      'move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree for removal',
+      'without a `supersededPlan.reason` or with `archive-missing` (not archived yet), move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree for removal',
+      "the helper's proof `preserved-plan-superseded` can show it recoverable from the base branch",
     ],
     'the cleanup pass-record contract',
   );
@@ -30131,7 +30956,8 @@ test('Phase 6 reports every early round from its append-only entry', () => {
 });
 
 // Invariant: on T3 a verdict wake enters early in the recorded round, ahead of every wake class at
-// an unchanged head and of the all-optional stop, so an early round costs no extra round there.
+// an unchanged head and of the "No-wake stop", which decides only the suspend that follows, so an
+// early round costs no extra round there.
 test('a T3 checks resume enters early in the recorded round ahead of every wake class', () => {
   const early = earlyEntrySection();
   assert.match(
@@ -30147,7 +30973,16 @@ test('a T3 checks resume enters early in the recorded round ahead of every wake 
     near('enters Phase 3 in the recorded round', 'ahead of every wake class', 20),
   );
   assert.match(early, near('progress, unchanged', 'changed only by a new pending check', 20));
-  assert.match(early, near('"Bounds" stop', 'all-optional pending set', 20));
+  assert.match(
+    early,
+    near('ahead of every wake class', '"No-wake stop" of `host-pr-watch`', 200),
+    'early entry precedes every wake class and the "No-wake stop" of host-pr-watch',
+  );
+  assert.match(
+    early,
+    near('"No-wake stop" of `host-pr-watch`', 'then decides the following suspend', 40),
+    'the "No-wake stop" then decides the following suspend',
+  );
   assert.match(early, near('resets the unchanged count to zero', 'stays in that round', 120));
 });
 
@@ -30308,5 +31143,42 @@ test('a possibly applied PR comment write is re-read on its own target and never
   assert.match(
     section(watch, 'Bounds.', 'Report-and-stop'),
     near('For an unconfirmed re-trigger', 'no review absent from the recorded baseline', 40),
+  );
+});
+
+// Pins the two named performers in each fragment plus the removal of the old exclusivity phrase,
+// not a full set comparison.
+test('every fragment lists the same workflows that may resolve a conflict on a head branch', () => {
+  const comments = source('src/shared/pr-review-comments.md');
+  const windows = {
+    'src/shared/pr-review-comments.md': boundedSlice(
+      comments,
+      'A head branch that **conflicts**',
+      'is reported instead of performed.',
+    ),
+    'src/shared/worktree-integration.md': boundedSlice(
+      source('src/shared/worktree-integration.md'),
+      '**Update existing PRs:**',
+      '1. **Mark the plan as implemented',
+    ),
+    'src/shared/merge-gate-conflict-resolution.md': boundedSlice(
+      source('src/shared/merge-gate-conflict-resolution.md'),
+      '## Conflict-resolution delegation contract',
+      'with its own stated substitutions.',
+    ),
+  };
+  for (const [path, slice] of Object.entries(windows)) {
+    const text = prose(slice);
+    assert.ok(text.includes('{{SKILL:merge-gate}}'), `${path} names merge-gate`);
+    assert.ok(
+      text.includes('autopilot-delivery-conflict'),
+      `${path} names autopilot-delivery-conflict`,
+    );
+  }
+  assert.ok(
+    !prose(section(comments, '### No history rewriting')).includes(
+      'no other workflow resolves a conflict',
+    ),
+    'the old exclusivity phrase is gone',
   );
 });

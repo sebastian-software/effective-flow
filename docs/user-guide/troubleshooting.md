@@ -211,7 +211,8 @@ Retention is intentional whenever Effective Flow cannot prove that normal remova
 | Cleanup is running in this worktree             | The current execution worktree cannot safely remove itself.                                                                                                                                                                   | Let cleanup finish, then run it from the main checkout or another safe execution location if this worktree should be reconsidered.                                                         |
 
 A stopped `merge-gate` worktree is the one `aborted` or `failed` worktree that `cleanup` can release
-itself, after your confirmation. When it cannot prove that removal loses no commit, it keeps the
+itself, after your confirmation, besides a kept Issue Buddy `issue-planning` worktree whose preserved
+plan is gone or already archived as Implemented on the base (the `Superseded` question). When it cannot prove that removal loses no commit, it keeps the
 worktree and its head branch and reports a `blockers` entry for each failed check:
 
 - `unpushed-commits`: the head branch holds a commit that is on no remote-tracking ref. Push the

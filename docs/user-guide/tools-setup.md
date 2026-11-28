@@ -668,7 +668,7 @@ inspection status, a specific reason for keeping it, and a safe next step. When 
 linked worktree, that current execution worktree is reported as in use by the cleanup run. Active,
 aborted, failed, dirty, locked, prunable, harness-managed, mismatched, and lifecycle-less worktrees
 stay intact; the only `aborted` or `failed` worktrees cleanup may release are a `merge-gate` one that
-passes its proof and a kept `issue-planning` worktree whose preserved plan is gone (see below). A blocked `invalid-record` item is reported like any other retained worktree, with
+passes its proof and a kept `issue-planning` worktree whose preserved plan is gone or is proven superseded (see below). A blocked `invalid-record` item is reported like any other retained worktree, with
 its `blockers` and a next step (see
 [Cleanup keeps a linked worktree](troubleshooting.md#cleanup-keeps-a-linked-worktree)).
 An `active` record may represent either work still in progress or a run interrupted by a crash;
@@ -737,6 +737,16 @@ the report names both. Cleanup lists that worktree as kept while the plan is sti
 cleanup never discards a plan. Move the plan somewhere you want to keep it, or delete it, then run
 cleanup again: it offers the worktree like any other finished one and removes it after
 confirmation, together with its unadvanced `issue-planning/<pass>` branch.
+
+Cleanup can also discard that plan itself when the base proves it redundant. If the worktree's only
+change is its untracked plan, and your local `origin/<base>` (nothing is fetched) holds an archived
+copy of the same name that is marked Implemented and keeps every byte of the preserved text, cleanup
+offers the worktree under its own `Superseded` question. Confirming discards exactly that plan file
+and removes the worktree and its branch; the plan stays recoverable from the archive copy on the
+base. Each proof runs again under the record lock right before the discard, and a refusal before the
+discard leaves the worktree kept with its plan. A kept worktree that fails the proof, for example
+because the base has no archive copy yet, the plan was revised before archiving, or the worktree
+holds more than the plan, stays listed with the reason and a next step.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the

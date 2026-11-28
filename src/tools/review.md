@@ -411,8 +411,9 @@ On a resolved pull request:
    loaded "PR review publication" instead of the local-mode report or the finding issues of a
    publishing target.
 6. Emit per the shared selection in `next-steps`, retaining any verified source association and
-   observed PR outcome; a published `incomplete` criterion is part of that outcome and leads to
-   `{{SKILL:iterate}} <PR>`. Only its generic fallback uses the pull-request row.
+   observed PR outcome; a published `incomplete` criterion is part of that outcome and leads to the
+   invocation of the `next-steps` incomplete-criterion row, in plan-aware selection as in the
+   fallback. Only its generic fallback uses the pull-request row.
 
 An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
 interpretations and ask, never guess. A merged or closed pull request is reviewed read-only and
