@@ -24,6 +24,8 @@ export const GIT_ENV = Object.freeze({
   GIT_AUTHOR_EMAIL: 'effective-flow@example.invalid',
   GIT_COMMITTER_NAME: 'Effective Flow Test',
   GIT_COMMITTER_EMAIL: 'effective-flow@example.invalid',
+  // Empty counts as unset: the machine-level worktree base of the host never leaks into a test.
+  EFFECTIVE_FLOW_WORKTREE_BASE_DIR: '',
 });
 
 export const SESSION = 'build-0123456789abcdef';

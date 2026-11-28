@@ -25,7 +25,6 @@
 // rule without touching it. A missing `.claude/` is created on `apply` only.
 
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -59,6 +58,10 @@ import {
   resolveRoot,
 } from './effective-flow-state-core.mjs';
 import { isObject, setOwn } from './runtime-file-primitives.mjs';
+import { foreignWriter, resolutionChain, systemAccounts } from './path-trust-core.mjs';
+
+// The path trust checks moved to the leaf module `path-trust-core.mjs`; re-exported unchanged.
+export { isPrivateGroupIn, resolutionChain, systemAccounts } from './path-trust-core.mjs';
 
 export const HARNESS_MODES = Object.freeze(['preview', 'apply']);
 export const UNSUPPORTED_PATH_REASONS = Object.freeze([
@@ -83,7 +86,6 @@ export const WIDENED_RULE_WARNINGS = Object.freeze({
 
 const HARNESS_KEYS = Object.freeze(['cwd', 'skillRoot', 'mode', 'digest']);
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
-const MAX_LINK_HOPS = 40;
 // The helper this module ships beside; a rule may only name an install that resolves to it.
 const OWN_HELPER = fileURLToPath(new URL('./effective-flow-state.mjs', import.meta.url));
 
@@ -112,94 +114,6 @@ function requireHarnessInput(input) {
 function isWithin(parent, child) {
   if (child === parent) return true;
   return child.startsWith(parent === '/' ? '/' : `${parent}/`);
-}
-
-// Every directory consulted while resolving `target`, link targets included, and the resolved
-// target itself. A link's own directory is consulted to read the link, so whoever can write it can
-// re-point the link: both the symlinked and the resolved chain are therefore covered. A relative
-// link resolves against the link's directory; more than MAX_LINK_HOPS links is an error.
-export async function resolutionChain(fs, target) {
-  const consulted = new Set(['/']);
-  let pending = target.split('/').filter(Boolean);
-  let current = '/';
-  let hops = 0;
-  while (pending.length > 0) {
-    const name = pending.shift();
-    if (name === '.') continue;
-    if (name === '..') {
-      current = path.dirname(current);
-      continue;
-    }
-    consulted.add(current);
-    const next = path.join(current, name);
-    const info = await fs.lstat(next);
-    if (info.isSymbolicLink()) {
-      hops += 1;
-      if (hops > MAX_LINK_HOPS) throw new Error(`too many links resolving ${target}`);
-      const link = await fs.readlink(next);
-      if (path.isAbsolute(link)) current = '/';
-      pending = [...link.split('/').filter(Boolean), ...pending];
-      continue;
-    }
-    current = next;
-  }
-  return { directories: [...consulted], resolved: current };
-}
-
-function parseAccounts(text) {
-  return text
-    .split('\n')
-    .filter((line) => line !== '' && !line.startsWith('#'))
-    .map((line) => line.split(':'));
-}
-
-// Whether `gid` is the private group of the user `uid`, given the parsed `/etc/passwd` and
-// `/etc/group` records: the user's primary group, with no other user having it as primary group
-// and no other user listed as a member.
-export function isPrivateGroupIn(users, groups, gid, uid) {
-  const owner = users.find((fields) => Number(fields[2]) === uid);
-  if (!owner || Number(owner[3]) !== gid) return false;
-  if (users.some((fields) => Number(fields[3]) === gid && Number(fields[2]) !== uid)) {
-    return false;
-  }
-  const group = groups.find((fields) => Number(fields[2]) === gid);
-  const members = (group?.[3] ?? '').split(',').filter((name) => name !== '');
-  return members.every((name) => name === owner[0]);
-}
-
-// The default account lookup over `/etc/passwd` and `/etc/group`; `read` (a `readFile`-shaped
-// function) is injectable. Unreadable files make every group count as shared, so a group-writable
-// directory is refused (fail closed).
-export function systemAccounts({ read = readFile } = {}) {
-  let cache;
-  const load = async () => {
-    cache ??= Promise.all([
-      read('/etc/passwd', 'utf8').then(parseAccounts),
-      read('/etc/group', 'utf8').then(parseAccounts),
-    ]).catch(() => null);
-    return cache;
-  };
-  return {
-    async isPrivateGroup(gid, uid) {
-      const loaded = await load();
-      return loaded ? isPrivateGroupIn(loaded[0], loaded[1], gid, uid) : false;
-    },
-  };
-}
-
-// Whether a principal other than the owner and root can write the node. World-writable is accepted
-// only for a sticky directory owned by root (as `/tmp`); group-writable only for the owner's
-// private group.
-async function foreignWriter(info, accounts) {
-  const mode = Number(info.mode);
-  if (mode & 0o002) {
-    if (info.isDirectory() && mode & 0o1000 && Number(info.uid) === 0) return null;
-    return 'world-writable';
-  }
-  if (mode & 0o020 && !(await accounts.isPrivateGroup(Number(info.gid), Number(info.uid)))) {
-    return 'group-writable';
-  }
-  return null;
 }
 
 async function worktreePaths(context) {

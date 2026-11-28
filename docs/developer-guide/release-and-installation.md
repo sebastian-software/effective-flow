@@ -477,7 +477,9 @@ allow rules through `harness allow-rules`, `effective-flow-state-commit-core.mjs
 `effective-flow-state-review-core.mjs` (behind `review open-report` and `review write-report`), `review-report-render.mjs`, its pure report renderer,
 `dated-name-allocation.mjs`, the dated-name allocation shared with the mechanics helper, `claude-settings-core.mjs`, the read-only settings
 parser and rule-shape matcher it shares with `setup-status`, and `runtime-file-primitives.mjs`, the
-bounded-read and JSON-object primitives of the memory and settings cores); the build-run helpers
+bounded-read and JSON-object primitives of the memory and settings cores, `path-trust-core.mjs`, the
+path trust checks of the harness and worktree cores, and `worktree-reuse-facts-core.mjs`, the
+harness reuse facts of the worktree and build-run cores); the build-run helpers
 `scripts/protected-validation-protocol.mjs` and `scripts/protected-validation-core.mjs`;
 the shared `scripts/process-runner.mjs` that the CLI
 entries import and inject into their cores, and `scripts/runtime-state-guard.mjs`, the runtime-state guard; and the pilot

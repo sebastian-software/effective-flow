@@ -222,6 +222,11 @@ declined.
 
 ### Temporary worktree
 
+```lazy-include
+worktree-conflict-stop
+when: the temporary worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
 Provision one Effective Flow-owned worktree under "Worktree execution" step 2 of the loaded
 `worktree-integration`, with its receipt and its lifecycle record, and with these differences
 only:
@@ -229,13 +234,15 @@ only:
 - **It is always a separate worktree, and it never switches a checkout.** `worktree.enabled: false`
   does not apply, because publication never switches, stages in, or commits in the invocation
   checkout. Under a harness-managed receipt (a Claude Code or Codex worktree session) it is a
-  **sibling**: one Effective Flow-owned worktree under the configured base directory of the
-  verified `RUNTIME_STATE_ROOT`, never nested inside the harness worktree, which is never switched.
+  **sibling**: one Effective Flow-owned worktree under the resolved base of the verified
+  `RUNTIME_STATE_ROOT`, never nested inside the harness worktree, which is never switched.
   This is a stated exception to the "Determine mode" rule that reuses a harness-managed checkout.
-- **Its path is distinct:** `BASE_DIR/REPO_NAME/<SESSION_ID>-plan-publication`, with step 2's
-  `REPO_NAME` (the basename of `RUNTIME_STATE_ROOT`, also under a harness receipt), so `{{SKILL:plan}}`
-  and `{{SKILL:apply}}` in one session never collide on `BASE_DIR/REPO_NAME/SESSION_ID`. The
-  caller's worktree-record exit self-check includes this path as the run's own.
+- **Its path is distinct:** step 2's `worktree path-resolve` and `worktree path-prepare` run with
+  purpose `plan-publication` and `cwd` `RUNTIME_STATE_ROOT`, also under a harness receipt, with
+  `worktree-conflict-stop` between them, so the
+  leaf is `<base>/<repo>/<SESSION_ID>-plan-publication` and `{{SKILL:plan}}` and `{{SKILL:apply}}`
+  in one session never collide on the delivery leaf. The caller's worktree-record exit self-check
+  includes this path as the run's own.
 - **Its receipt** is `effective-flow-created` with the calling workflow and purpose
   `plan-publication`. Its record, written with `worktree record-init`, carries the same workflow
   and branch policy `retain`, so the caller's self-check finds it by session and workflow.

@@ -323,6 +323,12 @@ const QUESTION_INVENTORY = Object.freeze(
         'path the host owns consent instead: it replaces a user-set title only after the app asks, and an unattended',
       ],
     ],
+    'shared/worktree-conflict-stop.md': [
+      [
+        'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
+        '**Interactive run.** Ask before `path-prepare`, quoting the computed path and the forbidding',
+      ],
+    ],
     'shared/worktree-integration.md': [
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',

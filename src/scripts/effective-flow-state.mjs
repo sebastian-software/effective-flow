@@ -6,8 +6,8 @@
 //   node effective-flow-state.mjs harness allow-rules <<< '<json>'
 //   node effective-flow-state.mjs commit create <<< '<json>'
 //   node effective-flow-state.mjs review <open-report|write-report> <<< '<json>'
-//   node effective-flow-state.mjs worktree <record-init|transition|inspect|remove|resume-check> \
-//     <<< '<json>'
+//   node effective-flow-state.mjs worktree <record-init|transition|inspect|remove|resume-check|
+//     path-resolve|path-prepare|reuse-facts> <<< '<json>'
 //   node effective-flow-state.mjs cleanup <plan|apply> <<< '<json>'
 //   node effective-flow-state.mjs ledger <init|append|reconcile> <<< '<json>'
 //   node effective-flow-state.mjs presence <register|refresh|list|release|prune> <<< '<json>'

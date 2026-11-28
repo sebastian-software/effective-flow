@@ -1,7 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 580
+contextBudget: 586
 ---
 
 # Effective Flow Issue Buddy
@@ -215,12 +215,19 @@ other trusted comment starting with `<!-- effective-flow-triage ` (with the spac
 Leftovers create no verdict, retry or recovery authority. Changed collection metadata cannot be
 replayed. Never fabricate a candidate, fingerprint or recovery record.
 
+```lazy-include
+worktree-conflict-stop
+when: the planning worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
 **Planning worktree.** In publishing mode, immediately after collection and before recovery or
 judgment, create the pass's `issue-planning` worktree at `collect.baseOid`, so no second fetch
-runs: guard every parent below `.effective-flow/` and the exact path per `runtime-state-safety`,
-then run `git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT>
-<collect.baseOid>` with `PLANNING_ROOT` = `BASE_DIR/REPO_NAME/<passId>-issue-planning`
-(`worktree.baseDir`, default `.effective-flow/.worktrees`, against `RUNTIME_STATE_ROOT`). Issue its `effective-flow-created` receipt and write its record with
+runs: `PLANNING_ROOT` is the `worktreePath` of `worktree path-resolve` (purpose `issue-planning`,
+`sessionId` the `passId`), whose parents `worktree path-prepare` creates once
+`worktree-conflict-stop` let the pass continue; guard a `PLANNING_ROOT`
+below `.effective-flow/` per `runtime-state-safety`, then run
+`git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT>
+<collect.baseOid>`. Issue its `effective-flow-created` receipt and write its record with
 `worktree record-init` (workflow `issue-buddy`, purpose `issue-planning`, `sessionId` the
 `passId`, `creationOid` = `collect.baseOid`); a failed step stops the pass. Then require
 `git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's

@@ -104,8 +104,9 @@ every value spelled out literally.
 - **Blockers:** call `blocker-record` with `{"cwd","runId","kind","summary","site"?}`. `site` is
   the question-site id the blocker arose at: pass it for every blocker that comes from a site row;
   only a blocker without a site (`plan-not-approved`, `appendix-scan`, `post-branch-failure`,
-  `unknown-question`, and a `scoring-failure` from a malformed `decision-extract` block) omits it.
-  A `security` blocker carries `localOnly` instead of `summary`. Its kinds are the
+  `unknown-question`, `worktree-location-conflict`, and a `scoring-failure` from a malformed
+  `decision-extract` block) omits it. A `security` blocker carries `localOnly` instead of
+  `summary`; a `worktree-location-conflict` blocker (`worktree-conflict-stop`) carries neither. Its kinds are the
   `BLOCKER_KINDS` of `autopilot-core.mjs`. A `blocker` row records `site-blocker`, which requires
   `site`, except S-GATE (`clarity-gate`) and the red-validation rows S-GFIX, S-GRFC, S-GDOC and
   S-GBLD (`validation-red`). A conditional blocker of a `scored` or `fixed` row (`scored`: S-PPR or

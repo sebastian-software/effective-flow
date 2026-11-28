@@ -193,6 +193,16 @@ a security blocker becomes a neutral appendix on a draft pull request instead of
 push, just as on private GitHub. The wording does not mention security; unavailable or unknown
 visibility is treated as public.
 
+When the location for a new worktree is forbidden by your loaded instructions and no
+`EFFECTIVE_FLOW_WORKTREE_BASE_DIR` is set, `autopilot` records a `worktree-location-conflict`
+blocker. It publishes nothing: no plan-only draft and no appendix, on every repository visibility.
+The run ends without a pull request, or with the existing plan pull request unchanged, and the
+machine path appears only in the local report. The one exception is the worktree of the single
+attempt to resolve a conflict with the base: a forbidden location there only leaves that conflict
+unresolved (delivery-base reason `worktree-location-conflict`), and the draft is still published.
+See
+[Troubleshooting](./troubleshooting.md#worktree-provisioning-stopped-location-conflict).
+
 ### The pull-request record
 
 `pr` appends one marked block to the draft pull request description, replaced – never stacked – on

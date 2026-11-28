@@ -35,10 +35,16 @@ export const POLICY_PATHS = Object.freeze([
   'evals/build-context/_scaffold/provisional-release.mjs',
   'evals/build-context/suite.config.mjs',
 ]);
+// Scenarios added after the PR581 disposition; its exact-absence list stays the 22 it admitted.
+const POST_PR581_SCENARIOS = Object.freeze([
+  'harness-branch-adoption',
+  'worktree-location-conflict',
+  'worktree-base-difference',
+]);
 export const ABSENT_POPULATIONS = Object.freeze([
-  ...Object.entries(CASES).flatMap(([scenario, cases]) =>
-    cases.map((variant) => `behavioural:${scenario}:${variant}:5`),
-  ),
+  ...Object.entries(CASES)
+    .filter(([scenario]) => !POST_PR581_SCENARIOS.includes(scenario))
+    .flatMap(([scenario, cases]) => cases.map((variant) => `behavioural:${scenario}:${variant}:5`)),
   ...CELL_NAMES.map((cell) => `paired:${cell}:5`),
   'native:codex:1',
   'native:claude:1',

@@ -1,7 +1,7 @@
 ---
 description: "Turns a confirmed selection of current-session local changes into coherent commits on a fresh delivery branch and opens a pull request without changing the source checkout beyond an optional, user-confirmed upstream fast-forward before selection."
 catalogHint: "Delivers confirmed local changes as coherent commits in a clean pull request."
-contextBudget: 824
+contextBudget: 846
 ---
 
 # Effective Flow Deliver
@@ -180,7 +180,7 @@ Only after this check, record the source `HEAD`, branch or detached OID, complet
 worktree state.
 
 2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`, `delivery.branchPrefix`,
-   `plan.dir`, `worktree.baseDir`, and `worktree.setup` through the shared configuration contract.
+   `plan.dir`, and `worktree.setup` through the shared configuration contract.
    `deliver` reports that its explicit PR intent replaces any different configured
    `delivery.completion`; it does not change the stored value. Record whether hidden mode
    (`visibility: hidden`, config locator step 0) is active: then no derived commit message, branch
@@ -209,6 +209,11 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 
 ### 3. Create the isolated delivery branch
 
+```lazy-include
+worktree-conflict-stop
+when: the `worktree path-resolve` of sub-step 2 of this section for purpose `partial-diff` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and sub-step 3's `worktree path-prepare` has not run
+```
+
 1. Revalidate the source receipt and runtime root. Refresh the configured remote base and resolve its
    exact OID before creating delivery artifacts. A non-empty `committed-range` read
    `{root: sourceRoot, baseRef: <refreshed base ref>, baseBranch: <resolved local base branch>, knownOids: []}`
@@ -216,9 +221,10 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
    replaces the manifest. A failed read adds no notice.
 2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name, or `deliver/<slug>` when
    the prefix is empty (the hidden-mode default), as `data.branch` of `named` from `node <skill-root>/scripts/effective-flow-mechanics.mjs delivery-branch-name` with one JSON object on stdin: `cwd` the repository root, `branchPrefix`, `skill: "deliver"`, `text` the confirmed delivery subject, `visibility` the resolver's `data.visibility`, passed verbatim, `excludeNames`. Report `data.originalSlug` and `data.slug` in one line when `data.sanitized`; `prefix-discloses` stops, naming `delivery.branchPrefix` and {{SKILL:setup}}; so do a nonzero exit, an unparsable envelope and `ok: false`, naming the error code — never derive the name by hand.
-   Verify the branch and the absolute worktree path are unused in `git worktree list --porcelain`; a branch listed there goes into `excludeNames` for another call.
+   Verify the branch and the `worktreePath` that `worktree path-resolve` returns for purpose `partial-diff` are unused in `git worktree list --porcelain`; a branch listed there goes into `excludeNames` for another call.
 3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
-   cleaning, resetting, or otherwise changing the source checkout. Issue a separate
+   cleaning, resetting, or otherwise changing the source checkout, at that `worktreePath` once
+   `worktree-conflict-stop` let the run continue and `worktree path-prepare` created its parents. Issue a separate
    `effective-flow-created` receipt with purpose `partial-diff`, record the exact creation OID and
    current-run ownership flags, and write its lifecycle record as `active` with branch policy
    `retain` through `worktree record-init`. Receipt or record failure retains both artifacts and

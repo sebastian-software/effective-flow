@@ -33,9 +33,14 @@ record, use no `--force` or detached workaround, merge nothing, and report which
 branch and that it must be cleaned or released first. Git refuses to attach a branch that is already
 checked out elsewhere without `--force`, which this workflow never uses.
 
+```lazy-include
+worktree-conflict-stop
+when: the merge-gate worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and step 2's `worktree path-prepare` has not run
+```
+
 Otherwise create one Effective Flow-owned worktree with the fragment's receipt and its lifecycle
-record: purpose `merge-gate`, path `<worktree.baseDir>/<REPO_NAME>/<SESSION_ID>-merge-gate`,
-`branchPolicy: retain`, the head branch as its branch, and a receipt `setupStatus` of `pending`,
+record: purpose `merge-gate`, path `<base>/<repo>/<SESSION_ID>-merge-gate` from `worktree
+path-resolve` as "Worktree execution" step 2 prescribes, `branchPolicy: retain`, the head branch as its branch, and a receipt `setupStatus` of `pending`,
 `complete`, `skipped` or `externally managed`. Provision it in exactly this sequence; the fragment's
 receipt is issued after step 2, and setup, if any, runs after step 7:
 
@@ -44,7 +49,8 @@ receipt is issued after step 2, and setup, if any, runs after step 7:
    `RUNTIME_STATE_ROOT`. If the fetch fails, provision nothing and write no record; record a failed
    provisioning fetch, with its reason, like an undetermined existence check, and end the round
    under "A round runs forward only".
-2. If `refs/heads/<head>` exists, run `git worktree add <path> <head>`; otherwise create the branch
+2. Apply `worktree-conflict-stop`, then run `worktree path-prepare`, which stops on a refusal. If `refs/heads/<head>` exists, run
+   `git worktree add <path> <head>`; otherwise create the branch
    explicitly from the fetched ref with
    `git worktree add --track -b <head> <path> refs/remotes/origin/<head>`. Never create a new branch
    name, and never use `--force`, `--detach` or Git's implicit tracking guess.

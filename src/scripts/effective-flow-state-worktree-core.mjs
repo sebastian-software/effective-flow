@@ -5,6 +5,9 @@
 //   worktree transition   {cwd, executionRoot, recordId, from, to, reason, sessionId, branch?,
 //                          workflow?, fetchedHeadOid?, release?, adoption?, visibility?}
 //   worktree inspect      {cwd, executionRoot, sessionId?}
+//   worktree path-resolve {cwd, purpose, sessionId, group?}
+//   worktree path-prepare {cwd, purpose, sessionId, group?}
+//   worktree reuse-facts  {cwd, executionRoot, baseRef, localBaseBranch, visibility}
 //   worktree remove       {cwd, executionRoot, sessionId, recordIds, integrationRoot?}
 //   cleanup plan          {cwd, executionRoot, decisions?}
 //   cleanup apply         {cwd, executionRoot, decisions?, items}
@@ -31,6 +34,22 @@
 // base directories come from the configuration resolver (`config-resolve-core.mjs`); registration,
 // branch, tip and status come from Git. A record's identity fields are compared against these facts
 // and never trusted as input.
+//
+// `worktree path-resolve` computes the one path the purpose table requires,
+// `<base>/<repo>/<SESSION_ID><suffix>` (`<base>/<repo>/<SESSION_ID>/<group>` for `apply-review`),
+// from the base `resolveBases` derives: EFFECTIVE_FLOW_WORKTREE_BASE_DIR from `deps.env`, else the
+// configured key, else the default, with that closed source and its diagnostics; a base outside
+// `.effective-flow/` must already exist (WORKTREE_BASE_INVALID). `worktree path-prepare`
+// re-derives the same result and creates the missing parent directories: below `.effective-flow/`
+// through the runtime-state guard, elsewhere after the trust checks of `path-trust-core.mjs` on the
+// base's resolution chain and on every segment below it, and probes the leaf's parent with a
+// directory it removes again. Neither ever creates the leaf, which must not exist, and neither
+// falls back to another base after a refusal.
+//
+// `worktree reuse-facts` reads the facts of a linked or harness-native checkout that decide how a
+// reused harness worktree obtains its delivery branch (`worktree-reuse-facts-core.mjs`). It
+// fetches the base ref and the HEAD branch's upstream first, which updates only remote-tracking
+// refs, and writes nothing else.
 //
 // Records live at `<cwd>/.effective-flow/worktree-runs/<RECORD_ID>.json` with the exact version 1
 // key set `build-run-core.mjs` checks with `exact()` (RECORD_KEYS), plus `cleanupRunId` and
@@ -120,10 +139,21 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readlink,
+  realpath,
+  rmdir,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import { hostname as osHostname } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import process from 'node:process';
 import { isDeepStrictEqual } from 'node:util';
 import { isSafeBaseRef, resolveConfiguration } from './config-resolve-core.mjs';
 import {
@@ -154,6 +184,7 @@ import {
 import {
   HOST_PATTERN,
   OPERATION_KEYS,
+  StateError,
   StateOutcome,
   TOKEN_PATTERN,
   UNKNOWN_HOST,
@@ -190,6 +221,8 @@ import {
   verifyBranchProof,
 } from './pr-delivery-git-core.mjs';
 import { nonTerminalBuildRunBranches } from './build-run-core.mjs';
+import { resolutionChain, systemAccounts, untrustedNode } from './path-trust-core.mjs';
+import { ReuseFactsError, deriveReuseFacts } from './worktree-reuse-facts-core.mjs';
 
 export const RECORDS_DIR = 'worktree-runs';
 export const RECORD_SCHEMA_VERSION = 1;
@@ -465,7 +498,17 @@ const PROBE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRO
 const OWNER_FLAGS = PROBE_FLAGS;
 
 // The filesystem calls the core makes for locks and probes, injectable as `deps.fs`.
-const DEFAULT_FS = Object.freeze({ lstat, mkdir, open, readdir, realpath, rmdir, unlink });
+const DEFAULT_FS = Object.freeze({
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readlink,
+  realpath,
+  rmdir,
+  stat,
+  unlink,
+});
 
 // ---------------------------------------------------------------------------------------------
 // Small helpers
@@ -757,9 +800,65 @@ export async function openRoots(context, input) {
   return { cwd, common, worktrees, executionRoot: execution.canonical ?? execution.path };
 }
 
-// The base directories of the purpose table and the configuration locator step, from the
-// configuration resolver. A configured value that is set but invalid is INVALID_STATE.
+// The machine-level worktree base: an absolute directory that wins over both configured keys, so no
+// machine path has to enter a repository. The helper cannot tell which settings scope set it.
+export const WORKTREE_BASE_ENV = 'EFFECTIVE_FLOW_WORKTREE_BASE_DIR';
+// The closed source of a resolved base.
+export const BASE_SOURCES = Object.freeze(['environment', 'configuration', 'default']);
+// The diagnostics a resolved base may carry; each names the configured `key` it concerns.
+export const BASE_DIAGNOSTICS = Object.freeze([
+  'configured-base-differs',
+  'configured-base-invalid',
+]);
+// The configuration key behind each base of the purpose table.
+const BASE_KEYS = Object.freeze({
+  worktree: 'worktree.baseDir',
+  applyReview: 'applyReview.worktree.baseDir',
+});
+const INVALID_BASE = Symbol('invalid-base');
+
+// Throws a StateError whose envelope carries `details` beside `code` and `message`.
+function refuse(code, message, details) {
+  const error = new StateError(code, message);
+  error.envelopeDetails = details;
+  throw error;
+}
+
+// EFFECTIVE_FLOW_WORKTREE_BASE_DIR from the injected environment: null when unset, empty or blank,
+// else the absolute path it names. Any other value is WORKTREE_BASE_INVALID, never a fallback.
+function environmentBase(deps) {
+  const value = deps.env?.[WORKTREE_BASE_ENV];
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+    return null;
+  }
+  if (!isText(value) || !path.isAbsolute(value)) {
+    refuse('WORKTREE_BASE_INVALID', `${WORKTREE_BASE_ENV} must be an absolute directory path`, {
+      variable: WORKTREE_BASE_ENV,
+      reason: 'not-absolute',
+    });
+  }
+  return path.resolve(value);
+}
+
+// The configured base of `key` resolved against `cwd`: null when unset or empty, INVALID_BASE when
+// set but invalid.
+function configuredBase(context, config, key) {
+  const entry = config.values[key];
+  if (!entry) return null;
+  if (entry.state !== 'set') return INVALID_BASE;
+  const value = typeof entry.value === 'string' ? entry.value : entry.raw;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  if (!isText(value) || value.includes('\0')) return INVALID_BASE;
+  return path.resolve(context.cwd, value);
+}
+
+// The base directories of the purpose table (`worktree`, `applyReview`), each one's source of
+// BASE_SOURCES, the diagnostics, and the configuration locator step. Precedence: the environment
+// base, the configured key, the default. Without the environment base, a configured value that is
+// set but invalid is INVALID_STATE; with it, that value is the `configured-base-invalid` diagnostic,
+// and one that differs from it is `configured-base-differs`.
 async function resolveBases(context, deps) {
+  const environment = environmentBase(deps);
   let config;
   try {
     config = await resolveConfiguration(
@@ -769,22 +868,28 @@ async function resolveBases(context, deps) {
   } catch (error) {
     fail('INVALID_STATE', `the configuration cannot be resolved: ${error?.message ?? error}`);
   }
-  const base = (key) => {
-    const entry = config.values[key];
-    if (!entry) return path.resolve(context.cwd, DEFAULT_BASE_DIR);
-    if (entry.state !== 'set') fail('INVALID_STATE', `${key} is invalid`);
-    const value = typeof entry.value === 'string' ? entry.value : entry.raw;
-    if (typeof value !== 'string' || value.trim() === '') {
-      return path.resolve(context.cwd, DEFAULT_BASE_DIR);
+  const bases = { locatorStep: config.source.step, sources: {}, diagnostics: [] };
+  for (const [name, key] of Object.entries(BASE_KEYS)) {
+    const configured = configuredBase(context, config, key);
+    if (environment !== null) {
+      if (configured === INVALID_BASE) {
+        bases.diagnostics.push({ code: 'configured-base-invalid', key });
+      } else if (configured !== null && configured !== environment) {
+        bases.diagnostics.push({ code: 'configured-base-differs', key, configured });
+      }
+      bases[name] = environment;
+      bases.sources[name] = 'environment';
+    } else if (configured === INVALID_BASE) {
+      fail('INVALID_STATE', `${key} is invalid`);
+    } else if (configured !== null) {
+      bases[name] = configured;
+      bases.sources[name] = 'configuration';
+    } else {
+      bases[name] = path.resolve(context.cwd, DEFAULT_BASE_DIR);
+      bases.sources[name] = 'default';
     }
-    if (!isText(value) || value.includes('\0')) fail('INVALID_STATE', `${key} is invalid`);
-    return path.resolve(context.cwd, value);
-  };
-  return {
-    worktree: base('worktree.baseDir'),
-    applyReview: base('applyReview.worktree.baseDir'),
-    locatorStep: config.source.step,
-  };
+  }
+  return bases;
 }
 
 // The canonical form of `target` when it exists, else `target` itself.
@@ -808,6 +913,312 @@ async function requiredLocation(context, bases, record) {
   }
   const leaf = `${session}${PURPOSE_SUFFIXES[record.purpose] ?? ''}`;
   return { exact: await canonicalOrSelf(context.fs, path.join(bases.worktree, repo, leaf)) };
+}
+
+// ---------------------------------------------------------------------------------------------
+// worktree path-resolve and worktree path-prepare
+
+// A filesystem-safe component name below an `apply-review` session directory.
+export const GROUP_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+// The errno codes of a mkdir a sandbox or a missing permission denies.
+const DENIED_ERRNOS = Object.freeze(['EACCES', 'EPERM', 'EROFS']);
+
+function requirePathTarget(input) {
+  if (!PURPOSES.includes(input.purpose)) {
+    fail('INVALID_INPUT', `purpose must be one of ${PURPOSES.join(', ')}`);
+  }
+  const sessionId = requireSessionId(input.sessionId);
+  if (input.purpose === 'apply-review') {
+    if (typeof input.group !== 'string' || !GROUP_NAME_PATTERN.test(input.group)) {
+      fail('INVALID_INPUT', `group must match ${GROUP_NAME_PATTERN.source}`);
+    }
+  } else if (input.group !== undefined) {
+    fail('INVALID_INPUT', 'group is only valid for purpose apply-review');
+  }
+  return { purpose: input.purpose, sessionId, group: input.group ?? null };
+}
+
+// The node at `target`, or null when nothing is there (a component on the way that is no directory
+// counts as nothing; the segment walk refuses that component itself).
+async function lstatOrNull(fs, target) {
+  try {
+    return await fs.lstat(target);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return null;
+    fail('UNSAFE_TARGET', `cannot inspect ${target}: ${error?.code ?? error?.message}`);
+  }
+}
+
+// The deepest existing ancestor-or-self of `target`.
+async function existingPrefix(fs, target) {
+  let current = target;
+  while ((await lstatOrNull(fs, current)) === null) {
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return current;
+}
+
+// The resolved worktree path of `target`: the base of its purpose with its source and diagnostics,
+// the leaf, the missing parent directories in creation order, and the guard `path-prepare` applies.
+// The base's existing prefix is canonical, so the leaf equals the canonical path `record-init`
+// requires once the worktree exists.
+async function resolveWorktreePath(context, bases, target) {
+  const { fs } = context;
+  const name = target.purpose === 'apply-review' ? 'applyReview' : 'worktree';
+  const source = bases.sources[name];
+  const requested = bases[name];
+  const key = BASE_KEYS[name];
+  const leaf =
+    target.purpose === 'apply-review'
+      ? [path.basename(context.cwd), target.sessionId, target.group]
+      : [
+          path.basename(context.cwd),
+          `${target.sessionId}${PURPOSE_SUFFIXES[target.purpose] ?? ''}`,
+        ];
+  // Decided on the requested path, so a link below `.effective-flow/` meets the runtime-state
+  // guard that refuses it instead of the trust checks of its target.
+  const guard = isBelow(path.join(context.cwd, RUNTIME_STATE_DIR), path.join(requested, ...leaf))
+    ? 'runtime-state'
+    : 'path-trust';
+  // A base outside `.effective-flow/` must exist, whether the variable or the configured key names
+  // it: the helper creates only the segments below it.
+  if (source === 'environment' || (source === 'configuration' && guard === 'path-trust')) {
+    let info = null;
+    try {
+      info = await fs.stat(requested);
+    } catch {
+      // Reported below.
+    }
+    if (!info?.isDirectory()) {
+      const named = source === 'environment' ? WORKTREE_BASE_ENV : key;
+      refuse('WORKTREE_BASE_INVALID', `${named} names no existing directory`, {
+        ...(source === 'environment' ? { variable: WORKTREE_BASE_ENV } : { key }),
+        path: requested,
+        reason: info ? 'not-a-directory' : 'missing',
+      });
+    }
+  }
+  const anchor = await existingPrefix(fs, requested);
+  const anchorReal = await canonical(fs, anchor);
+  if (anchorReal === null) {
+    refuse('WORKTREE_PATH_UNTRUSTED', `${anchor} cannot be resolved`, {
+      path: anchor,
+      reason: 'unresolvable',
+    });
+  }
+  const base = path.join(anchorReal, path.relative(anchor, requested));
+  const worktreePath = path.join(base, ...leaf);
+  const parent = path.dirname(worktreePath);
+  const parents = [];
+  for (let current = parent; (await lstatOrNull(fs, current)) === null;) {
+    parents.unshift(current);
+    const up = path.dirname(current);
+    if (up === current) break;
+    current = up;
+  }
+  return {
+    base,
+    source,
+    worktreePath,
+    parents,
+    guard,
+    diagnostics: bases.diagnostics.filter((entry) => entry.key === key),
+    requested,
+  };
+}
+
+// The named refusal of a directory creation a sandbox or a missing permission denied.
+function sandboxDenied(target, base, code) {
+  refuse(
+    'WORKTREE_SANDBOX_DENIED',
+    `creating ${target} was denied (${code}): allow writes below ${base} in the user-scope host settings the configuration guide names for ${WORKTREE_BASE_ENV}`,
+    { path: target, base, reason: code },
+  );
+}
+
+// Below `.effective-flow/`: each missing parent through the runtime-state guard, then the guard of
+// the leaf itself, exactly as the prose applied it before each `mkdir` and before `git worktree add`.
+// A creation the guard's `mkdir` reports as denied is WORKTREE_SANDBOX_DENIED, as elsewhere.
+async function prepareRuntimeStateParents(context, resolved) {
+  const created = [];
+  for (const directory of resolved.parents) {
+    const absent = (await lstatOrNull(context.fs, directory)) === null;
+    try {
+      await ensureGuardedDirectory(context, directory);
+    } catch (error) {
+      const code = error?.code === 'WRITE_FAILED' ? error.cause?.code : undefined;
+      if (DENIED_ERRNOS.includes(code)) sandboxDenied(directory, resolved.base, code);
+      throw error;
+    }
+    if (absent) created.push(directory);
+  }
+  await assertDirectoryChain(context.cwd, path.dirname(resolved.worktreePath));
+  await guardTarget(context, resolved.worktreePath);
+  return created;
+}
+
+// Elsewhere: every directory consulted resolving the base's existing prefix (links and their
+// directories included) must pass `untrustedNode`; every segment below it down to the leaf's parent
+// must be a real directory, not a link, passing the same check, and a missing one is created with
+// mode 0700 and checked after creation.
+async function prepareTrustedParents(context, resolved, deps) {
+  const { fs } = context;
+  const accounts = deps.accounts ?? systemAccounts();
+  const uid =
+    deps.uid !== undefined
+      ? deps.uid
+      : typeof process.getuid === 'function'
+        ? process.getuid()
+        : null;
+  const untrusted = (target, reason, message) =>
+    refuse('WORKTREE_PATH_UNTRUSTED', `${target} ${message}`, { path: target, reason });
+  const trust = async (target, info) => {
+    const reason = await untrustedNode(info, accounts, uid);
+    if (reason) untrusted(target, reason, `fails the trust check (${reason})`);
+  };
+  const anchor = await existingPrefix(fs, resolved.requested);
+  let chain;
+  try {
+    chain = await resolutionChain(fs, anchor);
+  } catch (error) {
+    untrusted(anchor, 'unresolvable', `cannot be resolved: ${error?.code ?? error?.message}`);
+  }
+  for (const directory of new Set([...chain.directories, chain.resolved])) {
+    await trust(directory, await fs.lstat(directory));
+  }
+  const leafParent = path.dirname(resolved.worktreePath);
+  const segments = [];
+  for (let current = leafParent; isBelow(chain.resolved, current);) {
+    segments.unshift(current);
+    current = path.dirname(current);
+  }
+  if (!(await fs.lstat(chain.resolved)).isDirectory()) {
+    untrusted(chain.resolved, 'not-a-directory', 'is not a directory');
+  }
+  // The chain walk must land where `realpath` did; anything else means the tree moved under us.
+  if (leafParent !== chain.resolved && segments.length === 0) {
+    untrusted(chain.resolved, 'unresolvable', 'no longer resolves to the base');
+  }
+  const created = [];
+  for (const segment of segments) {
+    let info = await lstatOrNull(fs, segment);
+    if (info === null) {
+      try {
+        await fs.mkdir(segment, { mode: 0o700 });
+        created.push(segment);
+      } catch (error) {
+        if (DENIED_ERRNOS.includes(error?.code)) sandboxDenied(segment, resolved.base, error.code);
+        if (error?.code !== 'EEXIST') {
+          fail('WRITE_FAILED', `cannot create ${segment}: ${error?.code ?? error?.message}`);
+        }
+      }
+      info = await fs.lstat(segment);
+    }
+    if (info.isSymbolicLink()) untrusted(segment, 'symlink', 'is a symbolic link');
+    if (!info.isDirectory()) untrusted(segment, 'not-a-directory', 'is not a directory');
+    await trust(segment, info);
+  }
+  return created;
+}
+
+// Proves that `git worktree add` may create the leaf: a uniquely named directory is created in the
+// leaf's parent and removed again, below `.effective-flow/` after the runtime-state guard. Existing
+// parents a sandbox makes read-only are WORKTREE_SANDBOX_DENIED here, before anything else ran.
+async function probeLeafParent(context, resolved) {
+  const parent = path.dirname(resolved.worktreePath);
+  const probe = path.join(parent, `.effective-flow-probe-${randomBytes(8).toString('hex')}`);
+  if (resolved.guard === 'runtime-state') await guardTarget(context, probe);
+  try {
+    await context.fs.mkdir(probe, { mode: 0o700 });
+  } catch (error) {
+    if (DENIED_ERRNOS.includes(error?.code)) sandboxDenied(parent, resolved.base, error.code);
+    fail('WRITE_FAILED', `cannot write below ${parent}: ${error?.code ?? error?.message}`);
+  }
+  try {
+    await context.fs.rmdir(probe);
+  } catch (error) {
+    fail('WRITE_FAILED', `cannot remove the probe ${probe}: ${error?.code ?? error?.message}`);
+  }
+}
+
+function publicPath(cwd, target, resolved, extra = {}) {
+  const { requested, ...result } = resolved;
+  return { runtimeStateRoot: cwd, ...target, ...result, ...extra };
+}
+
+// `worktree path-resolve`: reads only.
+export async function pathResolve(input, deps) {
+  const context = prepare('worktree path-resolve', input, deps);
+  const target = requirePathTarget(input);
+  await requireRootSyntax(input.cwd);
+  const { cwd } = await resolveRoot(context, input.cwd);
+  const resolved = await resolveWorktreePath(context, await resolveBases(context, deps), target);
+  return publicPath(cwd, target, resolved);
+}
+
+// `worktree path-prepare`: re-derives the `path-resolve` result, creates its missing parents,
+// requires the leaf to be absent (WORKTREE_PATH_EXISTS) and its parent writable (a probe directory,
+// WORKTREE_SANDBOX_DENIED). `created` lists what this call created.
+export async function pathPrepare(input, deps) {
+  const context = prepare('worktree path-prepare', input, deps);
+  const target = requirePathTarget(input);
+  await requireRootSyntax(input.cwd);
+  const { cwd } = await resolveRoot(context, input.cwd);
+  const resolved = await resolveWorktreePath(context, await resolveBases(context, deps), target);
+  const created =
+    resolved.guard === 'runtime-state'
+      ? await prepareRuntimeStateParents(context, resolved)
+      : await prepareTrustedParents(context, resolved, deps);
+  if ((await lstatOrNull(context.fs, resolved.worktreePath)) !== null) {
+    refuse('WORKTREE_PATH_EXISTS', `${resolved.worktreePath} already exists`, {
+      path: resolved.worktreePath,
+    });
+  }
+  await probeLeafParent(context, resolved);
+  return publicPath(cwd, target, resolved, { created });
+}
+
+// `worktree reuse-facts`: fetches the base ref and the HEAD branch's upstream in the linked
+// `executionRoot`, then returns the facts and their `branchSource`. The main checkout is no reused
+// worktree, so it is INVALID_ROOT.
+export async function reuseFacts(input, deps) {
+  const context = prepare('worktree reuse-facts', input, deps);
+  for (const key of ['executionRoot', 'baseRef', 'localBaseBranch', 'visibility']) {
+    if (!Object.hasOwn(input, key)) fail('INVALID_INPUT', `${key} is required`);
+  }
+  const { cwd, executionRoot } = await openRoots(context, input);
+  if (executionRoot === cwd) {
+    fail('INVALID_ROOT', 'executionRoot must be a linked or harness checkout, not the main one');
+  }
+  for (const key of ['baseRef', 'localBaseBranch']) {
+    if (!isText(input[key], 256)) fail('INVALID_INPUT', `${key} must be a non-empty string`);
+  }
+  let facts;
+  try {
+    facts = await deriveReuseFacts(
+      {
+        baseRef: input.baseRef,
+        localBaseBranch: input.localBaseBranch,
+        visibility: input.visibility,
+        fetch: true,
+      },
+      {
+        git: (args, { env, timeoutMs, processGroup } = {}) =>
+          runGit(context, executionRoot, ['-c', 'core.fsmonitor=false', ...args], {
+            env: env === undefined ? context.env : { ...context.env, ...env },
+            timeoutMs,
+            processGroup,
+          }),
+        environment: deps.env ?? process.env,
+      },
+    );
+  } catch (error) {
+    if (error instanceof ReuseFactsError) fail(error.code, error.message);
+    throw error;
+  }
+  return { runtimeStateRoot: cwd, executionRoot, ...facts };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2135,6 +2546,8 @@ async function inspectRecords(
   const records = [];
   const sources = new Map();
   const named = new Set();
+  // The `<base>/<repo>` directory of every valid record, from the parent of its session leaf.
+  const repositoryDirectories = new Set();
   const ids = recordSet === null ? await listRecordIds(context) : [...recordSet.valid.keys()];
   for (const id of ids) {
     const paths = recordPaths(roots.cwd, id);
@@ -2156,6 +2569,11 @@ async function inspectRecords(
     }
     const record = read.record;
     named.add(record.worktreePath);
+    repositoryDirectories.add(
+      path.dirname(
+        record.purpose === 'apply-review' ? path.dirname(record.worktreePath) : record.worktreePath,
+      ),
+    );
     if (sessionId !== null && record.sessionId !== sessionId) continue;
     const facts = await gatherFacts(context, roots, worktrees, record, { mergeGateRelease });
     const { conditions, blockers } = assessEligibility(facts, {
@@ -2209,6 +2627,7 @@ async function inspectRecords(
     records,
     sources,
     named,
+    repositoryDirectories,
     orphanLocks,
     orphanLedgers,
     ledgerDirectory: ledgers.finding,
@@ -2233,17 +2652,30 @@ function isBelow(parent, target) {
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
-async function unrecordedWorktrees(context, roots, worktrees, named, sessionId, deps) {
+// The registered linked worktrees no record names; with `sessionId`, only those at or below that
+// session's paths under the current bases and under the `<base>/<repo>` directory of every existing
+// record (`repositoryDirectories`), so a worktree under an earlier base stays visible after the
+// base changed.
+async function unrecordedWorktrees(
+  context,
+  roots,
+  { worktrees, named, repositoryDirectories },
+  sessionId,
+  deps,
+) {
   let sessionRoots = null;
   if (sessionId !== null) {
     const bases = await resolveBases(context, deps);
     const repo = path.basename(roots.cwd);
+    const directories = new Set([path.join(bases.worktree, repo), ...repositoryDirectories]);
     sessionRoots = await Promise.all(
       [
-        path.join(bases.worktree, repo, sessionId),
-        ...Object.values(PURPOSE_SUFFIXES).map((suffix) =>
-          path.join(bases.worktree, repo, `${sessionId}${suffix}`),
-        ),
+        ...[...directories].flatMap((directory) => [
+          path.join(directory, sessionId),
+          ...Object.values(PURPOSE_SUFFIXES).map((suffix) =>
+            path.join(directory, `${sessionId}${suffix}`),
+          ),
+        ]),
         path.join(bases.applyReview, repo, sessionId),
       ].map((candidate) => canonicalOrSelf(context.fs, candidate)),
     );
@@ -2275,8 +2707,8 @@ export async function inspect(input, deps) {
   const context = prepare('worktree inspect', input, deps);
   const sessionId = input.sessionId === undefined ? null : requireSessionId(input.sessionId);
   const roots = await openRoots(context, input);
-  const { worktrees, records, named, orphanLocks, orphanLedgers, ledgerDirectory } =
-    await inspectRecords(context, roots, { sessionId });
+  const inspected = await inspectRecords(context, roots, { sessionId });
+  const { records, orphanLocks, orphanLedgers, ledgerDirectory } = inspected;
   return {
     runtimeStateRoot: roots.cwd,
     executionRoot: roots.executionRoot,
@@ -2287,7 +2719,7 @@ export async function inspect(input, deps) {
     orphanLedgers,
     // Only when the `ledgers/` entry is unsafe: `{reason: 'unsafe', path}`, and no ledger listed.
     ...(ledgerDirectory ? { ledgerDirectory } : {}),
-    unrecorded: await unrecordedWorktrees(context, roots, worktrees, named, sessionId, deps),
+    unrecorded: await unrecordedWorktrees(context, roots, inspected, sessionId, deps),
   };
 }
 
@@ -4405,8 +4837,7 @@ export async function cleanupPlan(input, deps) {
     unrecorded: await unrecordedWorktrees(
       context,
       roots,
-      worktrees,
-      new Set([...named, ...invalid.paths]),
+      { worktrees, named: new Set([...named, ...invalid.paths]), repositoryDirectories: [] },
       null,
       deps,
     ),

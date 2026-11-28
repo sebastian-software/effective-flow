@@ -129,8 +129,8 @@ branch all stay in `EXECUTION_ROOT`.
 - **Codex app:** A Codex app worktree is harness-managed, may start in detached HEAD, and remains
   associated with its task across Handoff. Reuse and revalidate it; do not wrap it in another
   Effective Flow worktree or remove it. Detached HEAD is valid only when the receipt explicitly
-  pins its OID. If delivery requires a branch, create or adopt that branch through the supported
-  app flow, then issue and verify a new branch receipt before committing.
+  pins its OID. Its delivery branch follows `worktree-integration`'s harness branch reuse (created
+  at a clean task's first commit); issue and verify a new branch receipt before committing.
 
 The standalone `{{SKILL:deliver}}` partial-diff lifecycle is the narrow exception to reusing a
 harness-managed source checkout as the delivery checkout. Its dirty or detached source receipt is

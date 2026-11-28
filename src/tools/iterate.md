@@ -1,7 +1,7 @@
 ---
 description: "Feeds review notes from an existing pull request (bots like Greptile and human reviewers) as well as additional free-text instructions back into the same PR as new commits – a mini build on an already delivered change. Classifies each item and delegates to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}, replies to and resolves the addressed review threads. Without a PR it iterates locally on the latest branch change."
 catalogHint: "Feeds PR review notes and instructions back into an existing PR as new commits."
-contextBudget: 1910
+contextBudget: 1913
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -118,6 +118,11 @@ goal-completion
 ```lazy-include
 worktree-integration
 when: Phase 1 must provision the PR head checkout, or must read `delivery.baseBranch` for the local-mode diff
+```
+
+```lazy-include
+worktree-conflict-stop
+when: Phase 1's `worktree path-resolve` for the PR head checkout returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
 ```
 
 ```lazy-include
@@ -592,7 +597,8 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
   no record, no `--force` or detached workaround – and report which checkout holds the branch and
   that it must be cleaned or released first. Otherwise read the deferred `worktree-integration` fragment – a mandatory load before the
   worktree is created – and create one Effective Flow-owned worktree for the existing head branch
-  without `-b`: never create a branch, never rebase or force. Issue its `effective-flow-created`
+  at the path its "Worktree execution" step 2 resolves and prepares (purpose `delivery`), without
+  `-b`: never create a branch, never rebase or force. Issue its `effective-flow-created`
   receipt with purpose `delivery`, set `creationOid` to the fetched head OID, and write its record
   immediately per the worktree record obligation. Phase 5's handback withdraws it after the push
   with one `worktree remove` call (denial fallback: `cleanup-ready`); a controlled stop sets

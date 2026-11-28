@@ -228,17 +228,22 @@ exit `1` fails, and any other exit stops the run.
 Here "this run created the branch" sets "this run created the delivery branch". A local branch that
 is ahead is resumed only through the worktree that holds its commits ("Resumption by adoption").
 
-**Dedicated worktree.** Derive `WORKTREE_PATH` and guard every parent directory exactly as "Worktree
-execution" step 2 prescribes, then run
+```lazy-include
+worktree-conflict-stop
+when: the dedicated worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
+**Dedicated worktree.** Resolve `WORKTREE_PATH`, apply `worktree-conflict-stop` and prepare its
+parents exactly as "Worktree execution" step 2 prescribes, purpose `delivery`, then run
 `git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> '<head-branch>'` without `-b`. Issue and
 verify its `effective-flow-created` receipt with purpose `delivery`, record the worktree as created
 by this run, and immediately write its lifecycle record with `worktree record-init`, `creationOid`
 set to the fetched head OID. Setup follows "Worktree execution" step 3.
 
 **Under a harness-managed receipt** (a Claude Code or Codex worktree session), this is a stated
-exception to "Determine mode": create the dedicated worktree as a **sibling** under the configured
-base directory of the verified `RUNTIME_STATE_ROOT`, at step 2's path with `REPO_NAME` the basename
-of `RUNTIME_STATE_ROOT`, never nested in the harness worktree, which is never switched. The sibling becomes `EXECUTION_ROOT`, and the report says the changes live there,
+exception to "Determine mode": create the dedicated worktree as a **sibling** at step 2's resolved
+path, with `cwd` the verified `RUNTIME_STATE_ROOT`, never nested in the harness worktree, which is
+never switched. The sibling becomes `EXECUTION_ROOT`, and the report says the changes live there,
 not in the harness session's tree.
 
 ### Resumption by adoption

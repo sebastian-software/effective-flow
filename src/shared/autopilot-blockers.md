@@ -5,7 +5,8 @@ A blocker is anything no score resolved: the blocker rows and kinds of `scored-d
 duplicate tie re-score, a scoring-leaf failure after its retry, an unknown question, a failed
 clarity gate, the decision cap, a local-only security finding), a plan that did not end
 `Approved` with zero open points (`plan-not-approved`), an appendix scan finding
-(`appendix-scan`) and a failure after branch creation (`post-branch-failure`). Record each one
+(`appendix-scan`), a failure after branch creation (`post-branch-failure`) and a worktree path a
+loaded instruction forbids (`worktree-location-conflict`, `worktree-conflict-stop`). Record each one
 with `blocker-record` as `scored-decisions` "Records" defines, unless the helper already recorded
 it.
 
@@ -19,11 +20,27 @@ worktree-integration
 when: the plan-only draft path is about to provision its worktree; reading it is mandatory before any `git worktree add`
 ```
 
+```lazy-include
+worktree-conflict-stop
+when: the plan-only draft path's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
 **Stop at once.** A blocker ends implementation where it occurs. Stop the downstream workflow
 through its own controlled stop, so an owned worktree moves to `aborted` and is retained with its
 branch; never stage, commit or push implementation work, and never retry the blocked step.
 Uncommitted or unvalidated work stays in the retained worktree, which the report names. Then
 choose exactly one ending below.
+
+### Worktree location conflict
+
+When the ledger holds a `worktree-location-conflict` blocker, whatever else stands and on every
+repository, push nothing and open or update no pull request: not the implementation, not the
+plan-only draft, not an appendix. `pr-appendix` returns `withheld` for this state and
+`appendix-merge` refuses it. Report locally with the neutral message of `worktree-conflict-stop`;
+the computed path and the forbidding instruction appear only there. Close with
+`outcome: "no-pull-request"`, or, on an issue source with a plan pull request, with
+`plan-pull-request-unchanged` and that pull request's number; `run-close` refuses any other
+outcome.
 
 ### Security blocker on a public repository
 
@@ -59,8 +76,8 @@ used and stays unchanged.
    an empty prefix; `<plan-slug>` is the plan file name without its date prefix and `.md`) from the
    resolved base ref, its `effective-flow-created` receipt and its lifecycle record (purpose
    `delivery`, branch policy `retain`, workflow `autopilot`). It is always a separate worktree and
-   never switches a checkout; under a harness-managed receipt it is a sibling under the
-   configured base directory of `RUNTIME_STATE_ROOT`. Run no `worktree.setup`.
+   never switches a checkout; under a harness-managed receipt it is a sibling at step 2's
+   resolved path. Run no `worktree.setup`.
    **Existing branch** (a rerun on the same plan): when that branch exists locally or on the
    remote, make the literal `remote-tracker.mjs pr-list` call with
    `{cwd, state: "open", head: "<branch>"}`. Continue only on exactly one item that is

@@ -164,6 +164,8 @@ const RUNTIME_SCRIPT_FILES = [
   'review-report-render.mjs',
   'dated-name-allocation.mjs',
   'claude-settings-core.mjs',
+  'path-trust-core.mjs',
+  'worktree-reuse-facts-core.mjs',
   'runtime-file-primitives.mjs',
   'runtime-state-guard.mjs',
   'delivery-selection.mjs',

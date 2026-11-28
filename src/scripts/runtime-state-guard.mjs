@@ -390,7 +390,7 @@ export async function guardedMkdir(context, target) {
     await mkdir(target, { mode: 0o700 });
   } catch (error) {
     if (error?.code === 'EEXIST') return false;
-    fail('WRITE_FAILED', `cannot create ${target}: ${error?.code ?? error?.message}`);
+    fail('WRITE_FAILED', `cannot create ${target}: ${error?.code ?? error?.message}`, error);
   }
   const info = await lstat(target);
   if (info.isSymbolicLink() || !info.isDirectory()) {

@@ -374,13 +374,13 @@ Controls the depth and behavior of [`/effective-flow review`](./tools-quality.md
 
 Controls [`/effective-flow apply`](./tools-implement.md) when it processes review findings.
 
-| Key                     | Values                                       | Default                      | Meaning                                                  |
-| ----------------------- | -------------------------------------------- | ---------------------------- | -------------------------------------------------------- |
-| `defaultCommitStrategy` | `worktrees` / `single` / `none` / `null`     | `null`                       | Ask for the findings commit strategy on every run        |
-| `finalValidation`       | `full` / `changedScope` / `off`              | `full`                       | Scope of final validation after all findings             |
-| `stashPolicy`           | `interactive` / `keep` / `discard` / `apply` | `interactive`                | Handling of uncommitted changes before processing        |
-| `worktree.baseDir`      | String                                       | `.effective-flow/.worktrees` | Base directory for findings-internal isolation worktrees |
-| `worktree.setup`        | `auto` / `none` / free-text command          | `auto`                       | Setup command for each findings-internal worktree        |
+| Key                     | Values                                       | Default                      | Meaning                                                                                                 |
+| ----------------------- | -------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `defaultCommitStrategy` | `worktrees` / `single` / `none` / `null`     | `null`                       | Ask for the findings commit strategy on every run                                                       |
+| `finalValidation`       | `full` / `changedScope` / `off`              | `full`                       | Scope of final validation after all findings                                                            |
+| `stashPolicy`           | `interactive` / `keep` / `discard` / `apply` | `interactive`                | Handling of uncommitted changes before processing                                                       |
+| `worktree.baseDir`      | String                                       | `.effective-flow/.worktrees` | Base directory for findings-internal isolation worktrees; a set `EFFECTIVE_FLOW_WORKTREE_BASE_DIR` wins |
+| `worktree.setup`        | `auto` / `none` / free-text command          | `auto`                       | Setup command for each findings-internal worktree                                                       |
 
 `applyReview.worktree.*` is independent of the top-level `worktree.*` block: the former isolates
 parallel review findings and cherry-picks their commits, while the latter selects the execution
@@ -777,6 +777,10 @@ Controls the execution location of the overall implementation, independently of
 | `enabled` | `true` / `false`                    | `true`                       | Run implementation in a separate Git worktree        |
 | `setup`   | `auto` / `none` / free-text command | `auto`                       | Setup command in the newly created delivery worktree |
 | `baseDir` | String                              | `.effective-flow/.worktrees` | Base directory for delivery worktrees                |
+
+The environment variable `EFFECTIVE_FLOW_WORKTREE_BASE_DIR` (an absolute path to an existing
+directory) wins over `baseDir` and `applyReview.worktree.baseDir`; see
+[Machine-level worktree location](./worktree-and-delivery.md#machine-level-worktree-location).
 
 ## Block `tracker`
 

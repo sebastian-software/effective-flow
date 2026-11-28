@@ -99,6 +99,11 @@ worktree-integration
 when: "Restore the plan" has created the delivery worktree and is about to run its setup
 ```
 
+```lazy-include
+worktree-conflict-stop
+when: the delivery worktree's or the plan-on-base worktree's `worktree path-resolve` returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
 Issue Buddy withdraws its planning worktree, and with it the plan, after confirmed publication.
 Make the literal `remote-tracker.mjs pr-read` call with `{cwd, number}` and use only its
 normalized fields: require `sameRepository: true`, `draft: true` and a valid `planPrMarker`, which
@@ -109,8 +114,10 @@ is `P`. Validate the head branch with
 Restore the plan in this run's own **delivery worktree** on the plan head branch, never in the
 invocation or primary checkout. Create it as `plan-pr-continuation`'s "Provisioning" prescribes for
 a dedicated worktree: its local-branch-state rule, then
-`git -C <RUNTIME_STATE_ROOT> worktree add <DELIVERY_ROOT> '<head-branch>'` without `-b`, at
-`BASE_DIR/REPO_NAME/<run-id>`, with an `effective-flow-created` receipt (workflow `autopilot`,
+`git -C <RUNTIME_STATE_ROOT> worktree add <DELIVERY_ROOT> '<head-branch>'` without `-b`, at the
+`worktreePath` of "Worktree execution" step 2's `worktree path-resolve` and `worktree
+path-prepare` with purpose `delivery` and `sessionId` `<run-id>` and `worktree-conflict-stop`
+between them, with an `effective-flow-created` receipt (workflow `autopilot`,
 purpose `delivery`) and `worktree record-init`, `creationOid` set to the fetched head OID. Then run
 setup in it per `worktree.setup` as "Worktree execution" step 3 of `worktree-integration`
 prescribes for a newly created worktree, and record the receipt's final setup status (`complete`
@@ -137,7 +144,10 @@ Issue Buddy skipped the issue because its plan is already on the base. Resolve t
 Buddy does (the configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main`), fetch it
 with `git -C <RUNTIME_STATE_ROOT> fetch origin 'refs/heads/<base>:refs/remotes/origin/<base>'` and
 create this run's own worktree at the fetched base OID: purpose `issue-planning`, branch
-`issue-planning/<run-id>`, path `BASE_DIR/REPO_NAME/<run-id>-issue-planning`, with its receipt and
+`issue-planning/<run-id>`, path from the `worktree path-resolve` and `worktree path-prepare` of
+"Worktree execution" step 2 with `sessionId` `<run-id>` (`<base>/<repo>/<run-id>-issue-planning`)
+and `worktree-conflict-stop` between them,
+with its receipt and
 `worktree record-init` (workflow `autopilot`). Find the open plans directly under `<plan.dir>/` of
 that worktree whose header carries exactly one `**Issue:** #<N>` line and a canonical open status.
 Exactly one match continues on the plan-source path with that file's absolute path in the worktree

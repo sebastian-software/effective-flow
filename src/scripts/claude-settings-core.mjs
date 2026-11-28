@@ -76,6 +76,15 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   // `resume-check` only reads: it takes no lock, writes nothing, and runs Git with
   // `GIT_OPTIONAL_LOCKS=0`.
   'worktree resume-check',
+  // `path-resolve` only reads. `path-prepare` creates only the missing parent directories of the
+  // one worktree path the purpose table requires below the resolved base (mode 0700, through the
+  // runtime-state guard below `.effective-flow/`, after the trust checks elsewhere), never the
+  // worktree path itself, and removes nothing.
+  'worktree path-resolve',
+  'worktree path-prepare',
+  // `reuse-facts` only reads, apart from the fetch of the base ref and the HEAD branch's upstream,
+  // which updates only remote-tracking refs.
+  'worktree reuse-facts',
   'cleanup plan',
   // The delivery-progress ledger housekeeping. `ledger init` writes one private ledger file below
   // `.effective-flow/worktree-runs/ledgers/`, no-clobber and under the record lock, only for the

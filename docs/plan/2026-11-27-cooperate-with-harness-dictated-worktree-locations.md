@@ -74,6 +74,14 @@ worktree-creating tool, so it is not a refactoring.
 - The record schema gets no version 2.
 - The conflict question offers no agent-supplied location and no "continue here" option.
 
+**Decisions during implementation** (2026-11-28):
+
+- A location conflict in Autopilot's delivery-base attempt records `unresolved` and still
+  publishes the draft. Other Autopilot location conflicts still block publication.
+- A new delivery branch in a reused harness checkout starts at the freshly resolved base commit.
+- Implement the fixture and evaluator support for the three new scenarios. Record missing live
+  evidence separately from the automated tests of that support.
+
 ## Outcome checkpoint
 
 **Primary source:** user request in a Recensor session retro, 2026-11-27, for
@@ -189,9 +197,12 @@ agent's loaded context forbids the computed path. That context includes the syst
     - `plan-pull-request-unchanged` with the PR number when an issue source already has a plan PR;
     - otherwise `no-pull-request`.
   - The ADR `docs/adr/plan-only-unattended-publication.md` gains this exception.
+  - A location conflict in the delivery-base attempt is not a blocker: record `unresolved` with
+    reason `worktree-location-conflict` and continue publishing without exposing the machine path.
 - **Every other non-interactive run** ends with `ABORT: worktree-location-conflict` and the same
-  neutral message. Examples are delegated `build`, the merge-gate delegation, `iterate` from
-  merge-gate, and issue-buddy planning.
+  neutral message. This includes `Run state: non-interactive` or `relayed`, an Issue Buddy pass,
+  or a leaf without a user channel. Same-session delegation and `Run state: gated` inherit the
+  caller's interactivity.
 - **Public text never quotes the machine path or the instruction.** Both appear only in the local
   question or report.
 
@@ -224,7 +235,7 @@ rejection conditions are as listed below.
 - the tree and index are clean;
 - there are no untracked files outside the ignore rules;
 - there are no commits beyond the base;
-- no upstream commit is absent from HEAD;
+- no upstream commit is absent from both HEAD and the fresh base;
 - in hidden mode, the name passes the `prefix-discloses` check of `delivery-branch-name`
   (`worktree-integration.md:162-168`).
 
@@ -247,6 +258,8 @@ base and no untracked files.
 
 - Effective Flow creates the delivery branch, named through `delivery-branch-name`, immediately
   before the first commit.
+- If HEAD is behind the base at setup, move it to the fresh base with `git switch --detach`,
+  leaving the local base branch unchanged. Otherwise keep the checkout's existing identity.
 - It sets the run's branch-created flag and records the creation OID in `authorization.json`. It
   issues a new verified receipt.
 - An empty result or an abort before the first commit leaves no branch, so the empty-branch cleanup
@@ -372,8 +385,9 @@ Stop and report instead of improvising when any of these occurs:
   has no location proof. The scan still sees the old root through the records.
 - **The same basename in one session under one base:** `git worktree add` fails on the existing
   leaf, and the run stops. Nothing is overwritten.
-- **Harness worktree behind the base:** authorize, then ff-only, then transition. If the
-  fast-forward fails, today's behaviour applies.
+- **Harness worktree behind the base:** for adoption, authorize, fast-forward the host branch,
+  then transition. If the fast-forward fails, today's behaviour applies. For branch creation,
+  authorize at the fresh base, switch to it detached, then transition without a delivery branch.
 - **Abort after a commit on a created branch:** the branch is kept and reported. The harness is
   never switched back.
 - **T3 Code session started without `workspaceStrategy`:** this is the main checkout, so there is

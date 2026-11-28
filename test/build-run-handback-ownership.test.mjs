@@ -1047,6 +1047,103 @@ test('existing in-place handback may restore its verified original checkout with
   assert.equal(accepted.finalCheckout.head, live.finalPlan.commit);
 });
 
+// Invariant: an owned build worktree follows the prose order `path-resolve`, conflict stop,
+// `authorize-execution`, `path-prepare`, `git worktree add`: the authorization accepts the resolved
+// root while its parent directories do not exist yet, still requires the root itself to be absent,
+// and the transition proves the created worktree at exactly that root.
+test('owned-worktree authorization precedes path-prepare and accepts missing parents', async (t) => {
+  const fx = fixture(t, true);
+  const state = (operation, input) =>
+    executeStateOperation(operation, input, {
+      runner: createProcessRunner(),
+      env: { ...env, EFFECTIVE_FLOW_WORKTREE_BASE_DIR: '' },
+    });
+  const target = { cwd: fx.root, purpose: 'delivery', sessionId: fx.input.runId };
+  const resolved = await state('worktree path-resolve', target);
+  assert.equal(resolved.ok, true, JSON.stringify(resolved));
+  const root = resolved.result.worktreePath;
+  assert.equal(existsSync(path.dirname(root)), false, 'the parents are not created yet');
+  const live = await start(fx);
+  const authorize = () =>
+    live.call('authorize-execution', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      mode: 'owned-worktree',
+      executionRoot: root,
+      branch: 'feature',
+      baseHead: live.input.execution.head,
+      authority: {
+        kind: 'source',
+        source: 'instruction',
+        index: null,
+        quote: live.input.source.instruction,
+      },
+    });
+  mkdirSync(root, { recursive: true });
+  await assert.rejects(authorize(), error('COLLISION'), 'the root itself must be absent');
+  rmSync(path.join(fx.root, '.effective-flow', '.worktrees'), { recursive: true });
+  const authorization = await authorize();
+  assert.equal(existsSync(path.dirname(root)), false, 'authorization creates nothing');
+  const prepared = await state('worktree path-prepare', target);
+  assert.equal(prepared.ok, true, JSON.stringify(prepared));
+  assert.equal(prepared.result.worktreePath, root);
+  git(fx.root, 'worktree', 'add', '-q', '-b', 'feature', root);
+  const head = live.input.execution.head;
+  const record = {
+    schemaVersion: 1,
+    recordId: 'owned-delivery',
+    sessionId: live.input.runId,
+    componentId: null,
+    workflow: 'build',
+    purpose: 'delivery',
+    repositoryIdentity: live.repositoryIdentity,
+    runtimeStateRoot: live.root,
+    worktreePath: root,
+    branch: 'feature',
+    creationOid: head,
+    ownership: 'effective-flow-created',
+    receipt: {
+      repositoryIdentity: live.repositoryIdentity,
+      executionRoot: root,
+      runtimeStateRoot: live.root,
+      checkout: { kind: 'branch', branch: 'feature' },
+      origin: 'effective-flow-created',
+      setupOwner: 'Effective Flow build',
+      setupStatus: 'pending',
+      workflow: 'build',
+      purpose: 'delivery',
+    },
+    branchPolicy: 'retain',
+    createdAt: '2026-10-20T10:00:00Z',
+    updatedAt: '2026-10-20T10:00:00Z',
+    status: 'active',
+    reason: null,
+  };
+  const initialized = await state('worktree record-init', {
+    cwd: live.root,
+    executionRoot: live.root,
+    record,
+  });
+  assert.equal(initialized.ok, true, JSON.stringify(initialized));
+  const transition = await live.call('transition-execution', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    authorization,
+    execution: {
+      executionRoot: root,
+      branch: 'feature',
+      head,
+      origin: 'effective-flow-created',
+      owner: 'build',
+    },
+    ownership: live.ref(live.root, '.effective-flow/worktree-runs/owned-delivery.json'),
+  });
+  assert.equal(
+    JSON.parse(readFileSync(path.join(transition.root, transition.path))).execution.executionRoot,
+    root,
+  );
+});
+
 // Invariant (compatibility): a record the runtime-state helper writes passes build-run's lifecycle
 // proof (`exact()` over the version 1 key set, every identity field) at the transition, and the
 // helper's per-record lock path is the one build-run's lock check reads: a held lock blocks build

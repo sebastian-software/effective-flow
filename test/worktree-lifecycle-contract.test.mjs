@@ -578,26 +578,45 @@ test('post-withdrawal lifecycle calls use the runtime root as executionRoot', ()
   assert.doesNotMatch(delivery, /cd <RUNTIME_STATE_ROOT> &&/);
 });
 
-// Invariant: the helper's purpose table derives `REPO_NAME` from `cwd` (the main checkout), so
-// prose must name the same directory; `git rev-parse --show-toplevel` in a linked or harness
-// checkout would name a path the helper refuses.
-test('REPO_NAME is the basename of RUNTIME_STATE_ROOT at every worktree path derivation', () => {
+// Invariant: the helper's purpose table derives the repository directory from `cwd` (the main
+// checkout) and is the only source of a worktree path, so every provisioning site takes the path
+// from `worktree path-resolve` with `cwd` the verified `RUNTIME_STATE_ROOT` and its parents from
+// `worktree path-prepare`; none composes `BASE_DIR/REPO_NAME` or names `REPO_NAME`, which a
+// `git rev-parse --show-toplevel` in a linked or harness checkout would misname.
+test('every worktree path derivation takes the path-resolve result from RUNTIME_STATE_ROOT', () => {
   const flat = (text) => text.replace(/\s+/g, ' ');
-  assert.match(flat(delivery), /`REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`/);
+  assert.match(
+    flat(delivery),
+    /`WORKTREE_PATH` is the `worktreePath` of `worktree path-resolve` with `cwd` the verified `RUNTIME_STATE_ROOT`, never a linked or harness checkout/,
+  );
+  assert.match(flat(delivery), /create its parent directories with `worktree path-prepare`/);
   assert.match(
     flat(applyReview),
-    /`REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`/,
+    /`WORKTREE_PATH` is the `worktreePath` of `worktree path-resolve` .* with `cwd` the verified `RUNTIME_STATE_ROOT`, purpose `apply-review`/,
   );
-  assert.match(
-    flat(readShared('plan-publication')),
-    /`REPO_NAME` \(the basename of `RUNTIME_STATE_ROOT`/,
-  );
-  assert.match(
-    flat(readShared('plan-pr-continuation')),
-    /`REPO_NAME` the basename of `RUNTIME_STATE_ROOT`/,
-  );
-  for (const text of [delivery, applyReview]) {
-    assert.doesNotMatch(text, /basename "\$\(git rev-parse --show-toplevel\)"/);
+  assert.match(flat(applyReview), /Create the missing parents with `worktree path-prepare`/);
+  for (const name of [
+    'plan-publication',
+    'plan-pr-continuation',
+    'merge-gate-checkout-boundary',
+    'autopilot-blockers',
+    'autopilot-issue-source',
+    'autopilot-delivery-conflict',
+  ]) {
+    assert.doesNotMatch(readShared(name), /\bREPO_NAME\b|\bBASE_DIR\b/, `${name} composes no path`);
+  }
+  for (const name of ['iterate', 'issue-buddy', 'apply-issues', 'deliver']) {
+    assert.doesNotMatch(
+      readSource('tools', `${name}.md`),
+      /\bREPO_NAME\b|\bBASE_DIR\b/,
+      `${name} composes no path`,
+    );
+  }
+  for (const text of [delivery, applyReview, lifecycle]) {
+    assert.doesNotMatch(
+      text,
+      /\bREPO_NAME\b|\bBASE_DIR\b|basename "\$\(git rev-parse --show-toplevel\)"/,
+    );
   }
 });
 
@@ -607,7 +626,7 @@ test('apply-issues gives each issue worktree its own sessionId and path', () => 
   const flat = extractBody(readSource('tools', 'apply-issues.md')).replace(/\s+/g, ' ');
   assert.match(
     flat,
-    /`sessionId` `<SESSION_ID>-issue-<n>` \(`<n>` the issue number\), path `BASE_DIR\/REPO_NAME\/<SESSION_ID>-issue-<n>` and purpose `delivery`/,
+    /`sessionId` `<SESSION_ID>-issue-<n>` \(`<n>` the issue number\), purpose `delivery` and the path `worktree path-resolve` and `worktree path-prepare` give for both/,
   );
   assert.match(
     flat,
@@ -940,7 +959,7 @@ test('the merge-gate checkout boundary names its purpose, path, branch policy an
   const boundary = readShared('merge-gate-checkout-boundary').replace(/\s+/g, ' ');
   for (const token of [
     'purpose `merge-gate`',
-    'path `<worktree.baseDir>/<REPO_NAME>/<SESSION_ID>-merge-gate`',
+    'path `<base>/<repo>/<SESSION_ID>-merge-gate` from `worktree path-resolve`',
     '`branchPolicy: retain`',
     '`setupStatus` of `pending`, `complete`, `skipped` or `externally managed`',
     "no new branch name; the head branch is the pull request's existing branch",
@@ -950,7 +969,7 @@ test('the merge-gate checkout boundary names its purpose, path, branch policy an
   const table = lifecycle.replace(/\s+/g, ' ');
   assert.ok(
     table.includes(
-      '`plan-publication` or `merge-gate` at `BASE_DIR/REPO_NAME/SESSION_ID-<purpose>` carry `retain`',
+      '`plan-publication` or `merge-gate` at `<base>/<repo>/SESSION_ID-<purpose>` carry `retain`',
     ),
     'the lifecycle purpose table binds merge-gate to its path and retain',
   );
@@ -1226,4 +1245,19 @@ test('cleanup offers proven delivery branches as their own lazily detailed class
     [/the content itself stays in `<proofCommit>`/, 'content stays in the base'],
   ]);
   assert.doesNotMatch(flatCleanup, /gc\.pruneExpire/, 'the report wording stays lazy');
+});
+
+// Invariant: the lifecycle reads the variable only from `path-resolve`'s `source`, never from a
+// shell probe, and reports a base diagnostic (the ADR difference) once per run, then continues.
+test('the lifecycle reports the configured-base difference once and probes no shell', () => {
+  assertClauses(flatLifecycle, [
+    [
+      /Whether the variable is set is known only from `source`, never from a shell probe/,
+      'no probe',
+    ],
+    [
+      /Report each `diagnostics` entry \(`configured-base-differs`, `configured-base-invalid`\) once per run and continue/,
+      'diagnostic once per run',
+    ],
+  ]);
 });

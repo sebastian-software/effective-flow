@@ -27,6 +27,11 @@ worktree-integration
 when: step 4 has created the attempt worktree and is about to run its setup
 ```
 
+```lazy-include
+worktree-conflict-stop
+when: step 4's `worktree path-resolve` for the attempt worktree returned a `source` other than `environment` and a `worktreePath` that a loaded system, `CLAUDE.md`, `AGENTS.md` or host instruction forbids, and its `worktree path-prepare` has not run
+```
+
 1. **Fetch.** `git -C <RUNTIME_STATE_ROOT> fetch origin 'refs/heads/<base>:refs/remotes/origin/<base>'`.
    A failed fetch, like any error envelope below, is a `post-branch-failure` blocker.
 2. **Check.** Make the literal `autopilot.mjs delivery-base-check` call with
@@ -44,11 +49,13 @@ when: step 4 has created the attempt worktree and is about to run its setup
 4. **Checkout.** When the run holds `DELIVERY_ROOT` (an issue source's plan pull request), the
    attempt runs there. Otherwise (a plan source or the plan-on-base path) create a run-owned
    **attempt worktree** on `<branch>` with the mechanics `autopilot-issue-source` "Restore the
-   plan" uses for the delivery worktree: `worktree add` without `-b` at
-   `BASE_DIR/REPO_NAME/<run-id>-delivery-base`, a receipt with workflow `autopilot` and purpose
-   `delivery`, `worktree record-init` with `sessionId` `<run-id>-delivery-base` (purpose
+   plan" uses for the delivery worktree: `worktree add` without `-b` at the path `worktree
+path-resolve` and `worktree path-prepare` give for purpose `delivery` and `sessionId`
+   `<run-id>-delivery-base`, with `worktree-conflict-stop` between them, a receipt with workflow
+   `autopilot` and purpose `delivery`, `worktree record-init` with that `sessionId` (purpose
    `delivery` requires the path to end in the session id) and `creationOid` `<head-oid>`, then
-   `worktree.setup`. When `record-init` fails after `worktree add`, run
+   `worktree.setup`. A location conflict there creates nothing and records `unresolved` with
+   `worktree-location-conflict`, no blocker. When `record-init` fails after `worktree add`, run
    `git -C <RUNTIME_STATE_ROOT> worktree remove '<path>'` without `--force`; if that fails, keep the
    worktree and report its path. The checkout must be on `<branch>` at `<head-oid>`, and
    `git -C <checkout> status --porcelain` must print nothing. A dirty checkout, a held branch or a
@@ -93,9 +100,9 @@ when: step 4 has created the attempt worktree and is about to run its setup
     - `unchecked`: `reason` the proof's, every other field but the first three and `headOid` null;
     - `resolved`: `reason` null, `conflictResolution` `ask` or `auto`, the effective
       `validationMode`, `mergeOid` the merge commit, `checkout` its absolute root;
-    - `unresolved`: `reason`, `mergeOid` null, `conflictResolution` as resolved, the
+    - `unresolved`: `reason` names the failed step, `mergeOid` is null, `conflictResolution` as resolved, the
       `validationMode` determined so far or null, `checkout` the attempt's root, null for
-      `conflict-resolution-off` and `checkout-unavailable`.
+      `conflict-resolution-off`, `checkout-unavailable` and `worktree-location-conflict`.
 
     The helper verifies a named checkout with Git: on `refs/heads/<branch>`, a `resolved` tip with
     exactly the parents `[headOid, baseOid]`, an `unresolved` branch still at `headOid` with no

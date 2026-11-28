@@ -206,6 +206,9 @@ test('operations, locks and codes are frozen closed sets', () => {
       'worktree inspect',
       'worktree remove',
       'worktree resume-check',
+      'worktree path-resolve',
+      'worktree path-prepare',
+      'worktree reuse-facts',
       'cleanup plan',
       'cleanup apply',
       'ledger init',
@@ -284,6 +287,10 @@ test('operations, locks and codes are frozen closed sets', () => {
       'LEGACY_CHANGED',
       'GIT_FAILED',
       'INTERNAL_ERROR',
+      'WORKTREE_BASE_INVALID',
+      'WORKTREE_PATH_UNTRUSTED',
+      'WORKTREE_PATH_EXISTS',
+      'WORKTREE_SANDBOX_DENIED',
     ],
   );
   for (const value of [STATE_OPERATIONS, LOCK_NAMES, OUTCOME_CODES, STATE_ERROR_CODES, LOCKS]) {
@@ -318,6 +325,14 @@ test('exit codes: 0 success, 4 outcome, 2 input or root, 3 unsafe or write, 1 ot
   assert.equal(exitFor('LEGACY_CHANGED'), 3);
   assert.equal(exitFor('GIT_FAILED'), 1);
   assert.equal(exitFor('INTERNAL_ERROR'), 1);
+  for (const code of [
+    'WORKTREE_BASE_INVALID',
+    'WORKTREE_PATH_UNTRUSTED',
+    'WORKTREE_PATH_EXISTS',
+    'WORKTREE_SANDBOX_DENIED',
+  ]) {
+    assert.equal(exitFor(code), 3, code);
+  }
 });
 
 // Invariant: SCOPE_REFUSED is an outcome like the others: exit 4, a stderr line the prose can read
