@@ -1,7 +1,7 @@
 ---
 description: "Drives one trusted GitHub issue or one local plan unattended to a draft pull request: Issue Buddy plans an issue, the deep plan review always runs, the plan's recommended workflow implements it, every question is resolved by recorded 1–10 option scores, and the draft pull request documents close decisions, blockers and architecture fit. Never asks the user, never marks a pull request ready and never merges."
 catalogHint: "Takes one issue or plan unattended to a draft pull request, with decisions recorded."
-contextBudget: 502
+contextBudget: 530
 ---
 
 # Effective Flow Autopilot
@@ -94,7 +94,7 @@ when: preflight Stage A returned `issue-reference`, before the source checks
 
 ```lazy-include
 autopilot-delivery-conflict
-when: the workflow reported its verified handback commit and pre-delivery step 1 starts
+when: the workflow reported its verified handback commit and pre-delivery step 1 starts, or the user explicitly resumes a retained delivery-base gate
 ```
 
 ```lazy-include
@@ -120,6 +120,9 @@ and a `post-branch-failure` blocker after it. Every `autopilot.mjs` call carries
 appendix and its scan. Never write the ledger, the appendix or a decision record any other way.
 
 ## Phase 1: Preflight and classification
+
+For explicit user re-entry with only a `Capacity resume:` line, take the delivery-base resume
+path below instead of normal preflight. No source classification or `run-init` runs on that path.
 
 Preflight writes nothing: no ledger, no runtime-state migration, no file, branch or forge object.
 Any failure stops with its cause and creates no run. In this order:
@@ -236,7 +239,12 @@ Decision budget: <remaining>
 Next steps: suppressed
 Completion: pr
 Draft: requested
+Capacity wait: budget=<minutes>m; deadline=unanchored
 ```
+
+`<minutes>` is the preflight resolution's `validation.capacityWaitBudgetMinutes`: its `minutes`,
+else 120, an invalid value named once; the workflow's returned `Capacity wait:` line then goes to
+the delivery-base attempt's validators.
 
 (`{{SKILL:fix}}`, `{{SKILL:refactor}}` or `{{SKILL:docs}}` in place of `{{SKILL:build}}` as routed.)
 On an issue source the argument is the plan's absolute path in the run-owned worktree, and
@@ -277,6 +285,24 @@ carry-over, pre-commit security classification and handback follow `scored-decis
 4. **Appendix.** Make the literal `autopilot.mjs pr-appendix` call with `{cwd, runId}`, plus
    `planPullRequest: <number>` on the issue path. `rendered` hands its `sha256` to the workflow's `{{SKILL:pr}}` call with the inputs `scored-decisions` lists under "Before
    `pr`". `withheld` or `blocked` ends the run before any push.
+
+**Waiting for capacity.** A workflow return `ABORT: waiting for capacity` is read before every
+blocker path and is no blocker. A capacity wait from the delivery-base attempt takes this same exit.
+Run no further pre-delivery step, delivery, appendix or plan-only draft and
+write nothing to the forge; keep every worktree as a blocker does, leaving the workflow's retained
+record as it is; close with `no-pull-request`, or `plan-pull-request-unchanged` with the plan pull
+request on an issue source, which releases the planning claim. Report the workflow's waiting report
+and its re-entry: invoke the routed workflow with the retained plan and its `Capacity resume:`
+line only, without any scored/Automation lines. This is gated local recovery, not publication
+under the closed ledger. For a delivery-base
+wait, the explicit user invocation `autopilot` with only that `Capacity resume:` line instead
+enters the retained delivery-base stage per `autopilot-delivery-conflict`, before normal source
+selection or opening a ledger. Neither case starts a fresh autopilot run.
+
+```lazy-include
+capacity-refusal-retry
+when: a delivery-base validation reports a capacity refusal, or an explicit user invocation resumes a retained delivery-base gate
+```
 
 **After delivery.** When the workflow's handback reports `{{SKILL:pr}}`'s verified pushed head,
 make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOid}`; without one

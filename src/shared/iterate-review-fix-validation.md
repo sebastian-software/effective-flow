@@ -41,7 +41,8 @@ follow its content.
    `ABORT: validation environment signature`, naming the class and the affected checks. Under effective `quick` only the excluded test commands are deferred to
    CI, none of which runs locally, so any other environment check stops the run the same way. A
    timeout of the validator's own host tool, and any timeout it cannot attribute, is no environment
-   signature and keeps Phase 4's path.
+   signature and keeps Phase 4's path. A check `not executed (capacity)` is read before this rule,
+   is no signature and follows Phase 4's capacity step, under either mode.
 
 **Return line.** On `DONE`, and on every `ABORT` after Phase 4 started, the return's final text
 states exactly one line beside the `Returned commits:` and `Scope expansion:` lines, above the

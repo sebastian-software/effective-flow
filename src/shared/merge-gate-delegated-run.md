@@ -5,8 +5,26 @@ always-loaded core together with the run states, the closed question-id set and 
 this fragment uses. It runs in the delegated run the caller dispatched, and in a caller that runs the
 gate inline with its own run state, caller limits and Phase 0 results, which skips "Entry" but applies Phase 0
 step 2's `prReviewsRead` bullet with that run state before Phase 1, to the capabilities its Phase 0
-already read and without probing the provider again.
+already read and without probing the provider again. "Capacity entry" applies to both routes.
 `{{SKILL:merge-gate}}` is this fragment's only consumer.
+
+### Capacity entry
+
+For an open PR, an ordinary inline run uses the caller's `Capacity wait:` line. A delegated run
+adopts it after "Entry" and keeps its current line in wisdom across re-dispatches; an anchored
+wisdom line takes precedence over the caller's initial line. Do not re-resolve configuration.
+
+An explicit user resume runs inline after the read-only Phase 0 PR and authority checks, before
+Phase 1, and restores the original run's verified wisdom and binding per
+`capacity-refusal-retry`; require the same open PR, head and base OIDs as in the retained merge,
+and honor the tighter of the retained and current caller limits. Re-enter the specific conflict
+validation stage, not provisioning or `git merge`. If the PR, limits, or inputs no longer allow
+that gate, stop for reconciliation with no write to the checkout or forge.
+
+```lazy-include
+capacity-refusal-retry
+when: the inline run received a user-authorized Capacity resume line for conflict validation
+```
 
 ### Entry
 
@@ -1673,7 +1691,8 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
   write **onto the pull request's discussion**; the head **branch** is bounded by "Git write
   boundary".
 - Give every `build` input `summaryComment: suppressed`, `reviewGuard: established`,
-  `nextSteps: suppressed`, this run's `runState`, its `languageContext` and the stored scope record
+  `nextSteps: suppressed`, this run's `runState`, its `languageContext`, its `capacityWait`
+  (`merge-gate-delegation-contract`) and the stored scope record
   as `authorizedScope`, plus an approval round's
   `approvedOutcomes` whenever it delegates a thread or body item, and a bot round's
   `reviewFixValidation` for a `quick` review-fix candidate (`merge-gate-review-fix-validation`); the helper places each control line, the `Boundary token:` line and the

@@ -40,6 +40,8 @@ const RUNTIME_SCRIPT_FILES = [
   'delegation-envelope-core.mjs',
   'build-run-core.mjs',
   'build-run.mjs',
+  'capacity-wait-core.mjs',
+  'capacity-wait.mjs',
   'protected-validation-protocol.mjs',
   'protected-validation-core.mjs',
   'diff-baseline.mjs',

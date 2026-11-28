@@ -511,6 +511,14 @@ If the runtime migration fails, setup leaves the config marker unwritten, preser
 source and safely copied partial state, and applies its existing conditional rollback to its own
 unchanged ADR/convention writes.
 
+### Capacity wait block
+
+Guided's advanced settings also ask **Block 11 (`validation`)**: `validation.capacityWaitBudgetMinutes`
+(non-negative integer minutes, default `120`, `0` = no automatic retry). Only a non-negative integer
+is accepted; other input asks again or keeps the default. A Targeted request reaches it as well, for
+example `/effective-flow setup set validation.capacityWaitBudgetMinutes to 30`. Semantics:
+[Configuration](configuration.md#block-validation).
+
 ### Fast pilot block
 
 Guided's advanced settings end with **Block 10 (`executionProfiles`)**, which a

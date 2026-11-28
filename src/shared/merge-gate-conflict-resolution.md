@@ -32,6 +32,7 @@ Hand `{{AGENT:merge-conflict-resolver}}`:
 - the rule **"on an environment signature, report the check and its diagnostic; no suite split, no
   base comparison, no rerun"** with the signature classes and the preflight mapping of
   `environment-signature-classes`, which both roles include;
+- the run's **`Capacity wait:` line**, under which both roles retry a refused check;
 - the **forbidden substitutes** for a check that cannot run here: never run the suite, or a
   suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`
   or one over a suite-covering directory or glob; never neutralize the preflight by editing the
@@ -84,7 +85,8 @@ stated for the reason the second bullet gives:
     "Conflict validation mode" is `quick`, the **conflict-commit scope** it states instead of the
     generic `quick` mapping;
   - the rule **"on an environment signature, report the check and its diagnostic; no suite split,
-    no base comparison, no rerun"** with the same signature classes and preflight mapping;
+    no base comparison, no rerun"** with the same signature classes and preflight mapping, and
+    the run's `Capacity wait:` line updated from the resolver's report;
   - the same **forbidden substitutes**: never run the suite, or a suite-equivalent selection,
     outside the project's test entrypoint, such as a bare `node --test` or one over a
     suite-covering directory or glob; never neutralize the preflight by editing the probe or the
@@ -155,14 +157,29 @@ observed in the wisdom file first.
    to `{{AGENT:merge-conflict-resolver}}` per "Conflict-resolution delegation contract". The human-comment guard does **not** block this
    delegation, for the reason stated beside the CI repair.
    <!-- spawn-site:merge-gate-conflict-resolution/resolver -->
-3. **Consume the worker's outcome.** `ABORT` ends this step as a controlled stop under step 1's last
+3. **Consume the worker's outcome.** `ABORT: waiting for capacity` is read first and is no stop:
+   the index and checkout stay as returned, no `git merge --abort` runs, and
+   the run ends waiting for capacity per `capacity-refusal-retry`, committing, pushing, resolving
+   and merging nothing. Retain the resolver's partial per-file record, assigned scope and pending
+   checks locally. Resume this worker in validation-only mode before completing its staging and
+   return; do not resolve any file again. Any other `ABORT` ends this step as a controlled stop under step 1's last
    bullet. `DONE` continues.
 4. **Reconcile, then verify independently** – in that order, per that contract, ending with the
    resolved but uncommitted tree handed to `{{AGENT:code-validator}}` in the effective mode of
    "Conflict validation mode". A modified path the record does not name and justify, a failing
    verdict from either role, a verification that executed **no** check at all, or a stop that
-   section's classification names ends this step as a stop that commits nothing.
+   section's classification names ends this step as a stop that commits nothing. A validator
+   check left `not executed (capacity)` ends the run waiting as step 3 does, retaining the full
+   resolver record. Resume at step 4 only when the interrupted gate was independent verification;
+   reconcile again before verifying. On drift without a provable resolver record or merge identity,
+   stop for reconciliation instead of running on a different candidate.
    <!-- spawn-site:merge-gate-conflict-resolution/verification -->
+
+```lazy-include
+capacity-refusal-retry
+when: either role reports a check `not executed (capacity)` or returns `ABORT: waiting for capacity`, or the run was invoked with a `Capacity resume:` line
+```
+
 5. **Review the staged merge, third**, per that contract. A review that does not pass ends this
    step as a stop that commits nothing.
    <!-- spawn-site:merge-gate-conflict-resolution/review -->
@@ -226,7 +243,8 @@ for this change; replace a mandated combined gate that contains an excluded comm
 remaining established subcommands. Where those cannot run separately, the validator runs `full` and
 says so, and the effective mode is `full`.
 
-**Classifying the reported results.** An environment signature is one of the four classes of
+**Classifying the reported results.** A `not executed (capacity)` check is read first and is
+neither a signature nor a failing verdict. An environment signature is one of the four classes of
 `environment-signature-classes`. A check with one counts as not executed, and the round ends as a
 stop before the commit and the push that reports the signature class and the affected checks. Under
 effective `full` that holds with or without CI. Under effective `quick` only the excluded test

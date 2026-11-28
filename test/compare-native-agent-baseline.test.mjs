@@ -150,6 +150,8 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'merge-conflict-resolver-forbidden-substitutes',
       'code-validator-build-validation-budget',
       'merge-conflict-resolver-environment-signature-classes',
+      'code-validator-capacity-refusal',
+      'merge-conflict-resolver-capacity-refusal',
       'project-routing-skill-sources',
       'worker-git-history',
       'code-span-placeholder-pairs',

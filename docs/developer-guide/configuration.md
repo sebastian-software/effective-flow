@@ -507,6 +507,19 @@ review findings onto the pull request it just created. `delivery.prReview` keeps
 review-publication concept, not to the gate, and renaming it would recreate the confusion the
 `pr-review` → `merge-gate` tool rename removed.
 
+### Capacity wait budget (`validation.capacityWaitBudgetMinutes`)
+
+`validation.capacityWaitBudgetMinutes` is the one `validation.*` key. `config-resolve` validates it
+as a non-negative integer of at most one year (a transitional JSON value must be a JSON number) and
+reports a valid entry with a `minutes` field; an invalid entry yields an `invalid-value`
+diagnostic. An unset key stays unreported: the owning run applies the default of 120 minutes, and
+`0` disables automatic retry. The run that owns validation resolves it once and passes the shared
+`Capacity wait:` line to every validator, resolver and nested workflow, so no worker resolves the key
+or starts its own clock. The contract is
+[`capacity-refusal-retry`](../../src/shared/capacity-refusal-retry.md); the helper is described under
+"Capacity-wait" in the [build system guide](./build-system.md). Setup asks the key in Guided advanced
+block 11 and accepts it as a Targeted change.
+
 ## Read-time backward compatibility
 
 The complete German envelope—`# Effective-Flow-Projektsetup`, `Aktiv`/`Abgelöst`,

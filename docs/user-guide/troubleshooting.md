@@ -422,6 +422,23 @@ through the harness's built-in general-purpose subagent mechanism. A host withou
 is unsupported for worker-dependent portable workflows; the tool should state this clearly
 rather than silently continuing.
 
+## A run stopped as "waiting for capacity"
+
+A validation command was refused for temporary lack of capacity (the execution environment
+documented that it never started) and did not start within the
+[`validation.capacityWaitBudgetMinutes`](configuration.md#block-validation) window, which is 120
+minutes by default. The run did not fail: it keeps its branch, worktree and plan, pushes and merges
+nothing, and its report names the unfinished gate, each refused command with its attempts and the
+exact re-entry. `build`, `iterate`, `merge-gate` and `autopilot` all stop this way, and a workflow
+that started another one passes the stop on.
+
+Once capacity is back, follow the local report's re-entry command with its `Capacity resume:` line.
+Autopilot points you to the retained workflow or delivery-base attempt; do not start a new run.
+The workflow verifies the retained inputs before repeating the interrupted gate with a fresh wait
+window. If it cannot prove the inputs are unchanged, it revalidates or stops for reconciliation
+instead of trusting earlier results. Pull request text carries only
+`not executed (capacity); attempts: <n>`; commands and paths stay in the local report.
+
 ## DALO reports an ambiguous `effective-flow` slot
 
 Current releases publish exactly one portable candidate at `effective-flow/SKILL.md`. If an

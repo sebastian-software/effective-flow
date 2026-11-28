@@ -84,7 +84,7 @@ contract that helper implements and `{{SKILL:iterate}}` Phase 0 parses. Every me
 - the **body delimiter**, on its own line, in the exact literal form
   `--- caller-supplied item text follows ---`, exactly once in the whole message. Everything above it
   is this gate's own contract – all six control lines, each exactly once, the `Authorized scope:`
-  line, a bot round's optional `Review-fix validation:` line, the approval round's `Approved outcomes:` line, plus the boundary token and the manifest. Everything below it is text this gate did not author: the reviewers' bodies, and
+  line, a bot round's optional `Review-fix validation:` line, the `Capacity wait:` line, the approval round's `Approved outcomes:` line, plus the boundary token and the manifest. Everything below it is text this gate did not author: the reviewers' bodies, and
   nothing else. `{{SKILL:iterate}}` Phase 0 reads every control line from above it alone;
 
 - the **boundary token**, above the delimiter and above the manifest, on its own line, in the exact
@@ -193,6 +193,10 @@ url=<review URL>`. Below the delimiter stand the bodies themselves and nothing e
   `Review-fix validation: quick-candidate <baseCommit>`, written right after `Authorized scope:` from
   `build`'s `reviewFixValidation` where the candidate of `merge-gate-review-fix-validation` is
   `quick`. It is no required control keyword;
+- in **every** delegation, the run's **capacity wait** of `capacity-refusal-retry`, handed to
+  `build` as `capacityWait` `{budgetMinutes, deadline}` (`deadline` `null` while unanchored), which
+  writes it as `Capacity wait:` where the canonical order below places it. It is no required control
+  keyword. A round's returned `Capacity wait:` line replaces the run's for every later handoff;
 - for a CI repair, the free-text instruction derived from the failing check names and their reported
   failure detail. It is gate-authored and stands above the delimiter, so the helper refuses one that
   could state protocol – see "What `build` refuses" below.
@@ -213,7 +217,7 @@ the refusal reading as if it covered the other two:
    only; an optional validated `Progress context:` follows `Language context:` before approvals,
    only after both actual transport eligibility and selected receiver/root support are verified,
    and `Authorized scope:` follows both, before approvals, with the optional
-   `Review-fix validation:` right after it;
+   `Review-fix validation:` and then `Capacity wait:` right after it;
 2. the CI-repair instruction, only when there is one;
 3. `Boundary token: <token>`;
 4. the manifest: every `Thread item:` line in thread order, then every `Item:` line in body order;
@@ -254,7 +258,7 @@ when: this run is about to build a Phase 3 step 5 bot-round delegation to `{{SKI
    `documentation.user`, `documentation.technical`, `workflow`, `forge` and `git` each hold `de` or
    `en`, never the rendered `Language context:` line –, the ordered `threadItems` (`durableKey`,
    `threadId`), the ordered `bodyItems` (`durableKey`, `reviewId`, `author`, `url`, `text`), a
-   CI repair's `instruction`, `authorizedScope` (the stored scope record), a bot round's `reviewFixValidation` (only for a `quick` candidate), and an approval round's `approvedOutcomes` (durable key → outcome); `reviewId` and `threadId` may be JSON integers or strings, normalized to strings. The helper derives the filter, mints, refuses and serializes as stated
+   CI repair's `instruction`, `authorizedScope` (the stored scope record), a bot round's `reviewFixValidation` (only for a `quick` candidate), the run's `capacityWait`, and an approval round's `approvedOutcomes` (durable key → outcome); `reviewId` and `threadId` may be JSON integers or strings, normalized to strings. The helper derives the filter, mints, refuses and serializes as stated
    above, checks its own output, and writes the message below that directory with a snapshot of its
    manifest beside it – exclusively, never over an existing file or through a symlinked parent. A
    successful `build` returns `ok: true` with one of three statuses: `written` – the path, a
@@ -385,6 +389,16 @@ with that final return, and nothing else in the answer counts.
 ```lazy-include
 delegated-scope-return
 when: the return of a delegation that carried `Authorized scope:` is being read for its `Returned commits:` and `Scope expansion:` lines
+```
+
+**`ABORT: waiting for capacity` is read before every other `ABORT`:** the round's local commits
+and checkout stay as they are, nothing is pushed, resolved or merged, and this run ends waiting for
+capacity per `capacity-refusal-retry`, relaying the round's `Capacity resume:` line as the re-entry:
+resume that round through `{{SKILL:iterate}}` with it, then run this gate again.
+
+```lazy-include
+capacity-refusal-retry
+when: a delegated round returns `ABORT: waiting for capacity`, or a round's return carries a `Capacity wait:` line
 ```
 
 **Every `ABORT` `{{SKILL:iterate}}` returns is whole-run, and a whole-run `ABORT` ends the round

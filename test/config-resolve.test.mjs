@@ -4076,3 +4076,63 @@ test('cli: the review-fix-validation operation prints one envelope line and exit
   assert.equal(envelope.data.reviewFixValidation.value, 'quick');
   assert.equal(envelope.data.reviewFixValidation.ceiling, 'quick');
 });
+
+// Issue #829: `validation.capacityWaitBudgetMinutes` is a whole-minute budget owned by this resolver.
+test('owned key: validation.capacityWaitBudgetMinutes reports valid integers as minutes, zero included', async (t) => {
+  const { root } = plainDirectory(t);
+  for (const [raw, minutes] of [
+    ['120', 120],
+    ['0', 0],
+    ['5', 5],
+    ['525600', 525600],
+  ]) {
+    write(root, SETUP_ADR, setupDocument({ 'validation.capacityWaitBudgetMinutes': raw }));
+    const data = await resolved({ cwd: root, tool: 'build' });
+    const entry = data.values['validation.capacityWaitBudgetMinutes'];
+    assert.equal(entry.state, 'set', raw);
+    assert.equal(entry.minutes, minutes, raw);
+    assert.equal(diagnostic(data, 'invalid-value'), undefined, raw);
+  }
+});
+
+test('owned key: validation.capacityWaitBudgetMinutes stays unreported when unset', async (t) => {
+  const { root } = plainDirectory(t);
+  write(root, SETUP_ADR, setupDocument({}));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.values['validation.capacityWaitBudgetMinutes'], undefined);
+});
+
+test('owned key: validation.capacityWaitBudgetMinutes refuses anything but a bounded non-negative integer', async (t) => {
+  const { root } = plainDirectory(t);
+  for (const raw of ['-1', '1.5', 'abc', '525601', '1e3', '05', '1000000']) {
+    write(root, SETUP_ADR, setupDocument({ 'validation.capacityWaitBudgetMinutes': raw }));
+    const data = await resolved({ cwd: root, tool: 'build' });
+    const entry = data.values['validation.capacityWaitBudgetMinutes'];
+    assert.equal(entry.state, 'invalid', raw);
+    assert.equal(entry.minutes, undefined, raw);
+    assert.deepEqual(diagnostic(data, 'invalid-value'), {
+      code: 'invalid-value',
+      key: 'validation.capacityWaitBudgetMinutes',
+      raw,
+    });
+  }
+});
+
+test('owned key: validation.capacityWaitBudgetMinutes in the transitional JSON counts only as a JSON integer', async (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    join('.effective-flow', 'config.json'),
+    '{"validation":{"capacityWaitBudgetMinutes":30}}',
+  );
+  const valid = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(valid.values['validation.capacityWaitBudgetMinutes'].minutes, 30);
+  write(
+    root,
+    join('.effective-flow', 'config.json'),
+    '{"validation":{"capacityWaitBudgetMinutes":"30"}}',
+  );
+  const text = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(text.values['validation.capacityWaitBudgetMinutes'].state, 'invalid');
+  assert.ok(codes(text).includes('invalid-value'));
+});

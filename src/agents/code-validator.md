@@ -132,6 +132,8 @@ Return, in project-routing order:
 - terminal states, decisive diagnostics, and warnings, plus each failure's `attribution:`
   annotation under a `Failure attribution:` line;
 - validation-generated working-tree changes and skipped prerequisites;
+- each `not executed (capacity)` check with its `Capacity refusal:` line, and the current
+  `Capacity wait:` line;
 - one honest overall result and the evidence gaps that remain.
 
 Do not fix findings unless the calling workflow separately authorizes and delegates a change.

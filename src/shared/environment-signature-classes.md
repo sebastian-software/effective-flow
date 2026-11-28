@@ -15,3 +15,16 @@ these.
 environment preflight carries a signature only where its failed check is `git-checkout`, which is
 version control unavailable; any other failed preflight check, such as loopback, sandbox or
 temporary space, is a failing check, reported `FAILED` and never skipped.
+
+**Capacity refusal.** A check is `not executed (capacity)` only when documented, structured
+launch metadata from the execution environment identifies the exact attempt and attests that the
+command never started because of temporary lack of capacity. Diagnostic text alone is not proof.
+A bare exit status, such as 75 under the common `EX_TEMPFAIL`
+convention, output from the project after launch, an unknown launch status and the four classes
+above are none, and keep their handling. A capacity refusal is no signature and no failure, also
+where the environment-signature rule is off.
+
+```lazy-include
+capacity-refusal-retry
+when: a check is classified `not executed (capacity)`
+```

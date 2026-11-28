@@ -145,6 +145,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'backlog-audit.mjs',
   'build-run-core.mjs',
   'build-run.mjs',
+  'capacity-wait-core.mjs',
+  'capacity-wait.mjs',
   'capture-core.mjs',
   'capture.mjs',
   'claude-settings-core.mjs',

@@ -59,17 +59,20 @@ when: step 4 has created the attempt worktree and is about to run its setup
 6. **Contract.** The attempt applies the "Conflict-resolution delegation contract" and "Conflict
    validation mode" sections of `merge-gate-conflict-resolution` unchanged, with these
    substitutions: run state non-interactive; the attempt's checkout as the provisioned checkout;
-   no wisdom file, the record of step 11 replaces it; no push, `{{SKILL:pr}}` pushes, so every
+   no wisdom file in the ordinary path, the record of step 11 replaces it; no push, `{{SKILL:pr}}` pushes, so every
    "push nothing" there means "commit nothing" here; no rounds, one attempt. The ceiling call keeps
    `tool: "merge-gate"`; where no pull request exists yet, the `pr-status-read` alternative is
    unknown.
 7. **Resolve.** Capture the conflict state, determine the candidate mode and hand the conflict to
-   `{{AGENT:merge-conflict-resolver}}` per that contract. `ABORT` or a declined spawn is
-   `resolver-abort`.
+   `{{AGENT:merge-conflict-resolver}}` per that contract. A capacity wait return takes the wait
+   exit below, before independent verification;
+   any other `ABORT` or a declined spawn is `resolver-abort`.
    <!-- spawn-site:autopilot-delivery-conflict/resolver -->
 8. **Reconcile, then verify independently**, in that order, through `{{AGENT:code-validator}}` in
-   the effective mode. A reconciliation mismatch, a failing or unverified verification and an
-   environment signature are `verification-failed`.
+   the effective mode. Both handoffs use the run's `Capacity wait:` line. A `not executed (capacity)`
+   check is read first and is neither a signature nor a failing verdict. If it still cannot start,
+   take the wait exit below. A reconciliation mismatch, a failing or unverified verification and
+   an environment signature remain `verification-failed`.
    <!-- spawn-site:autopilot-delivery-conflict/verification -->
 9. **Review** the staged merge with the routed reviewers that contract's review bullet selects
    through `pre-commit-review`. A review that does not pass is `review-failed`.
@@ -102,6 +105,16 @@ when: step 4 has created the attempt worktree and is about to run its setup
     merge in progress, and in both a clean checkout after the commit or abort. Its error envelope,
     a failed `merge --abort` or an unverified quick marker after the commit is a
     `post-branch-failure` blocker.
+
+**Wait exit and re-entry.** Bind `autopilot` to the actual attempt checkout and its owning
+session with gate `delivery-base-resolution` or `delivery-base-verification`. Retain the verifier
+handoff and resolver record locally, with the base and head OIDs; skip steps 9–11 and withdrawal,
+including `git merge --abort`. After explicit resume, apply the shared identity checks before
+any action, require the original merge parents and authority, and re-enter only the recorded
+stage using the existing step 7 or 8 dispatch. After verified success, continue through review
+and commit in steps 9–10, then hand the result back locally for gated delivery: never write to
+the closed Autopilot ledger or automatically publish on this recovery path. If identity cannot
+be established, keep the checkout and stop for reconciliation.
 
 **Withdrawal.** Withdraw an attempt worktree that has a record after step 11 with one `worktree remove` call
 (`sessionId` `<run-id>-delivery-base`, its record id), whatever the attempt's result. Only when the

@@ -97,6 +97,14 @@ build-run-contract
 
 ## Entry and nesting capability
 
+**Capacity resume.** Before Phase 2, use `capacity-refusal-retry` to verify the binding against the
+retained wisdom and plan, approved scope, validation state and checkout. Re-enter the recorded
+gate only. On same-input drift that can be reconciled within the approved scope, revalidate from
+Phase 5; on missing scope or ownership proof stop without mutating. Do not create a replacement
+worktree or repeat implementation. For a former Autopilot run, use no scored mode or publication
+handoff: keep its authorization limits, ask for any new decision, and stop locally before delivery
+so the user can review and deliver the retained change explicitly.
+
 For a delegated run, apply “Helper invocation and failure handling” in `build-run-contract` before referenced reads, the nesting probe or any mutation. Validate the request with `build-run.mjs validate` and require its successful envelope before reading the bound plan/source artifacts and repository instructions; verify their digests, roots, receipt, languages and completion condition. A failed mandatory helper is not unavailable nesting and cannot select the inline fallback. Reject an unexpected invocation, changed approval basis or contradictory checkpoint. The caller's approval covers only the bound plan. Before any project/runtime mutation, start exactly one bounded read-only no-op nested child, await its completed result, and require its explicit success; it reads no project source, writes nothing and starts no children.
 <!-- spawn-site:build-delegated-run/nested-spawn-probe -->
 
@@ -240,6 +248,15 @@ run's one full-suite point:
    signature, and a validator host-tool timeout, is such a result too: not executed, with its class
    (`wall-clock`, `no-space`, `version-control`, `process-termination`) or `host-timeout` as the id.
 
+   **Capacity.** Every validator this workflow starts, under `Validation: targeted` too, gets the
+   run's `Capacity wait:` line: the one the caller handed beside the plan argument, else one from
+   this run's `validation.capacityWaitBudgetMinutes`. A check reported `not executed (capacity)` is
+   read first, before the environment result, the run's validity, attribution and step 3's repair:
+   it follows `capacity-refusal-retry`, invalidates no full run, spends no slot below and goes to no
+   implementer. A run that ends waiting returns `ABORT: waiting for capacity` and runs no later
+   phase. A resume reruns the interrupted Phase 5 step 1 or Phase 7 step 1; on drift it
+   revalidates from Phase 5 step 1 through Phase 7.
+
    **Validation budget.** This step is the run's one full-suite point. Phase 4's tests, every
    correction round and Phase 7 run targeted; a second full run happens at most once, only in
    Phase 7 under its condition (a) or (b), so the run never exceeds two full runs. Beside the path
@@ -264,11 +281,13 @@ run's one full-suite point:
    `base-validation` worktree with its lifecycle record per `worktree-lifecycle`, and start
    `{{AGENT:code-validator}}` there with `Failure attribution: base-ci-then-local`, a
    `Base attribution run:` line naming only the pending identities, the same signature rule, and the
-   reason step 2 ran.
+   reason step 2 ran. Pass the current `Capacity wait:` line. A base check that still cannot start
+   pauses at base attribution with both checkouts intact, before the cleanup below; retain both
+   checkout identities and the pending attribution set for re-entry.
    <!-- spawn-site:build-delegated-run/base-attribution -->
 
    Merge each returned `pre-existing`, `new` or `unknown` into the original annotation. Before
-   `worktree remove`, on every exit path, run
+   `worktree remove`, on each exit path except waiting for capacity, run
    `git -C <WORKTREE_PATH> restore --source=<CREATION_OID> --staged --worktree -- :/`, then
    `git -C <WORKTREE_PATH> clean -f -d -- <PATH>...` on only the untracked, non-ignored paths the
    validator reported as generated, never `-x`, skipping the clean when it reported none; then
@@ -287,6 +306,11 @@ when: the validator reports the suite stopped at the project's own environment p
 ```lazy-include
 validation-environment-continuation
 when: the validator reports the suite as `SKIPPED (environment: <prerequisite id>)`
+```
+
+```lazy-include
+capacity-refusal-retry
+when: Phase 5 is about to dispatch its first validator, or the run was invoked with a `Capacity resume:` line
 ```
 
 2. Give the user the complete list of all errors and warnings found.
@@ -397,7 +421,11 @@ severity. An admitted Critical residual also requires the existing explicit comp
    Before that second full run, record `secondFullUsed: true` in the wisdom file and, for delegated
    execution, retain the updated state with `retain-evidence` as `validation-budget-second-full`;
    only that exclusive creation proves an unknown slot free, and its `COLLISION` means the slot is
-   used, so Phase 7 stays targeted rather than stopping on a helper failure. After a repair here, render again and
+   used, so Phase 7 stays targeted rather than stopping on a helper failure. On proven capacity
+   non-start, retain the original reservation and the exact pending full-suite check in the
+   wisdom file. Verified resume continues that same reserved full run at the pending check; it
+   neither spends a new slot nor downgrades the interrupted gate to targeted. This exception
+   does not apply to unknown launch state or an unverified resume. After a repair here, render again and
    re-check targeted over that repair's Delta; `full` follows only while the slot is unused and (a)
    or (b) holds. The `final-validation` receipt `reason` names the targeted scope or the condition
    that applied.
@@ -470,10 +498,13 @@ Rules for the findings report:
   English plan instead of the tables.
 - If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
-4. Delete the wisdom file after persisting the bounded required gate evidence per `build-run-contract`.
+4. Persist the bounded required gate evidence per `build-run-contract`; keep wisdom until step 5 succeeds.
 5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". For delegated execution retain the exact before/after path digests. For delegated execution only, if product bytes changed, use `{{AGENT:code-validator}}` for the bounded independent formatting-only check required by `build-run-contract`, passing just those changed paths and the retained basis; its judgment must name each exact digest and its actual independent handle. If this reveals a semantic correction, use the existing affected review/validation path and fresh receipts instead of preserving an old pass. Pure plan completion needs only the deterministic preservation proof. When step 6 will run a handback, build the verification record per `verification-evidence` from the step 1 render and only the checks this run observed; a step 1 repair without a fresh render before the passing validator run builds none. Then discard the diff baseline.
    <!-- spawn-site:build-delegated-run/completion-transform-check -->
-6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
+   The formatting-only validator also shares the capacity line. If it leaves a check refused,
+   preserve the formatter output and digests and stop before delivery. On verified resume repeat
+   that independent check, not the formatter or plan append.
+6. Delete the wisdom file only after step 5 succeeds. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
    Under `Commit: caller-owned` (`caller-owned-commit`) no commit, completion action or worktree withdrawal of this step runs, no plan is switched or archived (a plan this run wrote stays untracked and is reported), and neither do the `build-run-contract` calls `seal-delivery` and `handoff` below. For delegated execution, at that existing handback's reconciled staged-tree boundary call `seal-delivery`; immediately after its verified commit and before worktree withdrawal call `handoff`. Hidden/private and in-place-without-delivery follow their bound variants. After handoff relay later delivery/publication questions through runtime-only checkpoints; preserve the original ordering and publication gates. Record an actual in-place checkout restore with `record-return`, never infer it from a branch name.
 7. Run the worktree-record exit self-check.
 8. If Phase 2 reserved a pilot record, finalize it exactly once per the loaded `pilot-measurement-workflow` fragment, including its incident and finalization-failure paths.

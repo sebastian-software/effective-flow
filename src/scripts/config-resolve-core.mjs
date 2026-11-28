@@ -147,6 +147,12 @@ const FAST_PROFILE_KEY = 'executionProfiles.fast.enabled';
 const PR_REVIEW_KEY = 'delivery.prReview';
 const PR_REVIEW_VALUES = Object.freeze(['ask', 'always', 'off']);
 const VISIBILITY_KEY = 'visibility';
+// The capacity wait budget in whole minutes (`shared/capacity-refusal-retry.md`): a set entry gains
+// `minutes` when it is a non-negative integer no larger than one year, and is invalid otherwise. An
+// unset key stays unreported; the owning tool applies its default.
+export const CAPACITY_BUDGET_KEY = 'validation.capacityWaitBudgetMinutes';
+export const MAX_CAPACITY_BUDGET_MINUTES = 365 * 24 * 60;
+const CAPACITY_BUDGET_FORMAT = /^(?:0|[1-9]\d{0,5})$/;
 const VISIBILITY_VALUES = Object.freeze(['hidden', 'standard']);
 
 // ---------------------------------------------------------------------------------------------
@@ -799,7 +805,8 @@ export function flattenJsonConfiguration(root) {
       rows.push({ key: prefix, raw: String(value), decoded: { value, items: [String(value)] } });
     } else {
       const raw = String(value);
-      rows.push({ key: prefix, raw, decoded: { value: raw, items: itemsOf(raw) } });
+      const decoded = prefix === CAPACITY_BUDGET_KEY && typeof value === 'number' ? value : raw;
+      rows.push({ key: prefix, raw, decoded: { value: decoded, items: itemsOf(raw) } });
     }
   };
   visit(root, [], false);
@@ -1226,6 +1233,21 @@ function strictBoolean(entry) {
   return null;
 }
 
+// The whole minutes of a set capacity budget entry, or null when it is no non-negative integer up to
+// MAX_CAPACITY_BUDGET_MINUTES. A transitional JSON value counts only as a JSON number, so a string
+// "30" there is invalid.
+function capacityBudgetMinutes(entry) {
+  if (entry.source === 'transitional-json') {
+    const { value } = entry;
+    return Number.isSafeInteger(value) && value >= 0 && value <= MAX_CAPACITY_BUDGET_MINUTES
+      ? value
+      : null;
+  }
+  if (typeof entry.raw !== 'string' || !CAPACITY_BUDGET_FORMAT.test(entry.raw)) return null;
+  const minutes = Number(entry.raw);
+  return minutes <= MAX_CAPACITY_BUDGET_MINUTES ? minutes : null;
+}
+
 // The keys whose rules this resolver owns. No other key is validated here.
 function validateOwnedKeys(values, rows, diagnostics) {
   const fast = values[FAST_PROFILE_KEY];
@@ -1245,6 +1267,15 @@ function validateOwnedKeys(values, rows, diagnostics) {
   else if (prReview.state === 'set' && !PR_REVIEW_VALUES.includes(prReview.raw)) {
     diagnostics.push({ code: 'invalid-value', key: PR_REVIEW_KEY, raw: prReview.raw });
     Object.assign(prReview, { state: 'invalid', value: null, items: [] });
+  }
+
+  const budget = values[CAPACITY_BUDGET_KEY];
+  if (budget?.state === 'set') {
+    const minutes = capacityBudgetMinutes(budget);
+    if (minutes === null) {
+      diagnostics.push({ code: 'invalid-value', key: CAPACITY_BUDGET_KEY, raw: budget.raw });
+      Object.assign(budget, { state: 'invalid', value: null, items: [] });
+    } else budget.minutes = minutes;
   }
 
   // The structural `visibility` diagnostics come from `buildValues`; only the domain check is here.

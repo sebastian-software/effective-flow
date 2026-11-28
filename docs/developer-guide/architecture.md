@@ -1205,7 +1205,7 @@ level proves `new`, then one narrow local run in a `base-validation` worktree pr
 at its own spawn site `build-delegated-run/base-attribution`. Environment signatures, proven
 pre-existing failures and plan-approved `Expected failure:` lines (test identity or one check
 diagnostic) start no correction round; a validator host-tool timeout is reported like a signature,
-as `host-timeout`. The budget state survives resume as retained `validation-budget` evidence. The owners are
+as `host-timeout`. A check the environment refused to start for temporary lack of capacity is none of these: it is `not executed (capacity)`, retried unchanged inside one run-wide wait budget (`validation.capacityWaitBudgetMinutes`) and, when the budget ends, the gate stops as `waiting for capacity` with the work kept and an explicit `Capacity resume:` re-entry, owned by [`capacity-refusal-retry`](../../src/shared/capacity-refusal-retry.md). The budget state survives resume as retained `validation-budget` evidence. The owners are
 [`build-delegated-run`](../../src/shared/build-delegated-run.md),
 [`build-failure-attribution`](../../src/shared/build-failure-attribution.md) and
 [`environment-signature-classes`](../../src/shared/environment-signature-classes.md).
