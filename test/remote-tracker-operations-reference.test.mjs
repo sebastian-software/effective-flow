@@ -194,6 +194,7 @@ const FIXTURES = {
   'pr-read': { number: 1 },
   'pr-acceptance-sources': { number: 1, headSha: SHA },
   'issue-acceptance-criteria': { numbers: [1] },
+  'pr-merged-plan-evidence': { number: 1, issues: [1] },
   'pr-comments-read': { number: 1 },
   'pr-reviews-read': { number: 1 },
   'pr-list': {},

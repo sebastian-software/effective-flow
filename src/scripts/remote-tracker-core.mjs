@@ -72,13 +72,16 @@ import {
 import {
   WORK_IN_PROGRESS_PREFIX,
   buildForgejoCommandPlan,
+  normalizeForgejoChangedFile,
 } from './remote-tracker-forgejo-core.mjs';
 import {
   buildGithubCommandPlan,
   buildGithubReviewThreadCommentsPlan,
   buildGithubReviewThreadsPagePlan,
   buildReviewPayload,
+  normalizeGithubChangedFile,
 } from './remote-tracker-github-core.mjs';
+import { classifyPlanText, planSectionsByMeaning, readIssueHeader } from './plan-lint-core.mjs';
 import { lookupThreadLedgerFile, recordThreadLedgerFile } from './remote-tracker-ledger-core.mjs';
 import {
   appendixDigest,
@@ -190,6 +193,7 @@ const REMOTE_OPERATIONS = new Set([
   'pr-read',
   'pr-acceptance-sources',
   'issue-acceptance-criteria',
+  'pr-merged-plan-evidence',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',
@@ -327,6 +331,9 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'pr-acceptance-sources': 'pullRequestRead',
   // Its issue reads gate the call; each permission read checks its own capability as it runs.
   'issue-acceptance-criteria': 'issueRead',
+  // The composite merged-plan read starts with `pr-read` and pages the pull request's file list
+  // under the same capability; each permission read checks its own capability as it runs.
+  'pr-merged-plan-evidence': 'pullRequestRead',
   'pr-comments-read': 'prCommentsRead',
   // A named entry, never an absent one. The operation gate tests `capabilities[key] === false`, so
   // an operation missing from this table is waved through unprobed on every provider — which for a
@@ -7583,6 +7590,351 @@ async function executePrAcceptanceSources(input, repository, runner, probe) {
   return { result, commands: context.commands };
 }
 
+// ---------------------------------------------------------------------------------------------
+// pr-merged-plan-evidence: the archived plans a merged pull request carries as issue evidence
+//
+// Read-only and writes nothing; its Git fetch may add objects to the local store, as
+// `pr-acceptance-sources` does. It decides mechanically which archived plans of a merged pull
+// request count as evidence for the observed forge issues and returns their test-results sections
+// as data; matching a criterion to a recorded result stays the post-merge observation's judgment.
+// A plan is admitted only when the pull request is merged and passes `pullRequestSourceTrust`, its
+// listed path lies directly under `<plan.dir>/archive/` and passes the plan-path rules, this pull
+// request archived it (`added`, or `renamed` from the plan path `planArchivePath` maps onto it),
+// its blob at the merge commit is within `planBytes`, and the text carries one implemented status,
+// one `**Issue:** #<N>` header naming an observed issue and one non-blank test-results section
+// within `sectionBytes`. Only a listed `.md` path under `<plan.dir>/archive/` is a candidate; every
+// other listed path is ignored, never echoed and never counted. Every candidate that fails is
+// rejected once with a closed `reason`. A file list that is truncated by a bound or by a count
+// below the stated `changed_files`, or more candidates than `candidates`, admits nothing. Every limit that rejects or truncates is named in
+// `truncated`, and any forge or Git failure outside these closed outcomes fails closed.
+
+export const MERGED_PLAN_EVIDENCE_BOUNDS = Object.freeze({
+  // GitHub lists at most 3000 changed files and stops there without an error.
+  listedFiles: 3000,
+  // Forgejo clamps a page to `MAX_RESPONSE_ITEMS` (default 50), so 3000 files need 60 pages there.
+  listingPages: 60,
+  candidates: 20,
+  sectionBytes: 32 * 1024,
+});
+
+export const MERGED_PLAN_REJECTION_REASONS = Object.freeze([
+  'unsafe-path',
+  'outside-archive',
+  'removed',
+  'unsupported-status',
+  'not-archived-here',
+  'oversized',
+  'section-oversized',
+  'blob-missing',
+  'status-not-implemented',
+  'issue-header-missing',
+  'issue-header-ambiguous',
+  'issue-header-invalid',
+  'other-issue',
+  'no-test-results',
+  'test-results-ambiguous',
+]);
+
+// Validated before the first provider call, so a malformed request never costs a probe or a read.
+function validateMergedPlanEvidenceInput(input) {
+  requireString(input.cwd, 'cwd');
+  prNumber(input);
+  const { issues } = input;
+  if (!Array.isArray(issues)) {
+    fail('INVALID_PAYLOAD', 'issues must be an array of forge issue numbers', { field: 'issues' });
+  }
+  if (issues.some((number) => !Number.isSafeInteger(number) || number <= 0)) {
+    fail('INVALID_PAYLOAD', 'issues must contain positive integers', { field: 'issues' });
+  }
+  if (new Set(issues).size !== issues.length) {
+    fail('INVALID_PAYLOAD', 'issues must be distinct', { field: 'issues' });
+  }
+  if (issues.length > ACCEPTANCE_SOURCE_BOUNDS.issues) {
+    fail('INVALID_PAYLOAD', `issues must name at most ${ACCEPTANCE_SOURCE_BOUNDS.issues} issues`, {
+      field: 'issues',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.issues,
+    });
+  }
+  if (input.planDir !== undefined) normalizeAcceptancePlanDir(input.planDir);
+  if (input.hiddenMode !== undefined && typeof input.hiddenMode !== 'boolean') {
+    fail('INVALID_PAYLOAD', 'hiddenMode must be a boolean', { field: 'hiddenMode' });
+  }
+}
+
+function mergedPlanEvidenceResult(outcome, issues, extra = {}) {
+  return {
+    outcome,
+    pullRequest: null,
+    trust: null,
+    issues: issues.map((number) => ({ number, plans: [] })),
+    rejected: [],
+    truncated: [],
+    ...extra,
+  };
+}
+
+// Hidden-mode plans never sit in a pull-request diff, and no observed issue needs no evidence.
+function mergedPlanEvidenceSkip(input) {
+  if (input.hiddenMode === true) return mergedPlanEvidenceResult('hidden-mode', input.issues);
+  if (input.issues.length === 0) return mergedPlanEvidenceResult('no-issues', []);
+  return null;
+}
+
+// One page of the pull request's changed files through the adapter's `pr-files-read` plan,
+// normalized to `{ path, previousPath?, status }` by the provider's own mapping.
+async function mergedPlanFilesPage(context, number, page) {
+  const label = 'pr-merged-plan-evidence';
+  const plan = buildCommandPlan('pr-files-read', { number, page }, context.repository);
+  context.commands.push(redact(plan));
+  const result = await runChecked(context.runner, plan, label);
+  const raw = isTeaApiIncludePlan(plan)
+    ? teaApiSuccess(result, label).body
+    : parseCommandOutput(result, plan, label).raw;
+  if (!Array.isArray(raw)) fail('INVALID_PAYLOAD', 'provider returned no changed-file list');
+  const normalize =
+    context.repository.provider === 'github'
+      ? normalizeGithubChangedFile
+      : normalizeForgejoChangedFile;
+  return raw.map(normalize);
+}
+
+// The complete changed-file list, or `null` with the bound named in `truncated` when the list is
+// not provably complete: a stated count that is missing, above `listedFiles` or not met by the
+// listing, or a listing that needs more than `listingPages` pages.
+async function mergedPlanFileListing(context, number, stated) {
+  const bounds = MERGED_PLAN_EVIDENCE_BOUNDS;
+  const truncate = (entry) => {
+    context.truncated.push({ source: 'file-listing', ...entry });
+    return null;
+  };
+  if (!Number.isSafeInteger(stated) || stated < 0) {
+    return truncate({ bound: 'changedFiles', stated: null });
+  }
+  if (stated > bounds.listedFiles) {
+    return truncate({ bound: 'listedFiles', limit: bounds.listedFiles, stated });
+  }
+  const files = [];
+  for (let page = 1; files.length < stated; page += 1) {
+    if (page > bounds.listingPages) {
+      return truncate({ bound: 'listingPages', limit: bounds.listingPages, stated });
+    }
+    const entries = await mergedPlanFilesPage(context, number, page);
+    if (entries.length === 0) break;
+    files.push(...entries);
+  }
+  if (files.length !== stated) {
+    return truncate({ bound: 'changedFiles', stated, listed: files.length });
+  }
+  return files;
+}
+
+// The structural half of admission, decided from the listing alone before any Git read. An
+// `unsafe-path` rejection never carries the path.
+function mergedPlanCandidate(file, planDir) {
+  const { path } = file;
+  if (!isSafePlanPath(path) || PATH_UNSAFE_CHARACTERS.test(path)) {
+    return { rejected: { reason: 'unsafe-path' } };
+  }
+  if (path.slice(`${planDir}/archive/`.length).includes('/')) {
+    return { rejected: { path, reason: 'outside-archive' } };
+  }
+  if (file.status === 'removed') return { rejected: { path, reason: 'removed' } };
+  if (file.status === 'unsupported') return { rejected: { path, reason: 'unsupported-status' } };
+  const archivedHere =
+    file.status === 'added' ||
+    (file.status === 'renamed' && planArchivePath(file.previousPath, planDir) === path);
+  if (!archivedHere) return { rejected: { path, reason: 'not-archived-here' } };
+  return { path };
+}
+
+// The textual half of admission: one implemented status, one `**Issue:**` header naming an
+// observed issue, and one non-blank test-results section within `sectionBytes`, taken whole.
+function mergedPlanAdmission(context, path, text, observed) {
+  if (classifyPlanText(text).status !== 'implemented') {
+    return { rejected: { path, reason: 'status-not-implemented' } };
+  }
+  const header = readIssueHeader(text);
+  if (header.error !== null) return { rejected: { path, reason: `issue-header-${header.error}` } };
+  if (header.issue === null) return { rejected: { path, reason: 'issue-header-missing' } };
+  if (!observed.includes(header.issue)) return { rejected: { path, reason: 'other-issue' } };
+  const sections = planSectionsByMeaning(text, 'Test results');
+  if (sections.length > 1) return { rejected: { path, reason: 'test-results-ambiguous' } };
+  const [section] = sections;
+  const body = section?.body ?? [];
+  const first = body.findIndex((line) => line.trim() !== '');
+  if (first === -1) return { rejected: { path, reason: 'no-test-results' } };
+  const last = body.findLastIndex((line) => line.trim() !== '');
+  const sectionText = body.slice(first, last + 1).join('\n');
+  const size = Buffer.byteLength(sectionText, 'utf8');
+  if (size > MERGED_PLAN_EVIDENCE_BOUNDS.sectionBytes) {
+    context.truncated.push({
+      source: 'plan',
+      bound: 'sectionBytes',
+      limit: MERGED_PLAN_EVIDENCE_BOUNDS.sectionBytes,
+      path,
+      size,
+    });
+    return { rejected: { path, reason: 'section-oversized' } };
+  }
+  return {
+    issue: header.issue,
+    plan: { path, section: section.heading, sectionLine: section.line, text: sectionText },
+  };
+}
+
+// Sizes every candidate blob at the merge commit in one `--batch-check` call, then reads the ones
+// within `planBytes` in one `--batch` call. Returns `{ texts, rejected }`.
+async function mergedPlanBlobs(context, mergeCommit, paths) {
+  const objectNames = (list) => `${list.map((path) => `${mergeCommit}:${path}`).join('\n')}\n`;
+  const checked = await acceptanceGit(
+    context,
+    'cat-file plan sizes',
+    ['cat-file', '--batch-check'],
+    { stdin: objectNames(paths) },
+  );
+  const sizes = parseCatFileBatchCheck(gitStdoutText(checked), paths.length);
+  const readable = [];
+  const rejected = [];
+  for (const [index, path] of paths.entries()) {
+    const entry = sizes[index];
+    if (entry === null || entry.type !== 'blob') {
+      rejected.push({ path, reason: 'blob-missing' });
+    } else if (entry.size > ACCEPTANCE_SOURCE_BOUNDS.planBytes) {
+      context.truncated.push({
+        source: 'plan',
+        bound: 'planBytes',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.planBytes,
+        path,
+        size: entry.size,
+      });
+      rejected.push({ path, reason: 'oversized' });
+    } else {
+      readable.push(path);
+    }
+  }
+  const texts = new Map();
+  if (readable.length > 0) {
+    const batch = await acceptanceGit(context, 'cat-file plans', ['cat-file', '--batch'], {
+      stdin: objectNames(readable),
+      buffer: true,
+    });
+    const contents = parseCatFileBatch(gitStdoutBuffer(batch), readable.length);
+    for (const [index, path] of readable.entries()) {
+      if (contents[index] === null) rejected.push({ path, reason: 'blob-missing' });
+      else texts.set(path, contents[index]);
+    }
+  }
+  return { texts, rejected };
+}
+
+// Runs the admission pipeline described above and returns `{ result, commands }`; `result.outcome`
+// is `evaluated`, `not-merged`, `untrusted` or `truncated` (`hidden-mode` and `no-issues` return
+// earlier, from `mergedPlanEvidenceSkip`).
+async function executePrMergedPlanEvidence(input, repository, runner, probe) {
+  const number = prNumber(input);
+  const observed = [...input.issues];
+  const planDir = normalizeAcceptancePlanDir(input.planDir ?? DEFAULT_ACCEPTANCE_PLAN_DIR);
+  const context = {
+    repository,
+    runner,
+    probe,
+    commands: [],
+    gitEnv: acceptanceGitEnv(process.env),
+    permissions: new Map(),
+    truncated: [],
+  };
+  const result = mergedPlanEvidenceResult('evaluated', observed, { truncated: context.truncated });
+
+  const { raw, record } = await acceptanceForgeRead(context, 'pr-read', { number });
+  const sameRepository = typeof record.sameRepository === 'boolean' ? record.sameRepository : null;
+  const author = record.author?.login ?? null;
+  result.pullRequest = {
+    number,
+    mergeCommit: null,
+    base: record.base ?? null,
+    sameRepository,
+    author,
+    changedFiles: Number.isSafeInteger(raw?.changed_files) ? raw.changed_files : null,
+  };
+  if (raw?.merged !== true) {
+    result.outcome = 'not-merged';
+    return { result, commands: context.commands };
+  }
+  const mergeCommit =
+    typeof raw.merge_commit_sha === 'string' ? raw.merge_commit_sha.trim().toLowerCase() : '';
+  if (!GIT_OBJECT_NAME.test(mergeCommit)) {
+    fail('INVALID_PAYLOAD', 'merged pull request states no merge commit', { number });
+  }
+  result.pullRequest.mergeCommit = mergeCommit;
+
+  // A pull request that is not stated to be this repository's own is untrusted whatever its
+  // author may do, so its author's permission is not read at all.
+  const permission =
+    sameRepository === true ? await acceptanceAuthorPermission(context, author) : null;
+  const trust = pullRequestSourceTrust({ sameRepository, authorPermission: permission });
+  result.trust = { ...trust, authorPermission: permission };
+  if (!trust.trusted) {
+    result.outcome = 'untrusted';
+    return { result, commands: context.commands };
+  }
+
+  const files = await mergedPlanFileListing(context, number, raw.changed_files);
+  if (files === null) {
+    result.outcome = 'truncated';
+    return { result, commands: context.commands };
+  }
+  // Only a `.md` path under the archive is a candidate, so `unsafe-path` names a genuinely unsafe
+  // archived plan path rather than an archived image or other non-plan file.
+  const prefix = `${planDir}/archive/`;
+  const listed = files
+    .filter((file) => file.path.startsWith(prefix) && file.path.endsWith('.md'))
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  if (listed.length > MERGED_PLAN_EVIDENCE_BOUNDS.candidates) {
+    context.truncated.push({
+      source: 'candidates',
+      bound: 'candidates',
+      limit: MERGED_PLAN_EVIDENCE_BOUNDS.candidates,
+      listed: listed.length,
+    });
+    result.outcome = 'truncated';
+    return { result, commands: context.commands };
+  }
+
+  const candidates = [];
+  for (const file of listed) {
+    const judged = mergedPlanCandidate(file, planDir);
+    if (judged.rejected) result.rejected.push(judged.rejected);
+    else candidates.push(judged.path);
+  }
+  if (candidates.length === 0) return { result, commands: context.commands };
+
+  await requireAcceptanceBranch(context, result.pullRequest.base, 'merge');
+  if (!(await acceptanceEnsureCommit(context, mergeCommit, result.pullRequest.base, 'merge'))) {
+    fail('COMMAND_FAILED', 'the merge commit is not available after the fetch', {
+      step: 'fetch merge',
+      reason: 'merge-commit-missing',
+      mergeCommit,
+    });
+  }
+  const blobs = await mergedPlanBlobs(context, mergeCommit, candidates);
+  const byPath = new Map(blobs.rejected.map((entry) => [entry.path, entry]));
+  const admitted = new Map(observed.map((issue) => [issue, []]));
+  for (const path of candidates) {
+    if (byPath.has(path)) {
+      result.rejected.push(byPath.get(path));
+      continue;
+    }
+    const judged = mergedPlanAdmission(context, path, blobs.texts.get(path), observed);
+    if (judged.rejected) result.rejected.push(judged.rejected);
+    else admitted.get(judged.issue).push(judged.plan);
+  }
+  result.issues = observed.map((issue) => ({
+    number: issue,
+    plans: admitted.get(issue).map((plan, index) => ({ ordinal: index + 1, ...plan })),
+  }));
+  return { result, commands: context.commands };
+}
+
 export async function executeOperation(operation, input = {}, options = {}) {
   requireString(operation, 'operation');
   requireObject(input);
@@ -7621,6 +7973,21 @@ export async function executeOperation(operation, input = {}, options = {}) {
     if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
     if (operation === 'pr-acceptance-sources') validatePrAcceptanceInput(input);
     if (operation === 'issue-acceptance-criteria') validateIssueAcceptanceCriteriaInput(input);
+    // Hidden mode and an empty issue list admit nothing, so they return before any forge or Git
+    // read, repository resolution and probe included.
+    if (operation === 'pr-merged-plan-evidence') {
+      validateMergedPlanEvidenceInput(input);
+      const skipped = mergedPlanEvidenceSkip(input);
+      if (skipped !== null) {
+        return {
+          ok: true,
+          operation,
+          provider: null,
+          data: { result: skipped, commands: [] },
+          dryRun: false,
+        };
+      }
+    }
     if (
       operation === 'pr-status-read' &&
       input.includeCheckIdentity !== undefined &&
@@ -7763,6 +8130,18 @@ export async function executeOperation(operation, input = {}, options = {}) {
         runner,
         probe,
       );
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: { result: collected.result, commands: collected.commands },
+        dryRun: false,
+      };
+    }
+    // A pull-request read, its author's permission, its paged file list and Git reads at the merge
+    // commit, so it lists every forge and Git command it ran, as above.
+    if (operation === 'pr-merged-plan-evidence') {
+      const collected = await executePrMergedPlanEvidence(input, activeRepository, runner, probe);
       return {
         ok: true,
         operation,

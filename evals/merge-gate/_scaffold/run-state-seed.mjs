@@ -1,9 +1,9 @@
-// The runtime state three scenarios find in their slot before the session starts: two gate runs
+// The runtime state six scenarios find in their slot before the session starts: five gate runs
 // that are re-dispatched with an earlier dispatch's record, and a second gate run's presence marker.
 //
-// **Why these three scenarios need it and the others do not.** Every other scenario starts a gate
+// **Why these six scenarios need it and the others do not.** Every other scenario starts a gate
 // run from nothing, so its slot holds no runtime state and the shared seed commit is all the
-// checkout needs. These three are about state a gate run reads rather than state it writes:
+// checkout needs. These six are about state a gate run reads rather than state it writes:
 //
 //   * `quick-conflict-commit-without-ci-evidence-blocks` enters the gate where its Phase-4 condition
 //     11 applies: the wisdom file records a conflict-resolution commit that was validated in
@@ -30,6 +30,13 @@
 //     proof, its base merge was a no-op — what Git does on this checkout, whose head already
 //     contains the seeded base — and its check wait then timed out: the record, this run's presence
 //     marker, and the pull-request `origin` of `merge-origin.mjs` the exit's ancestry fetches read.
+//   * `draft-ready-redispatch-marks-ready`, `draft-ready-keep-draft-stops` and
+//     `forgejo-wip-draft-marks-ready` carry the answer to a `ready-for-review` question, and Entry
+//     step 3 accepts a `Relayed answer:` line only together with a present wisdom file from an
+//     earlier dispatch. So each slot holds what a first dispatch leaves behind when it returns
+//     `BLOCKED-USER ready-for-review` in round 1: the record with the posed question and no consumed
+//     answer, and this run's presence marker. The two mark-ready slots keep the draft-ready `origin`
+//     of `merge-origin.mjs`; the Keep-draft run stops at Entry and never fetches, so it gets none.
 //
 // **The history is deterministic, and the fixture states it.** The seed commit is re-made at a fixed
 // instant with a fixed message, and every further commit has fixed content, identity and dates, so
@@ -49,7 +56,13 @@ import { devNull } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { FORGEJO_WIP_CONFLICT_SCENARIO, prepareMergeOrigin } from './merge-origin.mjs';
+import {
+  DRAFT_READY_KEEP_DRAFT_SCENARIO,
+  DRAFT_READY_MARKS_READY_SCENARIO,
+  FORGEJO_WIP_CONFLICT_SCENARIO,
+  FORGEJO_WIP_MARKS_READY_SCENARIO,
+  prepareMergeOrigin,
+} from './merge-origin.mjs';
 import { prepareCheckout as prepareNoCiCheckout } from './no-ci-checkout.mjs';
 
 export const QUICK_COMMIT_SCENARIO = 'quick-conflict-commit-without-ci-evidence-blocks';
@@ -85,6 +98,24 @@ export const RELAYED_ROUND = 1;
 export const FORGEJO_WIP_CONFLICT_SESSION_ID = `merge-gate-eval-${FORGEJO_WIP_CONFLICT_SCENARIO}`;
 export const FORGEJO_WIP_CONFLICT_PRESENCE_TOKEN = '54afce3225211234f8138d0f89b68770';
 export const FORGEJO_WIP_CONFLICT_WISDOM_FILE = `${RUNTIME_STATE_DIR}/.wisdom-accumulation-${FORGEJO_WIP_CONFLICT_SESSION_ID}.tmp.md`;
+
+// The draft-ready re-dispatches' own identities, named by their scenario prompts in the same way:
+// the session ID, the presence token the first dispatch received, and the wisdom file it left.
+const DRAFT_READY_TOKENS = Object.freeze({
+  [DRAFT_READY_MARKS_READY_SCENARIO]: 'b7993f49f226192b5321897c68995fce',
+  [DRAFT_READY_KEEP_DRAFT_SCENARIO]: '506b275e396f2dabacf398def46482ae',
+  [FORGEJO_WIP_MARKS_READY_SCENARIO]: '3b39aa9e348dc1e4508b436dd3ab8179',
+});
+export const DRAFT_READY_REDISPATCH_RUNS = Object.freeze(
+  Object.fromEntries(
+    Object.entries(DRAFT_READY_TOKENS).map(([scenario, token]) => {
+      const sessionId = `merge-gate-eval-${scenario}`;
+      const wisdomFile = `${RUNTIME_STATE_DIR}/.wisdom-accumulation-${sessionId}.tmp.md`;
+      return [scenario, Object.freeze({ sessionId, token, wisdomFile })];
+    }),
+  ),
+);
+export const READY_FOR_REVIEW_QUESTION = 'ready-for-review';
 
 // The other gate run of the presence scenario. Its head is a commit the sandbox does not hold, so a
 // correct notice names that run's pull request alone.
@@ -512,6 +543,121 @@ function seedForgejoWipConflictRun(args) {
   return origin;
 }
 
+// The state digest of the `ready-for-review` question per "Question instance" in
+// `tools/merge-gate.md`: the SHA-256 hex of `ready-for-review|<head SHA>|<subject keys>`, the keys
+// `appendix=<appendixDigest or none>`, `class=<class>` and `trust=<appendixTrust>` sorted and
+// comma-joined, all three taken from the fixture's `pr-draft-classify` result.
+export function readyForReviewDigest(fixture) {
+  const classified = fixture.operations['pr-draft-classify'].envelope.data.result;
+  const keys = [
+    `appendix=${classified.appendixDigest ?? 'none'}`,
+    `class=${classified.class}`,
+    `trust=${classified.appendixTrust}`,
+  ].sort();
+  return createHash('sha256')
+    .update(`${READY_FOR_REVIEW_QUESTION}|${fixture.headSha}|${keys.join(',')}`, 'utf8')
+    .digest('hex');
+}
+
+// The record a draft-ready run's first dispatch left when it returned
+// `BLOCKED-USER ready-for-review` in round 1. The checks were green on the head, no trigger of
+// Phase 2 step 1 fired — on Forgejo trigger (c)'s proof and the WIP-draft exit's were `clean` — and
+// Phase 4 found every condition other than the draft and condition 9 met, classified the draft and
+// posed the question. No `Relayed answer:` was consumed yet, so the re-dispatch's answer is the
+// instance's first.
+export function draftReadyWisdomRecord(scenario, fixture) {
+  const run = DRAFT_READY_REDISPATCH_RUNS[scenario];
+  const { operations, headSha, pullRequest, viewerLogin } = fixture;
+  const pr = operations['pr-read'].envelope.data.result;
+  const status = operations['pr-status-read'].envelope.data.result;
+  const classified = operations['pr-draft-classify'].envelope.data.result;
+  const proof = operations['merge-proof-local']?.envelope.data;
+  const comments = operations['pr-comments-read'].envelope.data.result;
+  const reviews = operations['pr-reviews-read'].envelope.data.result;
+  const threads = operations['review-threads-read'].envelope.data.result;
+  if (threads.length > 0 || comments.some((entry) => entry.author.login !== viewerLogin)) {
+    throw new Error(
+      `${scenario}: the fixture's guard read is not the inactive one this record states`,
+    );
+  }
+  const checks = status.checks.map((entry) => `${entry.name} ${entry.conclusion}`).join(', ');
+  const ownComments = comments.map((entry) => `${viewerLogin}, top-level comment ${entry.id}`);
+  const reviewList = reviews.map((entry) => `${entry.author.login}, ${entry.state}`);
+  const forgejo = fixture.repository.provider === 'forgejo';
+  const roundLines = forgejo
+    ? [
+        `- check result: ${checks} on ${headSha}; no merge state and no mergeable stated (Forgejo); draft`,
+        '- trigger (a) not fired (no merge state); trigger (b) not fired (no failing check)',
+        `- trigger (c): ancestry check steps 1 to 3 passed for ${headSha} and ${pr.base}; merge-proof-local status ${proof.status}, conflictCount ${proof.conflictCount}, base ${proof.baseCommit}; trigger (c) not fired`,
+        `- Forgejo WIP-draft exit: ancestry check steps 1 to 3 passed; merge-proof-local status ${proof.status}; the loop left`,
+      ]
+    : [
+        `- check result: ${checks} on ${headSha}; merge state ${status.mergeState}, mergeable ${status.mergeable}; draft`,
+        `- trigger (a) not fired (${status.mergeState}); trigger (b) not fired (no failing check); trigger (c) not fired (merge state stated)`,
+      ];
+  const phaseFourLines = [
+    ...(forgejo
+      ? [`- merge-proof-local status ${proof.status}, conflictCount ${proof.conflictCount}`]
+      : []),
+    `- every condition other than 3's draft half and 9 holds on ${headSha}; the draft trigger of "Draft ready for review" holds`,
+    `- Draft ready for review: pr-draft-classify class ${classified.class}, blockers ${classified.blockers}, appendixTrust ${classified.appendixTrust}; readyTitle "${classified.readyTitle}"; condition 9 met`,
+    `- question ${READY_FOR_REVIEW_QUESTION} posed (round 1, state digest ${readyForReviewDigest(fixture)}); returned BLOCKED-USER ${READY_FOR_REVIEW_QUESTION}`,
+  ];
+  return `# merge-gate wisdom record (session ${run.sessionId})
+
+## Pull request
+
+- PR #${pullRequest} ${pr.url}; head branch ${pr.head}, base ${pr.base}; head SHA at Phase 0 ${headSha}
+- completion mode: merge (source: configuration, mergeGate.completion)
+- caller limits, dispatch 1: none
+- viewer-read login: ${viewerLogin}
+- nested-spawn probe passed
+- presence marker registered for session ${run.sessionId}, token ${run.token}
+
+## Human-comment guard
+
+- Phase 1: inactive. Review threads: none. Pull-request comments: ${comments.length === 0 ? 'none' : `${comments.length}, by ${viewerLogin}`}. Submitted reviews: ${reviewList.length === 0 ? 'none' : reviewList.join('; ')}.
+- items the identity rule excluded: ${ownComments.length === 0 ? 'none' : ownComments.join('; ')}
+- logins the catch-all counted: none
+- items excluded solely through mergeGate.botAccounts: none
+
+## Round 1
+
+${roundLines.join('\n')}
+- VERIFIED_HEAD_SHA ${headSha}; REVIEW_HEAD_SHA ${headSha}
+
+## Phase 4
+
+${phaseFourLines.join('\n')}
+`;
+}
+
+function seedDraftReadyRedispatchRun(args) {
+  const { scenario, fixture, projectRoot } = args;
+  const run = DRAFT_READY_REDISPATCH_RUNS[scenario];
+  // The two mark-ready scenarios keep their draft-ready `origin`; the Keep-draft one has none.
+  const origin = prepareMergeOrigin(args);
+  const now = new Date();
+  const started = new Date(now.getTime() - 20 * 60 * 1000).toISOString();
+  const refreshed = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  writePresenceMarker(
+    projectRoot,
+    {
+      sessionId: run.sessionId,
+      token: run.token,
+      prNumber: fixture.pullRequest,
+      head: fixture.headSha,
+      base: fixture.operations['pr-read'].envelope.data.result.base,
+    },
+    started,
+    refreshed,
+  );
+  writeFileSync(resolve(projectRoot, run.wisdomFile), draftReadyWisdomRecord(scenario, fixture), {
+    flag: 'wx',
+  });
+  return { ...origin, wisdomFile: run.wisdomFile };
+}
+
 function seedOtherRunPresence({ projectRoot }) {
   const now = new Date();
   const started = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
@@ -520,14 +666,17 @@ function seedOtherRunPresence({ projectRoot }) {
   return { marker: OTHER_RUN.sessionId };
 }
 
-// The suite's checkout hook after the repair and configured-reviewer origins: the three seeded
-// scenarios here, the presence and the Forgejo WIP-draft conflict ones on top of the `origin` of
-// `merge-origin.mjs`; the six merging scenarios' `origin` and the other draft-ready ones there, two
-// of the merging ones no-CI policy scenarios; the four blocking no-CI policy scenarios in
-// `no-ci-checkout.mjs`; and nothing for any other scenario.
+// The suite's checkout hook after the repair and configured-reviewer origins: the six seeded
+// scenarios here, the presence, the Forgejo WIP-draft conflict and the two mark-ready ones on top of
+// the `origin` of `merge-origin.mjs`; the six merging scenarios' `origin` and the other draft-ready
+// ones there, two of the merging ones no-CI policy scenarios; the four blocking no-CI policy
+// scenarios in `no-ci-checkout.mjs`; and nothing for any other scenario.
 export function prepareCheckout(args) {
   if (args.scenario === QUICK_COMMIT_SCENARIO) return seedQuickCommitRun(args);
   if (args.scenario === FORGEJO_WIP_CONFLICT_SCENARIO) return seedForgejoWipConflictRun(args);
+  if (Object.hasOwn(DRAFT_READY_REDISPATCH_RUNS, args.scenario)) {
+    return seedDraftReadyRedispatchRun(args);
+  }
   if (args.scenario === PRESENCE_NOTICE_SCENARIO) {
     return { ...prepareMergeOrigin(args), ...seedOtherRunPresence(args) };
   }

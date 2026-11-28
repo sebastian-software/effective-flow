@@ -22,6 +22,8 @@ import {
   exitCodeFor,
   lintPlans,
   planForgeFields,
+  planSectionsByMeaning,
+  readIssueHeader,
 } from '../src/scripts/plan-lint-core.mjs';
 import { main } from '../src/scripts/plan-lint.mjs';
 
@@ -1517,4 +1519,88 @@ test('planForgeFields: the workflow label maps a skill-name span to its workflow
 
 test('planForgeFields: a plan without an H1 yields a null title', () => {
   assert.equal(planForgeFields('## Requirement\n\nText.\n').title, null);
+});
+
+// Invariant: the `**Issue:**` header classifier never throws, reads only the header block before
+// the first `##` heading, and keeps the precedence `parseIssueHeader` always had: the first
+// malformed line is `invalid` before any duplicate is considered. `pr-merged-plan-evidence` maps
+// these results onto its rejection reasons, and `parseIssueHeader` throws on the two errors.
+test('readIssueHeader: number, absence, invalid, ambiguous and invalid-before-ambiguous', () => {
+  assert.deepEqual(readIssueHeader('# T\n\n**Issue:** #842\n\n## Req\n'), {
+    issue: 842,
+    error: null,
+  });
+  assert.deepEqual(readIssueHeader('# T\r\n**Issue:** #7 \r\n## Req\r\n'), {
+    issue: 7,
+    error: null,
+  });
+  assert.deepEqual(readIssueHeader('# T\n\n## Req\n\n**Issue:** #7\n'), {
+    issue: null,
+    error: null,
+  });
+  assert.deepEqual(readIssueHeader('# T\n'), { issue: null, error: null });
+  for (const malformed of ['#07', 'o/r#7', '7', '#7 extra']) {
+    assert.deepEqual(
+      readIssueHeader(`# T\n**Issue:** ${malformed}\n`),
+      { issue: null, error: 'invalid' },
+      malformed,
+    );
+  }
+  assert.deepEqual(readIssueHeader('# T\n**Issue:** #7\n**Issue:** #8\n## R\n'), {
+    issue: null,
+    error: 'ambiguous',
+  });
+  assert.deepEqual(readIssueHeader('# T\n**Issue:** #7\n**Issue:** #7\n'), {
+    issue: null,
+    error: 'ambiguous',
+  });
+  // A malformed line beside a valid duplicate is `invalid`, wherever the malformed line sits.
+  assert.deepEqual(readIssueHeader('# T\n**Issue:** #7\n**Issue:** #7\n**Issue:** x\n'), {
+    issue: null,
+    error: 'invalid',
+  });
+  assert.deepEqual(readIssueHeader('# T\n**Issue:** x\n**Issue:** #7\n**Issue:** #8\n'), {
+    issue: null,
+    error: 'invalid',
+  });
+});
+
+// Invariant: a section is found only under an exact mapped heading outside a code fence, and it
+// ends at the next heading of level 1 or 2, so a fenced heading never opens a second section and a
+// `###` subheading stays inside the section it belongs to.
+test('planSectionsByMeaning: fence-aware, both languages, ends at the next level-1 or level-2 heading', () => {
+  const text = [
+    '# T',
+    '',
+    '## Test results',
+    '',
+    '- `pnpm agent:check`: passed',
+    '### Details',
+    'more',
+    '```',
+    '## Test results',
+    '```',
+    '## Next',
+    'after',
+    '## Testergebnisse',
+    'zwei',
+  ].join('\n');
+  assert.deepEqual(planSectionsByMeaning(text, 'Test results'), [
+    {
+      heading: '## Test results',
+      line: 3,
+      body: [
+        '',
+        '- `pnpm agent:check`: passed',
+        '### Details',
+        'more',
+        '```',
+        '## Test results',
+        '```',
+      ],
+    },
+    { heading: '## Testergebnisse', line: 13, body: ['zwei'] },
+  ]);
+  assert.deepEqual(planSectionsByMeaning('# T\n```\n## Test results\n```\n', 'Test results'), []);
+  assert.throws(() => planSectionsByMeaning('', 'No such row'), /lacks the row/);
 });

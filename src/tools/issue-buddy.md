@@ -468,6 +468,9 @@ pass-report` with `{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts,
 pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`,
 plus `baseMoves` when `issue-buddy-base-move` added an entry. After successful collection also pass
 `collect: <exact persisted returned result>`; before it, pass `mode` and `limits`. Use only reconciled successfully recorded verdicts/PR identities.
+Project each `verdicts` entry to exactly `{issue, verdict, reason}`, e.g.
+`[{"issue": 858, "verdict": "not-ready", "reason": "Needs acceptance criteria"}]`.
+Omit `fingerprint`; do not forward the whole `verdict-record` result.
 Initial leftovers are bound by collection; append only validated preserved new-file diagnostics.
 No `ready`, `passFailure` or extra cache field is admitted. Never rewrite a v1 report.
 

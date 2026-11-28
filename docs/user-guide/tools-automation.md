@@ -102,8 +102,9 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    in one pull request.
 4. **Fit.** After the implementation is committed and the
    [delivery base](#end-states) is checked, a read-only reviewer scores from 1 to 10 how
-   well the change fits your accepted ADRs in `docs/adr/`, `docs/developer-guide/architecture.md`,
-   `docs/concept/` and your other open plans, as committed on the delivery branch. With none of these, the record says "not assessed —
+   well the change fits your ADRs in `docs/adr/` except superseded, rejected or deprecated ones,
+   `docs/developer-guide/architecture.md`, `docs/concept/` and your other open plans, as
+   committed on the delivery branch. With none of these, the record says "not assessed —
    no architecture or roadmap sources found". When the reviewer still fails after one retry, it
    says "not assessed — scoring unavailable". Neither is a blocker.
 5. **Deliver.** `pr` opens or finishes the **draft** pull request and appends the autopilot record.

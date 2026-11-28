@@ -17,9 +17,12 @@ In this order, before any other write:
    `non-interactive`, or under `non-interactive` a `Completion answer:` or a `Relayed answer:` other
    than `none` returns `ABORT unparseable input line`. `Caller limits:` holds one or more
    comma-separated tokens; an unknown, duplicated or empty token returns the same `ABORT`.
-   `Host:` accepts only `t3-code`. `Resumed wait:` is accepted only together with `Host: t3-code`,
-   under every run state, alone or with one `Relayed answer:` line, whose answer the digest rule of
-   "Answers and returns" consumes or discards; it never sets `report` mode itself.
+   `Host:` accepts only `t3-code`. An `Associated plan:` value may end in exactly one suffix
+   anchored at the line end, `; head=` followed by 40 or 64 lower-case hexadecimal characters;
+   everything before it, any other `;` included, is the path. `Resumed wait:` is accepted only
+   together with `Host: t3-code`, under every run state, alone or with one `Relayed answer:` line,
+   whose answer the digest rule of "Answers and returns" consumes or discards; it never sets
+   `report` mode itself.
    Optional `Progress context:` is the sole additional line: read `shared/subagent-progress.md`
    on demand and validate it before any authority-bearing work; missing context is valid legacy
    input with progress disabled. Unknown/malformed/duplicate/injected context returns
@@ -28,13 +31,18 @@ In this order, before any other write:
    `runtime-state-safety`; a verified value that differs from the passed one returns `ABORT`.
    Then apply the caller's `Associated plan:` check from "Dispatching the delegated run" to an
    optional `Associated plan:` line; a line failing it returns `ABORT unparseable input line`. Only
-   that validated plan feeds the merged-run candidate order of `next-steps`.
+   that validated plan feeds the merged-run candidate order of `next-steps`. A line with a head
+   is checked in one call with the line's head as `headSha` and fetches nothing; a line without one
+   is checked without `headSha` and never takes the fallback.
 3. **Wisdom file.** The path must resolve under the verified `RUNTIME_STATE_ROOT/.effective-flow/`,
    its name must match `.wisdom-accumulation-*.tmp.md`, and it must be absent or a regular file,
    absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file` and touch nothing at that path, never cleaning up a
    file this check rejected. A present file is this gate run's record from an earlier dispatch.
    A `Resumed wait:` dispatch instead requires a present file holding an unconsumed wait record
    whose kind and round equal the line's; otherwise it returns `ABORT unparseable input line`.
+   A dispatch with a `Relayed answer:` line, `Relayed answer: none` included, requires a present
+   file from an earlier dispatch of this gate run; without one it returns
+   `ABORT unparseable input line`.
    A dispatch whose `Caller limits:` line is missing or lacks a limit that file records returns
    `ABORT caller limits narrowed`.
 4. **Fresh state.** Re-read all pull-request state: re-run Phase 0 steps 1 and 2 read-only with the
@@ -1633,8 +1641,9 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
    blockers, as `finish-incomplete`, as `marker-invalid` or without `pullRequestMarkReady`, or at
    `mergeGate.maxRounds` after its ready step takes the matching `ended without merge` or
    `marked ready` row; every other ending of that subsection takes the generic selection. Its
-   `<plan-file>` is the classification's `planPath`, or for an `unmarked` draft the validated
-   `Associated plan:` line; without either, `{{SKILL:review}} <PR>` leads with no alternative.
+   `<plan-file>` is the classification's `planPath`, or for an `unmarked` draft the path of a
+   validated `Associated plan:` line that carries no `; head=`; without either,
+   `{{SKILL:review}} <PR>` leads with no alternative.
    A dispatched run returning `ABORT` emits nothing here: its caller alone emits that ending's block.
    The block stays chat only: nothing of it is written onto the pull request.
 

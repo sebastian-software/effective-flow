@@ -1293,6 +1293,23 @@ test('built worker bodies carry the lean sentence for the orchestrator and keep 
   }
 });
 
+// Invariant: every built worker in every target carries the foreground-first await rule exactly
+// once, so no leaf returns DONE or ABORT while a command it started is still running. The span is
+// taken from the source mandate, so the pin follows its wording instead of a second copy.
+test('built worker bodies carry the leaf await-commands rule exactly once in every target', () => {
+  const mandate = readSource('shared/delegation-mandate.md');
+  const span = mandate.match(/child delegation\. ([^\n]+?) Start each worker/)?.[1];
+  assert.ok(span, 'the mandate carries an insertion between the leaf definition and the handoff');
+  assert.match(span, /background command/, 'the extracted span is the await-commands rule');
+  for (const target of TARGETS) {
+    for (const artifact of workerArtifacts(target)) {
+      const body = readFileSync(artifact, 'utf8');
+      const where = relative(distRoot, artifact);
+      assert.equal(body.split(span).length, 2, `${where}: await-commands rule not exactly once`);
+    }
+  }
+});
+
 // In every target the initial-implementation tier line renders between its Quality-only binding
 // and the selector list, so no Fast reference shares a sentence with the tier values.
 test('the initial-implementation tier line renders right after its Quality-only binding', async () => {

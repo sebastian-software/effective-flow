@@ -242,9 +242,12 @@ const suite = {
   // earlier dispatch's record or another run's presence marker, the first with the history and
   // `origin` its Phase-4 condition fetches, the second on top of its merging `origin`, and the
   // Forgejo WIP-draft conflict scenario finds an earlier dispatch's trigger-(c) record on top of its
-  // draft-ready `origin`, so `run-state-seed.mjs` seeds exactly those three and hands every other
-  // scenario on to `merge-origin.mjs`, then `no-ci-checkout.mjs`. Each returns null for every
-  // scenario outside its group.
+  // draft-ready `origin`. The three draft-ready re-dispatches find the record a first dispatch left
+  // when it returned `BLOCKED-USER ready-for-review`, because Entry step 3 accepts a `Relayed answer:`
+  // line only with such a file: the two mark-ready ones on top of their draft-ready `origin`, the
+  // Keep-draft one, which stops at Entry, without one. So `run-state-seed.mjs` seeds exactly those
+  // six and hands every other scenario on to `merge-origin.mjs`, then `no-ci-checkout.mjs`. Each
+  // returns null for every scenario outside its group.
   prepareCheckout: (input) =>
     prepareRepairOrigin(input) ??
     prepareConfiguredReviewerOrigin(input) ??

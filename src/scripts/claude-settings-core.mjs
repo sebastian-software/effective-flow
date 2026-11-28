@@ -162,6 +162,7 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'pr-read',
   'pr-acceptance-sources',
   'issue-acceptance-criteria',
+  'pr-merged-plan-evidence',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',

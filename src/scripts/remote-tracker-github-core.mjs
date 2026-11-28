@@ -3,8 +3,9 @@
 // `buildCommandPlan` in `remote-tracker-core.mjs` dispatches here when the resolved provider is
 // `github`, so this file holds one `switch (operation)` plus the helpers whose only code consumer
 // is that switch: the `gh` host arguments, the pull-request status GraphQL query, and the review
-// payload builders. The thread-reply body is built in the shared core, because the Forgejo adapter
-// posts the same body.
+// payload builders, plus `normalizeGithubChangedFile`, the one payload mapping only this provider
+// spells. The thread-reply body is built in the shared core, because the Forgejo adapter posts the
+// same body.
 //
 // It imports from `remote-tracker-shared-core.mjs` and `remote-tracker-decomposition-core.mjs`;
 // the native sub-issue cases are the only plan sites that reach into the decomposition subsystem.
@@ -46,6 +47,31 @@ import {
 } from './remote-tracker-decomposition-core.mjs';
 
 const REVIEW_EVENTS = Object.freeze(['COMMENT']);
+
+// GitHub's `pulls/<n>/files` statuses mapped onto the neutral set `pr-merged-plan-evidence` judges:
+// `added`, `modified`, `renamed` and `removed` keep their name, while `copied`, `changed`,
+// `unchanged` and any other value become `unsupported`, which rejects that candidate.
+const GITHUB_FILE_STATUSES = Object.freeze({
+  added: 'added',
+  modified: 'modified',
+  renamed: 'renamed',
+  removed: 'removed',
+});
+
+// One `pulls/<n>/files` entry as `{ path, previousPath?, status }` with the neutral status above;
+// an entry that is not an object with a string `filename` is a malformed payload.
+export function normalizeGithubChangedFile(item) {
+  if (item === null || typeof item !== 'object' || typeof item.filename !== 'string') {
+    fail('INVALID_PAYLOAD', 'provider returned a malformed changed-file entry');
+  }
+  return {
+    path: item.filename,
+    ...(typeof item.previous_filename === 'string' ? { previousPath: item.previous_filename } : {}),
+    status: Object.hasOwn(GITHUB_FILE_STATUSES, item.status)
+      ? GITHUB_FILE_STATUSES[item.status]
+      : 'unsupported',
+  };
+}
 
 const REVIEW_SIDES = Object.freeze(['LEFT', 'RIGHT']);
 
@@ -448,6 +474,18 @@ export function buildGithubCommandPlan(operation, input, repository) {
         '--paginate',
         '--slurp',
         ghEndpoint(`issues/${prNumber(input)}/comments`),
+      ]);
+    // One page of a pull request's changed files, the read `pr-merged-plan-evidence` pages itself:
+    // no `--paginate`, so the core counts pages against its own bound. GitHub stops listing at
+    // 3000 files without an error, which the core detects against the payload's `changed_files`.
+    case 'pr-files-read':
+      return mutationPlan('gh', [
+        'api',
+        ...hostArgs,
+        `${ghEndpoint(`pulls/${prNumber(input)}/files`)}?${new URLSearchParams({
+          per_page: '100',
+          page: String(payloadInteger(input.page, 'page')),
+        })}`,
       ]);
     // `--paginate --slurp` **plus** an explicit `per_page=100`, which is the pairing `label-list`,
     // `issue-list` and `pr-list` use and which `pr-comments-read` omits. `--paginate` follows the

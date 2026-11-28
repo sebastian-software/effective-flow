@@ -127,7 +127,10 @@ test writers, validators, and reviewers next to the include. Delegating to a nam
 mandatory; analysis and exploration delegation is the default at the workflow/tool orchestration
 level, with a narrow triviality exception. Only the orchestrator starts workers or analysis
 fan-out. Each worker is a leaf executor: it starts no child, never re-delegates its assignment or
-a write, and returns missing essential context to the orchestrator. The orchestrator launches a
+a write, and returns missing essential context to the orchestrator. It also starts no background
+command it would have to wait for, runs its commands in the foreground and returns `DONE` or
+`ABORT` only after every foreground call it made has returned; a command it expects to outlast the
+foreground limit stays unstarted and is named in its result as not run. The orchestrator launches a
 worker with zero inherited turns when supported, otherwise the smallest supported history, and
 provides a compact, self-contained handoff containing the objective, relevant artifact paths,
 scoped paths and ownership, execution and runtime-state roots for write-capable work, resolved
@@ -145,6 +148,18 @@ continuing that agent with `SendMessage` — and that resume is not a retry; `me
 Retry 1–3. Its receiver rule reads outcomes only from the resumed turn's final return, never from
 the interim keyword-less text. The shipped fragments name no harness tool or parameter: the build's
 harness leak guard fails the Codex and portable targets on `run_in_background`.
+
+The leaf rule against background commands has the same Claude Code reason: a sub-agent is not
+reliably woken by a background command it started, so it would hand its caller a keyword-less
+interim result. The foreground limit is the longest wait the host's foreground command call allows,
+with its per-call timeout raised to the maximum. A leaf expects a command to outlast it only from
+evidence such as project guidance, CI timings or an earlier cut-off of the same command; queue
+admission cannot be predicted. A call the host's timeout cuts off has returned, and the domain
+owner's states classify any surviving workload (`effective-delivery`'s `TIMEOUT` for a confirmed
+stop, `TERMINATION_UNCONFIRMED` otherwise). On Codex, continuing the same exec session after its
+yield time is the same foreground call: it is neither a background command nor a polling loop, and
+it has not returned while the session still runs. Hand-written sub-agent briefs follow the matching
+rule in [`t3-acceptance-runs.md`](t3-acceptance-runs.md).
 
 The mandate also keeps the orchestrator lean: it sends other substantive work to a sub-agent unless
 a tool's in-run rule binds it or the triviality exception applies. Three sites follow from that.
@@ -1148,9 +1163,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 82 non-destructive or bounded rules, in four
+a prose removal of that state too. `setup` can write 83 non-destructive or bounded rules, in four
 families (twenty-five runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 49 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 50 read-only `remote-tracker` operations, among them `issue-acceptance-criteria` (`pr-acceptance-sources` also writes its private no-clobber review snapshot; an allow-listed read also removes the input file it names below `.effective-flow/remote-tracker/inputs/`), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

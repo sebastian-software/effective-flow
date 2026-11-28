@@ -1357,7 +1357,15 @@ Plan …` in German) cut to the 72-UTF-16-code-unit subject limit commitlint cou
     `not-found` or `outside-plan-dir` (a path reference outside `<plan.dir>/` and its archive), by
     exact match only; unsafe plan-directory or plan-file state is `UNSAFE_PATH`, while an unusable
     archive answers an archive reference in name or path form with `not-found` and
-    `archiveIgnored: true`.
+    `archiveIgnored: true`. An optional `headSha` (a full lower-case object ID, 40 or 64 hex
+    characters) applies to the path form only; with any other form it is `INVALID_INPUT`. Only when
+    the checkout answers `not-found` does the helper look up the same exact path in that commit
+    from local objects only, every Git call under `GIT_NO_LAZY_FETCH=1`: the commit must exist
+    locally, the `:(literal)` tree entry must be a regular blob (`100644` or `100755`) whose name
+    matches byte for byte, and the blob must not exceed `MAX_PLAN_BYTES` (512 KiB, owned by
+    `plan-lint-core.mjs`); anything else is `not-found`. Such a resolution adds `source: "head"`
+    and `headSha`; its `archiveIgnored` describes the checkout only. It fetches nothing and
+    changes no checkout, index or ref; `merge-gate` fetches the pull-request head before it calls.
 
   The owning fragments (`base-branch-resolution`, `worktree-integration`, `plan-numbering`,
   `concept-contract`, `unresolved-review-report`, `security-disclosure-gate`, `project-adr-convention`,
@@ -1534,7 +1542,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 82 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 83 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
