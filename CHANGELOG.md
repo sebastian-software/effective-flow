@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.82.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.81.0...effective-flow-v1.82.0) (2026-11-28)
+
+
+### Features
+
+* **cleanup:** remove planning worktrees whose preserved plan is archived on the base ([#822](https://github.com/sebastian-software/effective-flow/issues/822)) ([b2edc5e](https://github.com/sebastian-software/effective-flow/commit/b2edc5e435fe29ce8eecdae7612e92e60b3ce716))
+* **host-pr-watch:** say how a T3 run waits for a check that is not required ([#802](https://github.com/sebastian-software/effective-flow/issues/802)) ([c3eb8f2](https://github.com/sebastian-software/effective-flow/commit/c3eb8f2fe7e4901e708f59b6e3d38795f5d90050)), closes [#793](https://github.com/sebastian-software/effective-flow/issues/793)
+* **issue-buddy:** forbid project tools in the planning worktree and format plans in the parent ([#809](https://github.com/sebastian-software/effective-flow/issues/809)) ([343ffce](https://github.com/sebastian-software/effective-flow/commit/343ffce74a72a901257ced06f8b4a9ca8fd60611))
+* **iterate:** process own published review findings on request ([#776](https://github.com/sebastian-software/effective-flow/issues/776)) ([d468128](https://github.com/sebastian-software/effective-flow/commit/d4681288e0c946c3cbe842bcc979e1a92eb60c54))
+* **merge-gate:** accept an archived plan's test results as issue evidence ([#853](https://github.com/sebastian-software/effective-flow/issues/853)) ([6eeeba4](https://github.com/sebastian-software/effective-flow/commit/6eeeba4fc4b8bbbc2a93228a92a4a8c66d428907)), closes [#842](https://github.com/sebastian-software/effective-flow/issues/842)
+* **model-selection:** define the T3 delegate_task transport contract and select path ([#865](https://github.com/sebastian-software/effective-flow/issues/865)) ([64a2ed7](https://github.com/sebastian-software/effective-flow/commit/64a2ed7e4d9050720b442d33ba1aa28da850440b))
+* **worktree:** cooperate with harness-dictated locations ([#819](https://github.com/sebastian-software/effective-flow/issues/819)) ([e0a7fa8](https://github.com/sebastian-software/effective-flow/commit/e0a7fa8d00b26ac34f5fc615f474c6755c149d57))
+
+
+### Bug Fixes
+
+* **agents:** ban Git history rewriting in every write-capable worker ([#827](https://github.com/sebastian-software/effective-flow/issues/827)) ([dc199a3](https://github.com/sebastian-software/effective-flow/commit/dc199a38404f68c590f6be6c7804bdca5d536755)), closes [#825](https://github.com/sebastian-software/effective-flow/issues/825)
+* **agents:** make leaf workers await every command before returning ([#852](https://github.com/sebastian-software/effective-flow/issues/852)) ([dc7db67](https://github.com/sebastian-software/effective-flow/commit/dc7db67bfacc72172473b45e8be65b3c27315e10)), closes [#841](https://github.com/sebastian-software/effective-flow/issues/841)
+* **autopilot:** keep Active ADRs in the architecture-fit sources ([#851](https://github.com/sebastian-software/effective-flow/issues/851)) ([e34e4a8](https://github.com/sebastian-software/effective-flow/commit/e34e4a88075cf42aa85d1a70e847db9203b80d9e))
+* **autopilot:** stop preflight when the T3 classification wait times out ([#860](https://github.com/sebastian-software/effective-flow/issues/860)) ([0bfb4f2](https://github.com/sebastian-software/effective-flow/commit/0bfb4f2f35b03458c621e8767b66b61456cc989b))
+* **issue-buddy:** document pass-report verdict fields ([#861](https://github.com/sebastian-software/effective-flow/issues/861)) ([226ba8e](https://github.com/sebastian-software/effective-flow/commit/226ba8e73eaff9984fd7c9f404a16fcbaca74446))
+* **iterate:** gate the T3 top-level reviewer wait on wake-capable checks ([#854](https://github.com/sebastian-software/effective-flow/issues/854)) ([4f6480b](https://github.com/sebastian-software/effective-flow/commit/4f6480b95cc05e9d0d6c3037f6cbce542339f445)), closes [#849](https://github.com/sebastian-software/effective-flow/issues/849)
+* **merge-gate:** drop a failing Associated plan line at Entry instead of aborting ([#839](https://github.com/sebastian-software/effective-flow/issues/839)) ([419e3db](https://github.com/sebastian-software/effective-flow/commit/419e3dbdb69dc9b034d720c3a856301b3c89e288)), closes [#818](https://github.com/sebastian-software/effective-flow/issues/818)
+* **merge-gate:** keep the associated plan when it exists only on the PR head ([#821](https://github.com/sebastian-software/effective-flow/issues/821)) ([f81702f](https://github.com/sebastian-software/effective-flow/commit/f81702fe703624f888c4e9c00faea47b839567e6)), closes [#814](https://github.com/sebastian-software/effective-flow/issues/814)
+* **merge-gate:** reject a Relayed answer line on a first delegated dispatch ([#840](https://github.com/sebastian-software/effective-flow/issues/840)) ([1d9f448](https://github.com/sebastian-software/effective-flow/commit/1d9f4487fc88ce00f7edb1a01b817b273b7cde97)), closes [#817](https://github.com/sebastian-software/effective-flow/issues/817)
+* **merge-gate:** stop on T3 Code before any suspension no wake can end ([#855](https://github.com/sebastian-software/effective-flow/issues/855)) ([6fa2828](https://github.com/sebastian-software/effective-flow/commit/6fa282849ee4aca883a83100e642fda0c6133edd)), closes [#848](https://github.com/sebastian-software/effective-flow/issues/848)
+* **pilot-measurement:** keep the gate-observation capability in a helper-owned file ([#823](https://github.com/sebastian-software/effective-flow/issues/823)) ([3bc2836](https://github.com/sebastian-software/effective-flow/commit/3bc2836b35efb519a7e1a4db41eb2b4763c9390a))
+* **pilot-measurement:** report pending observation handle cleanup ([#862](https://github.com/sebastian-software/effective-flow/issues/862)) ([1176309](https://github.com/sebastian-software/effective-flow/commit/11763094d50875408e2ebc2c495da01f251c8386))
+* **pr-review:** name autopilot's delivery-base step as a head-branch conflict resolver ([#826](https://github.com/sebastian-software/effective-flow/issues/826)) ([516ab97](https://github.com/sebastian-software/effective-flow/commit/516ab97e7525a361321a8e4868751cc22fddf512)), closes [#824](https://github.com/sebastian-software/effective-flow/issues/824)
+
 ## [1.81.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.80.0...effective-flow-v1.81.0) (2026-11-27)
 
 
