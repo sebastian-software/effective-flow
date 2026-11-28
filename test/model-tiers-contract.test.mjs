@@ -12,7 +12,11 @@ import {
   parseSpawnSiteTable,
   resolveAgentTier,
 } from '../build-lib.mjs';
-import { MODEL_TIER_MAPPINGS, PANEL_MODEL_ALLOWLIST } from './support/native-profile-config.mjs';
+import {
+  MODEL_TIER_MAPPINGS,
+  PANEL_MODEL_ALLOWLIST,
+  T3_MODEL_PINS,
+} from './support/native-profile-config.mjs';
 import { executeOperation } from '../src/scripts/model-selection-core.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -632,6 +636,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     'host-pr-watch: no-watch rule for a delegated inline run; no spawn',
   ],
   [
+    'shared/host-pr-watch.md',
+    'The exceptions are a delegated `merge-gate` run',
+    'host-identity rule for a transport-started orchestrator whose spawn is marked at its own site; starts nothing',
+  ],
+  [
     'shared/next-steps.md',
     '**T4 (aborts only):**',
     'retrospective slot signal T4: defines a signal about sub-agents a run already spawned; instructs no spawn',
@@ -1196,6 +1205,7 @@ test('every shipped selector resolves every generated site from the canonical bu
                 'refactor/initial-implementation',
               ],
             },
+            t3Pins: T3_MODEL_PINS,
           }
         : {}),
     });
@@ -1265,6 +1275,87 @@ test('every shipped selector resolves every generated site from the canonical bu
       const body = readFileSync(relativePath, 'utf8');
       const siteLines = [...body.matchAll(/^\s*Model selection site: `([^`]+)`/gm)];
       for (const [, id] of siteLines) assert.ok(expectedSites.some((site) => site.id === id));
+    }
+  }
+});
+
+// Invariant (T3 delegation transport): the pins live only in the portable contract, so the native
+// Claude and Codex contracts stay free of any T3 catalog ID and a native helper answers a transport
+// request with `no-t3-pins`; the lazy fragment the `model-selection` pointer names ships in every
+// target, since a pointer that resolves on one harness only would strand a portable or native run.
+test('only the portable contract carries the T3 pins and every target ships the transport fragment', () => {
+  const aliases = new Set([
+    ...Object.values(MODEL_TIER_MAPPINGS).map(({ claude }) => claude.model),
+    ...PANEL_MODEL_ALLOWLIST.claude,
+  ]);
+  for (const target of TARGETS) {
+    const root = join(distRoot, target, 'effective-flow');
+    const raw = readFileSync(join(root, 'scripts/model-selection-contract.json'), 'utf8');
+    const contract = JSON.parse(raw);
+    if (target === 'portable') {
+      assert.deepEqual(contract.t3Pins, T3_MODEL_PINS, 'portable carries the build pins');
+      assert.deepEqual(new Set(Object.keys(contract.t3Pins)), aliases, 'one pin per Claude alias');
+    } else {
+      assert.equal(Object.hasOwn(contract, 't3Pins'), false, `${target} carries no t3Pins`);
+      for (const id of Object.values(T3_MODEL_PINS)) {
+        assert.equal(raw.includes(id), false, `${target} contract names no T3 catalog ID ${id}`);
+      }
+    }
+    const fragment = readFileSync(join(root, 'shared/t3-delegation-transport.md'), 'utf8');
+    assert.match(fragment, /^# T3 delegation transport$/m, `${target} ships the fragment`);
+    assert.doesNotMatch(fragment, /\{\{/, `${target} fragment keeps no unresolved placeholder`);
+    assert.match(
+      readFileSync(join(root, 'shared/model-selection.md'), 'utf8'),
+      /Read `shared\/t3-delegation-transport\.md`/,
+      `${target} model-selection points to the shipped fragment`,
+    );
+  }
+});
+
+// Invariant (T3 delegation transport): the installed helper of each target answers a transport
+// request as its contract allows: a native build has no pins, so it is unavailable with exit code 3
+// and `no-t3-pins` and the mandate's no-mechanism path applies, while the portable build resolves
+// the tier's alias to the pinned catalog ID on the inherited instance.
+test('the installed helper of each target resolves or refuses a transport selection by its contract', () => {
+  const standard = MODEL_TIER_MAPPINGS.standard.claude;
+  const pinned = T3_MODEL_PINS[standard.model];
+  const input = {
+    transport: 't3-delegate',
+    site: 'apply-issues/issue-analysis',
+    capabilities: {
+      inheritedProviderInstanceId: 'claudeAgent',
+      providers: [{ providerInstanceId: 'claudeAgent', driverKind: 'claudeAgent' }],
+      models: [
+        {
+          id: pinned,
+          providerInstanceId: 'claudeAgent',
+          options: [{ id: 'effort', values: [standard.effort] }],
+        },
+      ],
+    },
+  };
+  for (const target of TARGETS) {
+    const run = spawnSync(
+      process.execPath,
+      [join(distRoot, target, 'effective-flow/scripts/model-selection.mjs'), 'select'],
+      { input: JSON.stringify(input), encoding: 'utf8' },
+    );
+    const envelope = JSON.parse(run.stdout);
+    if (target === 'portable') {
+      assert.equal(run.status, 0, run.stderr || run.stdout);
+      assert.equal(envelope.ok, true);
+      assert.deepEqual(envelope.data.spawn, {
+        target: {
+          providerInstanceId: 'claudeAgent',
+          model: pinned,
+          options: { effort: standard.effort },
+        },
+      });
+      assert.equal(envelope.data.expected.model, pinned);
+    } else {
+      assert.equal(run.status, 3, `${target}: ${run.stderr}`);
+      assert.equal(envelope.error.code, 'TRANSPORT_UNAVAILABLE');
+      assert.deepEqual(envelope.data, { reason: 'no-t3-pins' });
     }
   }
 });

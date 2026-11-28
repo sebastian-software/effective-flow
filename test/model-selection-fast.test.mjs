@@ -49,6 +49,7 @@ const CONTRACT = Object.freeze({
     },
   ],
   fast: { mappings: FAST, sites: [SITE] },
+  t3Pins: { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' },
 });
 const record = (harnessFamily, overrides = {}) => ({
   installKind: 'portable',
@@ -94,7 +95,8 @@ test('fast returns only the rendered Fast values and refuses native builds and o
     { contract: CONTRACT },
   );
   assert.equal(other.error.code, 'INVALID_INPUT');
-  const { fast: _fast, ...native } = CONTRACT;
+  // The T3 pins are portable-only as well, so the native form drops them beside the Fast values.
+  const { fast: _fast, t3Pins: _t3Pins, ...native } = CONTRACT;
   const nativeResult = await executeOperation(
     'fast',
     { harness: 'claude', site: SITE },
@@ -111,7 +113,7 @@ test('fast returns only the rendered Fast values and refuses native builds and o
   const missing = await executeOperation(
     'select',
     { harness: 'claude', site: SITE, role: 'nodejs-implementer' },
-    { contract: native },
+    { contract: { ...native, t3Pins: CONTRACT.t3Pins } },
   );
   assert.equal(missing.error.code, 'INVALID_CONTRACT');
 });

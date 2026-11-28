@@ -1749,7 +1749,8 @@ and directive syntax").
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
   `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`, `verification-evidence`,
-  `build-failure-attribution`.
+  `build-failure-attribution`, `t3-delegation-transport` (dormant on every target until a spawn site or
+  preflight names it, pointed to from `model-selection`).
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `subagent-progress` is orchestrator-only: active overview owners and returning relays reach its
@@ -2074,6 +2075,18 @@ rejects a repeated or invalid name and a model equal to that harness's `deep` mo
 provider-name guard treats allowlisted names like mapped ones. `select` requires `panelModel` at a
 panel site, rejects it elsewhere, and takes the effort from the `deep` mapping. See the
 [scoped exception](../adr/per-spawn-model-tiers.md).
+
+The portable contract alone also carries `t3Pins`, the T3 Code catalog ID of each Claude alias, for
+the [T3 delegation transport](../adr/t3-delegate-task-transport.md). `T3_MODEL_PINS` in `build.mjs`
+is the one source. `validateT3ModelPins` derives the alias set from `MODEL_TIER_MAPPINGS[*].claude.model`
+and `PANEL_MODEL_ALLOWLIST.claude`, and rejects a missing pin, a pin no alias uses and a value that is
+not one bounded catalog-ID token. `validateContract` requires `t3Pins` exactly on a `portable`
+contract, so the native Claude and Codex contracts stay byte-identical to their previous form, and
+the pinned IDs join the provider-name guard lists, so shipped prose never names one. `select` takes
+`transport: "t3-delegate"` as a separate path, not a harness classification: it resolves the spawn
+target from a bounded projection of `orchestrator_capabilities`, returns `TRANSPORT_UNAVAILABLE`
+(exit code 3, with a `data.reason`) where the host offers no match, and `verify` on such a
+selection always returns `UNVERIFIED`.
 
 `select` emits the role/parameters, normalized expected model/effort and contract digest. `verify`
 recomputes that selection and reads a supported independent execution source. The Codex adapter

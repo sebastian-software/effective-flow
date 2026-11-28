@@ -364,7 +364,16 @@ test('portable output contains only base workers and no native profile represent
       const contract = JSON.parse(content);
       assert.deepEqual(
         Object.keys(contract).sort(),
-        ['schemaVersion', 'target', 'mappings', 'panelModels', 'roles', 'sites', 'fast'].sort(),
+        [
+          'schemaVersion',
+          'target',
+          'mappings',
+          'panelModels',
+          'roles',
+          'sites',
+          'fast',
+          't3Pins',
+        ].sort(),
       );
       assert.equal(contract.schemaVersion, 1);
       assert.equal(contract.target, 'portable');
@@ -378,7 +387,13 @@ test('portable output contains only base workers and no native profile represent
           'refactor/initial-implementation',
         ],
       });
-      providerContent = JSON.stringify({ ...contract, mappings: {}, panelModels: {}, fast: {} });
+      providerContent = JSON.stringify({
+        ...contract,
+        mappings: {},
+        panelModels: {},
+        fast: {},
+        t3Pins: {},
+      });
     }
     assert.deepEqual(
       findProviderModelNames(providerContent, {
@@ -903,6 +918,41 @@ test('model-tier mapping, agent tier and spawn-site errors fail before swap', ()
     'foreign-provider-model-name',
     (checkout) => appendFileSync(join(checkout, 'src/tools/version.md'), '\nPrefer sonnet.\n'),
     /foreign provider-model guard: codex file effective-flow\/tools\/version\.md names sonnet/,
+  );
+});
+
+// Invariant: T3_MODEL_PINS pins exactly the Claude aliases the build derives from the tier mappings
+// and the panel allowlist, so a missing pin, an unused pin and a value that is no catalog ID fail
+// before swap; and a pinned catalog ID is a provider name, so one placed in shipped prose fails the
+// build's provider-name guard like the alias it pins, instead of leaking a model into a tool.
+test('a missing, unused or invalid T3 pin and a pinned catalog ID in prose fail before swap', () => {
+  assertMutatedBuildFails(
+    'missing-t3-pin',
+    (checkout) =>
+      replaceOnce(join(checkout, 'build.mjs'), "  fable: 'claude-fable-5-2',\n});", '});'),
+    /T3 model pins miss the Claude alias "fable" \(in T3_MODEL_PINS \(build\.mjs\)\)/,
+  );
+  assertMutatedBuildFails(
+    'unused-t3-pin',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'build.mjs'),
+        "  fable: 'claude-fable-5-2',\n});",
+        "  fable: 'claude-fable-5-2',\n  gpt: 'gpt-catalog-1',\n});",
+      ),
+    /T3 model pin "gpt" names no Claude tier or panel alias/,
+  );
+  assertMutatedBuildFails(
+    'invalid-t3-pin',
+    (checkout) =>
+      replaceOnce(join(checkout, 'build.mjs'), "opus: 'claude-opus-5-5',", "opus: 'claude opus',"),
+    /T3 model pin "opus" holds an invalid catalog ID/,
+  );
+  assertMutatedBuildFails(
+    'pinned-catalog-id-in-prose',
+    (checkout) =>
+      appendFileSync(join(checkout, 'src/tools/version.md'), '\nPrefer claude-sonnet-5-5.\n'),
+    /foreign provider-model guard: codex file effective-flow\/tools\/version\.md names claude-sonnet-5-5/,
   );
 });
 

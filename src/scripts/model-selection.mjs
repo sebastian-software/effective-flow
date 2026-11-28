@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 // One JSON request on stdin, one envelope on stdout. This helper never writes runtime state.
+// Exit codes: 0 success, 2 rejected input or tier policy, 3 an unavailable T3 delegation
+// transport (`TRANSPORT_UNAVAILABLE`), 1 every other error.
 import { realpathSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';

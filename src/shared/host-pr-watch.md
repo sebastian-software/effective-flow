@@ -8,14 +8,20 @@ no pointer of its own.
 
 **Dispatch on the running host first, and read only its own section.**
 
-| Host                                                                   | Section to read                                                   |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| T3 Code, or a delegated `merge-gate` run that received `Host: t3-code` | "T3 Code: wait, link and unwatch" and every section after it      |
-| Any other host                                                         | none — keep the tool's own path unchanged and **read no further** |
+| Host                                                                                                                                          | Section to read                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| T3 Code, or a delegated `merge-gate` run or an orchestrator started through the T3 delegation transport, each having received `Host: t3-code` | "T3 Code: wait, link and unwatch" and every section after it      |
+| Any other host                                                                                                                                | none — keep the tool's own path unchanged and **read no further** |
 
 Host identity comes only from explicit running-environment context, T3 Code's runtime information,
-never from tool visibility alone or a shell check. The one exception is the delegated `merge-gate`
-run: its host identity is the `Host: t3-code` input line alone.
+never from tool visibility alone or a shell check. The exceptions are a delegated `merge-gate` run
+or an orchestrator started through the T3 delegation transport, each having received
+`Host: t3-code`; that input line alone is their host identity. For the transport orchestrator the
+exception grants exactly the T3 wait path: the wait prohibitions of "T3 Code: wait, link and
+unwatch" and a delegated run's endings, the `SUSPENDED host-pr-watch` return or report-and-stop.
+Whatever its running environment reports, such an orchestrator counts as a delegated sub-agent
+here: it never calls `watch_pull_request`, `unwatch_pull_request`, `link_pull_request` or
+`link_issue`, so it links nothing, and its caller links.
 
 ## T3 Code: wait, link and unwatch
 
