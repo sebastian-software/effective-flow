@@ -235,6 +235,63 @@ test('delegation-mandate.md defines the self-contained leaf-worker handoff', () 
   assertLeafWorkerHandoff(delegationMandate, 'src/shared/delegation-mandate.md');
 });
 
+// Invariant: a leaf worker never returns a terminal result (`DONE`/`ABORT`) while a foreground call
+// it made is still running, and it starts no background command it would have to wait for. A leaf
+// has no reliable resume, so an unawaited command would be lost; the leaf-executor bullet states
+// the await rule once, separately from the leaf definition and before the handoff rule.
+test('delegation-mandate.md makes a leaf worker await every command it started before a terminal result', () => {
+  const leafBullets = delegationMandate
+    .split('\n')
+    .filter((line) => /\*\*leaf executor\*\*/.test(line));
+  assert.equal(
+    leafBullets.length,
+    1,
+    'expected exactly one line defining the **leaf executor** in delegation-mandate.md',
+  );
+  const [bullet] = leafBullets;
+  assertClauses(bullet, [
+    [
+      /starts? no background (?:command|call|process)[^.\n]{0,80}(?:wait for|await)/i,
+      'missing: a leaf starts no background command it would have to wait for',
+    ],
+    [
+      /(?:returns?|ends?)[^.\n]{0,60}`?(?:DONE|ABORT)`?[^.\n]{0,60}only after every foreground (?:call|command)[^.\n]{0,60}(?:has|have) returned/i,
+      'missing: a leaf returns DONE or ABORT only after every foreground call it made has returned',
+    ],
+    [
+      /(?:expects? to outlast|outlast)[^.\n]{0,60}foreground limit[^.\n]{0,80}(?:stays? unstarted|not start)[^.\n]{0,120}(?:not run|unrun)/i,
+      'missing: a command expected to outlast the foreground limit stays unstarted and is named in the result as not run',
+    ],
+  ]);
+  const childDelegationIndex = bullet.indexOf('child delegation.');
+  const awaitIndex = bullet.search(/starts? no background/i);
+  const handoffIndex = bullet.indexOf('Start each worker with **zero inherited turns**');
+  assert.notEqual(
+    childDelegationIndex,
+    -1,
+    'missing: the leaf definition ending in "child delegation."',
+  );
+  assert.notEqual(
+    handoffIndex,
+    -1,
+    'missing: the "Start each worker with **zero inherited turns**" handoff rule',
+  );
+  assert.ok(
+    childDelegationIndex < awaitIndex && awaitIndex < handoffIndex,
+    'the await rule must follow "child delegation." and precede "Start each worker with **zero inherited turns**"',
+  );
+  assert.doesNotMatch(
+    bullet,
+    /run_in_background/,
+    'the leaf-executor bullet must stay harness-neutral and not name run_in_background',
+  );
+  assert.doesNotMatch(
+    bullet,
+    /SendMessage/,
+    'the leaf-executor bullet must stay harness-neutral and not name SendMessage',
+  );
+});
+
 // A delegated run is not reliably resumed when a background child finishes, so its caller receives
 // an interim result with neither DONE nor ABORT. The orchestrator-as-sub-agent rule closes that at
 // the source; it binds only the run's own fan-out, so the workflow-to-workflow carve-out that

@@ -19976,6 +19976,15 @@ test('the Claude Code pending-child specifics live in the architecture guide, no
     /`SendMessage`/,
     'the architecture guide must name SendMessage as the Claude Code resume',
   );
+  assert.match(
+    mandateSection,
+    near(
+      'not reliably woken by a background command it started',
+      '\\[`t3-acceptance-runs\\.md`\\]\\(t3-acceptance-runs\\.md\\)',
+      1200,
+    ),
+    'the architecture guide must give the Claude Code reason for the leaf background-command rule and link t3-acceptance-runs.md',
+  );
   for (const path of [
     'src/shared/delegation-mandate.md',
     'src/shared/completion-protocol.md',

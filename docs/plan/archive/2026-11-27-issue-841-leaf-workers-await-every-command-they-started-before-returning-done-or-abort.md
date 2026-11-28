@@ -1,6 +1,6 @@
 # Leaf workers await every command they started before returning DONE or ABORT
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #841
@@ -123,16 +123,16 @@ follow. No new fragment, include or worker-specific rule.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/delegation-mandate.md` | Insert the foreground-first text (one insertion, one or more sentences) into the leaf-executor bullet (line 7), right after the leaf definition; line count unchanged |
-| `scripts/compare-native-agent-baseline.mjs` | Add the declared body delta `delegation-mandate-await-commands` after `delegation-mandate-triviality-scope`, with a one-line comment |
-| `test/delegation-mandate-contract.test.mjs` | New test whose title and comment name the invariant; it pins the insertion's clauses in the leaf-executor bullet with `assertClauses`, checks its position after the leaf definition, and keeps the harness-neutrality checks |
-| `test/compare-native-agent-baseline.test.mjs` | Add the new id at index 8 of the ordered `EXPECTED_NATIVE_DELTAS.body` list (lines 134-155), directly after `delegation-mandate-triviality-scope`, and add a composition/relocation test like the triviality-scope test (lines 618-650) |
-| `test/execution-profile-rendering.test.mjs` | Add the `Expected delta delegation-mandate-await-commands: …` line to the pinned comparator stdout (lines 526-552), with exactly the workers the comparator reports |
-| `test/model-tiers-contract.test.mjs` | Add one test next to the lean-sentence test (lines 1270-1292). Through the existing `workerArtifacts(target)` helper it asserts that every built worker in all three targets carries the insertion exactly once. The insertion is extracted from `src/shared/delegation-mandate.md`, never hardcoded |
-| `test/workflow-contracts.test.mjs` | In the architecture-guide test at lines 19962-19986, add one `assert.match` for the new rationale (a Claude Code sub-agent is not woken by its own background command) and the `t3-acceptance-runs.md` link |
-| `docs/developer-guide/architecture.md` | Add the foreground-first duty to the leaf-executor restatement (lines 129-135). Next to the existing `run_in_background` explanation (lines 136-147), record the Claude Code reason, the "foreground limit" definition and the Codex exec-session mapping, and link `t3-acceptance-runs.md`, since the shipped fragment names no harness specifics |
+| File                                          | Description                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/delegation-mandate.md`            | Insert the foreground-first text (one insertion, one or more sentences) into the leaf-executor bullet (line 7), right after the leaf definition; line count unchanged                                                                                                                                                                              |
+| `scripts/compare-native-agent-baseline.mjs`   | Add the declared body delta `delegation-mandate-await-commands` after `delegation-mandate-triviality-scope`, with a one-line comment                                                                                                                                                                                                               |
+| `test/delegation-mandate-contract.test.mjs`   | New test whose title and comment name the invariant; it pins the insertion's clauses in the leaf-executor bullet with `assertClauses`, checks its position after the leaf definition, and keeps the harness-neutrality checks                                                                                                                      |
+| `test/compare-native-agent-baseline.test.mjs` | Add the new id at index 8 of the ordered `EXPECTED_NATIVE_DELTAS.body` list (lines 134-155), directly after `delegation-mandate-triviality-scope`, and add a composition/relocation test like the triviality-scope test (lines 618-650)                                                                                                            |
+| `test/execution-profile-rendering.test.mjs`   | Add the `Expected delta delegation-mandate-await-commands: …` line to the pinned comparator stdout (lines 526-552), with exactly the workers the comparator reports                                                                                                                                                                                |
+| `test/model-tiers-contract.test.mjs`          | Add one test next to the lean-sentence test (lines 1270-1292). Through the existing `workerArtifacts(target)` helper it asserts that every built worker in all three targets carries the insertion exactly once. The insertion is extracted from `src/shared/delegation-mandate.md`, never hardcoded                                               |
+| `test/workflow-contracts.test.mjs`            | In the architecture-guide test at lines 19962-19986, add one `assert.match` for the new rationale (a Claude Code sub-agent is not woken by its own background command) and the `t3-acceptance-runs.md` link                                                                                                                                        |
+| `docs/developer-guide/architecture.md`        | Add the foreground-first duty to the leaf-executor restatement (lines 129-135). Next to the existing `run_in_background` explanation (lines 136-147), record the Claude Code reason, the "foreground limit" definition and the Codex exec-session mapping, and link `t3-acceptance-runs.md`, since the shipped fragment names no harness specifics |
 
 ## Implementation details
 
@@ -150,6 +150,7 @@ follow. No new fragment, include or worker-specific rule.
    `test/model-tiers-contract.test.mjs:1124-1147` and `:1270-1292`: no new sentence may contain the
    word "tier" or the phrase "substantive work". The insertion must stay separate from the leaf
    sentence, which stays byte-identical and must not gain "substantive" or "unless".
+
 2. In `scripts/compare-native-agent-baseline.mjs`, add the body delta
    `delegation-mandate-await-commands`. Its `from` is a substring that occurs exactly once per
    sidecar: the end of the leaf definition plus the start of "Start each worker". Its `to` is the
@@ -165,6 +166,7 @@ follow. No new fragment, include or worker-specific rule.
 
    Assert that the insertion comes after "child delegation" and before "zero inherited turns". Keep
    the existing `doesNotMatch` neutrality checks.
+
 4. In `test/compare-native-agent-baseline.test.mjs`, add the id to the ordered body-delta list.
    Add one composition test: the delta applies onto the current mandate body and is rejected when
    the insertion moves to another bullet.
@@ -238,15 +240,11 @@ Not relevant.
 ## Acceptance criteria
 
 - [ ] The leaf-executor bullet of `src/shared/delegation-mandate.md` states, right after the leaf
-      definition, three things:
-      - a worker starts no background command it would have to wait for;
-      - it runs its commands in the foreground and returns `DONE` or `ABORT` only after every
-        foreground call it made has returned;
-      - a command it expects to outlast the foreground limit stays unstarted and is named in its
-        result as not run.
-
-      The fragment still counts at most 16 by the guard's count and names no harness tool or
-      parameter.
+      definition, three things: a worker starts no background command it would have to wait for; it
+      runs its commands in the foreground and returns `DONE` or `ABORT` only after every foreground
+      call it made has returned; and a command it expects to outlast the foreground limit stays
+      unstarted and is named in its result as not run. The fragment still counts at most 16 by the
+      guard's count and names no harness tool or parameter.
 - [ ] A new test in `test/delegation-mandate-contract.test.mjs`, whose title or comment names the
       invariant, pins that insertion in the source bullet. A new test in
       `test/model-tiers-contract.test.mjs` pins it exactly once in every built portable worker
@@ -305,6 +303,7 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -368,6 +367,7 @@ Not relevant.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -376,15 +376,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 1 | 1 |
-| Testability | 0 | 0 | 2 |
-| Scope | 0 | 1 | 1 |
-| Maintainability | 0 | 0 | 0 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         1 |    1 |
+| Testability     |        0 |         0 |    2 |
+| Scope           |        0 |         1 |    1 |
+| Maintainability |        0 |         0 |    0 |
 
 ### Findings
 
@@ -418,15 +418,15 @@ Result at that time: Approved
 
 #### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 0 |
-| Testability | 0 | 0 | 1 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 0 | 0 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    0 |
+| Testability     |        0 |         0 |    1 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         0 |    0 |
 
 #### Findings
 

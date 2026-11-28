@@ -28,6 +28,9 @@ const LEAN_SENTENCE =
 const TRIVIALITY_SCOPE_SENTENCE =
   ' It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit.';
 
+const AWAIT_COMMANDS_SENTENCE =
+  ' A leaf starts no background command it would have to wait for; it runs each command in the foreground and returns `DONE` or `ABORT` only after every foreground call it made has returned. A command it expects to outlast the foreground limit stays unstarted and is named in its result as not run.';
+
 const PROGRESS_SENTENCE =
   ' **Load on demand:** Read `shared/subagent-progress.md` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.';
 
@@ -141,6 +144,7 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'delegation-mandate-parent-chain-progress',
       'delegation-mandate-conditional-checkpoint',
       'delegation-mandate-triviality-scope',
+      'delegation-mandate-await-commands',
       'generic-product-reviewer-tooling-assignment',
       'generic-product-reviewer-implementation-full-pass',
       'code-validator-conflict-commit-scope',
@@ -638,6 +642,38 @@ test('the triviality-scope delta composes before the lean sentence and rejects r
         codex({ body: lean }),
         codex({
           body: lean.replace('- Another bullet.', `- Another bullet.${TRIVIALITY_SCOPE_SENTENCE}`),
+        }),
+      ),
+    /body drift outside the expected deltas/,
+  );
+});
+
+// Invariant: the await-commands rule is permitted only between the leaf definition and the
+// handoff rule it precedes; it composes onto the current mandate body and fails anywhere else.
+test('the await-commands delta composes after the leaf definition and rejects relocation', () => {
+  const leafEnd = 'instead of seeking it through child delegation.';
+  const awaiting = MANDATE_BODY.replace(leafEnd, `${leafEnd}${AWAIT_COMMANDS_SENTENCE}`);
+  assert.notEqual(awaiting, MANDATE_BODY);
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: MANDATE_BODY }),
+      codex({ body: awaiting }),
+    ),
+    ['delegation-mandate-await-commands'],
+  );
+  assert.throws(
+    () =>
+      compareNativeSidecar(
+        'codex',
+        'effective-flow-rust-reviewer',
+        codex({ body: MANDATE_BODY }),
+        codex({
+          body: MANDATE_BODY.replace(
+            '- Another bullet.',
+            `- Another bullet.${AWAIT_COMMANDS_SENTENCE}`,
+          ),
         }),
       ),
     /body drift outside the expected deltas/,
