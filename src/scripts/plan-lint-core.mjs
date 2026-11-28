@@ -163,6 +163,10 @@ export const PLAN_PLACEHOLDERS = deepFreeze([
 export const UNATTENDED_PLAN_NAME =
   /^\d{4}-\d{2}-\d{2}-issue-([1-9]\d*)-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.md$/;
 
+// The plan-file size bound. Owned here with the plan-file contract; `plan-publication-core`
+// re-exports it and the mechanics helper bounds a head-commit plan blob with it.
+export const MAX_PLAN_BYTES = 512 * 1024;
+
 // In-process ref-name rule for a branch prefix or a branch name: no empty segment (so no leading,
 // trailing or doubled `/`), no segment starting or ending with `.`, no `..`, no `.lock` segment
 // suffix, no `@{`, and no control, space or `~^:?*[\` character. `git check-ref-format` stays the
@@ -956,7 +960,7 @@ export function readPlanFile(file, fs, { publication = false } = {}) {
       fail('UNSAFE_PATH', `plan file changed after its containment check: ${file.path}`);
     }
     if (!publication) return fs.readFileSync(descriptor, 'utf8');
-    const limit = 512 * 1024;
+    const limit = MAX_PLAN_BYTES;
     if (stat.size > limit) fail('PUBLICATION_METADATA_INVALID', 'plan exceeds 512 KiB');
     const buffer = Buffer.alloc(limit + 1);
     let length = 0;
