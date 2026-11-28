@@ -15916,6 +15916,9 @@ test('task-list-tick: a line that is no CommonMark fence hides no unchecked item
     ['```\n```js\n```\n- [ ] after\n', 1],
     // An indented fence an item's end closes is counted through.
     ['- [ ] a\n  ```\n- [ ] b\n', 2],
+    // A top-level indented fence closes at the column-0 run, which must not open a fence that hides
+    // the item after it.
+    ['  ```\n- [ ] x\n```\n- [ ] y\n', 2],
     // A real tilde fence still hides its content.
     ['~~~ `ok`\n- [ ] fenced\n~~~\n', 0],
     // A fence line inside a non-comment HTML block opens nothing; the block ends at the blank line,

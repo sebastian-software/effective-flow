@@ -5646,13 +5646,15 @@ function issueCriteriaProjection(positions, outcomes) {
 // of any of CommonMark's seven types, where a fence line is not a fence, until that block's end
 // condition (its end marker for types 1-5, a blank line for types 6 and 7), and closed by
 // CommonMark's closer rule (only spaces or tabs after the run). Lines inside an HTML block are
-// counted through. An indented fence is counted through, which can only add. Not modelled:
+// counted through. An indented fence is a fence in only some walks: a top-level one closes at a column-0 run, which
+// would otherwise open a fence that hides the items after it, while one inside a list item ends with
+// the item, so the count unions the walks with and without indented openers. Not modelled:
 // containers (an HTML block starts at up to three spaces even inside a list item or behind a `>`,
 // and the end of the item that holds it does not close it), an HTML-looking line inside an indented
 // fence, and the paragraph state type 7 reads, taken from the raw previous line, container markers
 // included. Each can misplace an HTML block and so hide the fence after it, so the count is the
-// number of lines this walk or the same walk without HTML blocks counts, each line once: an item is
-// skipped only if both models are wrong at its line.
+// number of lines any walk (with or without HTML blocks, with or without indented fence openers)
+// counts, each line once: an item is skipped only if every model is wrong at its line.
 const TASK_LIST_KEY8 = /^[0-9a-f]{8}$/;
 const UNCHECKED_TASK_ITEM = /^\[ \](?:[ \t]|$)/;
 const TICKABLE_ITEM_LINE = /^([ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+)\[ \]/;
@@ -5723,13 +5725,19 @@ function htmlBlockStart(raw, paragraph) {
 
 function countUncheckedTaskItems(text) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  const counted = walkUncheckedTaskItems(lines, true);
-  for (const index of walkUncheckedTaskItems(lines, false)) counted.add(index);
+  const counted = new Set();
+  for (const htmlBlocks of [true, false]) {
+    for (const indentedFences of [false, true]) {
+      for (const index of walkUncheckedTaskItems(lines, htmlBlocks, indentedFences)) {
+        counted.add(index);
+      }
+    }
+  }
   return counted.size;
 }
 
 // The indices of the lines one walk counts as unchecked task items.
-function walkUncheckedTaskItems(lines, htmlBlocks) {
+function walkUncheckedTaskItems(lines, htmlBlocks, indentedFences) {
   let fence = null;
   let html = null;
   let paragraph = false;
@@ -5757,7 +5765,7 @@ function walkUncheckedTaskItems(lines, htmlBlocks) {
       paragraph = false;
     } else if (
       fenceLine &&
-      fenceLine[1] === '' &&
+      (indentedFences || fenceLine[1] === '') &&
       !(fenceLine[2][0] === '`' && fenceLine[3].includes('`'))
     ) {
       fence = fenceLine[2];
