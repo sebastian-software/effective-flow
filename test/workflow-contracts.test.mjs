@@ -5403,20 +5403,66 @@ test('the five tool-local emission gates keep the retrospective slot applicable'
   }
 });
 
-// Invariant: the delegated run accepts a plan path only after the same exact-match resolution every
-// plan reference gets; a mismatch is an unparseable input line, never a guess or a skipped check.
-test('the delegated merge-gate run validates Associated plan at Entry and rejects anything else', () => {
+// Invariant: a failing `Associated plan:` line is dropped and reported, never an abort: the delegated
+// run drops it at Entry, keeps the path and reason through the wisdom file, and Phase 6 reports it.
+// Only a malformed (empty) or duplicated line still aborts, through Entry step 1.
+test('the delegated merge-gate run drops a failing Associated plan line at Entry and reports it', () => {
   const run = prose(source('src/shared/merge-gate-delegated-run.md'));
+  // Entry step 1: a separate sentence names the only malformed value.
   assert.match(
-    run,
-    /apply the caller's `Associated plan:` check from "Dispatching the delegated run" to an optional `Associated plan:` line; a line failing it returns `ABORT unparseable input line`\. Only that validated plan feeds the merged-run candidate order of `next-steps`/,
+    boundedSlice(run, '1. Input lines.', '2. Roots.'),
+    /an `Associated plan:` line is malformed only when its value is empty/,
   );
+  // Entry step 2: a failing line is dropped by reference to the caller's check, on any outcome.
+  const roots = boundedSlice(run, '2. Roots.', '3. Wisdom file.');
+  assert.match(
+    roots,
+    /apply the caller's `Associated plan:` check from "Dispatching the delegated run" to an optional `Associated plan:` line; a line failing it[\s\S]{0,80}is dropped, never aborted/,
+  );
+  assert.match(roots, /continues without an associated plan/);
+  assert.match(
+    roots,
+    /Only that validated plan feeds the merged-run candidate order of `next-steps`/,
+  );
+  // The check is not restated here: no abort and no outcome list in step 2.
+  assert.doesNotMatch(roots, /ABORT unparseable input line/);
+  assert.doesNotMatch(roots, /ambiguous|not-found|outside-plan-dir|UNSAFE_PATH/);
+  // The dropped path and the reason are kept.
+  assert.match(roots, /the helper's `outcome` verbatim/);
+  assert.match(roots, /"not exact"/);
+  assert.match(roots, /error code/);
+  assert.match(roots, /"nonzero exit"[\s\S]{0,80}no envelope/);
   // The check belongs to Entry step 2, before any other write.
   ordered(
     source('src/shared/merge-gate-delegated-run.md'),
     '2. **Roots.**',
     "the caller's `Associated plan:` check",
     '3. **Wisdom file.**',
+  );
+  // Run presence appends the held drop: before `register` on a first dispatch, next to `refresh` after.
+  const presence = boundedSlice(run, '### Run presence', ' ### ');
+  assert.match(presence, /dropped `Associated plan:` line/);
+  assert.match(presence, near('dropped `Associated plan:` line', 'before `register`', 500));
+  assert.match(presence, near('dropped `Associated plan:` line', 'next to `refresh`', 500));
+  // The wisdom-accumulation list carries a dropped-line record after the caller-limits item.
+  ordered(
+    run,
+    'the caller limits of every dispatch',
+    'every dropped `Associated plan:` line',
+    'every consumed `Relayed answer:` by question id',
+  );
+  assert.match(run, /every dropped `Associated plan:` line[\s\S]{0,120}path and reason/);
+  // Phase 6 carries the drop records into step 2 before deleting the wisdom file, and reports each.
+  const phase6 = run.slice(run.indexOf('### Phase 6: Summary'));
+  const phase6Step1 = boundedSlice(
+    phase6,
+    '1. Delete the wisdom file',
+    '2. Run the worktree-record',
+  );
+  assert.match(phase6Step1, /carry the drop records into step 2/);
+  assert.match(
+    phase6,
+    /every carried dropped `Associated plan:` line[\s\S]{0,200}path and reason[\s\S]{0,200}continued without an associated plan/,
   );
   // The delegated run reaches the referenced section: its handoff reads the merge-gate tool file,
   // whose always-loaded core holds "Dispatching the delegated run".
@@ -5427,9 +5473,8 @@ test('the delegated merge-gate run validates Associated plan at Entry and reject
   );
   assert.match(caller, /`Associated plan: <repo-relative path>`, only for a verified association/);
   // Invariant (single source of the plan check): the full criteria live once, in the always-loaded
-  // core both readers load – the dispatching or inline caller, which drops a failing line before
-  // every dispatch, re-dispatches included, so Entry's strict check never aborts a gate run, and the
-  // delegated run's Entry, which applies the same check by reference as a backstop.
+  // core both readers load; the dispatching or inline caller drops a failing line before every
+  // dispatch, re-dispatches included, and the delegated run's Entry drops it by the same reference.
   assert.match(
     caller,
     /Before every dispatch, re-dispatches included, or an inline run, resolve it through `node <skill-root>\/scripts\/effective-flow-mechanics\.mjs plan-reference-resolve <<< '\{"cwd":"<root>","planDir":"<plan\.dir>","reference":"<repo-relative path>"\}'`, spelled per the call rule of Phase 0 step 2, with `<root>` the root `plan\.dir` resolves against \(the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode\) and `<plan\.dir>` the configured `plan\.dir`; it passes only on `resolved` with `data\.exact` true inside `<plan\.dir>\/` or `<plan\.dir>\/archive\/`\. On `not-found` only, and only in standard visibility, take the head OID from a `pr-status-read`, run `git fetch --no-write-fetch-head --refmap= origin refs\/pull\/<N>\/head` rooted in `RUNTIME_STATE_ROOT` with `GIT_TERMINAL_PROMPT=0` and a 60-second command timeout, then repeat the call with `"headSha":"<headSha>"` added to its JSON; a `source: "head"` result passes as `Associated plan: <data\.path>; head=<headSha>`\. A passed line always carries `data\.path`\. Drop a line that fails, also on a nonzero exit or `ok: false`, a missing head, or a failed or timed-out fetch, so it never aborts the gate; "Entry" repeats it/,
@@ -5455,13 +5500,13 @@ test('the delegated merge-gate run validates Associated plan at Entry and reject
     entryStep('1. **Input lines.**', '2. **Roots.**'),
     /An `Associated plan:` value may end in exactly one suffix anchored at the line end, `; head=` followed by 40 or 64 lower-case hexadecimal characters; everything before it, any other `;` included, is the path/,
   );
-  const roots = entryStep('2. **Roots.**', '3. **Wisdom file.**');
+  const headRoots = entryStep('2. **Roots.**', '3. **Wisdom file.**');
   assert.match(
-    roots,
+    headRoots,
     /A line with a head is checked in one call with the line's head as `headSha` and fetches nothing; a line without one is checked without `headSha` and never takes the fallback/,
   );
   for (const copy of ['source: "head"', '<plan.dir>/archive/', 'data.exact']) {
-    assert.ok(!roots.includes(copy), `Entry step 2 restates the caller criterion ${copy}`);
+    assert.ok(!headRoots.includes(copy), `Entry step 2 restates the caller criterion ${copy}`);
   }
   // A head-validated path does not exist in the checkout, so it never becomes the draft row's
   // `<plan-file>` invocation argument.
