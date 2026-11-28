@@ -293,6 +293,17 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // The foreground-first await rule follows the leaf definition and precedes the handoff rule;
+    // it runs after the deltas that embed the full worker bullet, so their literals still match.
+    Object.freeze({
+      id: 'delegation-mandate-await-commands',
+      edits: Object.freeze([
+        Object.freeze({
+          from: 'seeking it through child delegation. Start each worker with **zero inherited turns**',
+          to: 'seeking it through child delegation. A leaf starts no background command it would have to wait for; it runs each command in the foreground and returns `DONE` or `ABORT` only after every foreground call it made has returned. A command it expects to outlast the foreground limit stays unstarted and is named in its result as not run. Start each worker with **zero inherited turns**',
+        }),
+      ]),
+    }),
     // The generic-product reviewer accepts the `tooling` paths a pre-commit review assigns, and
     // its reduced-depth notice no longer calls them product code.
     Object.freeze({

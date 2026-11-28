@@ -64,6 +64,23 @@ follow-up mode change (#613) edited `src/tools/focus.md`, `src/shared/focus-sess
 `build.mjs`, so the D digests no longer match the source, and the D requalification below binds only
 its recorded candidate.
 
+**Documented nonbehavioral differences.** Each entry keeps the F record for `87851907` and updates
+`test/fixtures/focus-digests.sha256` in the same change.
+
+- **Leaf command completion (#841).** Changed file: the built
+  `dist/portable/effective-flow/tools/focus.md` (`58ca3e4c…` to `8b4ee491…`); no focus source and
+  no `build.mjs` row changed. Cause: two sentences added to the leaf-executor bullet of the eagerly
+  included `src/shared/delegation-mandate.md`: a leaf starts no background command it would have to
+  wait for, returns `DONE` or `ABORT` only after every foreground call has returned, and names a
+  command expected to outlast the foreground limit as not run. Removing exactly those sentences
+  from the built file restores the recorded digest; the tool stays at 416 lines. The difference is
+  nonbehavioral for the qualified path: the only spawn of focus, the leaf of "One read-only analysis
+  leaf", already may not run tests, builds, checks, probes, installations or historical commands,
+  or wait, and may use only short read-only Git metadata and already-recorded forge/CI queries. The
+  rule forbids nothing that leaf may do and grants nothing; the visible inline fallback, which the
+  record ran, keeps the same limits. The observer is the orchestrator, not a leaf, so the rule does
+  not reach it.
+
 ## Observed run and corrections
 
 Three bounded acceptance attempts, one post-correction requalification (D), and one
