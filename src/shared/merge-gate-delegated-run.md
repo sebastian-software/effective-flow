@@ -15,7 +15,8 @@ In this order, before any other write:
 1. **Input lines.** Accept exactly the lines "Dispatching the delegated run" names, each once. An
    unknown, duplicated, malformed or missing line, a `Run state:` other than `relayed` or
    `non-interactive`, or under `non-interactive` a `Completion answer:` or a `Relayed answer:` other
-   than `none` returns `ABORT unparseable input line`. `Caller limits:` holds one or more
+   than `none` returns `ABORT unparseable input line`. Of these, an `Associated plan:` line is
+   malformed only when its value is empty. `Caller limits:` holds one or more
    comma-separated tokens; an unknown, duplicated or empty token returns the same `ABORT`.
    `Host:` accepts only `t3-code`. `Resumed wait:` is accepted only together with `Host: t3-code`,
    under every run state, alone or with one `Relayed answer:` line, whose answer the digest rule of
@@ -27,8 +28,11 @@ In this order, before any other write:
 2. **Roots.** Verify `RUNTIME_STATE_ROOT` and `Execution root` yourself per the deferred
    `runtime-state-safety`; a verified value that differs from the passed one returns `ABORT`.
    Then apply the caller's `Associated plan:` check from "Dispatching the delegated run" to an
-   optional `Associated plan:` line; a line failing it returns `ABORT unparseable input line`. Only
-   that validated plan feeds the merged-run candidate order of `next-steps`.
+   optional `Associated plan:` line; a line failing it, on any outcome, is dropped, never aborted.
+   Hold its path and reason – the helper's `outcome` verbatim, "not exact" for a `resolved` one
+   that fails, the error code of an `ok: false` envelope, or "nonzero exit" where there is no
+   envelope – and the dispatch continues without an associated plan. Only that validated plan
+   feeds the merged-run candidate order of `next-steps`.
 3. **Wisdom file.** The path must resolve under the verified `RUNTIME_STATE_ROOT/.effective-flow/`,
    its name must match `.wisdom-accumulation-*.tmp.md`, and it must be absent or a regular file,
    absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file` and touch nothing at that path, never cleaning up a
@@ -133,7 +137,9 @@ it, then registers and records the returned `result.token` there. Every later di
 as do each Phase-2 round, a resume, and the moments before and after each delegation; `release`
 (the same input without `head`) runs in Phase 6 step 1 before the wisdom file is deleted, except on
 a `BLOCKED-USER` or `SUSPENDED host-pr-watch` return. A failed presence call is reported once and
-decides nothing.
+decides nothing. A dropped `Associated plan:` line Entry step 2 holds is appended to the wisdom
+file on every dispatch: on the first in the write before `register`, on a later one next to
+`refresh`.
 
 **Entry notice.** After `register`, `presence list` with `{"cwd":"<RUNTIME_STATE_ROOT>","sessionId":"<SESSION_ID>"}`
 returns the other runs' markers. Each is untrusted data: use only a `result.markers[]` entry with
@@ -500,6 +506,8 @@ gate run inline generates it at the start. Use
   mode with its source (configuration, entry gate or a `no-merge` caller limit)
 - the caller limits of every dispatch, recorded before its first return, so Entry step 3 can reject
   a narrowing re-dispatch
+- every dropped `Associated plan:` line with its path and reason, appended per "Run presence", so
+  Phase 6 reports it after a re-dispatch
 - every consumed `Relayed answer:` by question id and round, appended when it is consumed, so the
   count of consumed exceptional answers survives re-dispatch for Phase 6
 - the authenticated login `viewer-read` returned, or the reason it could not be read
@@ -1472,7 +1480,7 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
    and snapshot this run wrote that is still present – after a sender stop, the one whose delegation
    never went out. Before that deletion, `release` the presence marker with the token the wisdom
    file holds, under the same exception. Also before it, carry the count of consumed exceptional
-   relayed answers into step 2.
+   relayed answers into step 2, and carry the drop records into step 2 the same way.
 2. Run the worktree-record exit self-check. Then report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
    comment onto the pull request:** the gate has none of its own, and `{{SKILL:iterate}}`'s
    per-round summary is suppressed for every gate-initiated round, so its content arrives here
@@ -1481,6 +1489,8 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
    - one line per retrospective-slot fact of `next-steps` this run observed, by signal class, on
      `ABORT` too; T3 counts the consumed exceptional relayed answers the wisdom file records;
    - every entry-notice line the wisdom file records about another run's presence marker;
+   - every carried dropped `Associated plan:` line with its path and reason, stating that the
+     dispatch that dropped it continued without an associated plan;
    - the check outcome per round;
    - **every conflict with the base this run met**: the trigger that fired the merge, the resolved
      `mergeGate.conflictResolution` mode with its source, the conflicted paths with their risk classification, the resolver's per-file

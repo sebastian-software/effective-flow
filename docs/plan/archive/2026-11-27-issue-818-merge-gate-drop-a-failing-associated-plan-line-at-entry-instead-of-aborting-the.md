@@ -1,6 +1,6 @@
 # merge-gate: drop a failing Associated plan line at Entry instead of aborting the run
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #818
@@ -97,10 +97,10 @@ Out of scope: any change to the caller rule in `src/tools/merge-gate.md`.
 
 ## Affected files
 
-| File | Description |
-|---|---|
+| File                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/shared/merge-gate-delegated-run.md` | Entry step 1: one sentence stating that an `Associated plan:` line is malformed only when its value is empty. Entry step 2: drop a failing `Associated plan:` line, hold the reason, continue. Entry step 4 ("Run presence"): append the held drop to the wisdom file. Wisdom accumulation: add the dropped-line record. Phase 6 step 1: carry the drop records into step 2. Phase 6 step 2 report: add a bullet for every carried drop. |
-| `test/workflow-contracts.test.mjs` | Rewrite the test at lines 5381-5397 ("validates Associated plan at Entry and rejects anything else") to pin the step 1 malformed sentence, the drop rule, the wisdom-file record and the Phase 6 bullet. Update its invariant comment and title. Keep the step 1 pin at line 26911 green. |
+| `test/workflow-contracts.test.mjs`       | Rewrite the test at lines 5381-5397 ("validates Associated plan at Entry and rejects anything else") to pin the step 1 malformed sentence, the drop rule, the wisdom-file record and the Phase 6 bullet. Update its invariant comment and title. Keep the step 1 pin at line 26911 green.                                                                                                                                                |
 
 ## Implementation details
 
@@ -118,10 +118,10 @@ Out of scope: any change to the caller rule in `src/tools/merge-gate.md`.
      `resolved` outcome that still fails, "not exact"; for an `ok: false` envelope, its error
      code; "nonzero exit" only when there is no envelope (launch failure, no output);
    - that dispatch continues without an associated plan.
-   The step 2 text must not mention `ABORT unparseable input line` at all, not even in negated
-   form, because the test of step 5 asserts its absence from that slice.
-   Keep the sentence "Only that validated plan feeds the merged-run candidate order of
-   `next-steps`" unchanged.
+     The step 2 text must not mention `ABORT unparseable input line` at all, not even in negated
+     form, because the test of step 5 asserts its absence from that slice.
+     Keep the sentence "Only that validated plan feeds the merged-run candidate order of
+     `next-steps`" unchanged.
 3. **Wisdom accumulation and write point** (`merge-gate-delegated-run.md`, list at lines 498-506,
    and "Run presence" at lines 127-133). Add one item of its own after the caller-limits item:
    every `Associated plan:` line Entry dropped, with its path and reason, appended when Entry step 4
@@ -147,13 +147,13 @@ Out of scope: any change to the caller rule in `src/tools/merge-gate.md`.
    - Phase 6 step 1 carries the drop records into step 2, and step 2 carries the dropped-line
      bullet;
    - the existing `ordered(... '2. **Roots.**', "the caller's `Associated plan:` check",
-     '3. **Wisdom file.**')` order still holds;
+'3. **Wisdom file.**')` order still holds;
    - the validated-plan sentence still holds.
-   Rewrite the invariant comment above the test (line 5380-5381): a failing line is dropped and
-   reported, and only a malformed or duplicated line aborts through step 1. Keep the caller
-   assertions at lines 5398-5409, which this plan does not change, but reword their comment at
-   lines 5403-5406: the full criteria live once in the always-loaded core, and both the caller and
-   Entry drop a failing line, so the comment no longer calls Entry's check strict.
+     Rewrite the invariant comment above the test (line 5380-5381): a failing line is dropped and
+     reported, and only a malformed or duplicated line aborts through step 1. Keep the caller
+     assertions at lines 5398-5409, which this plan does not change, but reword their comment at
+     lines 5403-5406: the full criteria live once in the always-loaded core, and both the caller and
+     Entry drop a failing line, so the comment no longer calls Entry's check strict.
 6. **Step 1 coverage.** The step 1 pin at `test/workflow-contracts.test.mjs:26911` already ties
    "An unknown, duplicated, malformed or missing line" to `ABORT unparseable input line`. It stays
    unchanged; the new step 1 sentence is pinned by the test of step 5.
@@ -226,23 +226,23 @@ Not relevant.
 ## Acceptance criteria
 
 - [ ] Entry step 1 of `src/shared/merge-gate-delegated-run.md` states in one separate sentence that
-  an `Associated plan:` line is malformed only when its value is empty.
+      an `Associated plan:` line is malformed only when its value is empty.
 - [ ] Entry step 2 drops an `Associated plan:` line that fails the caller's resolution check on any
-  outcome, by reference to that check, and that dispatch continues without the plan. The step 2
-  text no longer returns `ABORT unparseable input line` for that line.
+      outcome, by reference to that check, and that dispatch continues without the plan. The step 2
+      text no longer returns `ABORT unparseable input line` for that line.
 - [ ] The wisdom-accumulation list carries a record of every dropped line with its path and reason,
-  appended when Entry step 4 applies "Run presence". Phase 6 step 1 carries the records into
-  step 2, and the Phase 6 report lists every carried drop with path and reason and states that the
-  dispatch that dropped it continued without the plan.
+      appended when Entry step 4 applies "Run presence". Phase 6 step 1 carries the records into
+      step 2, and the Phase 6 report lists every carried drop with path and reason and states that the
+      dispatch that dropped it continued without the plan.
 - [ ] Entry step 1 still returns `ABORT unparseable input line` for a duplicated `Associated plan:`
-  line, or one whose value is empty (malformed). The existing step 1 pin at
-  `test/workflow-contracts.test.mjs:26911` passes unchanged.
+      line, or one whose value is empty (malformed). The existing step 1 pin at
+      `test/workflow-contracts.test.mjs:26911` passes unchanged.
 - [ ] `src/tools/merge-gate.md` is unchanged.
 - [ ] A contract test in `test/workflow-contracts.test.mjs` pins the step 1 sentence, the drop
-  rule, the absence of the abort phrase and outcome names from the step 2 slice, the write point,
-  the Phase 6 carry-over and bullet. It fails against the current Entry step 2 wording.
+      rule, the absence of the abort phrase and outcome names from the step 2 slice, the write point,
+      the Phase 6 carry-over and bullet. It fails against the current Entry step 2 wording.
 - [ ] The full CI order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`,
-  `pnpm test:distribution`.
+      `pnpm test:distribution`.
 
 ## Validation plan
 
@@ -405,15 +405,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 2 | 3 |
-| Testability | 0 | 0 | 3 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 0 | 2 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         2 |    3 |
+| Testability     |        0 |         0 |    3 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         0 |    2 |
 
 ### Findings
 
