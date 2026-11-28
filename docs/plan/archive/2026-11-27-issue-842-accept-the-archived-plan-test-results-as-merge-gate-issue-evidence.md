@@ -1,6 +1,6 @@
 # Accept the archived plan test results as merge-gate issue evidence
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 **Issue:** #842
@@ -104,6 +104,7 @@ docs aligned to that rule.
 
   Each rejected candidate is returned with a closed reason. No rejected candidate ever becomes
   evidence.
+
 - **The plan parsers are shared, not copied, and the layering stays acyclic.** `parseIssueHeader`
   lives in `src/scripts/plan-publication-core.mjs`, which imports `remote-tracker-core.mjs`, so
   importing it from there would create a cycle. Add a non-throwing classifier to
@@ -140,23 +141,23 @@ docs aligned to that rule.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/remote-tracker-core.mjs` | Add the read-only forge operation `pr-merged-plan-evidence`: operation list, `CAPABILITY_BY_OPERATION` entry (`pullRequestRead`), input validation (`cwd` as the verified `RUNTIME_STATE_ROOT`, `number`, the observed forge `issues` as unique positive integers capped at a named bound like `ACCEPTANCE_SOURCE_BOUNDS.issues`, `planDir`, `hiddenMode`), the source-trust gate, the paginated file-listing read, merge-commit blob reads, structural admission, closed rejection reasons and named bounds in `truncated`. Reuse `pullRequestSourceTrust`, `isSafePlanPath`, the `PATH_UNSAFE_CHARACTERS` check, `acceptanceEnsureCommit`, and the `plan-lint-core.mjs` parsers instead of copying them. |
-| `src/scripts/plan-lint-core.mjs` | Add the non-throwing `**Issue:**` header classifier so that `remote-tracker-core.mjs` can import it without a cycle. |
-| `src/scripts/plan-publication-core.mjs` | Reimplement `parseIssueHeader` as a thin throwing wrapper over that classifier, with the same error code and messages, so its callers and tests stay unchanged. |
-| `src/scripts/remote-tracker-github-core.mjs` | Command plan for the pull-request file listing (paginated, cap-aware) and for exposing the merge commit OID the operation needs. |
-| `src/scripts/remote-tracker-forgejo-core.mjs` | Same command plans for Forgejo/Gitea through the existing `tea api` transport. |
-| `src/scripts/claude-settings-core.mjs` | Add the new operation to the read-only `remote-tracker` allow-list set. |
-| `src/shared/remote-tracker-operations.md` | One reference row (class, required and optional inputs, output keys, failure notes) for the new operation, kept in the format `test/remote-tracker-operations-reference.test.mjs` checks. |
-| `src/shared/merge-gate-issue-observation.md` | Step 3: name the admitted archived-plan test-results section as an accepted evidence locator, add the one helper call to the fixed read bounds, and keep `undetermined` for every unmatched criterion. Step 3: an admitted contradicting result makes the criterion `incomplete`, and a helper truncation is not a hit bound. Step 4: the offer locator becomes title, body, or "archived plan" plus its admitted-list ordinal, and revalidation reuses step 3's helper result with its reason stated, keeping its pinned bounds. `### Observation report items`: the locator with the archived plan path plus section heading, and the per-run helper outcome. |
-| `src/shared/issue-post-merge-observation.md` | Replace with pointers to merge-gate's observation steps 3 and 4: the duplicated covering-statement condition (verdict, ~line 93), the offer-locator wording (~lines 157-158), the pull-request read bound (~line 78) and the revalidation basis "the pull request's title and body" (~line 165). |
-| `test/remote-tracker-operations-reference.test.mjs` | Add one `FIXTURES` entry for the new operation, in operation-list order. Its minimal input carries a non-empty `issues` and no `hiddenMode: true`, so that it reaches the runner. |
-| `test/remote-tracker.test.mjs` | Fixture tests for the new operation with stubbed forge and git processes (see "Validation plan"). |
-| `test/workflow-contracts.test.mjs` | Contract test that pins, in `merge-gate-issue-observation.md`, the new evidence rule, its four admission conditions, the ordinal locator in step 4 and the path locator in `### Observation report items`, the contradiction rule, the truncation-is-not-a-hit-bound rule, step 4's reuse of the helper result, the per-run helper-outcome report item, and the unchanged `undetermined` fallback. It also pins the pointers in `issue-post-merge-observation.md`. The existing step 4 bound assertion (~lines 13603-13615) and the revalidation assertion (~lines 13617-13646) stay green unchanged. |
-| `docs/user-guide/tools-deliver.md` | Update the covering-evidence and locator descriptions (~lines 662 and 1422) with the archived-plan variant. |
-| `docs/user-guide/remote-tracker.md` | Update the completion condition (~line 1132) and the locator description (~lines 1142-1143), and list the new operation where the operations are listed. |
-| `docs/developer-guide/architecture.md`, `docs/developer-guide/configuration.md`, `docs/user-guide/tools-setup.md` | Update the read-only operation count from 49 to 50 and the list where one is given (~lines 1146, 135 and 282). |
+| File                                                                                                              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/remote-tracker-core.mjs`                                                                             | Add the read-only forge operation `pr-merged-plan-evidence`: operation list, `CAPABILITY_BY_OPERATION` entry (`pullRequestRead`), input validation (`cwd` as the verified `RUNTIME_STATE_ROOT`, `number`, the observed forge `issues` as unique positive integers capped at a named bound like `ACCEPTANCE_SOURCE_BOUNDS.issues`, `planDir`, `hiddenMode`), the source-trust gate, the paginated file-listing read, merge-commit blob reads, structural admission, closed rejection reasons and named bounds in `truncated`. Reuse `pullRequestSourceTrust`, `isSafePlanPath`, the `PATH_UNSAFE_CHARACTERS` check, `acceptanceEnsureCommit`, and the `plan-lint-core.mjs` parsers instead of copying them. |
+| `src/scripts/plan-lint-core.mjs`                                                                                  | Add the non-throwing `**Issue:**` header classifier so that `remote-tracker-core.mjs` can import it without a cycle.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `src/scripts/plan-publication-core.mjs`                                                                           | Reimplement `parseIssueHeader` as a thin throwing wrapper over that classifier, with the same error code and messages, so its callers and tests stay unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `src/scripts/remote-tracker-github-core.mjs`                                                                      | Command plan for the pull-request file listing (paginated, cap-aware) and for exposing the merge commit OID the operation needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `src/scripts/remote-tracker-forgejo-core.mjs`                                                                     | Same command plans for Forgejo/Gitea through the existing `tea api` transport.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `src/scripts/claude-settings-core.mjs`                                                                            | Add the new operation to the read-only `remote-tracker` allow-list set.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/shared/remote-tracker-operations.md`                                                                         | One reference row (class, required and optional inputs, output keys, failure notes) for the new operation, kept in the format `test/remote-tracker-operations-reference.test.mjs` checks.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `src/shared/merge-gate-issue-observation.md`                                                                      | Step 3: name the admitted archived-plan test-results section as an accepted evidence locator, add the one helper call to the fixed read bounds, and keep `undetermined` for every unmatched criterion. Step 3: an admitted contradicting result makes the criterion `incomplete`, and a helper truncation is not a hit bound. Step 4: the offer locator becomes title, body, or "archived plan" plus its admitted-list ordinal, and revalidation reuses step 3's helper result with its reason stated, keeping its pinned bounds. `### Observation report items`: the locator with the archived plan path plus section heading, and the per-run helper outcome.                                            |
+| `src/shared/issue-post-merge-observation.md`                                                                      | Replace with pointers to merge-gate's observation steps 3 and 4: the duplicated covering-statement condition (verdict, ~line 93), the offer-locator wording (~lines 157-158), the pull-request read bound (~line 78) and the revalidation basis "the pull request's title and body" (~line 165).                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `test/remote-tracker-operations-reference.test.mjs`                                                               | Add one `FIXTURES` entry for the new operation, in operation-list order. Its minimal input carries a non-empty `issues` and no `hiddenMode: true`, so that it reaches the runner.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `test/remote-tracker.test.mjs`                                                                                    | Fixture tests for the new operation with stubbed forge and git processes (see "Validation plan").                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `test/workflow-contracts.test.mjs`                                                                                | Contract test that pins, in `merge-gate-issue-observation.md`, the new evidence rule, its four admission conditions, the ordinal locator in step 4 and the path locator in `### Observation report items`, the contradiction rule, the truncation-is-not-a-hit-bound rule, step 4's reuse of the helper result, the per-run helper-outcome report item, and the unchanged `undetermined` fallback. It also pins the pointers in `issue-post-merge-observation.md`. The existing step 4 bound assertion (~lines 13603-13615) and the revalidation assertion (~lines 13617-13646) stay green unchanged.                                                                                                      |
+| `docs/user-guide/tools-deliver.md`                                                                                | Update the covering-evidence and locator descriptions (~lines 662 and 1422) with the archived-plan variant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `docs/user-guide/remote-tracker.md`                                                                               | Update the completion condition (~line 1132) and the locator description (~lines 1142-1143), and list the new operation where the operations are listed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `docs/developer-guide/architecture.md`, `docs/developer-guide/configuration.md`, `docs/user-guide/tools-setup.md` | Update the read-only operation count from 49 to 50 and the list where one is given (~lines 1146, 135 and 282).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Implementation details
 
@@ -180,7 +181,7 @@ docs aligned to that rule.
       rules. More candidates than a fixed candidate bound admit nothing, and the bound is named in
       `truncated`.
    5. Validate the forge-supplied values first. Run `requireAcceptanceBranch(context, <base
-      branch>, 'merge')`, and require the merge commit OID to match `GIT_OBJECT_NAME`, failing
+branch>, 'merge')`, and require the merge commit OID to match `GIT_OBJECT_NAME`, failing
       closed with `INVALID_PAYLOAD`. Then make the merge commit present with
       `acceptanceEnsureCommit(context, <merge commit OID>, <base branch>, 'merge')`, which fetches by
       object name first and falls back to the branch. A merge commit still absent after that call,
@@ -202,6 +203,7 @@ docs aligned to that rule.
       - `no-test-results`, `test-results-ambiguous`.
 
       Every limit that rejects or truncates is named in `truncated`.
+
    8. Any forge or git failure outside these closed outcomes fails closed with an error envelope.
 2. **Adapters.** Add the file-listing command plan to the GitHub and Forgejo cores. Normalize each
    entry to `{path, previousPath?, status}`, with `status` one of `added`, `modified`, `renamed` or
@@ -371,6 +373,7 @@ Not relevant.
   These fixtures cover issue criterion (b) at the admission level. The coverage verdict itself
   stays the observation's model judgment, and the contract test pins its fallback (see
   "Assumptions and open points").
+
 - [ ] With `parseIssueHeader` turned into a wrapper over the new classifier, the existing
       `plan-publication` tests pass with no change to their assertions. These include the asserted
       `ISSUE_HEADER_INVALID` envelopes in `test/plan-publication.test.mjs` and
@@ -435,6 +438,7 @@ Not relevant.
 ### Decided by score
 
 <!-- effective-flow-scored-decisions:begin v1 -->
+
 ```json
 [
   {
@@ -517,6 +521,7 @@ Not relevant.
   }
 ]
 ```
+
 <!-- effective-flow-scored-decisions:end -->
 
 ## Plan review
@@ -525,15 +530,15 @@ Not relevant.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 2 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 1 | 2 |
-| Testability | 0 | 0 | 2 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 0 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    2 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         1 |    2 |
+| Testability     |        0 |         0 |    2 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         0 |    1 |
 
 ### Findings
 
@@ -567,15 +572,15 @@ Result at that time: Approved
 
 #### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 2 |
-| Security | 0 | 2 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 2 |
-| Testability | 0 | 0 | 1 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 1 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    2 |
+| Security        |        0 |         2 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    2 |
+| Testability     |        0 |         0 |    1 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         1 |    1 |
 
 #### Findings
 
@@ -609,3 +614,34 @@ Internal review (2026-11-27, plan). Every finding is incorporated.
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Requirement:** merge-gate's Phase 5.5 issue observation also accepts the `## Test results` / `## Testergebnisse` section of an archived plan as covering evidence, only when the merged pull request archived that plan under `<plan.dir>/archive/`, its `**Issue:**` header names the observed issue, and the pull request passes the existing source-trust gate. A contradicting admitted result makes the criterion `incomplete`; an unmatched criterion stays `undetermined`; no issue text is quoted.
+
+**Architecture decisions:** as planned and as decided by score. A new read-only forge operation `pr-merged-plan-evidence` selects the evidence deterministically from the forge's paginated pull-request file listing and reads plan blobs at the merge commit; the coverage judgment stays the observation's. The rule is owned once in `merge-gate-issue-observation.md` steps 3 and 4, and `issue-post-merge-observation.md` points there. The `**Issue:**` header classifier `readIssueHeader` and the section reader `planSectionsByMeaning` live in `plan-lint-core.mjs`, so no import cycle arises; `parseIssueHeader` stays a throwing wrapper with unchanged errors. Only `.md` paths under the archive are candidates. Named bounds: issues 3 (`ACCEPTANCE_SOURCE_BOUNDS.issues`; with more, no call is made and title and body alone decide), listed files 3000, listing pages 60, candidates 20, section bytes 32 KiB.
+
+**Affected files:** `src/scripts/remote-tracker-core.mjs`, `src/scripts/remote-tracker-github-core.mjs`, `src/scripts/remote-tracker-forgejo-core.mjs`, `src/scripts/plan-lint-core.mjs`, `src/scripts/plan-publication-core.mjs`, `src/scripts/claude-settings-core.mjs`, `src/shared/merge-gate-issue-observation.md`, `src/shared/issue-post-merge-observation.md`, `src/shared/remote-tracker-operations.md`, `src/shared/setup-allowlist.md`, `test/remote-tracker.test.mjs`, `test/remote-tracker-operations-reference.test.mjs`, `test/plan-lint.test.mjs`, `test/workflow-contracts.test.mjs`, `docs/user-guide/remote-tracker.md`, `docs/user-guide/tools-deliver.md`, `docs/user-guide/tools-setup.md`, `docs/developer-guide/architecture.md`, `docs/developer-guide/build-system.md`, `docs/developer-guide/configuration.md`.
+
+**Implementation details:** the adapters add an internal `pr-files-read` command plan per forge and normalize each changed file to `{path, previousPath?, status}`; the merge commit OID and changed-file count come from the existing pull-request read, so `pr-read` and `pr-list` records stay byte-identical. Every rejected candidate carries one of 15 closed reasons, every rejecting or truncating limit is named in `truncated`, and any other forge or Git failure returns an error envelope. The new read-only operation raises the read-only remote-tracker operation count to 50 and the Claude Code allow rules to 83 (`setup-allowlist.md`, `build-system.md`, `architecture.md`, `tools-setup.md`), which the documentation sync gate and correction round 1 updated beyond the plan's listed files. The Forgejo/Gitea file-status spellings follow the Gitea source and are not checked against a live server; an unknown value rejects that candidate as `unsupported-status`. No `contextBudget` changed.
+
+## Test results
+
+- Phase 5 full run (one per run), all through `t3-project` in an export of the candidate: `pnpm agent:check` flagged `docs/user-guide/remote-tracker.md` (fixed) and this plan file (already failing at the base, formatted at completion); `pnpm test` 7104 tests, 7011 passed, 7 failed, 1 cancelled, 85 skipped; `node build.mjs` passed; `pnpm test:distribution` passed; `pnpm eval merge-gate verify` reported no integrity blocker and the expected stale evidence debt.
+- Of the `pnpm test` failures, `test/setup-allowlist-contract.test.mjs` came from this change (allow-rule count 82 → 83) and was fixed in correction round 1. The timeouts in `test/merge-gate-eval-round-lifecycle.test.mjs`, `test/merge-gate-eval-round.test.mjs` and `test/protected-validation-operator.test.mjs` passed by identity on re-verification. Two composed host-driver tests in `test/host-driver.test.mjs` failed again under heavy shared-runner load, passed on the base locally, and then passed on the candidate under comparable load (137/137, headroom 129.9 s and 82.0 s); no code path leads from the changed files into them.
+- Later changes were verified targeted: the incorporation pass with 1531 affected tests, and the final validation over the delta since the Phase 5 tree with 2788 tests (2722 passed, 0 failed, 66 skipped), `node build.mjs` and `pnpm test:distribution` passing, and `pnpm agent:check` flagging only this plan file before its completion formatting.
+- The pull request's acceptance-criteria mapping covers issue criterion (b) at the admission level only: the fixtures prove which evidence the observation receives, and the contract test pins the `undetermined` fallback; no test runs the model's coverage judgment.
+
+**Review result:** the Node.js reviewer reported 0 Critical, 0 Important and 6 Notes; all six were fixed in the one incorporation pass, the floor-hit paths received a full pass without findings, and the scoped re-check confirmed every fix. One optional nit (two comment lines over 100 columns) was closed as cosmetic. No residual findings were admitted, so no external review report was written.
+
+## Review findings
+
+**Date:** 2026-11-28
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     6 |
+| Open / Not implemented |     0 |

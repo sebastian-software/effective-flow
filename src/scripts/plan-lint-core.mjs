@@ -357,19 +357,21 @@ function lineKey(entry) {
   return text.trimEnd();
 }
 
-// Returns the entries after each matching level-2 heading up to the next heading of level <= 2.
+// Returns one `{ heading, line, entries }` per matching heading outside a fence, in document
+// order: the heading in `lineKey` form, its 1-based line and the entries after it up to the next
+// heading of level <= 2.
 function sections(inventory, headings) {
   const result = [];
   for (let index = 0; index < inventory.length; index += 1) {
     const entry = inventory[index];
     if (entry.inFence || !headings.has(lineKey(entry))) continue;
-    const body = [];
+    const entries = [];
     for (let cursor = index + 1; cursor < inventory.length; cursor += 1) {
       const level = headingLevel(inventory[cursor]);
       if (level !== null && level <= 2) break;
-      body.push(inventory[cursor]);
+      entries.push(inventory[cursor]);
     }
-    result.push(body);
+    result.push({ heading: lineKey(entry), line: entry.number, entries });
   }
   return result;
 }
@@ -433,8 +435,8 @@ function countOpenPoints(inventory) {
   const found = sections(inventory, OPEN_POINTS_HEADINGS);
   if (found.length === 0) return null;
   let count = 0;
-  for (const body of found) {
-    for (const entry of body) {
+  for (const { entries } of found) {
+    for (const entry of entries) {
       const trimmed = entry.text.trim();
       if (trimmed === '' || EMPTY_OPEN_POINTS.has(trimmed)) continue;
       count += 1;
@@ -454,7 +456,7 @@ function classifyReviewResult(inventory) {
   const results = inventory.filter(
     (entry) => !entry.inFence && REVIEW_RESULT_LABELS.some((label) => entry.text.startsWith(label)),
   );
-  if (results.length !== 1 || !found[0].includes(results[0])) return null;
+  if (results.length !== 1 || !found[0].entries.includes(results[0])) return null;
   const row = mappingRow('Review result');
   for (const language of ['de', 'en']) {
     const { label, value } = fieldParts(row[language][0]);
@@ -504,8 +506,8 @@ function stripPlaceholders(text) {
 function classifyAcceptanceCriteria(inventory) {
   const found = sections(inventory, ACCEPTANCE_HEADINGS);
   if (found.length === 0) return 'missing';
-  for (const body of found) {
-    for (const entry of body) {
+  for (const { entries } of found) {
+    for (const entry of entries) {
       if (entry.inFence || headingLevel(entry) !== null) continue;
       const content = entry.text
         .trim()
@@ -585,6 +587,45 @@ export function classifyPlanText(text) {
     docCategory: headerField(outside, HEADER_FIELD_LABELS.docCategory),
     targetPath: headerField(outside, HEADER_FIELD_LABELS.targetPath),
   };
+}
+
+// The sections a plan text carries under the headings of one mapping row (`meaning`, e.g.
+// `Test results`), in document order: the exact heading as written (`lineKey` form), its 1-based
+// line and its body lines up to the next heading of level 1 or 2. A heading inside a code fence
+// does not count, exactly as for every other section the classifier reads.
+export function planSectionsByMeaning(text, meaning) {
+  const row = mappingRow(meaning);
+  return sections(inventoryLines(text), new Set([...row.de, ...row.en])).map(
+    ({ heading, line, entries }) => ({ heading, line, body: entries.map((entry) => entry.text) }),
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Issue header
+
+const ISSUE_HEADER_LABEL = fieldParts(mappingRow('Issue').en[0]).label;
+const ISSUE_HEADER_EXACT = /^\*\*Issue:\*\* #([1-9]\d*)[ \t]*$/;
+
+// The `**Issue:** #<N>` line of a plan's header block (the lines before the first `##` to `######`
+// heading), classified without throwing: `{ issue: <N>, error: null }`, `{ issue: null, error:
+// null }` when the block has no such line, or `{ issue: null, error }` with `error` `invalid` (a
+// line that is not exactly `#<positive integer>`) or `ambiguous` (more than one valid line). The
+// first malformed line yields `invalid` before any duplicate is considered, so a malformed line
+// beside a valid duplicate is `invalid`. `plan-publication-core.mjs` throws on both errors through
+// its `parseIssueHeader` wrapper; `remote-tracker-core.mjs` maps them to rejection reasons.
+export function readIssueHeader(text) {
+  const lines = String(text).split(/\r\n|\n|\r/);
+  const end = lines.findIndex((line) => /^#{2,6}\s/.test(line));
+  const header = end === -1 ? lines : lines.slice(0, end);
+  const values = [];
+  for (const line of header) {
+    if (!line.startsWith(ISSUE_HEADER_LABEL)) continue;
+    const match = line.match(ISSUE_HEADER_EXACT);
+    if (!match) return { issue: null, error: 'invalid' };
+    values.push(Number(match[1]));
+  }
+  if (values.length > 1) return { issue: null, error: 'ambiguous' };
+  return { issue: values[0] ?? null, error: null };
 }
 
 function validateExpectedLanguage(expectedLanguage) {
@@ -727,7 +768,8 @@ function workflowLabel(value) {
 export function planForgeFields(text) {
   const inventory = inventoryLines(text);
   const outside = inventory.filter((entry) => !entry.inFence);
-  const [requirement] = sections(inventory, REQUIREMENT_HEADINGS);
+  const [section] = sections(inventory, REQUIREMENT_HEADINGS);
+  const requirement = section?.entries;
   const summary = requirement
     ? (firstProseParagraph(requirement) ?? firstListItem(requirement))
     : null;

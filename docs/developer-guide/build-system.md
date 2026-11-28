@@ -1529,7 +1529,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 82 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 83 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a

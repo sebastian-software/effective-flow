@@ -1,7 +1,8 @@
 // The Forgejo half of the `remote-tracker` plan builder.
 //
 // `buildCommandPlan` in `remote-tracker-core.mjs` dispatches here for every provider that is not
-// `github`, so this file holds one `switch (operation)` and nothing else. Keeping it apart from
+// `github`, so this file holds one `switch (operation)` and the one payload mapping only this
+// provider spells (`normalizeForgejoChangedFile`). Keeping it apart from
 // the GitHub adapter is the point: the two forges disagree on wire formats, pagination and merge
 // payloads, and a change to one of them should be reviewable without reading the other.
 //
@@ -40,6 +41,35 @@ import {
 // Forgejo's default work-in-progress prefixes, which make a pull request a draft (see
 // `pr-mark-ready` below). `pr-draft-classify` strips the same prefixes to derive a ready title.
 export const WORK_IN_PROGRESS_PREFIX = /^(?:WIP:|\[WIP\])/i;
+
+// Gitea's `ChangedFile.status` (`services/convert` `ToChangedFile`) mapped onto the neutral set
+// `pr-merged-plan-evidence` judges: `added` and `renamed` keep their name, `changed` is `modified`
+// and `deleted` is `removed`; `copied`, `unchanged` and any other value become `unsupported`,
+// which rejects that candidate.
+const FORGEJO_FILE_STATUSES = Object.freeze({
+  added: 'added',
+  changed: 'modified',
+  renamed: 'renamed',
+  deleted: 'removed',
+});
+
+// One `ChangedFile` entry as `{ path, previousPath?, status }` with the neutral status above; an
+// empty `previous_filename` is no rename source, and an entry that is not an object with a string
+// `filename` is a malformed payload.
+export function normalizeForgejoChangedFile(item) {
+  if (item === null || typeof item !== 'object' || typeof item.filename !== 'string') {
+    fail('INVALID_PAYLOAD', 'provider returned a malformed changed-file entry');
+  }
+  return {
+    path: item.filename,
+    ...(typeof item.previous_filename === 'string' && item.previous_filename !== ''
+      ? { previousPath: item.previous_filename }
+      : {}),
+    status: Object.hasOwn(FORGEJO_FILE_STATUSES, item.status)
+      ? FORGEJO_FILE_STATUSES[item.status]
+      : 'unsupported',
+  };
+}
 
 // A thread write is built only on the evidence of a probe that read the forge's API description
 // and found the operation's route declared (see `review-thread-reply` below).
@@ -317,6 +347,17 @@ export function buildForgejoCommandPlan(operation, input, repository) {
     // bare branch name and a real `draft`, which is what `pr-list` reports for the same pull request.
     case 'pr-read':
       return teaApiReadPlan(repository, apiEndpoint(`pulls/${prNumber(input)}`));
+    // Class A: raw API JSON (`modules/structs.ChangedFile`). One page of a pull request's changed
+    // files, which `pr-merged-plan-evidence` pages itself against its own page bound; the forge may
+    // clamp `limit`, so the core compares the listed total with the payload's `changed_files`.
+    case 'pr-files-read':
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(
+          apiEndpoint(`pulls/${prNumber(input)}/files`),
+          payloadInteger(input.page, 'page'),
+        ),
+      );
     // Class B: tea renderer output.
     case 'pr-comments-read':
       return mutationPlan('tea', [

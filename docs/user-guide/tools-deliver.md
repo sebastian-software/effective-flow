@@ -659,8 +659,10 @@ The observation is not limited to pull requests from `apply`. A pull request fro
 continued plan pull request finished by `build`, `fix`, `refactor`, or `docs`, carries a lifecycle
 receipt with the non-closing relationship `refs`, so the merged pull request reaches the same
 observation. In an interactive run the gate offers to close the issue only when every acceptance
-criterion of the issue is covered in the merged pull request's title or body; otherwise it reports
-`incomplete` or `undetermined` and offers nothing. Nothing is closed automatically, and these pull
+criterion of the issue is covered in the merged pull request's title or body, or by a recorded result in the
+`## Test results` section of an archived plan that the merged pull request carries for that issue;
+otherwise it reports `incomplete` or `undetermined` and offers nothing. A recorded result that
+contradicts a criterion makes the issue `incomplete`, whatever the title or body says. Nothing is closed automatically, and these pull
 requests never added an in-progress label, so none is removed. A pull request created before this
 was added, or recovered by a direct `pr` run after a failed finish, stays legacy.
 
@@ -1419,12 +1421,18 @@ Two further things worth knowing about what the gate writes:
   otherwise the whole guidance such an issue ever gets. It does not invent unobserved work.
 - The report also names, per linked issue, the completion verdict – `complete`, `incomplete`, or
   `undetermined` – and the criterion locators behind it: which criterion, and whether its covering
-  statement sat in the merged pull request's title or body. It quotes no criterion text and no
-  pull-request text; you read the wording at the issue and pull-request URLs. Per issue it then says
+  evidence sat in the merged pull request's title, its body, or an archived plan, which the report
+  names by path and section heading. It quotes no criterion text, no pull-request text and no plan
+  text; you read the wording at the issue and pull-request URLs. Per issue it then says
   whether the terminal transition was offered, how you answered, and what the transition did –
   including, for a non-interactive run, the transition it recommended instead of posing, and, where
   the offer was unavailable, which capability or configuration value was missing on which connection.
   That last case is reported as unavailable, never as an incomplete issue.
+- Once per run the report names the archived-plan evidence outcome: how many plans were admitted per
+  issue, or why none was – no lookup made, the pull request not merged or untrusted, a bound that
+  truncated the listing, a rejected candidate's reason, or a helper error. A failed or empty lookup
+  leaves only the title and body as evidence. The lookup is made once per run, only for up to three
+  forge issues, never in hidden mode and never for an external issue.
 - Per assessed issue the report then names the **open points** recorded in that issue's canonical
   planning comment – the implementation-blocking decisions
   [`/effective-flow plan-issue`](tools-understand.md) left standing in the comment rather than in the
