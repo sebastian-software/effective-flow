@@ -219,7 +219,18 @@ export function observedHelperEvent(
           .filter(Boolean)
       : [],
     worktreeRemoved: result.finalCheckout?.worktreeRemoved ?? null,
-    branchSource: typeof result.branchSource === 'string' ? result.branchSource : null,
+    // `authorize-execution` returns only a record reference, so the recorded source is not in its
+    // result. The helper accepts the call only where the reported `reuseBase.branchSource` matches
+    // its own re-derivation (an `existing` report is never upgraded), so a successful call's input
+    // states the recorded value. `worktree reuse-facts` carries it in its result instead.
+    branchSource:
+      typeof result.branchSource === 'string'
+        ? result.branchSource
+        : envelope.ok === true &&
+            call.operation === 'authorize-execution' &&
+            typeof input.reuseBase?.branchSource === 'string'
+          ? input.reuseBase.branchSource
+          : null,
     // `worktree path-resolve` and `path-prepare`: where the base came from and which diagnostics it
     // carried, never the machine path itself.
     baseSource: ['environment', 'configuration', 'default'].includes(result.source)

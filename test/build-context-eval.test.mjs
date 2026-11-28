@@ -410,6 +410,32 @@ test('runtime-state helper calls and terminal keywords are observed without path
     },
   );
   assert.equal(terminal.conclusionKeyword, 'ABORT: worktree-location-conflict');
+  // `authorize-execution` returns a record reference: the recorded branch source is observed from
+  // the successful call's verified `reuseBase` input, never from a result field it does not carry.
+  const authorize = (ok, reuseBase) =>
+    observedHelperEvent(
+      {
+        ...tool,
+        arguments: {
+          cmd: `node /skill/scripts/build-run.mjs authorize-execution <<'EOF'\n${JSON.stringify({ reuseBase })}\nEOF`,
+        },
+      },
+      { ok, operation: 'authorize-execution', result: { root: '/r', path: 'p', digest: 'd' } },
+      {
+        session: 'root',
+        sourceDigest: 'digest',
+        alias: (value) => value,
+        agentSession: () => null,
+        roots: { 'build-run': '/skill/scripts/build-run.mjs' },
+      },
+    );
+  const adoptedReuse = {
+    baseRef: 'origin/develop',
+    localBaseBranch: 'develop',
+    branchSource: 'adopted',
+  };
+  assert.equal(authorize(true, adoptedReuse).branchSource, 'adopted');
+  assert.equal(authorize(false, adoptedReuse).branchSource, null);
 });
 
 test('build-context protocol helpers fail closed at the evidence boundary', () => {
